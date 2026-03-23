@@ -1,8 +1,8 @@
 /.github/ @Jakeeeey @ECuerdo
 
-/src/app/(customer-relationship-management)/crm/_components/ @Jakeeeey @ECuerdo
+/src/app/(manufacturing-management)/mm/_components/ @Jakeeeey @ECuerdo
 
-/src/app/(customer-relationship-management)/layout.tsx @Jakeeeey @ECuerdo
+/src/app/(manufacturing-management)/layout.tsx @Jakeeeey @ECuerdo
 
 /src/app/api/auth/@Jakeeeey @ECuerdo
 
