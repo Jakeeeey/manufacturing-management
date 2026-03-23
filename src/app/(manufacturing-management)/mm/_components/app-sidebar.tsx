@@ -30,61 +30,213 @@ import { NavMain } from "./nav-main";
 
 const data = {
   navMain: [
-    { title: "Dashboard", url: "/mm/", icon: LayoutDashboard },
-    { title: "Customer", url: "/mm/customer/", icon: Users },
     {
-      title: "Salesman Management",
-      url: "/mm/sales-force/",
-      icon: ShoppingCart,
-    },
-    {
-      title: "Customer Hub",
-      url: "/mm/customer-hub/",
+      title: "Product Management",
+      url: "#",
       icon: Bot,
       items: [
         {
-          title: "Callsheet Printable",
-          url: "/mm/customer-hub/callsheet-printable",
+          title: "SKU Creation",
+          url: "#",
           icon: ClipboardList,
         },
         {
-          title: "Callsheet",
-          url: "/mm/customer-hub/callsheet",
+          title: "Product Masterlist",
+          url: "#",
           icon: ClipboardList,
         },
         {
-          title: "Sales Order Report",
-          url: "/mm/customer-hub/sales-order-report",
+          title: "Product Catalog",
+          url: "#",
           icon: ShoppingCart,
         },
-        {
-          title: "Create Sales Order",
-          url: "/mm/customer-hub/create-sales-order",
-          icon: ShoppingCart,
-        },
-        {
-          title: "Sales Order Approval",
-          url: "/mm/customer-hub/sales-order-approval",
-          icon: ClipboardList,
-        },
-        // { title: "Disbursement", url: "/fm/treasury/disbursement" },
-        // { title: "Remittances", url: "/fm/treasury/remittances" },
       ],
     },
     {
-      title: "Defective Invoice Summary",
-      icon: ChartNoAxesCombined,
-      url: "/mm/invoice-management/invoice-summary-report",
+      title: "Purchase Order",
+      url: "#",
+      icon: Bot,
+      items: [
+        {
+          title: "Purchase Order Creation",
+          url: "#",
+          icon: ClipboardList,
+        },
+        {
+          title: "Purchase Order Approval",
+          url: "#",
+          icon: ClipboardList,
+        },
+      ],
     },
     {
-      title: "Invoice Cancellation Requests",
-      icon: FileXCorner,
-      url: "/mm/invoice-management/invoice-cancellation",
+      title: "Inventory",
+      url: "#",
+      icon: Bot,
+      items: [
+        {
+          title: "Lot Registration",
+          url: "#",
+          icon: ClipboardList,
+        },
+        {
+          title: "Lot and Batch Traceability",
+          url: "#",
+          icon: ClipboardList,
+        },
+        {
+          title: "Raw Material",
+          url: "#",
+          icon: ClipboardList,
+        },
+        {
+          title: "Good Stock",
+          url: "#",
+          icon: ClipboardList,
+        },
+        {
+          title: "Bad Stock",
+          url: "#",
+          icon: ClipboardList,
+        },
+        {
+          title: "Expiry and Shelf Life",
+          url: "#",
+          icon: ClipboardList,
+        },
+      ],
     },
     {
-      title: "Invoice Cancellation Approval",
-      icon: CircleCheckBig,
-      url: "/mm/invoice-management/invoice-cancellation-approval",
+      title: "Reports",
+      url: "#",
+      icon: ClipboardList,
+    },
+    {
+      title: "Calendar of Schedule",
+      url: "#",
+      icon: ClipboardList,
+    },
+    {
+      title: "BI and Financials",
+      url: "#",
+      icon: ClipboardList,
+    },
+    {
+      title: "File Management",
+      url: "#",
+      icon: Bot,
+      items: [
+        {
+          title: "Raw Material Registration",
+          url: "#",
+          icon: ClipboardList,
+        },
+        {
+          title: "Packaging Registration",
+          url: "#",
+          icon: ClipboardList,
+        },
+        {
+          title: "Supplier Registration",
+          url: "#",
+          icon: ShoppingCart,
+        },
+      ],
+    },
+    {
+      title: "Inbound",
+      url: "#",
+      icon: Bot,
+      items: [
+        {
+          title: "Receiving",
+          url: "#",
+          icon: ClipboardList,
+        },
+        {
+          title: "Sales Return",
+          url: "#",
+          icon: ClipboardList,
+        },
+      ],
+    },
+    {
+      title: "Outbound",
+      url: "#",
+      icon: Bot,
+      items: [
+        {
+          title: "Deliveries",
+          url: "#",
+          icon: ClipboardList,
+        },
+        {
+          title: "Return to Supplier",
+          url: "#",
+          icon: ClipboardList,
+        },
+      ],
+    },
+    {
+      title: "Planning and Engineering",
+      url: "#",
+      icon: Bot,
+      items: [
+        {
+          title: "MRP Engine",
+          url: "#",
+          icon: ClipboardList,
+        },
+        {
+          title: "Bill of Materials and Recipes",
+          url: "#",
+          icon: ClipboardList,
+        },
+      ],
+    },
+    {
+      title: "Production and Quality",
+      url: "#",
+      icon: Bot,
+      items: [
+        {
+          title: "Scheduling",
+          url: "#",
+          icon: ClipboardList,
+        },
+        {
+          title: "Shop Floor",
+          url: "#",
+          icon: ClipboardList,
+        },
+        {
+          title: "Final QA",
+          url: "#",
+          icon: ShoppingCart,
+        },
+      ],
+    },
+    {
+      title: "Sales Order",
+      url: "#",
+      icon: ClipboardList,
+    },
+    {
+      title: "Quality Assurance Configuration",
+      url: "#",
+      icon: Bot,
+      items: [
+        {
+          title: "Production Process",
+          url: "#",
+          icon: ClipboardList,
+        },
+        {
+          title: "QA Production Setup Checklist",
+          url: "#",
+          icon: ClipboardList,
+        },
+      ],
     },
   ],
 };
@@ -105,7 +257,8 @@ export function AppSidebar({
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton size="lg" render={<Link href="/main-dashboard" />}>
+            <SidebarMenuButton size="lg" asChild>
+              <Link href="/main-dashboard">
                 <div className="flex aspect-square size-10 items-center justify-center overflow-hidden">
                   <Image
                     src="/vertex_logo_black.png"
@@ -120,9 +273,10 @@ export function AppSidebar({
                 <div className="grid flex-1 text-left text-sm leading-tight">
                   <span className="truncate font-medium">VOS Web</span>
                   <span className="truncate text-xs text-muted-foreground">
-                    Manufacturing Management
+                    Customer Relationship Management
                   </span>
                 </div>
+              </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

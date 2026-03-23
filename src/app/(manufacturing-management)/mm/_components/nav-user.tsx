@@ -96,7 +96,9 @@ export function NavUser({ user, onLogout }: NavUserProps) {
         <SidebarMenu>
             <SidebarMenuItem>
                 <DropdownMenu>
-                    <DropdownMenuTrigger render={<SidebarMenuButton size="lg" className="w-full cursor-pointer" />}>
+                    <DropdownMenuTrigger asChild>
+                        {/* Cursor pointer for whole trigger row */}
+                        <SidebarMenuButton size="lg" className="w-full cursor-pointer">
                             <Avatar className="h-8 w-8 rounded-lg">
                                 <AvatarImage src={user.avatar || ""} alt={user.name} />
                                 <AvatarFallback className="rounded-lg">{initials}</AvatarFallback>
@@ -110,6 +112,7 @@ export function NavUser({ user, onLogout }: NavUserProps) {
                             </div>
 
                             <ChevronsUpDown className="ml-auto size-4 opacity-70" />
+                        </SidebarMenuButton>
                     </DropdownMenuTrigger>
 
                     <DropdownMenuContent
@@ -137,41 +140,49 @@ export function NavUser({ user, onLogout }: NavUserProps) {
                                 {isDark ? "Light mode" : "Dark mode"}
                             </DropdownMenuItem>
 
-                             <DropdownMenuItem render={<Link href="/mm/my-profile" className="cursor-pointer" />}>
+                            <DropdownMenuItem asChild>
+                                <Link href="/crm/my-profile" className="cursor-pointer">
                                     <User className="mr-2 size-4" />
                                     My Profile
+                                </Link>
                             </DropdownMenuItem>
 
-                             <DropdownMenuItem render={<Link href="/mm/change-password" className="cursor-pointer" />}>
+                            <DropdownMenuItem asChild>
+                                <Link href="/crm/change-password" className="cursor-pointer">
                                     <KeyRound className="mr-2 size-4" />
                                     Change Password
+                                </Link>
                             </DropdownMenuItem>
 
-                             <DropdownMenuItem render={<Link href="/mm/login-activity" className="cursor-pointer" />}>
+                            <DropdownMenuItem asChild>
+                                <Link href="/crm/login-activity" className="cursor-pointer">
                                     <ShieldCheck className="mr-2 size-4" />
                                     Login Activity
+                                </Link>
                             </DropdownMenuItem>
 
-                             <DropdownMenuItem render={<Link href="/mm/settings" className="cursor-pointer" />}>
+                            <DropdownMenuItem asChild>
+                                <Link href="/crm/settings" className="cursor-pointer">
                                     <Settings className="mr-2 size-4" />
                                     Settings
+                                </Link>
                             </DropdownMenuItem>
                         </DropdownMenuGroup>
 
                         <DropdownMenuSeparator />
 
-                         <DropdownMenuItem render={
+                        <DropdownMenuItem asChild>
                             <button
                                 type="button"
                                 className="w-full cursor-pointer text-left text-destructive focus:text-destructive disabled:cursor-not-allowed disabled:opacity-60"
                                 onClick={handleLogout}
                                 disabled={loggingOut}
-                            />
-                         }>
+                            >
                 <span className="inline-flex items-center">
                   <LogOut className="mr-2 size-4" />
                     {loggingOut ? "Logging out..." : "Log out"}
                 </span>
+                            </button>
                         </DropdownMenuItem>
                     </DropdownMenuContent>
                 </DropdownMenu>

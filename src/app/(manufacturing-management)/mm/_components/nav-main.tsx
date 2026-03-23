@@ -24,7 +24,7 @@ import {
     SidebarMenuSubItem,
 } from "@/components/ui/sidebar";
 
-import { THEME_SETTINGS_EVENT } from "@/components/components/theme/theme-settings";
+import { THEME_SETTINGS_EVENT } from "@/components/theme/theme-settings";
 
 /* --------------------------------- helpers -------------------------------- */
 
@@ -261,19 +261,19 @@ export function NavMain({ items }: { items: NavNode[] }) {
                     return (
                         <Collapsible
                             key={l1.title}
-                            render={<SidebarMenuItem className="min-w-0 overflow-hidden" />}
+                            asChild
                             open={l1HasChildren ? l1Open : undefined}
                             onOpenChange={l1HasChildren ? (v) => setOpenMap((p) => ({ ...p, [l1.title]: v })) : undefined}
                         >
+                            <SidebarMenuItem className="min-w-0 overflow-hidden">
                                 {/* LEVEL 1 */}
                                 {l1HasChildren ? (
-                                    <CollapsibleTrigger render={
+                                    <CollapsibleTrigger asChild>
                                         <SidebarMenuButton
                                             tooltip={l1.title}
                                             className={cn("cursor-pointer min-w-0 overflow-hidden", OUTER_ROW_NO_GREY)}
                                             data-active={l1Exact}
-                                        />
-                                    }>
+                                        >
                                             <div className={ROW}>
                                                 <div className={cn(PILL_BASE, GAP_L1, PILL_HOVER, PILL_ACTIVE)}>
                                                     {l1.icon ? <l1.icon className={ICON_L1_CLASS} /> : null}
@@ -286,18 +286,30 @@ export function NavMain({ items }: { items: NavNode[] }) {
                                                     )}
                                                 </div>
                                             </div>
+                                        </SidebarMenuButton>
                                     </CollapsibleTrigger>
                                 ) : (
                                     <SidebarMenuButton
-                                        render={l1Clickable ? <Link href={l1.url} className={ROW} /> : <div className={ROW} />}
+                                        asChild
                                         tooltip={l1.title}
                                         className={cn("cursor-pointer min-w-0 overflow-hidden", OUTER_ROW_NO_GREY)}
                                         data-active={l1Exact}
                                     >
+                                        {l1Clickable ? (
+                                            <Link href={l1.url} className={ROW}>
                                                 <div className={cn(PILL_BASE, GAP_L1, PILL_HOVER, PILL_ACTIVE)}>
                                                     {l1.icon ? <l1.icon className={ICON_L1_CLASS} /> : null}
                                                     <span className={LABEL}>{l1.title}</span>
                                                 </div>
+                                            </Link>
+                                        ) : (
+                                            <div className={ROW}>
+                                                <div className={cn(PILL_BASE, GAP_L1, PILL_HOVER, PILL_ACTIVE)}>
+                                                    {l1.icon ? <l1.icon className={ICON_L1_CLASS} /> : null}
+                                                    <span className={LABEL}>{l1.title}</span>
+                                                </div>
+                                            </div>
+                                        )}
                                     </SidebarMenuButton>
                                 )}
 
@@ -305,7 +317,7 @@ export function NavMain({ items }: { items: NavNode[] }) {
                                 {l1HasChildren ? (
                                     <div className={cn(DROP_WRAP, l1Open ? DROP_OPEN : DROP_CLOSED)}>
                                         <div className={DROP_INNER}>
-                                            <CollapsibleContent>
+                                            <CollapsibleContent forceMount>
                                                 <div>
                                                     <SidebarMenuSub className={SUB_WRAP_L2}>
                                                         {l1.items!.map((l2) => {
@@ -320,15 +332,26 @@ export function NavMain({ items }: { items: NavNode[] }) {
                                                                 return (
                                                                     <SidebarMenuSubItem key={l2.title} className="min-w-0 overflow-hidden">
                                                                         <SidebarMenuSubButton
-                                                                            render={l2Clickable ? <Link href={l2.url} className={ROW} /> : <div className={ROW} />}
+                                                                            asChild
                                                                             isActive={l2Exact}
                                                                             data-active={l2Exact}
                                                                             className={cn("cursor-pointer", subBtnVariants({ level: 2 }), OUTER_ROW_NO_GREY)}
                                                                         >
+                                                                            {l2Clickable ? (
+                                                                                <Link href={l2.url} className={ROW}>
                                                                                     <div className={cn(PILL_BASE, GAP_L2, PILL_HOVER, PILL_ACTIVE)}>
                                                                                         <L2Icon node={l2} kind="leaf" />
                                                                                         <span className={LABEL}>{l2.title}</span>
                                                                                     </div>
+                                                                                </Link>
+                                                                            ) : (
+                                                                                <div className={ROW}>
+                                                                                    <div className={cn(PILL_BASE, GAP_L2, PILL_HOVER, PILL_ACTIVE)}>
+                                                                                        <L2Icon node={l2} kind="leaf" />
+                                                                                        <span className={LABEL}>{l2.title}</span>
+                                                                                    </div>
+                                                                                </div>
+                                                                            )}
                                                                         </SidebarMenuSubButton>
                                                                     </SidebarMenuSubItem>
                                                                 );
@@ -337,17 +360,17 @@ export function NavMain({ items }: { items: NavNode[] }) {
                                                             return (
                                                                 <Collapsible
                                                                     key={l2.title}
-                                                                    render={<SidebarMenuSubItem className="min-w-0 overflow-hidden" />}
+                                                                    asChild
                                                                     open={l2Open}
                                                                     onOpenChange={(v) => setOpenMap((p) => ({ ...p, [l2Key]: v }))}
                                                                 >
-                                                                        <CollapsibleTrigger render={
+                                                                    <SidebarMenuSubItem className="min-w-0 overflow-hidden">
+                                                                        <CollapsibleTrigger asChild>
                                                                             <SidebarMenuSubButton
                                                                                 isActive={l2Exact}
                                                                                 data-active={l2Exact}
                                                                                 className={cn("cursor-pointer", subBtnVariants({ level: 2 }), OUTER_ROW_NO_GREY)}
-                                                                            />
-                                                                        }>
+                                                                            >
                                                                                 <div className={ROW}>
                                                                                     <div className={cn(PILL_BASE, GAP_L2, PILL_HOVER, PILL_ACTIVE)}>
                                                                                         <L2Icon node={l2} kind="parent" />
@@ -360,12 +383,13 @@ export function NavMain({ items }: { items: NavNode[] }) {
                                                                                         )}
                                                                                     </div>
                                                                                 </div>
+                                                                            </SidebarMenuSubButton>
                                                                         </CollapsibleTrigger>
 
                                                                         {/* ✅ L2 dropdown animation wrapper (fixed) */}
                                                                         <div className={cn(DROP_WRAP, l2Open ? DROP_OPEN : DROP_CLOSED)}>
                                                                             <div className={DROP_INNER}>
-                                                                                <CollapsibleContent>
+                                                                                <CollapsibleContent forceMount>
                                                                                     <div>
                                                                                         <SidebarMenuSub className={SUB_WRAP_L3}>
                                                                                             {l2.items!.map((l3) => {
@@ -375,15 +399,26 @@ export function NavMain({ items }: { items: NavNode[] }) {
                                                                                                 return (
                                                                                                     <SidebarMenuSubItem key={l3.title} className="min-w-0 overflow-hidden">
                                                                                                         <SidebarMenuSubButton
-                                                                                                            render={l3Clickable ? <Link href={l3.url} className={ROW} /> : <div className={ROW} />}
+                                                                                                            asChild
                                                                                                             isActive={l3Exact}
                                                                                                             data-active={l3Exact}
                                                                                                             className={cn("cursor-pointer", subBtnVariants({ level: 3 }), OUTER_ROW_NO_GREY)}
                                                                                                         >
+                                                                                                            {l3Clickable ? (
+                                                                                                                <Link href={l3.url} className={ROW}>
                                                                                                                     <div className={cn(PILL_BASE, GAP_L3, PILL_HOVER, PILL_ACTIVE)}>
                                                                                                                         <L3Icon node={l3} />
                                                                                                                         <span className={LABEL}>{l3.title}</span>
                                                                                                                     </div>
+                                                                                                                </Link>
+                                                                                                            ) : (
+                                                                                                                <div className={ROW}>
+                                                                                                                    <div className={cn(PILL_BASE, GAP_L3, PILL_HOVER, PILL_ACTIVE)}>
+                                                                                                                        <L3Icon node={l3} />
+                                                                                                                        <span className={LABEL}>{l3.title}</span>
+                                                                                                                    </div>
+                                                                                                                </div>
+                                                                                                            )}
                                                                                                         </SidebarMenuSubButton>
                                                                                                     </SidebarMenuSubItem>
                                                                                                 );
@@ -393,6 +428,7 @@ export function NavMain({ items }: { items: NavNode[] }) {
                                                                                 </CollapsibleContent>
                                                                             </div>
                                                                         </div>
+                                                                    </SidebarMenuSubItem>
                                                                 </Collapsible>
                                                             );
                                                         })}
@@ -402,6 +438,7 @@ export function NavMain({ items }: { items: NavNode[] }) {
                                         </div>
                                     </div>
                                 ) : null}
+                            </SidebarMenuItem>
                         </Collapsible>
                     );
                 })}
