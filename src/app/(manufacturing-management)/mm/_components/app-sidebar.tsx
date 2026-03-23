@@ -2,13 +2,8 @@
 
 import {
   Bot,
-  ChartNoAxesCombined,
-  CircleCheckBig,
   ClipboardList,
-  FileXCorner,
-  LayoutDashboard,
   ShoppingCart,
-  Users,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
