@@ -37,17 +37,17 @@ const data = {
       items: [
         {
           title: "SKU Creation",
-          url: "#",
+          url: "/mm/product-management/sku-creation",
           icon: ClipboardList,
         },
         {
           title: "Product Masterlist",
-          url: "#",
+          url: "/mm/product-management/product-masterlist",
           icon: ClipboardList,
         },
         {
           title: "Product Catalog",
-          url: "#",
+          url: "/mm/product-management/product-catalog",
           icon: ShoppingCart,
         },
       ],
@@ -59,12 +59,12 @@ const data = {
       items: [
         {
           title: "Purchase Order Creation",
-          url: "#",
+          url: "/mm/purchase-order/purchase-order-creation",
           icon: ClipboardList,
         },
         {
           title: "Purchase Order Approval",
-          url: "#",
+          url: "/mm/purchase-order/purchase-order-approval",
           icon: ClipboardList,
         },
       ],
@@ -76,49 +76,49 @@ const data = {
       items: [
         {
           title: "Lot Registration",
-          url: "#",
+          url: "/mm/inventory/lot-registration",
           icon: ClipboardList,
         },
         {
           title: "Lot and Batch Traceability",
-          url: "#",
+          url: "/mm/inventory/lot-and-batch-traceability",
           icon: ClipboardList,
         },
         {
           title: "Raw Material",
-          url: "#",
+          url: "/mm/inventory/raw-material",
           icon: ClipboardList,
         },
         {
           title: "Good Stock",
-          url: "#",
+          url: "/mm/inventory/good-stock",
           icon: ClipboardList,
         },
         {
           title: "Bad Stock",
-          url: "#",
+          url: "/mm/inventory/bad-stock",
           icon: ClipboardList,
         },
         {
           title: "Expiry and Shelf Life",
-          url: "#",
+          url: "/mm/inventory/expiry-and-shelf-life",
           icon: ClipboardList,
         },
       ],
     },
     {
       title: "Reports",
-      url: "#",
+      url: "/mm/reports",
       icon: ClipboardList,
     },
     {
       title: "Calendar of Schedule",
-      url: "#",
+      url: "/mm/calendar-of-schedule",
       icon: ClipboardList,
     },
     {
       title: "BI and Financials",
-      url: "#",
+      url: "/mm/bi-and-financials",
       icon: ClipboardList,
     },
     {
@@ -128,17 +128,17 @@ const data = {
       items: [
         {
           title: "Raw Material Registration",
-          url: "#",
+          url: "/mm/file-management/raw-material-registration",
           icon: ClipboardList,
         },
         {
           title: "Packaging Registration",
-          url: "#",
+          url: "/mm/file-management/packaging-registration",
           icon: ClipboardList,
         },
         {
           title: "Supplier Registration",
-          url: "#",
+          url: "/mm/file-management/supplier-registration",
           icon: ShoppingCart,
         },
       ],
@@ -150,12 +150,12 @@ const data = {
       items: [
         {
           title: "Receiving",
-          url: "#",
+          url: "/mm/inbound/receiving",
           icon: ClipboardList,
         },
         {
           title: "Sales Return",
-          url: "#",
+          url: "/mm/inbound/sales-return",
           icon: ClipboardList,
         },
       ],
@@ -167,12 +167,12 @@ const data = {
       items: [
         {
           title: "Deliveries",
-          url: "#",
+          url: "/mm/outbound/deliveries",
           icon: ClipboardList,
         },
         {
           title: "Return to Supplier",
-          url: "#",
+          url: "/mm/outbound/return-to-supplier",
           icon: ClipboardList,
         },
       ],
@@ -185,11 +185,23 @@ const data = {
         {
           title: "MRP Engine",
           url: "#",
-          icon: ClipboardList,
+          icon: Bot,
+          items: [
+            {
+              title: "Demand-Driven (Sales Orders)",
+              url: "/mm/planning-and-engineering/mrp-engine/demand-driven",
+              icon: ClipboardList,
+            },
+            {
+              title: "Material-Driven (Consumption)",
+              url: "/mm/planning-and-engineering/mrp-engine/material-driven",
+              icon: ClipboardList,
+            },
+          ],
         },
         {
           title: "Bill of Materials and Recipes",
-          url: "#",
+          url: "/mm/planning-and-engineering/bill-of-materials-and-recipes",
           icon: ClipboardList,
         },
       ],
@@ -201,24 +213,24 @@ const data = {
       items: [
         {
           title: "Scheduling",
-          url: "#",
+          url: "/mm/production-and-quality/scheduling",
           icon: ClipboardList,
         },
         {
           title: "Shop Floor",
-          url: "#",
+          url: "/mm/production-and-quality/shop-floor",
           icon: ClipboardList,
         },
         {
           title: "Final QA",
-          url: "#",
+          url: "/mm/production-and-quality/final-qa",
           icon: ShoppingCart,
         },
       ],
     },
     {
       title: "Sales Order",
-      url: "#",
+      url: "/mm/sales-order",
       icon: ClipboardList,
     },
     {
@@ -228,12 +240,12 @@ const data = {
       items: [
         {
           title: "Production Process",
-          url: "#",
+          url: "/mm/quality-assurance-configuration/production-process",
           icon: ClipboardList,
         },
         {
+          url: "/mm/quality-assurance-configuration/qa-production-setup-checklist",
           title: "QA Production Setup Checklist",
-          url: "#",
           icon: ClipboardList,
         },
       ],
@@ -273,7 +285,7 @@ export function AppSidebar({
                 <div className="grid flex-1 text-left text-sm leading-tight">
                   <span className="truncate font-medium">VOS Web</span>
                   <span className="truncate text-xs text-muted-foreground">
-                    Customer Relationship Management
+                    Manufacturing Management
                   </span>
                 </div>
               </Link>
