@@ -30,6 +30,7 @@ export default function LotManagementModule() {
   const [lots, setLots] = useState<Lot[]>([]);
   const [inventoryTypes, setInventoryTypes] = useState<InventoryType[]>([]);
   const [selectedInventoryType, setSelectedInventoryType] = useState<string>("all");
+  const [selectedLotName, setSelectedLotName] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [isLoading, setIsLoading] = useState(true);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -69,7 +70,7 @@ export default function LotManagementModule() {
     }
   };
 
-  // Filter lots by inventory type and search query
+  // Filter lots by inventory type, lot name, and search query
   const filteredLots = lots.filter((lot) => {
     // Filter by inventory type
     const matchesType =
@@ -87,6 +88,11 @@ export default function LotManagementModule() {
       });
     }
 
+    // Filter by lot name
+    const matchesLotName =
+      selectedLotName === "all" ||
+      lot.lot_name === selectedLotName;
+
     // Filter by search query (lot name or inventory type name)
     const matchesSearch =
       searchQuery.trim() === "" ||
@@ -95,13 +101,20 @@ export default function LotManagementModule() {
         .toLowerCase()
         .includes(searchQuery.toLowerCase());
 
-    return matchesType && matchesSearch;
+    return matchesType && matchesLotName && matchesSearch;
   });
 
   // Sort lots by lot_name (lot1, lot2, ...)
   const sortedLots = [...filteredLots].sort((a, b) => {
     const numA = parseInt(a.lot_name.replace(/\D/g, "")) || 0;
     const numB = parseInt(b.lot_name.replace(/\D/g, "")) || 0;
+    return numA - numB;
+  });
+
+  // Get unique lot names for the filter dropdown (sorted)
+  const uniqueLotNames = Array.from(new Set(lots.map(lot => lot.lot_name))).sort((a, b) => {
+    const numA = parseInt(a.replace(/\D/g, "")) || 0;
+    const numB = parseInt(b.replace(/\D/g, "")) || 0;
     return numA - numB;
   });
 
@@ -117,7 +130,7 @@ export default function LotManagementModule() {
   // Reset to first page when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [selectedInventoryType, searchQuery, itemsPerPage]);
+  }, [selectedInventoryType, selectedLotName, searchQuery, itemsPerPage]);
 
   // Check if a lot is full
   const isLotFull = (lot: Lot) => {
@@ -151,9 +164,9 @@ export default function LotManagementModule() {
 
       {/* Toolbar */}
       <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3 flex-1">
+        <div className="flex items-center gap-4 flex-1">
           {/* Search Input */}
-          <div className="relative w-70">
+          <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               type="text"
@@ -165,7 +178,7 @@ export default function LotManagementModule() {
           </div>
 
           {/* Inventory Type Filter */}
-          <div className="w-55">
+          <div className="w-48">
             <Select
               value={selectedInventoryType}
               onValueChange={setSelectedInventoryType}
@@ -173,7 +186,7 @@ export default function LotManagementModule() {
               <SelectTrigger>
                 <SelectValue placeholder="All Inventory Types" />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent position="popper" sideOffset={4}>
                 <SelectItem value="all">All Inventory Types</SelectItem>
                 {inventoryTypes.map((type) => (
                   <SelectItem
@@ -181,6 +194,29 @@ export default function LotManagementModule() {
                     value={type.inventory_type_id.toString()}
                   >
                     {type.type_name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Lot Name Filter */}
+          <div className="w-32">
+            <Select
+              value={selectedLotName}
+              onValueChange={setSelectedLotName}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="All Lots" />
+              </SelectTrigger>
+              <SelectContent position="popper" sideOffset={4}>
+                <SelectItem value="all">All Lots</SelectItem>
+                {uniqueLotNames.map((lotName) => (
+                  <SelectItem
+                    key={lotName}
+                    value={lotName}
+                  >
+                    {lotName}
                   </SelectItem>
                 ))}
               </SelectContent>
