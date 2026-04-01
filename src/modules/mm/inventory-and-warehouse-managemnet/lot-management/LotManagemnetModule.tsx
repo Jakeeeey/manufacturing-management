@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -10,21 +9,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { PencilIcon, PlusIcon, Search, RefreshCw } from "lucide-react";
+import { PlusIcon, Search, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import type { Lot, InventoryType } from "./type";
 import { fetchLots, fetchInventoryTypes } from "./providers/fetchProvider";
 import { CreateLotDialog } from "./components/CreateLotDialog";
 import { EditMaxBatchDialog } from "./components/EditMaxBatchDialog";
 import { Input } from "@/components/ui/input";
+import { LotManagementTable } from "./components/LotManagementTable";
 
 export default function LotManagementModule() {
   const [lots, setLots] = useState<Lot[]>([]);
@@ -164,7 +156,7 @@ export default function LotManagementModule() {
 
       {/* Toolbar */}
       <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-4 flex-1">
+        <div className="flex items-center gap-2 flex-1">
           {/* Search Input */}
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -177,50 +169,53 @@ export default function LotManagementModule() {
             />
           </div>
 
-          {/* Inventory Type Filter */}
-          <div className="w-48">
-            <Select
-              value={selectedInventoryType}
-              onValueChange={setSelectedInventoryType}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="All Inventory Types" />
-              </SelectTrigger>
-              <SelectContent position="popper" sideOffset={4}>
-                <SelectItem value="all">All Inventory Types</SelectItem>
-                {inventoryTypes.map((type) => (
-                  <SelectItem
-                    key={type.inventory_type_id}
-                    value={type.inventory_type_id.toString()}
-                  >
-                    {type.type_name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {/* Filters */}
+          <div className="flex items-center gap-1">
+            {/* Inventory Type Filter */}
+            <div className="w-48">
+              <Select
+                value={selectedInventoryType}
+                onValueChange={setSelectedInventoryType}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="All Inventory Types" />
+                </SelectTrigger>
+                <SelectContent position="popper" sideOffset={4}>
+                  <SelectItem value="all">All Inventory Types</SelectItem>
+                  {inventoryTypes.map((type) => (
+                    <SelectItem
+                      key={type.inventory_type_id}
+                      value={type.inventory_type_id.toString()}
+                    >
+                      {type.type_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-          {/* Lot Name Filter */}
-          <div className="w-32">
-            <Select
-              value={selectedLotName}
-              onValueChange={setSelectedLotName}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="All Lots" />
-              </SelectTrigger>
-              <SelectContent position="popper" sideOffset={4}>
-                <SelectItem value="all">All Lots</SelectItem>
-                {uniqueLotNames.map((lotName) => (
-                  <SelectItem
-                    key={lotName}
-                    value={lotName}
-                  >
-                    {lotName}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {/* Lot Name Filter */}
+            <div className="w-32">
+              <Select
+                value={selectedLotName}
+                onValueChange={setSelectedLotName}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="All Lots" />
+                </SelectTrigger>
+                <SelectContent position="popper" sideOffset={4}>
+                  <SelectItem value="all">All Lots</SelectItem>
+                  {uniqueLotNames.map((lotName) => (
+                    <SelectItem
+                      key={lotName}
+                      value={lotName}
+                    >
+                      {lotName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </div>
 
@@ -243,71 +238,12 @@ export default function LotManagementModule() {
       </div>
 
       {/* Table */}
-      <div className="flex-1 overflow-auto rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Lot</TableHead>
-              <TableHead>Inventory Type</TableHead>
-              <TableHead>Batch Occupied</TableHead>
-              <TableHead>Max Batch</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <TableRow>
-                <TableCell colSpan={5} className="text-center">
-                  Loading...
-                </TableCell>
-              </TableRow>
-            ) : paginatedLots.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={5} className="text-center text-muted-foreground">
-                  No lots found. Create one to get started.
-                </TableCell>
-              </TableRow>
-            ) : (
-              paginatedLots.map((lot) => {
-                const isFull = isLotFull(lot);
-                return (
-                  <TableRow
-                    key={lot.lot_id}
-                    className={isFull ? "bg-red-50 dark:bg-red-950/10" : ""}
-                  >
-                    <TableCell className="font-medium h-14">{lot.lot_name}</TableCell>
-                    <TableCell className="h-14">{lot.inventory_type_name || "Unknown"}</TableCell>
-                    <TableCell className="h-14">
-                      <div className="flex items-center gap-2">
-                        <span>{lot.occupied_count || 0}</span>
-                        {isFull && (
-                          <Badge variant="destructive" className="text-xs">
-                            full
-                          </Badge>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell className="h-14">
-                      <span>{lot.max_batch_capacity}</span>
-                    </TableCell>
-                    <TableCell className="text-right h-14">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setEditingLot(lot)}
-                        className="h-8 w-8 p-0"
-                        title="Edit max batch capacity"
-                      >
-                        <PencilIcon className="h-4 w-4" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                );
-              })
-            )}
-          </TableBody>
-        </Table>
-      </div>
+      <LotManagementTable
+        lots={paginatedLots}
+        isLoading={isLoading}
+        isLotFull={isLotFull}
+        onEditLot={setEditingLot}
+      />
 
       {/* Pagination */}
       {totalRows > 0 && (
