@@ -165,7 +165,7 @@ export default function LotManagementModule() {
               placeholder="Search by lot name or type..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9"
+              className="pl-9 border-gray-300 dark:border-gray-600"
             />
           </div>
 
@@ -177,7 +177,7 @@ export default function LotManagementModule() {
                 value={selectedInventoryType}
                 onValueChange={setSelectedInventoryType}
               >
-                <SelectTrigger>
+                <SelectTrigger className="border-gray-300 dark:border-gray-600">
                   <SelectValue placeholder="All Inventory Types" />
                 </SelectTrigger>
                 <SelectContent position="popper" sideOffset={4}>
@@ -200,7 +200,7 @@ export default function LotManagementModule() {
                 value={selectedLotName}
                 onValueChange={setSelectedLotName}
               >
-                <SelectTrigger>
+                <SelectTrigger className="border-gray-300 dark:border-gray-600">
                   <SelectValue placeholder="All Lots" />
                 </SelectTrigger>
                 <SelectContent position="popper" sideOffset={4}>
@@ -225,6 +225,7 @@ export default function LotManagementModule() {
             variant="outline"
             onClick={loadData}
             disabled={isLoading}
+            className="border-gray-300 dark:border-gray-600"
           >
             <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
             Refresh
@@ -247,7 +248,7 @@ export default function LotManagementModule() {
 
       {/* Pagination */}
       {totalRows > 0 && (
-        <div className="flex items-center justify-between px-2">
+        <div className="flex items-center justify-between px-2 py-2 border-t border-gray-200 dark:border-gray-700">
           <div className="text-sm text-muted-foreground">
             Showing {showingFrom} to {showingTo} of {totalRows} row(s)
           </div>
@@ -257,6 +258,7 @@ export default function LotManagementModule() {
               size="sm"
               onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
               disabled={currentPage === 1}
+              className="border-gray-300 dark:border-gray-600"
             >
               Previous
             </Button>
@@ -265,6 +267,7 @@ export default function LotManagementModule() {
               size="sm"
               onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
               disabled={currentPage === totalPages}
+              className="border-gray-300 dark:border-gray-600"
             >
               Next
             </Button>
