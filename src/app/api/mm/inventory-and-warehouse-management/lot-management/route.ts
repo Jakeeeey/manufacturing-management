@@ -14,6 +14,20 @@ const DIRECTUS_TOKEN = process.env.DIRECTUS_STATIC_TOKEN;
 const COOKIE_NAME = "vos_access_token";
 
 /**
+ * Type for Directus lot response - inventory_type_id can be either a number or an expanded object
+ */
+interface DirectusLot {
+  lot_id: number;
+  lot_name: string;
+  inventory_type_id: number | { inventory_type_id: number; type_name: string };
+  max_batch_capacity: number;
+  created_at: string;
+  updated_at: string;
+  created_by: number;
+  updated_by: number;
+}
+
+/**
  * Helper to get Directus headers
  */
 function getDirectusHeaders() {
@@ -144,7 +158,7 @@ export async function GET(req: NextRequest) {
     const lotsData = await lotsResponse.json();
 
     // Transform Directus response to match our type
-    const lots = (lotsData.data || []).map((lot: any) => {
+    const lots = (lotsData.data || []).map((lot: DirectusLot) => {
       // Extract inventory_type_id - handle both object and number cases
       const inventoryTypeId = typeof lot.inventory_type_id === 'object'
         ? lot.inventory_type_id?.inventory_type_id

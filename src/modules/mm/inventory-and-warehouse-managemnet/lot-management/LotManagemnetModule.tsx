@@ -28,7 +28,7 @@ export default function LotManagementModule() {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [editingLot, setEditingLot] = useState<Lot | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [itemsPerPage] = useState(10);
 
   // Load initial data
   useEffect(() => {
