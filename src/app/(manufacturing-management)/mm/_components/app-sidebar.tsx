@@ -245,6 +245,18 @@ const data = {
         },
       ],
     },
+     {
+      title: "Inventory and Warehouse Management",
+      url: "#",
+      icon: Bot,
+      items: [
+        {
+          title: "Lot Management",
+          url: "/mm/inventory-and-warehouse-management/lot-management",
+          icon: ClipboardList,
+        },  
+      ],
+    },
   ],
 };
 
