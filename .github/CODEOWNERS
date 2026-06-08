@@ -1,14 +1,14 @@
 /.github/ @Jakeeeey @ECuerdo @Xerman09 @Erwinrillorta0830
 
-/src/app/(customer-relationship-management)/crm/_components/ @Jakeeeey @ECuerdo @Xerman09 @Erwinrillorta0830
+/src/app/(manufacturing-management)/mm/_components/ @Jakeeeey @ECuerdo @Xerman09 @Erwinrillorta0830
 
-/src/app/(customer-relationship-management)/layout.tsx @Jakeeeey @ECuerdo @Xerman09 @Erwinrillorta0830
+/src/app/(manufacturing-management)/layout.tsx @Jakeeeey @ECuerdo @Xerman09 @Erwinrillorta0830
 
 /src/actions/ @Jakeeeey @ECuerdo @Xerman09 @Erwinrillorta0830
 
-/src/app/(customer-relationship-management)/crm/_components/ @Jakeeeey @ECuerdo @Xerman09 @Erwinrillorta0830
+/src/app/(manufacturing-management)/mm/_components/ @Jakeeeey @ECuerdo @Xerman09 @Erwinrillorta0830
 
-/src/app/(customer-relationship-management)/crm/[...slug]/ @Jakeeeey @ECuerdo @Xerman09 @Erwinrillorta0830
+/src/app/(manufacturing-management)/mm/[...slug]/ @Jakeeeey @ECuerdo @Xerman09 @Erwinrillorta0830
 
 /src/app/layout.tsx @Jakeeeey @ECuerdo @Xerman09 @Erwinrillorta0830
 
