@@ -1,4 +1,3 @@
-// src/app/(supply-chain-management)/scm/_components/ComingSoon.tsx
 import * as React from "react";
 
 import {
@@ -24,9 +23,9 @@ export type ComingSoonProps = {
 };
 
 export default function ComingSoon({
-                                       title = "Not Available Yet",
-                                       description = "This page is currently unavailable. It will appear once the feature is ready and enabled.",
-                                   }: ComingSoonProps) {
+    title = "Not Available Yet",
+    description = "This page is currently unavailable. It will appear once the feature is ready and enabled.",
+}: ComingSoonProps) {
     return (
         <div className="mx-auto w-full max-w-3xl px-4 py-10 md:px-6">
             <Card className="relative overflow-hidden">
@@ -175,8 +174,8 @@ export default function ComingSoon({
                     <p className="mt-4 text-center text-xs text-muted-foreground">
                         This section is not enabled in the current build.
                         <span className="block">
-              If you expected content here, please contact your administrator.
-            </span>
+                            If you expected content here, please contact your administrator.
+                        </span>
                     </p>
                 </CardContent>
             </Card>

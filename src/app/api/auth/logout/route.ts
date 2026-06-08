@@ -1,10 +1,9 @@
-// src/app/api/auth/logout/route.ts
 import { NextResponse } from "next/server"
+import {COOKIE_NAME, IS_SECURE_COOKIE} from "@/lib/auth-utils"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
-const COOKIE_NAME = "vos_access_token"
 
 export async function POST() {
     const res = NextResponse.json({ ok: true })
@@ -14,7 +13,7 @@ export async function POST() {
         value: "",
         httpOnly: true,
         sameSite: "lax",
-        secure: process.env.NODE_ENV === "production",
+        secure: IS_SECURE_COOKIE,
         path: "/",
         maxAge: 0,
     })

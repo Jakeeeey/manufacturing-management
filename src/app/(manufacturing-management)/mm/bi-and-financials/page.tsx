@@ -8,10 +8,11 @@ import {
 } from "@/components/ui/breadcrumb";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
-import { NavUser } from "../../mm/_components/nav-user";
+import { NavUser } from "@/components/shared/app-sidebar/nav-user";
 
 import { cookies } from "next/headers";
 
+// ✅ Wire the module you asked for
 import ComingSoon from "../../mm/_components/ComingSoon";
 
 export const runtime = "nodejs";
@@ -29,7 +30,7 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
         const padded = b64 + "=".repeat((4 - (b64.length % 4)) % 4);
 
         const json = Buffer.from(padded, "base64").toString("utf8");
-        return JSON.parse(json) as Record<string, unknown>;
+        return JSON.parse(json);
     } catch {
         return null;
     }
@@ -95,12 +96,12 @@ export default async function Page() {
                         <Breadcrumb>
                             <BreadcrumbList className="min-w-0 overflow-hidden">
                                 <BreadcrumbItem className="hidden md:block shrink-0">
-                                    <BreadcrumbLink href="#">Manufacturing Management</BreadcrumbLink>
+                                    <BreadcrumbLink href="#">Invoicing</BreadcrumbLink>
                                 </BreadcrumbItem>
                                 <BreadcrumbSeparator className="hidden md:block shrink-0" />
                                 <BreadcrumbItem className="min-w-0 overflow-hidden">
                                     <BreadcrumbPage className="truncate max-w-[56vw] sm:max-w-[60vw] md:max-w-none">
-                                        BI and Financials
+                                        Invoicing
                                     </BreadcrumbPage>
                                 </BreadcrumbItem>
                             </BreadcrumbList>

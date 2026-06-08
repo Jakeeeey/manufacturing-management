@@ -13,12 +13,12 @@ interface EmptyPlaceholderProps {
 }
 
 export function EmptyPlaceholder({
-    title = "No matching records",
-    description = "We couldn't find any data matching your current view. Try adjusting your filters or adding a new record to the system.",
-    actionLabel,
-    onAction,
-    icon: Icon = Database
-}: EmptyPlaceholderProps) {
+                                     title = "No matching records",
+                                     description = "We couldn't find any data matching your current view. Try adjusting your filters or adding a new record to the system.",
+                                     actionLabel,
+                                     onAction,
+                                     icon: Icon = Database
+                                 }: EmptyPlaceholderProps) {
     return (
         <div className="flex min-h-[400px] flex-col items-center justify-center rounded-xl border-2 border-dashed border-muted-foreground/10 bg-muted/5 p-8 text-center animate-in fade-in zoom-in duration-500">
             <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-background border transition-transform hover:scale-110 duration-300">
