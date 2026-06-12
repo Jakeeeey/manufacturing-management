@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Check, ChevronsUpDown } from "lucide-react";
+import { Check, ChevronsUpDown, Plus } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -19,29 +19,46 @@ import {
     PopoverTrigger,
 } from "@/components/ui/popover";
 
-export interface SearchableSelectProps {
+export interface CreatableSelectProps {
     options: { value: string; label: string }[];
     value?: string;
     onValueChange: (value: string) => void;
     placeholder?: string;
     disabled?: boolean;
     className?: string;
+    onCreateOption?: (name: string) => Promise<void> | void;
 }
 
-export function SearchableSelect({
+export function CreatableSelect({
     options,
     value,
     onValueChange,
     placeholder = "Select option...",
     disabled = false,
     className,
-}: SearchableSelectProps) {
+    onCreateOption,
+}: CreatableSelectProps) {
     const [open, setOpen] = React.useState(false);
+    const [searchQuery, setSearchQuery] = React.useState("");
 
     // Find the label for the current value
     const selectedLabel = React.useMemo(() => {
         return options.find((opt) => opt.value === value)?.label;
     }, [options, value]);
+
+    const handleCreate = async () => {
+        if (!onCreateOption || !searchQuery.trim()) return;
+        await onCreateOption(searchQuery.trim());
+        setSearchQuery("");
+        setOpen(false);
+    };
+
+    const filteredOptions = React.useMemo(() => {
+        if (!searchQuery.trim()) return options;
+        return options.filter((opt) =>
+            opt.label.toLowerCase().includes(searchQuery.toLowerCase())
+        );
+    }, [options, searchQuery]);
 
     return (
         <Popover open={open} onOpenChange={setOpen}>
@@ -53,30 +70,42 @@ export function SearchableSelect({
                     className={cn("w-full justify-between", !value && "text-muted-foreground", className)}
                     disabled={disabled}
                 >
-                    {selectedLabel || placeholder}
+                    <span className="truncate">{selectedLabel || placeholder}</span>
                     <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                 </Button>
             </PopoverTrigger>
             <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-                <Command>
-                    <CommandInput placeholder={`Search ${placeholder.toLowerCase()}...`} />
+                <Command shouldFilter={false}>
+                    <CommandInput
+                        placeholder={`Search ${placeholder.toLowerCase()}...`}
+                        value={searchQuery}
+                        onValueChange={setSearchQuery}
+                    />
                     <CommandList>
-                        <CommandEmpty>No results found.</CommandEmpty>
+                        {filteredOptions.length === 0 && (
+                            <CommandEmpty className="py-2 px-3 text-xs flex flex-col gap-2">
+                                <span>No results found.</span>
+                                {onCreateOption && searchQuery.trim() !== "" && (
+                                    <Button
+                                        size="sm"
+                                        variant="secondary"
+                                        className="w-full text-[10px] inline-flex items-center gap-1 justify-center py-1 h-auto"
+                                        onClick={handleCreate}
+                                    >
+                                        <Plus className="h-3 w-3" /> Create &quot;{searchQuery}&quot;
+                                    </Button>
+                                )}
+                            </CommandEmpty>
+                        )}
                         <CommandGroup>
-                            {options.map((opt) => (
+                            {filteredOptions.map((opt) => (
                                 <CommandItem
                                     key={opt.value}
-                                    value={opt.label.toLowerCase()}
+                                    value={opt.value}
                                     onSelect={() => {
-                                        // We need to map back to the ID/value since CommandItem uses text content or value prop
-                                        // Here we used label as value for search, so we find the option by label and call onValueChange with its value
-                                        // However, simpler is to use the option.value if unique, but Command compares normalized search.
-                                        // Let's stick to using the opt.value if we want precise selection.
-                                        // Re-eval: onSelect returns the value prop (opt.label).
-                                        // Actually, let's use the option value but ensure standard shadcn pattern.
-
                                         onValueChange(opt.value);
                                         setOpen(false);
+                                        setSearchQuery("");
                                     }}
                                 >
                                     <Check
