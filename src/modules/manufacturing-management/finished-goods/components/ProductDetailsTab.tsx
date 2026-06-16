@@ -6,7 +6,7 @@ import {
     Layers, 
     Scale, 
     Calendar, 
-    Image, 
+    Image as ImageIcon, 
     DollarSign, 
     Package, 
     FileText, 
@@ -259,6 +259,7 @@ export const ProductDetailsTab: React.FC<ProductDetailsTabProps> = ({
                             <div className="flex items-center gap-4 border border-dashed border-border rounded-xl p-4 bg-muted/5 hover:bg-muted/10 transition-all">
                                 {editedDetails.product_image ? (
                                     <div className="relative group w-20 h-20 rounded-lg overflow-hidden border bg-background flex items-center justify-center">
+                                        {/* eslint-disable-next-line @next/next/no-img-element */}
                                         <img 
                                             src={`${process.env.NEXT_PUBLIC_DIRECTUS_URL || "http://vtc:8074"}/assets/${editedDetails.product_image}`} 
                                             alt="Preview" 
@@ -291,7 +292,7 @@ export const ProductDetailsTab: React.FC<ProductDetailsTabProps> = ({
                                     </div>
                                 ) : (
                                     <div className="w-20 h-20 rounded-lg bg-muted/20 border flex items-center justify-center text-muted-foreground/45">
-                                        <Image className="h-6 w-6" />
+                                        <ImageIcon className="h-6 w-6" />
                                     </div>
                                 )}
                                 

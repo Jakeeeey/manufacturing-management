@@ -14,7 +14,7 @@ import {
     Loader2,
     Briefcase,
     ChevronLeft,
-    Image,
+    Image as ImageIcon,
     Package
 } from "lucide-react";
 import { toast } from "sonner";
@@ -1119,6 +1119,7 @@ export default function FinishedGoodsModule() {
                                         <div className="flex items-center gap-4 border border-dashed border-border rounded-xl p-4 bg-muted/5 hover:bg-muted/10 transition-all">
                                             {registerForm.productImage ? (
                                                 <div className="relative group w-16 h-16 rounded-lg overflow-hidden border bg-background flex items-center justify-center">
+                                                    {/* eslint-disable-next-line @next/next/no-img-element */}
                                                     <img 
                                                         src={`${process.env.NEXT_PUBLIC_DIRECTUS_URL || "http://vtc:8074"}/assets/${registerForm.productImage}`} 
                                                         alt="Preview" 
@@ -1150,7 +1151,7 @@ export default function FinishedGoodsModule() {
                                                 </div>
                                             ) : (
                                                 <div className="w-16 h-16 rounded-lg bg-muted/20 border flex items-center justify-center text-muted-foreground/45">
-                                                    <Image className="h-5 w-5" />
+                                                    <ImageIcon className="h-5 w-5" />
                                                 </div>
                                             )}
                                             
