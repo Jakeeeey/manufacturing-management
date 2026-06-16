@@ -16,3 +16,4 @@ export async function AppSidebar(props: ComponentProps<typeof Sidebar>) {
     />
   );
 }
+

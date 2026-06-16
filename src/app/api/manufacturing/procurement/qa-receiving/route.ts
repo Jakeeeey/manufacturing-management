@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 
-const DIRECTUS_URL = "http://goatedcodoer:8091";
-const DIRECTUS_STATIC_TOKEN = "rTilKSsclzuQW8WfQWK1ba8wrD_LetNn";
+const DIRECTUS_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://vtc:8074";
+const DIRECTUS_STATIC_TOKEN = process.env.DIRECTUS_STATIC_TOKEN || "test";
 
-const headers = {
-    "Authorization": `Bearer ${DIRECTUS_STATIC_TOKEN}`,
+const headers: Record<string, string> = {
     "Content-Type": "application/json"
 };
+if (DIRECTUS_STATIC_TOKEN) {
+    headers["Authorization"] = `Bearer ${DIRECTUS_STATIC_TOKEN}`;
+}
 
 export async function GET(request: Request) {
     try {
@@ -17,7 +19,7 @@ export async function GET(request: Request) {
 
         // Action: Fetch branches
         if (action === "branches") {
-            const res = await fetch(`${DIRECTUS_URL}/items/branches?filter[isActive][_eq]=1&sort=branch_name&limit=100`, { headers });
+            const res = await fetch(`${DIRECTUS_URL}/items/branches?filter[isActive][_eq]=1&sort=branch_name&limit=100`, { headers, cache: "no-store" });
             if (!res.ok) throw new Error(`Directus error loading branches: ${res.status}`);
             const json = await res.json();
             return NextResponse.json(json.data);

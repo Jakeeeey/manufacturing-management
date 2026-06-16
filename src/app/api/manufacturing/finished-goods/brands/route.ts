@@ -1,16 +1,10 @@
 import { NextResponse } from "next/server";
-
-const DIRECTUS_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://goatedcodoer:8091";
-const DIRECTUS_TOKEN = process.env.DIRECTUS_STATIC_TOKEN || "rTilKSsclzuQW8WfQWK1ba8wrD_LetNn";
-
+import { DIRECTUS_URL, headers } from "../../directus-api";
 export async function GET() {
     try {
         const url = `${DIRECTUS_URL}/items/brand?limit=-1&sort=brand_name`;
         const res = await fetch(url, {
-            headers: {
-                "Authorization": `Bearer ${DIRECTUS_TOKEN}`,
-                "Content-Type": "application/json"
-            },
+            headers,
             cache: "no-store"
         });
 
@@ -38,10 +32,7 @@ export async function POST(request: Request) {
         const url = `${DIRECTUS_URL}/items/brand`;
         const res = await fetch(url, {
             method: "POST",
-            headers: {
-                "Authorization": `Bearer ${DIRECTUS_TOKEN}`,
-                "Content-Type": "application/json"
-            },
+            headers,
             body: JSON.stringify({
                 brand_name: brand_name.trim()
             })

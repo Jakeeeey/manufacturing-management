@@ -43,7 +43,8 @@ export default function ProcurementModule({ initialTab = "suppliers" }: Procurem
         handleCreateSupplier,
         handleCreateShipment,
         handleAllocateExpenses,
-        handleUpdateShipmentStatus
+        handleUpdateShipmentStatus,
+        handleRegisterRawMaterial
     } = useProcurement(initialTab);
 
     const handleTabChange = (tabId: string) => {
@@ -122,6 +123,7 @@ export default function ProcurementModule({ initialTab = "suppliers" }: Procurem
                         onCreateShipment={handleCreateShipment}
                         onTriggerAllocation={handleTriggerExpenseAllocation}
                         onUpdateShipmentStatus={handleUpdateShipmentStatus}
+                        loading={loading}
                     />
                 )}
 
@@ -171,7 +173,11 @@ export default function ProcurementModule({ initialTab = "suppliers" }: Procurem
                 )}
 
                 {activeTab === "raw-materials" && (
-                    <RawMaterialsMaster rawMaterials={rawMaterials} />
+                    <RawMaterialsMaster 
+                        rawMaterials={rawMaterials} 
+                        suppliers={suppliers}
+                        onRegisterRawMaterial={handleRegisterRawMaterial}
+                    />
                 )}
             </div>
         </div>

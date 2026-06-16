@@ -10,7 +10,8 @@ import {
     fetchShipmentExpenses, 
     saveAndAllocateExpenses, 
     fetchRawMaterials,
-    updateShipmentStatus
+    updateShipmentStatus,
+    registerRawMaterial
 } from "../services/procurement-api";
 
 export function useProcurement(defaultTab: string = "suppliers") {
@@ -56,7 +57,8 @@ export function useProcurement(defaultTab: string = "suppliers") {
         exchange_rate: "58.00",
         total_foreign_currency: "0",
         total_php_value: "0",
-        status: "Ordered" as const
+        status: "Ordered" as const,
+        date_received: new Date().toISOString().split("T")[0]
     });
 
     const [shipmentLinesForm, setShipmentLinesForm] = useState<Array<{
@@ -213,6 +215,7 @@ export function useProcurement(defaultTab: string = "suppliers") {
         }
 
         try {
+            setLoading(true);
             const linesPayload = validLines.map(l => ({
                 product_id: parseInt(l.product_id),
                 quantity_ordered: parseFloat(l.quantity_ordered),
@@ -228,7 +231,8 @@ export function useProcurement(defaultTab: string = "suppliers") {
                 exchange_rate: rate,
                 total_foreign_currency: totalPhp / rate,
                 total_php_value: totalPhp,
-                status: shipmentForm.status
+                status: shipmentForm.status,
+                date_received: shipmentForm.date_received
             };
 
             await createShipment(shipmentPayload, linesPayload);
@@ -240,13 +244,16 @@ export function useProcurement(defaultTab: string = "suppliers") {
                 exchange_rate: "58.00",
                 total_foreign_currency: "0",
                 total_php_value: "0",
-                status: "Ordered"
+                status: "Ordered",
+                date_received: new Date().toISOString().split("T")[0]
             });
             setShipmentLinesForm([{ parent_product_id: "", product_id: "", quantity_ordered: "", base_unit_cost_php: "" }]);
             loadShipments();
         } catch (e: any) {
             console.error(e);
             toast.error(e.message || "Failed to save incoming shipment");
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -315,6 +322,34 @@ export function useProcurement(defaultTab: string = "suppliers") {
         }
     };
 
+    const handleRegisterRawMaterial = async (
+        productDetails: {
+            product_name: string;
+            product_code: string;
+            description?: string;
+            barcode?: string;
+            cost_per_unit?: number;
+            density_factor?: number;
+            unit_of_measurement?: number;
+            price_per_unit?: number;
+        },
+        supplierIds?: number[]
+    ): Promise<boolean> => {
+        setLoading(true);
+        try {
+            await registerRawMaterial(productDetails, supplierIds);
+            toast.success(`Successfully registered raw material "${productDetails.product_name}"`);
+            await loadRawMaterials();
+            return true;
+        } catch (e: any) {
+            console.error(e);
+            toast.error(e.message || "Failed to register raw material");
+            return false;
+        } finally {
+            setLoading(false);
+        }
+    };
+
     return {
         activeTab,
         setActiveTab,
@@ -343,6 +378,7 @@ export function useProcurement(defaultTab: string = "suppliers") {
         handleCreateSupplier,
         handleCreateShipment,
         handleAllocateExpenses,
-        handleUpdateShipmentStatus
+        handleUpdateShipmentStatus,
+        handleRegisterRawMaterial
     };
 }

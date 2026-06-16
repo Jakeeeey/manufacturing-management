@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { 
     fetchAllOperations,
     createOperation
-} from "@/modules/manufacturing-management/services/manufacturing-service";
+} from "../../directus-api";
 
 export async function GET() {
     try {

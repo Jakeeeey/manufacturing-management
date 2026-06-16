@@ -70,7 +70,10 @@ export async function fetchRawMaterials(): Promise<RawMaterial[]> {
     if (!res.ok) throw new Error("Failed to fetch raw materials");
     const products = await res.json();
     
-    return products.map((p: any) => ({
+    // Filter to exclude finished goods (which have versions)
+    const rawItems = products.filter((p: any) => !p.has_versions);
+    
+    return rawItems.map((p: any) => ({
         product_id: p.product_id,
         parent_id: p.parent_id ? (typeof p.parent_id === "object" ? p.parent_id.product_id : p.parent_id) : null,
         product_code: p.product_code || `SKU-${p.product_id}`,
@@ -90,6 +93,27 @@ export async function fetchRawMaterials(): Promise<RawMaterial[]> {
     }));
 }
 
+export async function registerRawMaterial(
+    productDetails: {
+        product_name: string;
+        product_code: string;
+        description?: string;
+        barcode?: string;
+        cost_per_unit?: number;
+        density_factor?: number;
+        unit_of_measurement?: number;
+        price_per_unit?: number;
+    },
+    supplierIds?: number[]
+): Promise<{ success: boolean; productId: number }> {
+    const res = await fetch("/api/manufacturing/procurement/raw-materials", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productDetails, supplierIds })
+    });
+    return handleResponse(res, "Failed to register raw material");
+}
+
 export async function updateShipmentStatus(shipmentId: number, status: string): Promise<any> {
     const res = await fetch("/api/manufacturing/procurement/shipments", {
         method: "PATCH",
@@ -98,3 +122,4 @@ export async function updateShipmentStatus(shipmentId: number, status: string): 
     });
     return handleResponse(res, "Failed to update shipment status");
 }
+

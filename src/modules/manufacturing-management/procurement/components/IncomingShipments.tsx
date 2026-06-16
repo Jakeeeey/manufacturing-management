@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { IncomingShipment, ShipmentLineItem, Supplier, RawMaterial } from "../types";
-import { Search, Plus, Calendar, ShieldCheck, Truck, Layers, Anchor, AlertCircle, Info, Landmark, Edit, RefreshCw } from "lucide-react";
+import { Search, Plus, Calendar, ShieldCheck, Truck, Layers, Anchor, AlertCircle, Info, Landmark, Edit, RefreshCw, Loader2 } from "lucide-react";
 import { BOMMaterialSelect } from "@/modules/manufacturing-management/finished-goods/components/BOMMaterialSelect";
 import { CreatableSelect } from "@/modules/manufacturing-management/finished-goods/components/CreatableSelect";
 
@@ -20,6 +20,7 @@ interface IncomingShipmentsProps {
     onCreateShipment: (e: React.FormEvent) => void;
     onTriggerAllocation: (s: IncomingShipment) => void;
     onUpdateShipmentStatus: (shipmentId: number, status: "Ordered" | "Approved" | "En Route" | "Receiving (QA)" | "Received") => void;
+    loading?: boolean;
 }
 
 export default function IncomingShipments({
@@ -37,7 +38,8 @@ export default function IncomingShipments({
     setLinesForm,
     onCreateShipment,
     onTriggerAllocation,
-    onUpdateShipmentStatus
+    onUpdateShipmentStatus,
+    loading = false
 }: IncomingShipmentsProps) {
     const [search, setSearch] = useState("");
     const [lookupIndex, setLookupIndex] = useState<number | null>(null);
@@ -56,14 +58,16 @@ export default function IncomingShipments({
         setSearching(true);
 
         const delayDebounce = setTimeout(() => {
-            fetch(`/api/manufacturing/finished-goods/products?search=${encodeURIComponent(lookupSearch.trim())}&limit=80`)
+            fetch(`/api/manufacturing/finished-goods/products?search=${encodeURIComponent(lookupSearch.trim())}&limit=120`)
                 .then(res => res.json())
                 .then(data => {
                     if (!active) return;
                     if (Array.isArray(data)) {
-                        const mapped: RawMaterial[] = data.map((p: any) => ({
+                        // Filter out finished goods (which have versions) so only raw materials and packaging remain
+                        const rawItemsOnly = data.filter((p: any) => !p.has_versions);
+                        const mapped: RawMaterial[] = rawItemsOnly.map((p: any) => ({
                             product_id: p.product_id,
-                            parent_id: p.parent_id ? (typeof p.parent_id === "object" ? p.parent_id.product_id : p.parent_id) : null,
+                            parent_id: null, // Flat item structure
                             product_code: p.product_code || `SKU-${p.product_id}`,
                             product_name: p.product_name,
                             unit_of_measurement: p.unit_of_measurement ? {
@@ -228,9 +232,10 @@ export default function IncomingShipments({
                         </div>
                     ) : (
                         filteredShipments.map(s => {
-                            const supName = s.supplier_id && typeof s.supplier_id === "object"
-                                ? s.supplier_id.supplier_name
-                                : `Supplier ID: ${s.supplier_id}`;
+                            const matchedSupplier = typeof s.supplier_id !== "object"
+                                ? suppliers.find(sup => sup.id === Number(s.supplier_id))
+                                : s.supplier_id;
+                            const supName = matchedSupplier ? matchedSupplier.supplier_name : `Supplier ID: ${s.supplier_id}`;
                             return (
                                 <button
                                     key={s.shipment_id}
@@ -243,11 +248,13 @@ export default function IncomingShipments({
                                         <span className="font-bold text-xs text-foreground truncate">BL/PO: {s.reference_number}</span>
                                         {getStatusBadge(s.status)}
                                     </div>
-                                    <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-                                        <span className="truncate max-w-[60%]">{supName}</span>
-                                        <span className="flex items-center gap-1 shrink-0 font-semibold text-foreground">
-                                            ₱{s.total_php_value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                        </span>
+                                    <div className="flex items-center justify-between text-[11px] text-muted-foreground font-semibold">
+                                        <span>{supName}</span>
+                                        <span className="font-mono">{s.total_php_value ? `₱${Number(s.total_php_value).toLocaleString(undefined, { minimumFractionDigits: 2 })}` : "₱0.00"}</span>
+                                    </div>
+                                    <div className="text-[10px] text-muted-foreground flex justify-between">
+                                        <span>Status: {s.status}</span>
+                                        <span>Received: {s.date_received && s.date_received !== "1970-01-01" ? new Date(s.date_received).toLocaleDateString() : "Pending"}</span>
                                     </div>
                                 </button>
                             );
@@ -270,9 +277,12 @@ export default function IncomingShipments({
                                 <p className="text-xs text-muted-foreground">
                                     Supplier Source:{" "}
                                     <strong className="text-foreground font-semibold">
-                                        {activeShipment.supplier_id && typeof activeShipment.supplier_id === "object"
-                                            ? activeShipment.supplier_id.supplier_name
-                                            : `ID: ${activeShipment.supplier_id}`}
+                                        {(() => {
+                                            const matchedSupplier = typeof activeShipment.supplier_id !== "object"
+                                                ? suppliers.find(sup => sup.id === Number(activeShipment.supplier_id))
+                                                : activeShipment.supplier_id;
+                                            return matchedSupplier ? matchedSupplier.supplier_name : `ID: ${activeShipment.supplier_id}`;
+                                        })()}
                                     </strong>
                                 </p>
                                 <div className="flex items-center gap-1.5 mt-2 bg-muted/40 p-1 rounded-lg border text-[10px] font-bold w-fit">
@@ -473,6 +483,17 @@ export default function IncomingShipments({
                                 </div>
 
                                 <div className="space-y-1.5">
+                                    <label className="text-[11px] font-semibold text-muted-foreground">Expected Arrival / ETA Date *</label>
+                                    <input
+                                        type="date"
+                                        required
+                                        value={shipmentForm.date_received || ""}
+                                        onChange={e => setShipmentForm({...shipmentForm, date_received: e.target.value})}
+                                        className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary font-semibold text-foreground"
+                                    />
+                                </div>
+
+                                <div className="space-y-1.5">
                                     <label className="text-[11px] font-semibold text-muted-foreground">Initial Status</label>
                                     <select
                                         value={shipmentForm.status}
@@ -567,9 +588,15 @@ export default function IncomingShipments({
 
                             <button
                                 type="submit"
-                                className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-primary py-2.5 text-xs font-semibold text-primary-foreground hover:bg-primary/95 transition-all shadow-sm shrink-0"
+                                disabled={loading}
+                                className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-primary py-2.5 text-xs font-semibold text-primary-foreground hover:bg-primary/95 transition-all shadow-sm shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                                Register Shipment
+                                {loading ? (
+                                    <>
+                                        <Loader2 className="h-3 w-3 animate-spin" />
+                                        Registering Shipment...
+                                    </>
+                                ) : "Register Shipment"}
                             </button>
                         </form>
                     </div>
@@ -615,49 +642,44 @@ export default function IncomingShipments({
                                 </div>
                             )}
                             
-                            {!searching && groupedResults.map(({ parent, options }) => {
+                            {!searching && searchResults.map((opt) => {
                                 return (
-                                    <div key={parent.product_id} className="p-3.5 hover:bg-muted/10 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                    <div key={opt.product_id} className="p-3.5 hover:bg-muted/10 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                                         <div className="min-w-0 flex-1">
-                                            <div className="font-bold text-xs text-foreground truncate">{parent.product_name}</div>
-                                            <div className="text-[10px] text-muted-foreground font-mono mt-0.5">Code: {parent.product_code || `ID-${parent.product_id}`}</div>
+                                            <div className="font-bold text-xs text-foreground truncate">{opt.product_name}</div>
+                                            <div className="text-[10px] text-muted-foreground font-mono mt-0.5">Code: {opt.product_code || `ID-${opt.product_id}`}</div>
                                         </div>
-                                        <div className="flex flex-wrap gap-1.5 shrink-0 items-center">
-                                            {options.map(opt => (
-                                                <button
-                                                    key={opt.product_id}
-                                                    type="button"
-                                                    onClick={() => {
-                                                        const serializedOptions = options.map(o => ({
-                                                            product_id: o.product_id,
-                                                            unit_shortcut: o.unit_of_measurement?.unit_shortcut || "PCS",
-                                                            cost_per_unit: o.cost_per_unit || o.estimated_unit_cost || 0
-                                                        }));
-
-                                                        handleLineFormChange(lookupIndex, {
-                                                            parent_product_id: String(parent.product_id),
-                                                            product_id: String(opt.product_id),
-                                                            product_name: parent.product_name,
-                                                            product_code: parent.product_code || "",
-                                                            selected_uom: opt.unit_of_measurement?.unit_shortcut || "PCS",
-                                                            base_unit_cost_php: String(opt.cost_per_unit || opt.estimated_unit_cost || 0),
-                                                            uom_options: serializedOptions
-                                                        });
-                                                        setLookupIndex(null);
-                                                    }}
-                                                    className="bg-primary/10 hover:bg-primary text-primary hover:text-primary-foreground border border-primary/20 px-2.5 py-1 rounded text-[10px] font-bold transition-all shadow-sm"
-                                                >
-                                                    {opt.unit_of_measurement?.unit_shortcut || "PCS"} (₱{Number(opt.cost_per_unit || opt.estimated_unit_cost || 0).toFixed(2)})
-                                                </button>
-                                            ))}
+                                        <div className="flex shrink-0 items-center">
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    handleLineFormChange(lookupIndex, {
+                                                        parent_product_id: String(opt.product_id),
+                                                        product_id: String(opt.product_id),
+                                                        product_name: opt.product_name,
+                                                        product_code: opt.product_code || "",
+                                                        selected_uom: opt.unit_of_measurement?.unit_shortcut || "PCS",
+                                                        base_unit_cost_php: String(opt.cost_per_unit || opt.estimated_unit_cost || 0),
+                                                        uom_options: [{
+                                                            product_id: opt.product_id,
+                                                            unit_shortcut: opt.unit_of_measurement?.unit_shortcut || "PCS",
+                                                            cost_per_unit: opt.cost_per_unit || opt.estimated_unit_cost || 0
+                                                        }]
+                                                    });
+                                                    setLookupIndex(null);
+                                                }}
+                                                className="bg-primary/10 hover:bg-primary text-primary hover:text-primary-foreground border border-primary/20 px-3 py-1.5 rounded text-[10px] font-bold transition-all shadow-sm"
+                                            >
+                                                Select {opt.unit_of_measurement?.unit_shortcut || "PCS"} (₱{Number(opt.cost_per_unit || opt.estimated_unit_cost || 0).toFixed(2)})
+                                            </button>
                                         </div>
                                     </div>
                                 );
                             })}
                             
-                            {!searching && groupedResults.length === 0 && (
+                            {!searching && searchResults.length === 0 && (
                                 <div className="p-8 text-center text-xs text-muted-foreground">
-                                    No ingredients found matching &quot;{lookupSearch}&quot;
+                                    No raw materials found matching &quot;{lookupSearch}&quot;
                                 </div>
                             )}
                         </div>

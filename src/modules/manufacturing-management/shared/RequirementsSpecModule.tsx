@@ -136,6 +136,17 @@ const SPECS_REGISTRY: Record<string, RequirementSpec> = {
             "Flag specific ingredients experiencing persistent cost spikes.",
             "Export data sheets for executive margin planning."
         ]
+    },
+    "manufacturing-qa": {
+        title: "Manufacturing Quality Assurance (JO Inspection)",
+        targetUser: "QA Inspectors & Production Supervisors",
+        userStory: "As a Quality Assurance Inspector, I want a dedicated command console to audit completed or active Job Orders, record quality control check results (Pass/Fail count), and log defect reasons so that only approved batches are released to Finished Goods inventory.",
+        functions: [
+            "Retrieve active/completed Job Orders from the floor queue.",
+            "Record validation counts (Pass Qty, Fail Qty, defect details).",
+            "Log audit checkpoints, inspect dates, and inspector assignments.",
+            "Release approved quantities to the Finished Goods master inventory."
+        ]
     }
 };
 

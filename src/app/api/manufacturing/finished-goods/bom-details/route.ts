@@ -14,8 +14,10 @@ import {
     getProductOverheads,
     syncProductOverheads,
     fetchAllOverheadTypes,
-    fetchAllOperations
-} from "@/modules/manufacturing-management/services/manufacturing-service";
+    fetchAllOperations,
+    DIRECTUS_URL,
+    headers
+} from "../../directus-api";
 
 export async function GET(request: Request) {
     try {
@@ -153,7 +155,15 @@ export async function POST(request: Request) {
             price_per_unit: details.targetSellingPrice,
             density_factor: details.densityFactor,
             product_brand: details.productBrand,
-            product_category: details.productCategory
+            product_category: details.productCategory,
+            description: details.description,
+            cost_per_unit: details.costPerUnit,
+            unit_of_measurement_count: details.unitOfMeasurementCount,
+            product_class: details.productClass,
+            product_segment: details.productSegment,
+            product_section: details.productSection,
+            product_shelf_life: details.productShelfLife,
+            product_image: details.productImage
         });
         if (!prodOk) throw new Error("Failed to update product details in Directus");
 
@@ -177,11 +187,8 @@ export async function POST(request: Request) {
         // 4b. Sync product overhead variables
         if (overheads) {
             let versionId = 0;
-            const bomRes = await fetch(`http://goatedcodoer:8091/items/manufacturing_boms/${numericBomId}`, {
-                headers: {
-                    "Authorization": "Bearer rTilKSsclzuQW8WfQWK1ba8wrD_LetNn",
-                    "Content-Type": "application/json"
-                }
+            const bomRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_boms/${numericBomId}`, {
+                headers
             });
             if (bomRes.ok) {
                 const bomJson = await bomRes.json();

@@ -20,6 +20,7 @@ export function useQuotation() {
     const [selectedCustomerId, setSelectedCustomerId] = useState<string>("");
     const [customerSearchText, setCustomerSearchText] = useState<string>("");
     const [quoteNumber, setQuoteNumber] = useState<string>("");
+    const [projectName, setProjectName] = useState<string>("");
     const [remarks, setRemarks] = useState<string>("");
     const [priceTypes, setPriceTypes] = useState<{ price_type_id: number; price_type_name: string }[]>([]);
     const [selectedPriceTypeId, setSelectedPriceTypeId] = useState<string>("");
@@ -139,6 +140,7 @@ export function useQuotation() {
         setView("create");
         setSelectedProductsList([]);
         setRemarks("");
+        setProjectName("");
         setSelectedCustomerId("");
         setCustomerSearchText("");
         
@@ -204,6 +206,7 @@ export function useQuotation() {
             setCustomerSearchText(custNameStr);
 
             setRemarks(quote.remarks || "");
+            setProjectName(quote.project_name || "");
             setView("create");
         } catch (e) {
             console.error("Error preparing revision:", e);
@@ -235,6 +238,14 @@ export function useQuotation() {
     const handleAgreedPriceChange = (productId: number, val: number) => {
         setSelectedProductsList(prev => prev.map(item => 
             item.product.product_id === productId ? { ...item, agreedPrice: val } : item
+        ));
+    };
+
+    const changeProductVersion = (productId: number, versionId: number | null, versionName: string | null) => {
+        setSelectedProductsList(prev => prev.map(item => 
+            item.product.product_id === productId 
+                ? { ...item, versionId, versionName } 
+                : item
         ));
     };
 
@@ -273,8 +284,31 @@ export function useQuotation() {
 
         setSavingQuote(true);
         try {
-            const totalSelling = selectedProductsList.reduce((sum, item) => sum + item.agreedPrice, 0);
-            const totalCost = selectedProductsList.reduce((sum, item) => sum + (item.product.cost_per_unit || 0), 0);
+            // Dynamically fetch and verify the COGS/BOM Cost for each selected product
+            const productsWithLatestCost = await Promise.all(selectedProductsList.map(async (item) => {
+                let latestCost = Number(item.product.cost_per_unit || 0);
+                try {
+                    const url = item.versionId 
+                        ? `/api/manufacturing/finished-goods/bom-cost?productId=${item.product.product_id}&versionId=${item.versionId}`
+                        : `/api/manufacturing/finished-goods/bom-cost?productId=${item.product.product_id}`;
+                    const resBOM = await fetch(url);
+                    if (resBOM.ok) {
+                        const costData = await resBOM.json();
+                        if (costData && typeof costData.cost === "number" && costData.cost > 0) {
+                            latestCost = costData.cost;
+                        }
+                    }
+                } catch (err) {
+                    console.error(`Error calculating dynamic BOM cost for product ${item.product.product_id}:`, err);
+                }
+                return {
+                    ...item,
+                    resolvedCost: latestCost
+                };
+            }));
+
+            const totalSelling = productsWithLatestCost.reduce((sum, item) => sum + Number(item.agreedPrice || 0), 0);
+            const totalCost = productsWithLatestCost.reduce((sum, item) => sum + Number(item.resolvedCost || 0), 0);
 
             const header = {
                 quote_number: quoteNumber.trim(),
@@ -282,17 +316,18 @@ export function useQuotation() {
                 total_selling_price: totalSelling,
                 total_simulated_cost: totalCost,
                 forex_rate_used: 61.39, // Default forex rate used for quote translation
-                remarks: remarks || ""
+                remarks: remarks || "",
+                project_name: projectName.trim()
             };
 
-            const snapshots = selectedProductsList.map(item => ({
+            const snapshots = productsWithLatestCost.map(item => ({
                 product_id: item.product.product_id,
-                version_id: 1, // Default version context
+                version_id: item.versionId || 1, // Store the selected version ID
                 node_name: item.product.product_name,
                 node_type: "product_quota",
                 quantity: 1,
                 uom: item.product.unit_of_measurement?.unit_shortcut || "PCS",
-                frozen_unit_cost_php: item.product.cost_per_unit || 0,
+                frozen_unit_cost_php: item.resolvedCost,
                 frozen_total_cost_php: item.agreedPrice // Save the target agreed price into the cost snapshot tree for quote tracking
             }));
 
@@ -359,12 +394,15 @@ export function useQuotation() {
         isDetailModalOpen,
         setIsDetailModalOpen,
         customers,
+        setCustomers,
         selectedCustomerId,
         customerSearchText,
         quoteNumber,
         setQuoteNumber,
         remarks,
         setRemarks,
+        projectName,
+        setProjectName,
         priceTypes,
         selectedPriceTypeId,
         setSelectedPriceTypeId,
@@ -389,6 +427,7 @@ export function useQuotation() {
         submitQuotation,
         filteredCatalog,
         totalPages,
-        paginatedCatalog
+        paginatedCatalog,
+        changeProductVersion
     };
 }

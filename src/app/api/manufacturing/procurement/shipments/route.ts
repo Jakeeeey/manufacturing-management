@@ -4,7 +4,7 @@ import {
     fetchShipmentLineItems, 
     createIncomingShipment,
     updateIncomingShipmentStatus
-} from "@/modules/manufacturing-management/services/manufacturing-service";
+} from "../../directus-api";
 
 export async function GET(request: Request) {
     try {

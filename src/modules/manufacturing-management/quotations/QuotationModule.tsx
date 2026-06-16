@@ -22,12 +22,15 @@ export default function QuotationModule() {
         isDetailModalOpen,
         setIsDetailModalOpen,
         customers,
+        setCustomers,
         selectedCustomerId,
         customerSearchText,
         quoteNumber,
         setQuoteNumber,
         remarks,
         setRemarks,
+        projectName,
+        setProjectName,
         priceTypes,
         selectedPriceTypeId,
         setSelectedPriceTypeId,
@@ -50,19 +53,20 @@ export default function QuotationModule() {
         submitQuotation,
         filteredCatalog,
         totalPages,
-        paginatedCatalog
+        paginatedCatalog,
+        changeProductVersion
     } = useQuotation();
 
     return (
         <div className="space-y-6">
             {view === "list" ? (
                 <QuotationList
-                    quotes={quotes}
-                    loadingQuotes={loadingQuotes}
-                    initCreateFlow={initCreateFlow}
-                    loadQuotes={loadQuotes}
-                    viewQuoteDetails={viewQuoteDetails}
-                    reviseQuotation={reviseQuotation}
+                     quotes={quotes}
+                     loadingQuotes={loadingQuotes}
+                     initCreateFlow={initCreateFlow}
+                     loadQuotes={loadQuotes}
+                     viewQuoteDetails={viewQuoteDetails}
+                     reviseQuotation={reviseQuotation}
                 />
             ) : (
                 <div className="space-y-6">
@@ -97,6 +101,7 @@ export default function QuotationModule() {
                                 customerSearchText={customerSearchText}
                                 selectedCustomerId={selectedCustomerId}
                                 customers={customers}
+                                setCustomers={setCustomers}
                                 handleSearchCustomers={handleSearchCustomers}
                                 selectCustomer={selectCustomer}
                                 priceTypes={priceTypes}
@@ -104,6 +109,8 @@ export default function QuotationModule() {
                                 setSelectedPriceTypeId={setSelectedPriceTypeId}
                                 remarks={remarks}
                                 setRemarks={setRemarks}
+                                projectName={projectName}
+                                setProjectName={setProjectName}
                             />
 
                             <ProductCatalogTable
@@ -124,6 +131,7 @@ export default function QuotationModule() {
                             selectedProductsList={selectedProductsList}
                             handleAgreedPriceChange={handleAgreedPriceChange}
                             removeProductFromQuote={removeProductFromQuote}
+                            changeProductVersion={changeProductVersion}
                         />
                     </div>
                 </div>
@@ -137,6 +145,7 @@ export default function QuotationModule() {
                 loadingSnapshots={loadingSnapshots}
                 setIsDetailModalOpen={setIsDetailModalOpen}
                 reviseQuotation={reviseQuotation}
+                loadQuotes={loadQuotes}
             />
         </div>
     );

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { fetchSuppliers, createSupplier } from "@/modules/manufacturing-management/services/manufacturing-service";
+import { fetchSuppliers, createSupplier } from "../../directus-api";
 
 export async function GET() {
     try {

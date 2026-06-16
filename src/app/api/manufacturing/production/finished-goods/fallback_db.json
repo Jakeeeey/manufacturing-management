@@ -1,0 +1,26 @@
+[
+  {
+    "id": 1781571670854,
+    "jo_id": "JO-PREREQ-25471-7169",
+    "product_id": 25471,
+    "product_name": "Mama Pina's Soya Oil 2L x 6",
+    "quantity_produced": 600,
+    "branch_id": 183,
+    "lot_number": "MFG-JO-PREREQ-25471-7169",
+    "expiration_date": "2028-12-02",
+    "unit_cost": 30.783,
+    "date_received": "2026-06-16T01:01:10.854Z"
+  },
+  {
+    "id": 1781571766515,
+    "jo_id": "JO-FORECAST-7056",
+    "product_id": 25478,
+    "product_name": "Mama Pina's Canolein Oil 1L x 12",
+    "quantity_produced": 100,
+    "branch_id": 183,
+    "lot_number": "MFG-JO-FORECAST-7056",
+    "expiration_date": "2028-12-02",
+    "unit_cost": 372.52,
+    "date_received": "2026-06-16T01:02:46.515Z"
+  }
+]

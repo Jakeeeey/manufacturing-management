@@ -36,13 +36,27 @@ export interface Product {
     expectedYieldPercent: number;
     targetSellingPrice: number;
     parentProduct?: boolean;
+    parent_id?: number | null;
     bom: BOMItem[];
     routings: RoutingStep[];
     densityFactor?: number;
     product_brand?: number;
     product_category?: number;
+    product_class?: number;
+    product_segment?: number;
+    product_section?: number;
+    product_shelf_life?: number;
+    cost_per_unit?: number;
+    unit_of_measurement_count?: number;
+    product_image?: string;
     customOverhead?: number;
     has_versions?: boolean;
+}
+
+export interface Supplier {
+    id: number;
+    supplier_name: string;
+    supplier_shortcut?: string | null;
 }
 
 export interface Supplier {
@@ -61,6 +75,21 @@ export interface Category {
     category_id: number;
     category_name: string;
     sku_code?: string | null;
+}
+
+export interface ProductClass {
+    class_id: number;
+    class_name: string;
+}
+
+export interface ProductSegment {
+    segment_id: number;
+    segment_name: string;
+}
+
+export interface ProductSection {
+    section_id: number;
+    section_name: string;
 }
 
 export interface Unit {
@@ -98,6 +127,12 @@ export interface BFFCatalogProduct {
     parent_id?: number | null;
     product_brand?: number | null;
     product_category?: number | null;
+    product_class?: number | null;
+    product_segment?: number | null;
+    product_section?: number | null;
+    product_shelf_life?: number | null;
+    unit_of_measurement_count?: number | null;
+    product_image?: string | null;
     has_versions?: boolean;
 }
 

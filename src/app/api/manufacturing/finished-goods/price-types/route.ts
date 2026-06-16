@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server";
-
-const DIRECTUS_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://goatedcodoer:8091";
-const DIRECTUS_TOKEN = process.env.DIRECTUS_STATIC_TOKEN || "rTilKSsclzuQW8WfQWK1ba8wrD_LetNn";
+import { DIRECTUS_URL, headers } from "../../directus-api";
 
 export async function GET(request: Request) {
     try {
@@ -12,7 +10,7 @@ export async function GET(request: Request) {
             // Fetch product prices for this specific price type
             const url = `${DIRECTUS_URL}/items/product_per_price_type?filter[price_type_id][_eq]=${priceTypeId}&limit=-1&fields=product_id,price`;
             const res = await fetch(url, {
-                headers: { "Authorization": `Bearer ${DIRECTUS_TOKEN}`, "Content-Type": "application/json" },
+                headers,
                 cache: "no-store"
             });
             if (!res.ok) throw new Error(`Failed to fetch product price rules: ${res.status}`);
@@ -22,7 +20,7 @@ export async function GET(request: Request) {
             // Fetch all price types
             const url = `${DIRECTUS_URL}/items/price_types?limit=-1&sort=sort`;
             const res = await fetch(url, {
-                headers: { "Authorization": `Bearer ${DIRECTUS_TOKEN}`, "Content-Type": "application/json" },
+                headers,
                 cache: "no-store"
             });
             if (!res.ok) throw new Error(`Failed to fetch price types: ${res.status}`);

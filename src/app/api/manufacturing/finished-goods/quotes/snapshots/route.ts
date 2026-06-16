@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { fetchQuotationSnapshots } from "@/modules/manufacturing-management/services/manufacturing-service";
+import { fetchQuotationSnapshots } from "../../../directus-api";
 
 export async function GET(request: Request) {
     try {

@@ -14,6 +14,8 @@ export interface QuotationHeader {
     forex_rate_used: number;
     remarks?: string;
     quote_date?: string;
+    status?: string;
+    project_name?: string;
 }
 
 export interface QuotationSnapshotNode {
@@ -41,10 +43,13 @@ export interface CatalogProduct {
     parent_id?: {
         product_name: string;
     } | null;
+    has_cogs?: boolean;
 }
 
 export interface SelectedQuoteProduct {
     product: CatalogProduct;
     priceTypePrice: number; // Preloaded price from price type
     agreedPrice: number; // User edited override price
+    versionId?: number | null;
+    versionName?: string | null;
 }

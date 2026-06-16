@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useDebounce } from "use-debounce";
 import { toast } from "sonner";
-import { Product, ProductVersion, Brand, Category, Unit, BOMItem, RoutingStep, ProductOverhead, BFFCatalogProduct, OperationType, OverheadType } from "../types";
+import { Product, ProductVersion, Brand, Category, Unit, BOMItem, RoutingStep, ProductOverhead, BFFCatalogProduct, OperationType, OverheadType, Supplier, ProductClass, ProductSegment, ProductSection } from "../types";
 import {
     fetchBrands,
     fetchCategories,
@@ -12,7 +12,13 @@ import {
     registerProduct,
     registerNewVersion,
     createBrand,
-    createCategory
+    createCategory,
+    fetchClasses,
+    fetchSegments,
+    fetchSections,
+    createSegment,
+    createClass,
+    createSection
 } from "../services/finished-goods-api";
 
 export function useFinishedGoods(initialTab: string = "details") {
@@ -24,6 +30,10 @@ export function useFinishedGoods(initialTab: string = "details") {
     const [brands, setBrands] = useState<Brand[]>([]);
     const [categories, setCategories] = useState<Category[]>([]);
     const [units, setUnits] = useState<Unit[]>([]);
+    const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+    const [classes, setClasses] = useState<ProductClass[]>([]);
+    const [segments, setSegments] = useState<ProductSegment[]>([]);
+    const [sections, setSections] = useState<ProductSection[]>([]);
     const [overheadTypes, setOverheadTypes] = useState<OverheadType[]>([]);
     const [operationTypes, setOperationTypes] = useState<OperationType[]>([]);
     const [simulatedForexRate, setSimulatedForexRate] = useState<number>(61.39);
@@ -58,7 +68,17 @@ export function useFinishedGoods(initialTab: string = "details") {
         densityFactor: "1.0",
         versionName: "v1.0",
         brandId: "",
-        categoryId: ""
+        categoryId: "",
+        description: "",
+        costPerUnit: "",
+        uomCount: "0",
+        classId: "",
+        segmentId: "",
+        sectionId: "",
+        shelfLife: "",
+        productImage: "",
+        parentId: "",
+        supplierIds: [] as string[]
     });
 
     // Form Edits
@@ -76,18 +96,28 @@ export function useFinishedGoods(initialTab: string = "details") {
     useEffect(() => {
         async function loadMetadata() {
             try {
-                const [bList, cList, uList, prodRes, overheadRes, operationsRes, forexRes] = await Promise.all([
+                const [bList, cList, uList, prodRes, overheadRes, operationsRes, forexRes, supRes, classesList, segmentsList, sectionsList] = await Promise.all([
                     fetchBrands(),
                     fetchCategories(),
                     fetchUnits(),
                     fetch("/api/manufacturing/finished-goods/products?limit=100"),
                     fetch("/api/manufacturing/finished-goods/overhead-types"),
                     fetch("/api/manufacturing/finished-goods/operations"),
-                    fetch("https://open.er-api.com/v6/latest/USD").catch(() => null)
+                    fetch("https://open.er-api.com/v6/latest/USD").catch(() => null),
+                    fetch("/api/manufacturing/procurement/suppliers"),
+                    fetchClasses().catch(() => []),
+                    fetchSegments().catch(() => []),
+                    fetchSections().catch(() => [])
                 ]);
                 setBrands(bList);
                 setCategories(cList);
                 setUnits(uList);
+                setClasses(classesList);
+                setSegments(segmentsList);
+                setSections(sectionsList);
+                if (supRes && supRes.ok) {
+                    setSuppliers(await supRes.json());
+                }
                 if (prodRes.ok) {
                     const prodData = await prodRes.json();
                     setAllCatalogProducts(prodData);
@@ -126,24 +156,38 @@ export function useFinishedGoods(initialTab: string = "details") {
                 if (!res.ok) throw new Error("Failed to fetch products");
                 const data = await res.json();
 
-                // Map to UI model
-                const mapped: Product[] = data.map((p: BFFCatalogProduct) => ({
-                    id: String(p.product_id),
-                    sku: p.product_code || `SKU-${p.product_id}`,
-                    title: p.product_name,
-                    description: p.description || "",
-                    barcode: p.barcode || "",
-                    baseUom: p.unit_of_measurement?.unit_shortcut || "PCS",
-                    expectedYieldPercent: 100,
-                    targetSellingPrice: Number(p.price_per_unit || 0),
-                    parentProduct: p.parent_id === null,
-                    bom: [],
-                    routings: [],
-                    densityFactor: p.density_factor ? Number(p.density_factor) : 1.0,
-                    product_brand: p.product_brand ? Number(p.product_brand) : undefined,
-                    product_category: p.product_category ? Number(p.product_category) : undefined,
-                    has_versions: !!p.has_versions
-                }));
+                // Map to UI model (only show finished goods which have versions)
+                const finishedGoods = data.filter((p: BFFCatalogProduct) => !!p.has_versions);
+                const mapped: Product[] = finishedGoods.map((p: BFFCatalogProduct) => {
+                    const parentId = p.parent_id && typeof p.parent_id === "object"
+                        ? Number((p.parent_id as any).product_id)
+                        : (p.parent_id ? Number(p.parent_id) : null);
+                    return {
+                        id: String(p.product_id),
+                        sku: p.product_code || `SKU-${p.product_id}`,
+                        title: p.product_name,
+                        description: p.description || "",
+                        barcode: p.barcode || "",
+                        baseUom: p.unit_of_measurement?.unit_shortcut || "PCS",
+                        expectedYieldPercent: 100,
+                        targetSellingPrice: Number(p.price_per_unit || 0),
+                        parentProduct: parentId === null,
+                        parent_id: parentId,
+                        bom: [],
+                        routings: [],
+                        densityFactor: p.density_factor ? Number(p.density_factor) : 1.0,
+                        product_brand: p.product_brand ? Number(p.product_brand) : undefined,
+                        product_category: p.product_category ? Number(p.product_category) : undefined,
+                        product_class: p.product_class ? Number(p.product_class) : undefined,
+                        product_segment: p.product_segment ? Number(p.product_segment) : undefined,
+                        product_section: p.product_section ? Number(p.product_section) : undefined,
+                        product_shelf_life: p.product_shelf_life ? Number(p.product_shelf_life) : undefined,
+                        cost_per_unit: p.cost_per_unit ? Number(p.cost_per_unit) : undefined,
+                        unit_of_measurement_count: p.unit_of_measurement_count ? Number(p.unit_of_measurement_count) : undefined,
+                        product_image: p.product_image || undefined,
+                        has_versions: !!p.has_versions
+                    };
+                });
 
                 setProducts(mapped);
 
@@ -252,6 +296,14 @@ export function useFinishedGoods(initialTab: string = "details") {
                         densityFactor: selectedProduct.densityFactor || 1.0,
                         product_brand: selectedProduct.product_brand,
                         product_category: selectedProduct.product_category,
+                        product_class: selectedProduct.product_class,
+                        product_segment: selectedProduct.product_segment,
+                        product_section: selectedProduct.product_section,
+                        product_shelf_life: selectedProduct.product_shelf_life,
+                        cost_per_unit: selectedProduct.cost_per_unit,
+                        unit_of_measurement_count: selectedProduct.unit_of_measurement_count,
+                        product_image: selectedProduct.product_image,
+                        parent_id: selectedProduct.parent_id,
                         customOverhead: details.customOverhead || 0
                     });
                     setEditedBOM(details.ingredients);
@@ -288,19 +340,35 @@ export function useFinishedGoods(initialTab: string = "details") {
 
             const brandVal = registerForm.brandId ? Number(registerForm.brandId) : undefined;
             const categoryVal = registerForm.categoryId ? Number(registerForm.categoryId) : undefined;
+            const classVal = registerForm.classId ? Number(registerForm.classId) : undefined;
+            const segmentVal = registerForm.segmentId ? Number(registerForm.segmentId) : undefined;
+            const sectionVal = registerForm.sectionId ? Number(registerForm.sectionId) : undefined;
+            const shelfLifeVal = registerForm.shelfLife ? Number(registerForm.shelfLife) : undefined;
+            const uomCountVal = registerForm.uomCount ? Number(registerForm.uomCount) : 0;
+            const costPerUnitVal = registerForm.costPerUnit ? Number(registerForm.costPerUnit) : 0;
 
             const res = await registerProduct(
                 {
                     product_name: registerForm.title.trim(),
                     product_code: registerForm.sku.trim(),
+                    description: registerForm.description.trim(),
                     barcode: registerForm.barcode.trim(),
                     price_per_unit: Number(registerForm.targetSellingPrice) || 0,
+                    cost_per_unit: costPerUnitVal,
                     density_factor: Number(registerForm.densityFactor) || 1.0,
                     unit_of_measurement: unitId,
+                    unit_of_measurement_count: uomCountVal,
                     product_brand: brandVal,
-                    product_category: categoryVal
+                    product_category: categoryVal,
+                    product_class: classVal,
+                    product_segment: segmentVal,
+                    product_section: sectionVal,
+                    product_shelf_life: shelfLifeVal,
+                    product_image: registerForm.productImage || undefined,
+                    parent_id: registerForm.parentId ? Number(registerForm.parentId) : null
                 },
-                registerForm.versionName.trim()
+                registerForm.versionName.trim(),
+                registerForm.supplierIds.map(Number)
             );
 
             if (res.success && res.productId) {
@@ -317,30 +385,53 @@ export function useFinishedGoods(initialTab: string = "details") {
                     densityFactor: "1.0",
                     versionName: "v1.0",
                     brandId: "",
-                    categoryId: ""
+                    categoryId: "",
+                    description: "",
+                    costPerUnit: "",
+                    uomCount: "0",
+                    classId: "",
+                    segmentId: "",
+                    sectionId: "",
+                    shelfLife: "",
+                    productImage: "",
+                    parentId: "",
+                    supplierIds: [] as string[]
                 });
 
                  // Reload products list
                 const resList = await fetch("/api/manufacturing/finished-goods/products?limit=100");
                 const dataList = await resList.json();
                 setAllCatalogProducts(dataList);
-                 const list: Product[] = dataList.map((p: BFFCatalogProduct) => ({
-                    id: String(p.product_id),
-                    sku: p.product_code || `SKU-${p.product_id}`,
-                    title: p.product_name,
-                    description: p.description || "",
-                    barcode: p.barcode || "",
-                    baseUom: p.unit_of_measurement?.unit_shortcut || "PCS",
-                    expectedYieldPercent: 100,
-                    targetSellingPrice: Number(p.price_per_unit || 0),
-                    parentProduct: p.parent_id === null,
-                    bom: [],
-                    routings: [],
-                    densityFactor: p.density_factor ? Number(p.density_factor) : 1.0,
-                    product_brand: p.product_brand ? Number(p.product_brand) : undefined,
-                    product_category: p.product_category ? Number(p.product_category) : undefined,
-                    has_versions: !!p.has_versions
-                }));
+                  const list: Product[] = dataList.map((p: BFFCatalogProduct) => {
+                     const parentId = p.parent_id && typeof p.parent_id === "object"
+                         ? Number((p.parent_id as any).product_id)
+                         : (p.parent_id ? Number(p.parent_id) : null);
+                     return {
+                        id: String(p.product_id),
+                        sku: p.product_code || `SKU-${p.product_id}`,
+                        title: p.product_name,
+                        description: p.description || "",
+                        barcode: p.barcode || "",
+                        baseUom: p.unit_of_measurement?.unit_shortcut || "PCS",
+                        expectedYieldPercent: 100,
+                        targetSellingPrice: Number(p.price_per_unit || 0),
+                        parentProduct: parentId === null,
+                        parent_id: parentId,
+                        bom: [],
+                        routings: [],
+                        densityFactor: p.density_factor ? Number(p.density_factor) : 1.0,
+                        product_brand: p.product_brand ? Number(p.product_brand) : undefined,
+                        product_category: p.product_category ? Number(p.product_category) : undefined,
+                        product_class: p.product_class ? Number(p.product_class) : undefined,
+                        product_segment: p.product_segment ? Number(p.product_segment) : undefined,
+                        product_section: p.product_section ? Number(p.product_section) : undefined,
+                        product_shelf_life: p.product_shelf_life ? Number(p.product_shelf_life) : undefined,
+                        cost_per_unit: p.cost_per_unit ? Number(p.cost_per_unit) : undefined,
+                        unit_of_measurement_count: p.unit_of_measurement_count ? Number(p.unit_of_measurement_count) : undefined,
+                        product_image: p.product_image || undefined,
+                        has_versions: !!p.has_versions
+                     };
+                  });
                 setProducts(list);
 
                 // Select new product & trigger version select
@@ -428,16 +519,26 @@ export function useFinishedGoods(initialTab: string = "details") {
                     densityFactor: editedDetails.densityFactor || 1.0,
                     productBrand: editedDetails.product_brand,
                     productCategory: editedDetails.product_category,
+                    description: editedDetails.description || "",
+                    costPerUnit: editedDetails.cost_per_unit || 0,
+                    unitOfMeasurementCount: editedDetails.unit_of_measurement_count || 0,
+                    productClass: editedDetails.product_class,
+                    productSegment: editedDetails.product_segment,
+                    productSection: editedDetails.product_section,
+                    productShelfLife: editedDetails.product_shelf_life,
+                    productImage: editedDetails.product_image,
+                    parent_id: editedDetails.parent_id !== undefined ? (editedDetails.parent_id ? Number(editedDetails.parent_id) : null) : null,
                     customOverhead: editedDetails.customOverhead || 0
                 },
                 editedBOM,
                 editedRoutings,
                 editedOverheads
             );
-
+ 
             if (res.success) {
                 setProducts(prev => prev.map(p => {
                     if (p.id === selectedProductId) {
+                        const updatedParentId = editedDetails.parent_id !== undefined ? (editedDetails.parent_id ? Number(editedDetails.parent_id) : null) : p.parent_id;
                         return {
                             ...p,
                             sku: editedDetails.sku || p.sku,
@@ -450,6 +551,15 @@ export function useFinishedGoods(initialTab: string = "details") {
                             densityFactor: editedDetails.densityFactor || p.densityFactor,
                             product_brand: editedDetails.product_brand,
                             product_category: editedDetails.product_category,
+                            product_class: editedDetails.product_class,
+                            product_segment: editedDetails.product_segment,
+                            product_section: editedDetails.product_section,
+                            product_shelf_life: editedDetails.product_shelf_life,
+                            cost_per_unit: editedDetails.cost_per_unit,
+                            unit_of_measurement_count: editedDetails.unit_of_measurement_count,
+                            product_image: editedDetails.product_image,
+                            parent_id: updatedParentId,
+                            parentProduct: updatedParentId === null,
                             customOverhead: editedDetails.customOverhead
                         };
                     }
@@ -499,9 +609,57 @@ export function useFinishedGoods(initialTab: string = "details") {
         }
     };
 
+    const handleCreateSegment = async (name: string): Promise<number | undefined> => {
+        try {
+            const res = await createSegment(name);
+            if (res.success && res.segment) {
+                toast.success(`Segment "${name}" created successfully!`);
+                setSegments(prev => [...prev, res.segment].sort((a, b) => a.segment_name.localeCompare(b.segment_name)));
+                return res.segment.segment_id;
+            }
+        } catch (e) {
+            console.error("Failed to create segment:", e);
+            const error = e instanceof Error ? e : new Error(String(e));
+            toast.error(error.message || "Failed to create segment");
+        }
+    };
+
+    const handleCreateClass = async (name: string): Promise<number | undefined> => {
+        try {
+            const res = await createClass(name);
+            if (res.success && res.class) {
+                toast.success(`Class "${name}" created successfully!`);
+                setClasses(prev => [...prev, res.class].sort((a, b) => a.class_name.localeCompare(b.class_name)));
+                return res.class.class_id;
+            }
+        } catch (e) {
+            console.error("Failed to create class:", e);
+            const error = e instanceof Error ? e : new Error(String(e));
+            toast.error(error.message || "Failed to create class");
+        }
+    };
+
+    const handleCreateSection = async (name: string): Promise<number | undefined> => {
+        try {
+            const res = await createSection(name);
+            if (res.success && res.section) {
+                toast.success(`Section "${name}" created successfully!`);
+                setSections(prev => [...prev, res.section].sort((a, b) => a.section_name.localeCompare(b.section_name)));
+                return res.section.section_id;
+            }
+        } catch (e) {
+            console.error("Failed to create section:", e);
+            const error = e instanceof Error ? e : new Error(String(e));
+            toast.error(error.message || "Failed to create section");
+        }
+    };
+
     return {
         handleCreateBrand,
         handleCreateCategory,
+        handleCreateSegment,
+        handleCreateClass,
+        handleCreateSection,
         activeTab,
         setActiveTab,
         isSidebarCollapsed,
@@ -509,6 +667,10 @@ export function useFinishedGoods(initialTab: string = "details") {
         brands,
         categories,
         units,
+        suppliers,
+        classes,
+        segments,
+        sections,
         loadingProducts,
         loadingBOM,
         savingBOM,
