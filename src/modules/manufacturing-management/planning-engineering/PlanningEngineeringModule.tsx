@@ -12,6 +12,7 @@ import { ManpowerWorkloadAnalysis } from "./components/ManpowerWorkloadAnalysis"
 
 export default function PlanningEngineeringModule() {
     const [joViewMode, setJoViewMode] = React.useState<"list" | "manpower">("list");
+    const [statusFilter, setStatusFilter] = React.useState<"all" | "ongoing" | "finished">("all");
     const {
         activeTab,
         setActiveTab,
@@ -236,24 +237,78 @@ export default function PlanningEngineeringModule() {
                             jobOrders={filteredJobOrders}
                             users={users}
                         />
-                    ) : (
+                     ) : (
                         /* Job Orders list tab */
-                        <JobOrdersList
-                            jobOrders={filteredJobOrders}
-                            checkingInventoryId={checkingInventoryId}
-                            procurementLoadingId={procurementLoadingId}
-                            handleRunFIFOInventoryCheck={handleRunFIFOInventoryCheck}
-                            handleTriggerProcurement={handleTriggerProcurement}
-                            handleProgressProcurement={handleProgressProcurement}
-                            handleDeleteJO={handleDeleteJO}
-                            branches={branches}
-                            handleCreatePrerequisiteJobOrder={handleCreatePrerequisiteJobOrder}
-                            users={users}
-                            suppliers={suppliers}
-                            products={products}
-                            handleAssignPersonnel={handleAssignPersonnel}
-                            modifyJobOrder={modifyJobOrder}
-                        />
+                        (() => {
+                            const displayedJobOrders = filteredJobOrders.filter(jo => {
+                                if (statusFilter === "all") return true;
+                                if (statusFilter === "finished") return jo.status === "Finished";
+                                return jo.status !== "Finished" && jo.status !== "Cancelled";
+                            });
+
+                            return (
+                                <div className="space-y-4">
+                                    {/* Status Filter Buttons */}
+                                    <div className="flex bg-muted/10 shrink-0 rounded-xl overflow-hidden border max-w-sm">
+                                        <button
+                                            onClick={() => setStatusFilter("all")}
+                                            className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-bold border-b-2 transition-all -mb-[1px] ${
+                                                statusFilter === "all"
+                                                    ? "border-primary text-primary bg-background"
+                                                    : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/30"
+                                            }`}
+                                        >
+                                            All ({filteredJobOrders.length})
+                                        </button>
+                                        <button
+                                            onClick={() => setStatusFilter("ongoing")}
+                                            className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-bold border-b-2 transition-all -mb-[1px] ${
+                                                statusFilter === "ongoing"
+                                                    ? "border-primary text-primary bg-background"
+                                                    : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/30"
+                                            }`}
+                                        >
+                                            Ongoing ({filteredJobOrders.filter(jo => jo.status !== "Finished" && jo.status !== "Cancelled").length})
+                                        </button>
+                                        <button
+                                            onClick={() => setStatusFilter("finished")}
+                                            className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-bold border-b-2 transition-all -mb-[1px] ${
+                                                statusFilter === "finished"
+                                                    ? "border-primary text-primary bg-background"
+                                                    : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/30"
+                                            }`}
+                                        >
+                                            Finished ({filteredJobOrders.filter(jo => jo.status === "Finished").length})
+                                        </button>
+                                    </div>
+
+                                    {displayedJobOrders.length === 0 ? (
+                                        <div className="text-center p-12 border rounded-xl bg-card">
+                                            <Cpu className="h-10 w-10 text-muted-foreground/30 mx-auto mb-2" />
+                                            <h4 className="text-xs font-bold text-foreground">No {statusFilter} Job Orders found</h4>
+                                            <p className="text-[11px] text-muted-foreground mt-1">There are no job orders matching the selected status filter.</p>
+                                        </div>
+                                    ) : (
+                                        <JobOrdersList
+                                            jobOrders={displayedJobOrders}
+                                            checkingInventoryId={checkingInventoryId}
+                                            procurementLoadingId={procurementLoadingId}
+                                            handleRunFIFOInventoryCheck={handleRunFIFOInventoryCheck}
+                                            handleTriggerProcurement={handleTriggerProcurement}
+                                            handleProgressProcurement={handleProgressProcurement}
+                                            handleDeleteJO={handleDeleteJO}
+                                            branches={branches}
+                                            handleCreatePrerequisiteJobOrder={handleCreatePrerequisiteJobOrder}
+                                            users={users}
+                                            suppliers={suppliers}
+                                            products={products}
+                                            handleAssignPersonnel={handleAssignPersonnel}
+                                            modifyJobOrder={modifyJobOrder}
+                                        />
+                                    )}
+                                </div>
+                            );
+                        })()
                     )}
 
                     {activeTab === "sales-orders" && totalPages > 1 && (
