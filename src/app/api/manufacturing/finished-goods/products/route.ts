@@ -83,6 +83,7 @@ export async function GET(request: Request) {
                     productCopy.cost_per_unit = 0;
                     productCopy.has_cogs = false;
                 }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
             } catch (err: any) {
                 console.error(`Error calculating dynamic rollup cost for product ${p.product_id}:`, err);
                 productCopy.has_cogs = false;
@@ -97,9 +98,9 @@ export async function GET(request: Request) {
         });
 
         return NextResponse.json(resolvedProducts);
-    } catch (e: any) {
+    } catch (e) {
         console.error("API Error fetching products:", e);
-        return NextResponse.json({ error: e.message || "Failed to fetch products" }, { status: 500 });
+        return NextResponse.json({ error: (e as { message?: string }).message || "Failed to fetch products" }, { status: 500 });
     }
 }
 
@@ -214,8 +215,8 @@ export async function POST(request: Request) {
         }
 
         return NextResponse.json({ success: true, productId, bom: bomJson.data });
-    } catch (e: any) {
+    } catch (e) {
         console.error("API Error registering product:", e);
-        return NextResponse.json({ error: e.message || "Failed to register product" }, { status: 500 });
+        return NextResponse.json({ error: (e as { message?: string }).message || "Failed to register product" }, { status: 500 });
     }
 }

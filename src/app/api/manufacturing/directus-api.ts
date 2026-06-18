@@ -42,7 +42,7 @@ export interface DirectusBOM {
     base_quantity: number;
     expected_yield_percentage: number;
     is_active: boolean;
-    version: { id: number; version_name: string } | number | null;
+    version: { id: number; version_name: string; created_at?: string } | number | null;
     valid_from?: string;
     valid_to?: string;
 }
@@ -271,17 +271,15 @@ export async function getActiveBOMForProduct(productId: number): Promise<{
         if (boms.length === 0) return { bom: null, components: [], routings: [] };
         
         const sortedBoms = [...boms].sort((a, b) => {
-            const timeA = a.version && typeof a.version === "object" && (a.version as any).created_at 
-                ? new Date((a.version as any).created_at).getTime() 
-                : 0;
-            const timeB = b.version && typeof b.version === "object" && (b.version as any).created_at 
-                ? new Date((b.version as any).created_at).getTime() 
-                : 0;
+            const versionA = a.version && typeof a.version === "object" ? a.version : null;
+            const versionB = b.version && typeof b.version === "object" ? b.version : null;
+            const timeA = versionA?.created_at ? new Date(versionA.created_at).getTime() : 0;
+            const timeB = versionB?.created_at ? new Date(versionB.created_at).getTime() : 0;
             
             if (timeA !== timeB) return timeB - timeA;
             
-            const idA = a.version && typeof a.version === "object" ? a.version.id : 0;
-            const idB = b.version && typeof b.version === "object" ? b.version.id : 0;
+            const idA = versionA ? versionA.id : 0;
+            const idB = versionB ? versionB.id : 0;
             if (idA !== idB) return idB - idA;
             
             return b.bom_id - a.bom_id;
@@ -755,7 +753,7 @@ export async function getProductOverheads(productId: number, versionId: number):
             const latestData = resLatest.ok ? (await resLatest.json()).data || [] : [];
             if (latestData.length > 0) {
                 const latestVersionId = latestData[0].version_id;
-                data = latestData.filter((o: any) => o.version_id === latestVersionId);
+                data = latestData.filter((o: { version_id?: unknown }) => o.version_id === latestVersionId);
             }
         }
         return data;
@@ -1117,7 +1115,7 @@ export async function createCustomer(payload: {
     city?: string;
     province?: string;
     isActive?: number;
-}): Promise<any> {
+}): Promise<unknown> {
     try {
         const url = `${DIRECTUS_URL}/items/customer`;
         const res = await fetch(url, {
@@ -1155,7 +1153,7 @@ export async function updateCustomer(id: number | string, payload: Partial<{
     city?: string;
     province?: string;
     isActive?: number;
-}>): Promise<any> {
+}>): Promise<unknown> {
     try {
         const url = `${DIRECTUS_URL}/items/customer/${id}`;
         const res = await fetch(url, {
@@ -1213,7 +1211,7 @@ export async function fetchStoreTypes(): Promise<unknown[]> {
 /**
  * Create a new store type record.
  */
-export async function createStoreType(name: string, userId: number): Promise<any> {
+export async function createStoreType(name: string, userId: number): Promise<unknown> {
     try {
         const url = `${DIRECTUS_URL}/items/store_type`;
         const res = await fetch(url, {
@@ -1380,18 +1378,18 @@ export async function processShipmentLandedCosts(
         let totalVolume = 0;
         let totalCommercialValuePhp = 0;
 
-        lines.forEach((l: any) => {
+        lines.forEach((l: { quantity_received?: unknown; base_unit_cost_php?: unknown; product_id?: { weight?: unknown; product_weight?: unknown; cbm_height?: unknown; cbm_width?: unknown; cbm_length?: unknown; product_id: string | number }; line_id?: unknown }) => {
             const qty = Number(l.quantity_received) || 0;
             const price = Number(l.base_unit_cost_php) || 0;
             totalCommercialValuePhp += qty * price;
 
-            const prod = l.product_id || {};
-            const weight = Number(prod.weight || prod.product_weight || 0);
+            const prod = l.product_id;
+            const weight = Number(prod?.weight || prod?.product_weight || 0);
             totalWeight += qty * weight;
 
-            const height = Number(prod.cbm_height || 0);
-            const width = Number(prod.cbm_width || 0);
-            const length = Number(prod.cbm_length || 0);
+            const height = Number(prod?.cbm_height || 0);
+            const width = Number(prod?.cbm_width || 0);
+            const length = Number(prod?.cbm_length || 0);
             totalVolume += qty * (height * width * length);
         });
 
@@ -1403,14 +1401,14 @@ export async function processShipmentLandedCosts(
 
             let ratio = 0;
             if (allocationMethod === "Weight" && totalWeight > 0) {
-                const prod = l.product_id || {};
-                const weight = Number(prod.weight || prod.product_weight || 0);
+                const prod = l.product_id;
+                const weight = Number(prod?.weight || prod?.product_weight || 0);
                 ratio = (qty * weight) / totalWeight;
             } else if (allocationMethod === "Volume" && totalVolume > 0) {
-                const prod = l.product_id || {};
-                const height = Number(prod.cbm_height || 0);
-                const width = Number(prod.cbm_width || 0);
-                const length = Number(prod.cbm_length || 0);
+                const prod = l.product_id;
+                const height = Number(prod?.cbm_height || 0);
+                const width = Number(prod?.cbm_width || 0);
+                const length = Number(prod?.cbm_length || 0);
                 ratio = (qty * (height * width * length)) / totalVolume;
             } else {
                 // Default: Commercial Value
@@ -1448,7 +1446,7 @@ export async function processShipmentLandedCosts(
         }
 
         // 6. Update Shipment Header Status
-        const updatePayload: Record<string, any> = { status };
+        const updatePayload: Record<string, unknown> = { status };
         if (status === "Received" || status === "Receiving (QA)") {
             updatePayload.date_received = new Date().toISOString().split('T')[0];
         }
@@ -1581,7 +1579,7 @@ export async function updateIncomingShipmentStatus(
             }
         }
 
-        const updatePayload: Record<string, any> = { status };
+        const updatePayload: Record<string, unknown> = { status };
         if (status === "Received" || status === "Receiving (QA)") {
             updatePayload.date_received = new Date().toISOString().split('T')[0];
         }
@@ -1602,7 +1600,35 @@ export async function updateIncomingShipmentStatus(
 /**
  * Fetch all job orders
  */
-export async function fetchJobOrders(): Promise<any[]> {
+export interface DirectusJobOrder {
+    jo_id: string;
+    due_date?: string | null;
+    status: string;
+    is_batched: boolean;
+    procurement_status: string;
+    branch_id?: number | null;
+    assigned_personnel?: unknown;
+    product_id?: number | null;
+    product_name?: string | null;
+    quantity?: number;
+    bom?: unknown;
+    components?: unknown;
+    routings?: unknown;
+    allocation_results?: unknown;
+    products?: {
+        product_id?: number | null;
+        product_name?: string | null;
+        quantity?: number;
+        bom?: unknown;
+        components?: unknown;
+        routings?: unknown;
+        allocation_results?: unknown;
+    }[];
+    sales_orders?: unknown[];
+    [key: string]: unknown;
+}
+
+export async function fetchJobOrders(): Promise<DirectusJobOrder[]> {
     try {
         const headersNoCache = { ...headers, "cache": "no-store" as const };
         
@@ -1617,9 +1643,9 @@ export async function fetchJobOrders(): Promise<any[]> {
         const josos = josoRes.ok ? (await josoRes.json()).data || [] : [];
 
         // Map them together
-        return jos.map((jo: any) => {
-            const products = jops.filter((p: any) => p.jo_id === jo.jo_id);
-            const salesOrders = josos.filter((s: any) => s.jo_id === jo.jo_id);
+        return jos.map((jo: Record<string, unknown>) => {
+            const products = jops.filter((p: { jo_id?: unknown }) => p.jo_id === jo.jo_id);
+            const salesOrders = josos.filter((s: { jo_id?: unknown }) => s.jo_id === jo.jo_id);
             
             // First product details (for backward compatibility with single-product UI)
             const mainProduct = products[0] || {};
@@ -1646,7 +1672,7 @@ export async function fetchJobOrders(): Promise<any[]> {
 /**
  * Create a new Job Order
  */
-export async function createJobOrder(joData: any, salesOrderIds?: number[]): Promise<any> {
+export async function createJobOrder(joData: Partial<DirectusJobOrder>, salesOrderIds?: number[]): Promise<{ jo_id?: string | null }> {
     try {
         // Insert header
         const headerPayload = {
@@ -1699,7 +1725,7 @@ export async function createJobOrder(joData: any, salesOrderIds?: number[]): Pro
             });
             if (!productRes.ok) {
                 // Rollback header
-                await fetch(`${DIRECTUS_URL}/items/job_order/${encodeURIComponent(joData.jo_id)}`, { method: "DELETE", headers }).catch(() => {});
+                await fetch(`${DIRECTUS_URL}/items/job_order/${encodeURIComponent(joData.jo_id || "")}`, { method: "DELETE", headers }).catch(() => {});
                 const txt = await productRes.text();
                 throw new Error(`Failed to create job_order_product line: ${productRes.status} - ${txt}`);
             }
@@ -1740,12 +1766,12 @@ export async function createJobOrder(joData: any, salesOrderIds?: number[]): Pro
 /**
  * Update Job Order details (e.g. status, allocation results, procurement status)
  */
-export async function updateJobOrder(joId: string, patchData: any): Promise<any> {
+export async function updateJobOrder(joId: string, patchData: Record<string, unknown> & { products?: { product_id: string | number; bom?: unknown; components?: unknown; routings?: unknown; allocationResults?: unknown; quantity?: unknown }[] }): Promise<unknown> {
     try {
         // Split header fields and product fields
         const headerFields = ["due_date", "status", "is_batched", "procurement_status", "branch_id", "assigned_personnel"];
-        const headerPatch: any = {};
-        const productPatch: any = {};
+        const headerPatch: Record<string, unknown> = {};
+        const productPatch: Record<string, unknown> = {};
 
         for (const key of Object.keys(patchData)) {
             if (headerFields.includes(key)) {
@@ -1854,7 +1880,7 @@ export async function updateJobOrder(joId: string, patchData: any): Promise<any>
                 if (lookupRes.ok) {
                     const existing = (await lookupRes.json()).data || [];
                     if (existing.length > 0) {
-                        const payload: any = {};
+                        const payload: Record<string, unknown> = {};
                         if (p.bom !== undefined) payload.bom = p.bom;
                         if (p.components !== undefined) payload.components = p.components;
                         if (p.routings !== undefined) payload.routings = p.routings;
@@ -1948,7 +1974,7 @@ export async function createDensityFactor(payload: {
     density: number;
     description?: string;
     is_system?: boolean;
-}): Promise<any> {
+}): Promise<unknown> {
     try {
         const url = `${DIRECTUS_URL}/items/density_factors`;
         const res = await fetch(url, {

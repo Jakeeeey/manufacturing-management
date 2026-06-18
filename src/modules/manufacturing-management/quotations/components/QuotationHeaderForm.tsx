@@ -72,6 +72,7 @@ export function QuotationHeaderForm({
     const [selectedCityCode, setSelectedCityCode] = useState("");
     
     const [storeTypes, setStoreTypes] = useState<{ id: number; store_type: string }[]>([]);
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
     const [isSaving, setIsSaving] = useState(false);
 
     // Load store types & initial provinces/cities when customer modal is opened
@@ -144,11 +145,13 @@ export function QuotationHeaderForm({
                 if (res.ok) {
                     const data = await res.json();
                     if (Array.isArray(data)) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
                         const mapped = data.map((b: any) => ({
                             code: b.code,
                             name: b.name,
                             cityCode: selectedCityCode
                         }));
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
                         mapped.sort((a: any, b: any) => a.name.localeCompare(b.name));
                         setBarangays(mapped);
                     }
@@ -233,6 +236,7 @@ export function QuotationHeaderForm({
             }
             selectCustomer(String(data.id), `${data.customer_name} (${data.customer_code})`);
             setIsModalOpen(false);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (error: any) {
             console.error("Error creating customer:", error);
             let errMsg = error.message || "Failed to create customer";

@@ -56,6 +56,7 @@ export async function GET(request: Request) {
             // Fetch all Job Orders
             const list = await fetchJobOrders();
             // Transform snake_case keys back to camelCase for client compatibility if needed
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
             const camelCaseList = list.map((item: any) => ({
                 jo_id: item.jo_id,
                 order_id: item.order_id,
@@ -77,9 +78,9 @@ export async function GET(request: Request) {
             }));
             return NextResponse.json(camelCaseList);
         }
-    } catch (e: any) {
+    } catch (e) {
         console.error("API Error in planning-engineering GET:", e);
-        return NextResponse.json({ error: e.message || "Failed to process planning request" }, { status: 500 });
+        return NextResponse.json({ error: (e as { message?: string }).message || "Failed to process planning request" }, { status: 500 });
     }
 }
 
@@ -110,6 +111,7 @@ export async function POST(request: Request) {
             procurement_status: jo.procurementStatus || "Idle",
             branch_id: jo.branch_id || null,
             assigned_personnel: jo.assignedPersonnel || null,
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
             products: jo.products ? jo.products.map((p: any) => ({
                 product_id: p.product_id,
                 product_name: p.product_name,
@@ -123,9 +125,9 @@ export async function POST(request: Request) {
 
         const result = await createJobOrder(dbPayload, salesOrderIds);
         return NextResponse.json({ success: true, data: result });
-    } catch (e: any) {
+    } catch (e) {
         console.error("API Error in planning-engineering POST:", e);
-        return NextResponse.json({ error: e.message || "Failed to create Job Order" }, { status: 500 });
+        return NextResponse.json({ error: (e as { message?: string }).message || "Failed to create Job Order" }, { status: 500 });
     }
 }
 
@@ -139,6 +141,7 @@ export async function PATCH(request: Request) {
         }
 
         // Map camelCase patch fields to snake_case fields
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         const dbPatch: Record<string, any> = {};
         if (patch.status !== undefined) dbPatch.status = patch.status;
         if (patch.bom !== undefined) dbPatch.bom = patch.bom;
@@ -155,9 +158,9 @@ export async function PATCH(request: Request) {
 
         const result = await updateJobOrder(joId, dbPatch);
         return NextResponse.json({ success: true, data: result });
-    } catch (e: any) {
+    } catch (e) {
         console.error("API Error in planning-engineering PATCH:", e);
-        return NextResponse.json({ error: e.message || "Failed to update Job Order" }, { status: 500 });
+        return NextResponse.json({ error: (e as { message?: string }).message || "Failed to update Job Order" }, { status: 500 });
     }
 }
 
@@ -172,8 +175,8 @@ export async function DELETE(request: Request) {
 
         const success = await deleteJobOrder(joId);
         return NextResponse.json({ success });
-    } catch (e: any) {
+    } catch (e) {
         console.error("API Error in planning-engineering DELETE:", e);
-        return NextResponse.json({ error: e.message || "Failed to delete Job Order" }, { status: 500 });
+        return NextResponse.json({ error: (e as { message?: string }).message || "Failed to delete Job Order" }, { status: 500 });
     }
 }

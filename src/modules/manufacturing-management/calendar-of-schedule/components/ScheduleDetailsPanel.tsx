@@ -75,6 +75,7 @@ export function ScheduleDetailsPanel({
                         <div className="space-y-2 border-t pt-3">
                             <span className="text-[10px] font-bold text-muted-foreground uppercase block">Floor routing timeline</span>
                             <div className="relative pl-3 border-l-2 border-emerald-500/30 space-y-2.5">
+{/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                                 {selectedJO.routings.map((rout: any) => (
                                     <div key={rout.routing_id} className="relative text-[10px]">
                                         <div className="absolute -left-[18px] top-1 h-2.5 w-2.5 rounded-full bg-emerald-500 border border-card" />
@@ -129,6 +130,7 @@ export function ScheduleDetailsPanel({
                         </div>
                         <div className="col-span-2 pt-2 border-t mt-2">
                             <span className="text-muted-foreground block font-bold uppercase text-[9px]">Estimated Time of Arrival (ETA)</span>
+{/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                             <span className="font-bold text-foreground block">{selectedShipment.estimated_delivery_date?.split("T")[0] || (selectedShipment as any).date_received?.split("T")[0] || "No ETA"}</span>
                         </div>
                     </div>

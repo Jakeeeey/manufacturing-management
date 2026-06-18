@@ -57,8 +57,8 @@ export async function PATCH(request: Request) {
         if (!res.ok) throw new Error(`Failed to update quotation status: ${res.status}`);
 
         return NextResponse.json({ success: true });
-    } catch (e: any) {
+    } catch (e) {
         console.error("API Error updating quotation status:", e);
-        return NextResponse.json({ error: e.message || "Failed to update quotation status" }, { status: 500 });
+        return NextResponse.json({ error: (e as { message?: string }).message || "Failed to update quotation status" }, { status: 500 });
     }
 }

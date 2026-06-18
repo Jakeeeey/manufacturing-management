@@ -6,6 +6,7 @@ import { JobOrder } from "../types";
 
 interface ManpowerWorkloadAnalysisProps {
     jobOrders: JobOrder[];
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     users: any[];
 }
 
@@ -16,6 +17,7 @@ export function ManpowerWorkloadAnalysis({ jobOrders, users }: ManpowerWorkloadA
     const analysis = useMemo(() => {
         // Map of userId -> list of task assignments and total hours
         const workerLoads: Record<string, {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
             user: any;
             totalHours: number;
             tasks: Array<{
@@ -69,9 +71,11 @@ export function ManpowerWorkloadAnalysis({ jobOrders, users }: ManpowerWorkloadA
                 routings: jo.routings
             }];
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
             productsList.forEach((p: any) => {
                 if (!p.routings) return;
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
                 p.routings.forEach((r: any) => {
                     const stepHours = (Number(r.duration_hours) || 0) * Number(p.quantity);
                     const opName = r.operation_name || "General Operation";

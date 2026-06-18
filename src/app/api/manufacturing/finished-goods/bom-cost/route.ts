@@ -46,12 +46,15 @@ async function fetchAllProducts(): Promise<DirectusProduct[]> {
     const versionProductIds = new Set<number>();
     if (versionsRes.ok) {
         const versions = (await versionsRes.json()).data || [];
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         versions.forEach((v: any) => v.product_id && versionProductIds.add(Number(v.product_id)));
     }
     const profiles = profilesRes.ok ? (await profilesRes.json()).data || [] : [];
     const profilesMap = new Map();
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     profiles.forEach((p: any) => profilesMap.set(Number(p.product_id), p));
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     products.forEach((p: any) => {
         p.has_versions = versionProductIds.has(Number(p.product_id));
         p.currency_profile = profilesMap.get(Number(p.product_id)) || null;
@@ -122,6 +125,7 @@ export async function GET(request: Request) {
             const resBOM = await fetch(`${DIRECTUS_URL}/items/manufacturing_boms?filter=${filter}&fields=*,version.*&limit=-1`, { headers, cache: "no-store" });
             if (resBOM.ok) {
                 const boms = (await resBOM.json()).data || [];
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const sortedBoms = [...boms].sort((a: any, b: any) => {
                     const timeA = a.version && typeof a.version === "object" && a.version.created_at
                         ? new Date(a.version.created_at).getTime()
@@ -212,8 +216,8 @@ export async function GET(request: Request) {
 
         return NextResponse.json({ cost: totalMaterialCost + totalRoutingCost, hasCogs: true });
 
-    } catch (e: any) {
+    } catch (e) {
         console.error("API Error calculating BOM cost:", e);
-        return NextResponse.json({ error: e.message || "Failed to calculate cost" }, { status: 500 });
+        return NextResponse.json({ error: (e as { message?: string }).message || "Failed to calculate cost" }, { status: 500 });
     }
 }

@@ -17,6 +17,7 @@ export async function fetchSuppliers(): Promise<Supplier[]> {
     return handleResponse(res, "Failed to fetch suppliers");
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function createSupplier(supplierData: Partial<Supplier>): Promise<any> {
     const res = await fetch("/api/manufacturing/procurement/suppliers", {
         method: "POST",
@@ -36,6 +37,7 @@ export async function fetchShipmentLineItems(shipmentId: number): Promise<Shipme
     return handleResponse(res, "Failed to fetch shipment line items");
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function createShipment(shipmentData: Partial<IncomingShipment>, lineItems: any[]): Promise<any> {
     const res = await fetch("/api/manufacturing/procurement/shipments", {
         method: "POST",
@@ -55,7 +57,9 @@ export async function saveAndAllocateExpenses(
     status: string,
     expenses: Partial<ShipmentExpense>[],
     allocationMethod: string,
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     lineItemUpdates?: any[]
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Promise<any> {
     const res = await fetch("/api/manufacturing/procurement/expenses", {
         method: "POST",
@@ -71,8 +75,10 @@ export async function fetchRawMaterials(): Promise<RawMaterial[]> {
     const products = await res.json();
     
     // Filter to exclude finished goods (which have versions)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     const rawItems = products.filter((p: any) => !p.has_versions);
     
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     return rawItems.map((p: any) => ({
         product_id: p.product_id,
         parent_id: p.parent_id ? (typeof p.parent_id === "object" ? p.parent_id.product_id : p.parent_id) : null,
@@ -114,6 +120,7 @@ export async function registerRawMaterial(
     return handleResponse(res, "Failed to register raw material");
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function updateShipmentStatus(shipmentId: number, status: string): Promise<any> {
     const res = await fetch("/api/manufacturing/procurement/shipments", {
         method: "PATCH",

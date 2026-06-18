@@ -114,6 +114,7 @@ export function CalendarGrid({
                         
                     const cellShipments = (filterMode === "all" || filterMode === "shipments")
                         ? shipments.filter(s => {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
                             const deliveryDate = s.estimated_delivery_date || s.actual_delivery_date || (s as any).date_received || (s as any).created_at || "";
                             return deliveryDate.split("T")[0] === cellDateStr;
                         })

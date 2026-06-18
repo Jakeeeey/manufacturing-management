@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { DIRECTUS_URL, headers } from "../../directus-api";
 
 // Types
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 interface DirectusProductVersion {
     id: number;
     product_id: number;
@@ -27,9 +28,9 @@ export async function GET(request: Request) {
         if (!res.ok) throw new Error(`Directus failed to fetch versions: ${res.status}`);
         const json = await res.json();
         return NextResponse.json(json.data || []);
-    } catch (e: any) {
+    } catch (e) {
         console.error("API Error fetching versions:", e);
-        return NextResponse.json({ error: e.message || "Failed to fetch versions" }, { status: 500 });
+        return NextResponse.json({ error: (e as { message?: string }).message || "Failed to fetch versions" }, { status: 500 });
     }
 }
 
@@ -150,6 +151,7 @@ export async function POST(request: Request) {
                 }
 
                 return NextResponse.json({ success: true, bom: newBOM });
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
             } catch (err: any) {
                 console.error("Error cloning BOM, rolling back...", err);
                 for (const id of createdRoutings) {
@@ -208,8 +210,8 @@ export async function POST(request: Request) {
             const bomJson = await bomRes.json();
             return NextResponse.json({ success: true, bom: bomJson.data });
         }
-    } catch (e: any) {
+    } catch (e) {
         console.error("API Error registering version:", e);
-        return NextResponse.json({ error: e.message || "Failed to register version" }, { status: 500 });
+        return NextResponse.json({ error: (e as { message?: string }).message || "Failed to register version" }, { status: 500 });
     }
 }

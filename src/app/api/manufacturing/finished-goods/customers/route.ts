@@ -74,9 +74,9 @@ export async function PATCH(request: Request) {
         const body = await request.json();
         const updated = await updateCustomer(id, body);
         return NextResponse.json(updated);
-    } catch (e: any) {
+    } catch (e) {
         console.error("API Error updating customer:", e);
-        return NextResponse.json({ error: e.message || "Failed to update customer" }, { status: 500 });
+        return NextResponse.json({ error: (e as { message?: string }).message || "Failed to update customer" }, { status: 500 });
     }
 }
 
@@ -89,9 +89,9 @@ export async function DELETE(request: Request) {
         }
         const success = await deleteCustomer(id);
         return NextResponse.json({ success });
-    } catch (e: any) {
+    } catch (e) {
         console.error("API Error deleting customer:", e);
-        return NextResponse.json({ error: e.message || "Failed to delete customer" }, { status: 500 });
+        return NextResponse.json({ error: (e as { message?: string }).message || "Failed to delete customer" }, { status: 500 });
     }
 }
 

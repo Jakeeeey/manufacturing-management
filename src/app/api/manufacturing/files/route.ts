@@ -44,7 +44,7 @@ export async function POST(req: Request) {
         console.error("BFF upload error:", err);
         return NextResponse.json({
             message: "BFF Upload Error",
-            detail: err instanceof Error ? err.message : String(err)
+            detail: err instanceof Error ? (err as { message?: string }).message : String(err)
         }, { status: 502 });
     }
 }
@@ -76,7 +76,7 @@ export async function DELETE(req: Request) {
         console.error("BFF delete error:", err);
         return NextResponse.json({
             message: "BFF Delete Error",
-            detail: err instanceof Error ? err.message : String(err)
+            detail: err instanceof Error ? (err as { message?: string }).message : String(err)
         }, { status: 502 });
     }
 }

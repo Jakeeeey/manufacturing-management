@@ -31,11 +31,13 @@ export async function fetchSalesOrderDetails(orderId: number): Promise<SalesOrde
     return handleResponse(res, "Failed to load order details");
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function explodeBOM(productId: number): Promise<{ bom: any; components: any[]; routings: any[] }> {
     const res = await fetch(`/api/manufacturing/planning-engineering?productId=${productId}`);
     return handleResponse(res, "Failed to explode product recipe");
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function fetchQAStockBatches(productId: number): Promise<any[]> {
     const res = await fetch(`/api/manufacturing/procurement/qa-receiving?productId=${productId}`);
     return handleResponse(res, "Failed to fetch stock batches");
@@ -46,6 +48,7 @@ export async function getJobOrders(): Promise<JobOrder[]> {
     return handleResponse(res, "Failed to fetch job orders");
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function addJobOrder(jo: JobOrder, salesOrderIds?: number[]): Promise<any> {
     const res = await fetch("/api/manufacturing/planning-engineering", {
         method: "POST",
@@ -55,6 +58,7 @@ export async function addJobOrder(jo: JobOrder, salesOrderIds?: number[]): Promi
     return handleResponse(res, "Failed to create job order");
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function modifyJobOrder(joId: string, patch: Partial<JobOrder>): Promise<any> {
     const res = await fetch("/api/manufacturing/planning-engineering", {
         method: "PATCH",

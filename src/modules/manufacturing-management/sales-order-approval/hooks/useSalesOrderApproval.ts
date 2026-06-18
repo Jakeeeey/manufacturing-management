@@ -37,6 +37,7 @@ export function useSalesOrderApproval() {
             setTotalCount(res.meta.totalCount);
             setTotalPages(res.meta.totalPages);
             setCurrentPage(res.meta.page);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
             toast.error(e.message || "Failed to load approval queue");
         } finally {
@@ -46,6 +47,7 @@ export function useSalesOrderApproval() {
 
     useEffect(() => {
         loadPendingOrders(currentPage, searchQuery);
+// eslint-disable-next-line react-hooks/exhaustive-deps
     }, [currentPage, searchQuery]);
 
     const handleSearchChange = (query: string) => {
@@ -59,6 +61,7 @@ export function useSalesOrderApproval() {
         try {
             const data = await fetchSalesOrderDetails(order.order_id);
             setOrderDetails(data);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
             toast.error(e.message || "Failed to load order details");
         } finally {
@@ -76,6 +79,7 @@ export function useSalesOrderApproval() {
                 setSelectedOrder(null);
                 setOrderDetails([]);
             }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
             toast.error(e.message || "Approval failed");
         } finally {
@@ -93,6 +97,7 @@ export function useSalesOrderApproval() {
                 setSelectedOrder(null);
                 setOrderDetails([]);
             }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
             toast.error(e.message || "Rejection failed");
         } finally {

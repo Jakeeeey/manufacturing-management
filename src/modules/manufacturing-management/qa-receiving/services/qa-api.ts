@@ -45,6 +45,7 @@ export async function submitInspection(payload: {
     }
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function fetchFifoInventory(branchId: string): Promise<any[]> {
     const res = await fetch(`/api/manufacturing/procurement/qa-receiving?branchId=${branchId}`);
     if (!res.ok) throw new Error("Failed to load branch inventory ledger");

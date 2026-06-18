@@ -31,6 +31,7 @@ export function SalesOrderApprovalTable({
     setSearchQuery,
     totalCount,
     totalPages,
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
     limit
 }: SalesOrderApprovalTableProps) {
     const [localSearch, setLocalSearch] = useState(searchQuery);

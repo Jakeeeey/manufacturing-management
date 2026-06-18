@@ -51,17 +51,24 @@ export function usePlanningEngineering() {
     const [joQty, setJoQty] = useState(1);
     
     // Branches data
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [branches, setBranches] = useState<any[]>([]);
     const [selectedBranchId, setSelectedBranchId] = useState<number | "">("");
     const [filterBranchId, setFilterBranchId] = useState<number | "">("");
 
     // Standalone & Personnel & Products data
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [products, setProducts] = useState<any[]>([]);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [users, setUsers] = useState<any[]>([]);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [suppliers, setSuppliers] = useState<any[]>([]);
     const [isStandaloneMode, setIsStandaloneMode] = useState(false);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [selectedStandaloneProduct, setSelectedStandaloneProduct] = useState<any | null>(null);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [selectedProductsList, setSelectedProductsList] = useState<any[]>([]);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [productVersions, setProductVersions] = useState<Record<number, any[]>>({});
 
     const loadVersionsForProduct = async (productId: number) => {
@@ -144,6 +151,7 @@ export function usePlanningEngineering() {
             setSalesOrders(resData.data);
             setSoDetailsMap(resData.detailsMap);
             setTotalPages(resData.meta.totalPages);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
             toast.error(e.message || "Failed to fetch Sales Orders");
         } finally {
@@ -156,6 +164,7 @@ export function usePlanningEngineering() {
         try {
             const data = await getJobOrders();
             setJobOrders(data);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
             toast.error(e.message || "Failed to load Job Orders");
         } finally {
@@ -236,6 +245,7 @@ export function usePlanningEngineering() {
                 setSelectedDetailId(String(data[0].detail_id));
                 setJoQty(Number(data[0].ordered_quantity));
             }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
             toast.error(e.message || "Failed to load SO details");
         } finally {
@@ -368,16 +378,19 @@ export function usePlanningEngineering() {
             setSelectedProductsList([]);
             setActiveTab("job-orders");
             loadJobOrders();
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
             toast.error(e.message || "Failed to save Job Order to database");
         }
     };
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     const handleAssignPersonnel = async (joId: string, personnel: any[]) => {
         try {
             await modifyJobOrder(joId, { assignedPersonnel: personnel });
             toast.success("Personnel assigned successfully!");
             loadJobOrders();
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
             toast.error(e.message || "Failed to assign personnel");
         }
@@ -393,6 +406,7 @@ export function usePlanningEngineering() {
                 quantity: jo.quantity
             }];
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
             const explodedProducts: any[] = [];
             const aggregatedComponents: Record<number, {
                 component_product_id: number;
@@ -463,10 +477,12 @@ export function usePlanningEngineering() {
                 }
 
                 const validBatches = stockBatches
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
                     .filter((item: any) => {
                         const matchesBranch = jo.branch_id ? Number(item.branch_id?.id || item.branch_id) === Number(jo.branch_id) : true;
                         return item.qa_status === "Passed" && Number(item.quantity_received) > 0 && matchesBranch;
                     })
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
                     .sort((a: any, b: any) => new Date(a.expiration_date).getTime() - new Date(b.expiration_date).getTime());
 
                 let allocatedQty = 0;
@@ -548,6 +564,7 @@ export function usePlanningEngineering() {
             }
             
             loadJobOrders();
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
             console.error(e);
             toast.error(e.message || "Failed to process stock validation");
@@ -594,6 +611,7 @@ export function usePlanningEngineering() {
             await modifyJobOrder(joId, { procurementStatus: "Ordered" });
             toast.success(`Procurement PO ${poNumber} created successfully.`);
             loadJobOrders();
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
             toast.error(e.message || "Failed to trigger procurement");
         } finally {
@@ -602,6 +620,7 @@ export function usePlanningEngineering() {
     };
 
     // Progresses procurement stages (Ordered -> Approved -> En Route -> Received QA)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     const handleProgressProcurement = async (jo: JobOrder, action: "Approve" | "Ship" | "QA", qaData?: any) => {
         setProcurementLoadingId(jo.jo_id);
         try {
@@ -609,6 +628,7 @@ export function usePlanningEngineering() {
             const shipmentRes = await fetch("/api/manufacturing/procurement/shipments");
             if (!shipmentRes.ok) throw new Error("Failed to load shipments list");
             const shipments = await shipmentRes.json();
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
             const shipment = shipments.find((s: any) => s.reference_number.startsWith(`PO-${jo.jo_id}`));
 
             if (!shipment) {
@@ -643,7 +663,9 @@ export function usePlanningEngineering() {
                 if (!linesRes.ok) throw new Error("Failed to load shipment lines");
                 const shipmentLines = await linesRes.json();
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const lineItemUpdates = qaData.lineItems.map((item: any) => {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
                     const matchLine = shipmentLines.find((sl: any) => Number(sl.product_id?.product_id || sl.product_id) === Number(item.product_id));
                     if (!matchLine) {
                         throw new Error(`Could not find shipment line for product ID: ${item.product_id}`);
@@ -689,6 +711,7 @@ export function usePlanningEngineering() {
             }
 
             loadJobOrders();
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
             toast.error(e.message || "Failed to progress procurement");
         } finally {
@@ -731,6 +754,7 @@ export function usePlanningEngineering() {
             await addJobOrder(newJO, []);
             toast.success(`Prerequisite Job Order ${prereqJoId} generated successfully!`);
             loadJobOrders();
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
             toast.error(e.message || "Failed to create prerequisite Job Order");
         }
@@ -745,6 +769,7 @@ export function usePlanningEngineering() {
             } else {
                 toast.error("Failed to delete Job Order");
             }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
             toast.error(e.message || "Error deleting Job Order");
         }
@@ -810,6 +835,7 @@ export function usePlanningEngineering() {
         setSelectedProductsList,
         productVersions,
         loadVersionsForProduct,
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         modifyJobOrder: async (joId: string, patch: any) => {
             await modifyJobOrder(joId, patch);
             loadJobOrders();

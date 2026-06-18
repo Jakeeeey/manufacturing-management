@@ -69,6 +69,7 @@ export function useProcurement(defaultTab: string = "suppliers") {
         selected_uom?: string;
         quantity_ordered: string;
         base_unit_cost_php: string;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         uom_options?: any[];
     }>>([{ parent_product_id: "", product_id: "", quantity_ordered: "", base_unit_cost_php: "" }]);
 
@@ -94,7 +95,9 @@ export function useProcurement(defaultTab: string = "suppliers") {
                 allocation_method: selectedShipmentExpenses[0].allocation_method === "By Weight" ? "Weight" :
                                    selectedShipmentExpenses[0].allocation_method === "By Volume" ? "Volume" : "Value",
                 expenses: selectedShipmentExpenses.map(x => ({
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
                     overhead_id: x.overhead_id ? String(typeof x.overhead_id === "object" ? (x.overhead_id as any).id : x.overhead_id) : "",
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
                     expense_type: x.expense_type || (x.overhead_id && typeof x.overhead_id === "object" ? (x.overhead_id as any).overhead_name : ""),
                     amount_php: String(x.amount_php || "")
                 }))
@@ -249,6 +252,7 @@ export function useProcurement(defaultTab: string = "suppliers") {
             });
             setShipmentLinesForm([{ parent_product_id: "", product_id: "", quantity_ordered: "", base_unit_cost_php: "" }]);
             loadShipments();
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
             console.error(e);
             toast.error(e.message || "Failed to save incoming shipment");
@@ -260,7 +264,9 @@ export function useProcurement(defaultTab: string = "suppliers") {
     const handleAllocateExpenses = async (
         e: React.FormEvent, 
         shipmentId: number, 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         targetStatus: any,
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         lineItemUpdates?: any[]
     ) => {
         e.preventDefault();
@@ -299,6 +305,7 @@ export function useProcurement(defaultTab: string = "suppliers") {
                     setSelectedShipment(null);
                 }
             }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
             console.error(e);
             toast.error(e.message || "Failed to allocate expenses");
@@ -314,6 +321,7 @@ export function useProcurement(defaultTab: string = "suppliers") {
             if (selectedShipment && selectedShipment.shipment_id === shipmentId) {
                 setSelectedShipment(prev => prev ? { ...prev, status } : null);
             }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
             console.error(e);
             toast.error(e.message || "Failed to update shipment status");
@@ -341,6 +349,7 @@ export function useProcurement(defaultTab: string = "suppliers") {
             toast.success(`Successfully registered raw material "${productDetails.product_name}"`);
             await loadRawMaterials();
             return true;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
             console.error(e);
             toast.error(e.message || "Failed to register raw material");

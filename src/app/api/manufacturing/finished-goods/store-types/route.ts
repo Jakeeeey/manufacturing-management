@@ -6,9 +6,9 @@ export async function GET() {
     try {
         const storeTypes = await fetchStoreTypes();
         return NextResponse.json(storeTypes);
-    } catch (e: any) {
+    } catch (e) {
         console.error("API Error fetching store types:", e);
-        return NextResponse.json({ error: e.message || "Failed to fetch store types" }, { status: 500 });
+        return NextResponse.json({ error: (e as { message?: string }).message || "Failed to fetch store types" }, { status: 500 });
     }
 }
 
@@ -51,8 +51,8 @@ export async function POST(request: Request) {
 
         const newStoreType = await createStoreType(body.store_type.trim(), encoderId);
         return NextResponse.json(newStoreType);
-    } catch (e: any) {
+    } catch (e) {
         console.error("API Error creating store type:", e);
-        return NextResponse.json({ error: e.message || "Failed to create store type" }, { status: 500 });
+        return NextResponse.json({ error: (e as { message?: string }).message || "Failed to create store type" }, { status: 500 });
     }
 }

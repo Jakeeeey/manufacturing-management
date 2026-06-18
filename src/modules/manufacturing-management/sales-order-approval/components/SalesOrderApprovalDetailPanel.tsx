@@ -125,7 +125,7 @@ export function SalesOrderApprovalDetailPanel({
                     <div className="space-y-0.5 col-span-2 pt-2.5 border-t border-dashed mt-1">
                         <span className="text-muted-foreground block text-[10px] font-bold uppercase tracking-wider">Remarks / Notes</span>
                         <p className="text-[11px] text-muted-foreground leading-relaxed italic">
-                            "{selectedOrder.remarks}"
+                            &ldquo;{selectedOrder.remarks}&rdquo;
                         </p>
                     </div>
                 )}

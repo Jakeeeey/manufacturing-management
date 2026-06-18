@@ -44,6 +44,7 @@ export function useUOMConversions() {
             const data = await res.json();
             if (Array.isArray(data) && data.length > 0) {
                 // Map fields from directus schema to frontend schema
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const mapped: DensityFactor[] = data.map((d: any) => ({
                     id: String(d.id),
                     name: d.name,

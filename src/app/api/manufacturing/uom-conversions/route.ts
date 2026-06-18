@@ -5,9 +5,9 @@ export async function GET() {
     try {
         const factors = await fetchDensityFactors();
         return NextResponse.json(factors);
-    } catch (e: any) {
+    } catch (e) {
         console.error("API Error fetching density factors:", e);
-        return NextResponse.json({ error: e.message || "Failed to fetch density factors" }, { status: 500 });
+        return NextResponse.json({ error: (e as { message?: string }).message || "Failed to fetch density factors" }, { status: 500 });
     }
 }
 
@@ -16,9 +16,9 @@ export async function POST(req: NextRequest) {
         const body = await req.json();
         const created = await createDensityFactor(body);
         return NextResponse.json(created);
-    } catch (e: any) {
+    } catch (e) {
         console.error("API Error creating density factor:", e);
-        return NextResponse.json({ error: e.message || "Failed to create density factor" }, { status: 500 });
+        return NextResponse.json({ error: (e as { message?: string }).message || "Failed to create density factor" }, { status: 500 });
     }
 }
 
@@ -31,8 +31,8 @@ export async function DELETE(req: NextRequest) {
         }
         const success = await deleteDensityFactor(id);
         return NextResponse.json({ success });
-    } catch (e: any) {
+    } catch (e) {
         console.error("API Error deleting density factor:", e);
-        return NextResponse.json({ error: e.message || "Failed to delete density factor" }, { status: 500 });
+        return NextResponse.json({ error: (e as { message?: string }).message || "Failed to delete density factor" }, { status: 500 });
     }
 }

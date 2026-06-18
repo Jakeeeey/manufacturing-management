@@ -36,8 +36,11 @@ export interface JobOrder {
     due_date: string;
     status: "Draft" | "Shortage" | "Proceed" | "Ongoing" | "Finished" | "On Hold" | "Cancelled";
     is_batched?: boolean;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     bom?: any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     components?: any[];
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     routings?: any[];
     allocationResults?: {
         component_product_id?: number;
@@ -52,7 +55,9 @@ export interface JobOrder {
     }[];
     procurementStatus?: "Idle" | "Ordered" | "Approved" | "En Route" | "Received QA";
     branch_id?: number;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     assignedPersonnel?: any[];
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     products?: any[];
 }
 

@@ -29,6 +29,7 @@ export async function fetchProducts(search?: string, limit: number = 100): Promi
     // Map Directus model to local Product interface
     return data.map((p: BFFCatalogProduct) => {
         const parentId = p.parent_id && typeof p.parent_id === "object"
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
             ? Number((p.parent_id as any).product_id)
             : (p.parent_id ? Number(p.parent_id) : null);
             

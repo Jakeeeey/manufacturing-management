@@ -18,7 +18,17 @@ export const dynamic = "force-dynamic";
 
 const COOKIE_NAME = "vos_access_token";
 
-function decodeJwtPayload(token: string): Record<string, any> | null {
+interface DecodedToken {
+    Firstname?: string;
+    FirstName?: string;
+    first_name?: string;
+    LastName?: string;
+    last_name?: string;
+    email?: string;
+    [key: string]: unknown;
+}
+
+function decodeJwtPayload(token: string): DecodedToken | null {
     try {
         const parts = token.split(".");
         if (parts.length < 2) return null;

@@ -78,8 +78,8 @@ export async function POST(request: Request) {
         }
 
         return NextResponse.json({ success: true, productId });
-    } catch (e: any) {
+    } catch (e) {
         console.error("API Error registering raw material:", e);
-        return NextResponse.json({ error: e.message || "Failed to register raw material" }, { status: 500 });
+        return NextResponse.json({ error: (e as { message?: string }).message || "Failed to register raw material" }, { status: 500 });
     }
 }

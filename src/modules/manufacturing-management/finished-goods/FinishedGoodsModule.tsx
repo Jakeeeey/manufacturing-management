@@ -386,6 +386,7 @@ export default function FinishedGoodsModule() {
         return { roots, childrenMap };
     }, [products, searchQuery]);
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
     const existingRoutingNames = useMemo(() => {
         const names = new Set<string>();
         products.forEach(p => {

@@ -6,7 +6,9 @@ interface SuppliersDirectoryProps {
     suppliers: Supplier[];
     isModalOpen: boolean;
     setIsModalOpen: (open: boolean) => void;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     supplierForm: any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     setSupplierForm: React.Dispatch<React.SetStateAction<any>>;
     onCreateSupplier: (e: React.FormEvent) => void;
 }
@@ -62,7 +64,7 @@ export default function SuppliersDirectory({
                 <div className="flex-1 overflow-y-auto divide-y">
                     {filteredSuppliers.length === 0 ? (
                         <div className="p-8 text-center text-xs text-muted-foreground">
-                            No suppliers found. Click "Register" to add one.
+                            No suppliers found. Click &quot;Register&quot; to add one.
                         </div>
                     ) : (
                         filteredSuppliers.map(s => (

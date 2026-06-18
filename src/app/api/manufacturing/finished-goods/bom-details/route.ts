@@ -130,7 +130,7 @@ export async function GET(request: Request) {
     } catch (e) {
         console.error("API Error fetching BOM details:", e);
         const error = e instanceof Error ? e : new Error(String(e));
-        return NextResponse.json({ error: error.message || "Failed to fetch BOM details" }, { status: 500 });
+        return NextResponse.json({ error: (error as { message?: string }).message || "Failed to fetch BOM details" }, { status: 500 });
     }
 }
 
@@ -216,6 +216,6 @@ export async function POST(request: Request) {
     } catch (e) {
         console.error("API Error saving BOM details:", e);
         const error = e instanceof Error ? e : new Error(String(e));
-        return NextResponse.json({ error: error.message || "Failed to save BOM details" }, { status: 500 });
+        return NextResponse.json({ error: (error as { message?: string }).message || "Failed to save BOM details" }, { status: 500 });
     }
 }

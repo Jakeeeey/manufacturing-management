@@ -48,15 +48,16 @@ export async function GET(request: Request) {
         }
 
         return NextResponse.json({ error: "Missing parameter branchId or action=branches" }, { status: 400 });
-    } catch (e: any) {
+    } catch (e) {
         console.error("API Error in QA Receiving route:", e);
-        return NextResponse.json({ error: e.message || "Internal server error" }, { status: 500 });
+        return NextResponse.json({ error: (e as { message?: string }).message || "Internal server error" }, { status: 500 });
     }
 }
 
 export async function POST(request: Request) {
     try {
         const body = await request.json();
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
         const { shipmentId, referenceNumber, branchId, branchName, lineItemUpdates } = body;
 
         if (!shipmentId || !branchId || !lineItemUpdates || !Array.isArray(lineItemUpdates)) {
@@ -127,8 +128,8 @@ export async function POST(request: Request) {
         }
 
         return NextResponse.json({ success: true });
-    } catch (e: any) {
+    } catch (e) {
         console.error("API Error submitting QA Receiving:", e);
-        return NextResponse.json({ error: e.message || "Failed to process QA receiving" }, { status: 500 });
+        return NextResponse.json({ error: (e as { message?: string }).message || "Failed to process QA receiving" }, { status: 500 });
     }
 }

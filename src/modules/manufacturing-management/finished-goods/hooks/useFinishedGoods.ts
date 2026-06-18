@@ -160,6 +160,7 @@ export function useFinishedGoods(initialTab: string = "details") {
                 const finishedGoods = data.filter((p: BFFCatalogProduct) => !!p.has_versions);
                 const mapped: Product[] = finishedGoods.map((p: BFFCatalogProduct) => {
                     const parentId = p.parent_id && typeof p.parent_id === "object"
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
                         ? Number((p.parent_id as any).product_id)
                         : (p.parent_id ? Number(p.parent_id) : null);
                     return {
@@ -404,6 +405,7 @@ export function useFinishedGoods(initialTab: string = "details") {
                 setAllCatalogProducts(dataList);
                   const list: Product[] = dataList.map((p: BFFCatalogProduct) => {
                      const parentId = p.parent_id && typeof p.parent_id === "object"
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
                          ? Number((p.parent_id as any).product_id)
                          : (p.parent_id ? Number(p.parent_id) : null);
                      return {

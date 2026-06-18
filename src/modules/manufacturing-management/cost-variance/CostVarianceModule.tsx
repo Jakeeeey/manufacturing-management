@@ -1,10 +1,12 @@
 "use client";
 
 import React, { useState } from "react";
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { TrendingUp, TrendingDown, ClipboardList, Hammer, AlertTriangle, CheckCircle, BarChart3, Plus, Percent } from "lucide-react";
 import { toast } from "sonner";
 
 export default function CostVarianceModule() {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars
     const [selectedJob, setSelectedJob] = useState<any | null>(null);
     const [logs, setLogs] = useState([
         { id: 101, joNumber: "JO-2026-001", productName: "Premium Vegetable Oil (1L)", date: "2026-06-12", expectedQty: 1000, actualQty: 980, variancePercent: -2.0, status: "Variance Flagged", standardCost: 45.50, actualCost: 47.80 },

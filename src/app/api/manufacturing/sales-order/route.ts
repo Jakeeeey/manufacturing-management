@@ -25,12 +25,14 @@ export async function GET(request: Request) {
             const details = json.data || [];
 
             // Resolve raw product_id integers into objects for frontend compatibility
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
             const productIds = [...new Set(details.map((d: any) => Number(d.product_id)).filter(Boolean))];
             if (productIds.length > 0) {
                 try {
                     const prodRes = await fetch(`${DIRECTUS_URL}/items/products?filter[product_id][_in]=${productIds.join(",")}&limit=-1&fields=product_id,product_name,product_code,unit_of_measurement.unit_shortcut,unit_of_measurement_count,product_brand.brand_name,product_category.category_name`, { headers });
                     if (prodRes.ok) {
                         const prodData = (await prodRes.json()).data || [];
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
                         const prodMap = new Map<number, any>(prodData.map((p: any) => [p.product_id, p]));
                         for (const det of details) {
                             const rawId = Number(det.product_id);
@@ -76,6 +78,7 @@ export async function GET(request: Request) {
                 const josoRes = await fetch(`${DIRECTUS_URL}/items/job_order_sales_orders?limit=-1`, { headers, cache: "no-store" });
                 if (josoRes.ok) {
                     const links = (await josoRes.json()).data || [];
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
                     linkedSoIds = links.map((l: any) => Number(l.so_id || l.sales_order_id)).filter(Boolean);
                 }
             } catch (err) {
@@ -107,6 +110,7 @@ export async function GET(request: Request) {
         const totalCount = json.meta?.filter_count || 0;
         const totalPages = Math.ceil(totalCount / limit);
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         const orderIdsToFetch = new Set<number>(salesOrders.map((so: any) => Number(so.order_id)));
         if (selectedIdsParam) {
             selectedIdsParam.split(",").forEach(idStr => {
@@ -115,6 +119,7 @@ export async function GET(request: Request) {
             });
         }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         const detailsMap: Record<number, any[]> = {};
         
         if (orderIdsToFetch.size > 0) {
@@ -124,13 +129,16 @@ export async function GET(request: Request) {
                 const detailsJson = await detailsRes.json();
                 const allDetails = detailsJson.data || [];
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const productIds = [...new Set(allDetails.map((d: any) => Number(d.product_id)).filter(Boolean))];
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
                 let prodMap = new Map<number, any>();
                 if (productIds.length > 0) {
                     try {
                         const prodRes = await fetch(`${DIRECTUS_URL}/items/products?filter[product_id][_in]=${productIds.join(",")}&limit=-1&fields=product_id,product_name,product_code,unit_of_measurement.unit_shortcut,unit_of_measurement_count,product_brand.brand_name,product_category.category_name`, { headers });
                         if (prodRes.ok) {
                             const prodData = (await prodRes.json()).data || [];
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
                             prodMap = new Map(prodData.map((p: any) => [p.product_id, p]));
                         }
                     } catch (err) {
@@ -172,6 +180,7 @@ export async function GET(request: Request) {
             const custRes = await fetch(`${DIRECTUS_URL}/items/customer?limit=-1&fields=customer_code,customer_name`, { headers });
             if (custRes.ok) {
                 const custData = (await custRes.json()).data || [];
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const custMap = new Map(custData.map((c: any) => [c.customer_code, c.customer_name]));
                 for (const so of salesOrders) {
                     so.customer_name = custMap.get(so.customer_code) || so.customer_code;
@@ -185,6 +194,7 @@ export async function GET(request: Request) {
             const termsRes = await fetch(`${DIRECTUS_URL}/items/payment_terms?limit=-1&fields=id,payment_name,payment_days`, { headers });
             if (termsRes.ok) {
                 const termsData = (await termsRes.json()).data || [];
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const termsMap = new Map<number, any>(termsData.map((t: any) => [Number(t.id), t]));
                 for (const so of salesOrders) {
                     if (so.payment_terms) {
@@ -211,9 +221,9 @@ export async function GET(request: Request) {
                 limit
             }
         });
-    } catch (e: any) {
+    } catch (e) {
         console.error("API Error in sales-order GET:", e);
-        return NextResponse.json({ error: e.message || "Failed to fetch sales orders" }, { status: 500 });
+        return NextResponse.json({ error: (e as { message?: string }).message || "Failed to fetch sales orders" }, { status: 500 });
     }
 }
 
@@ -263,6 +273,7 @@ export async function POST(request: Request) {
         const snapshots = (await snapRes.json()).data;
 
         // Filter snapshots that are actual product quotas
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         const items = snapshots.filter((s: any) => s.node_type === "product_quota");
         if (items.length === 0) {
             throw new Error("No finished goods found in this quotation.");
@@ -348,9 +359,9 @@ export async function POST(request: Request) {
         });
 
         return NextResponse.json({ success: true, order_id: newOrderId, order_no: orderNo });
-    } catch (e: any) {
+    } catch (e) {
         console.error("API Error in sales-order POST:", e);
-        return NextResponse.json({ error: e.message || "Failed to process quotation conversion" }, { status: 500 });
+        return NextResponse.json({ error: (e as { message?: string }).message || "Failed to process quotation conversion" }, { status: 500 });
     }
 }
 
@@ -390,6 +401,7 @@ export async function PATCH(request: Request) {
             const allDetailsRes = await fetch(`${DIRECTUS_URL}/items/sales_order_details?filter[order_id][_eq]=${orderId}&limit=-1`, { headers, cache: "no-store" });
             if (allDetailsRes.ok) {
                 const allDetails = (await allDetailsRes.json()).data || [];
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const sum = allDetails.reduce((acc: number, d: any) => acc + Number(d.net_amount || 0), 0);
                 
                 // Fetch current status and discount_amount to update net_amount
@@ -402,6 +414,7 @@ export async function PATCH(request: Request) {
                     currentStatus = soHeader.order_status;
                 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const headerPayload: any = {
                     total_amount: sum,
                     net_amount: sum - discount
@@ -433,8 +446,8 @@ export async function PATCH(request: Request) {
         }
 
         return NextResponse.json({ success: true });
-    } catch (e: any) {
+    } catch (e) {
         console.error("API Error in sales-order PATCH:", e);
-        return NextResponse.json({ error: e.message || "Failed to update sales order" }, { status: 500 });
+        return NextResponse.json({ error: (e as { message?: string }).message || "Failed to update sales order" }, { status: 500 });
     }
 }

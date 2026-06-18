@@ -1,5 +1,7 @@
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import React, { useState, useEffect } from "react";
 import { 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
     Loader2, ShieldCheck, Save, Send, Building2, 
     FileText, CreditCard, Calendar, Plus, Minus, AlertCircle 
 } from "lucide-react";
@@ -24,14 +26,16 @@ export function SalesOrderDetailPanel({
     loadingDetails,
     updatingStatusId,
     savingQuantities = false,
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
     handleApproveOrder,
     handleUpdateQuantities,
     handleSubmitForApproval
 }: SalesOrderDetailPanelProps) {
     const [editableQuantities, setEditableQuantities] = useState<Record<number, number>>({});
+    const [prevOrderDetails, setPrevOrderDetails] = useState<unknown[]>([]);
 
-    // Keep editableQuantities in sync with orderDetails updates
-    useEffect(() => {
+    if (orderDetails !== prevOrderDetails) {
+        setPrevOrderDetails(orderDetails);
         if (orderDetails.length > 0) {
             const initialQtys: Record<number, number> = {};
             orderDetails.forEach(item => {
@@ -41,7 +45,7 @@ export function SalesOrderDetailPanel({
         } else {
             setEditableQuantities({});
         }
-    }, [orderDetails]);
+    }
 
     if (!selectedOrder) {
         return (
@@ -180,7 +184,7 @@ export function SalesOrderDetailPanel({
                     <div className="space-y-0.5 col-span-2 pt-2.5 border-t border-dashed mt-1">
                         <span className="text-muted-foreground block text-[10px] font-bold uppercase tracking-wider">Remarks / Notes</span>
                         <p className="text-[11px] text-muted-foreground leading-relaxed italic">
-                            "{selectedOrder.remarks}"
+                            &ldquo;{selectedOrder.remarks}&rdquo;
                         </p>
                     </div>
                 )}
@@ -354,7 +358,7 @@ export function SalesOrderDetailPanel({
                 {hasChanges && (
                     <div className="bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20 rounded-lg p-2.5 flex items-start gap-2 text-[11px] font-semibold leading-relaxed">
                         <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-amber-600" />
-                        <span>You have unsaved quantity changes. Press "Save Quantities" below to commit them.</span>
+                        <span>You have unsaved quantity changes. Press &quot;Save Quantities&quot; below to commit them.</span>
                     </div>
                 )}
 

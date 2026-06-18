@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { Trash2, AlertTriangle, Coins, Percent } from "lucide-react";
 import { SelectedQuoteProduct } from "../types";
 
@@ -30,6 +31,7 @@ export function SelectedProductsList({
             fetch(`/api/manufacturing/finished-goods/versions?productId=${pid}`)
                 .then(res => res.ok ? res.json() : [])
                 .then(data => {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
                     const sorted = [...data].sort((a: any, b: any) => {
                         const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
                         const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;

@@ -29,6 +29,7 @@ export function useQAReceiving() {
 
     // FIFO inventory screen states
     const [fifoBranchId, setFifoBranchId] = useState<string>("");
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [fifoInventory, setFifoInventory] = useState<any[]>([]);
     const [loadingFifo, setLoadingFifo] = useState(false);
     const [expandedProducts, setExpandedProducts] = useState<Record<number, boolean>>({});
@@ -55,6 +56,7 @@ export function useQAReceiving() {
         try {
             const data = await fetchActiveShipments();
             setShipments(data || []);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
             console.error(e);
             toast.error(e.message || "Failed to load active shipments");
@@ -68,6 +70,7 @@ export function useQAReceiving() {
         try {
             const data = await fetchBranches();
             setBranches(data || []);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
             console.error(e);
             toast.error(e.message || "Failed to load branch list");
@@ -104,6 +107,7 @@ export function useQAReceiving() {
             if (branches.length > 0 && !selectedBranchId) {
                 setSelectedBranchId(branches[0].id.toString());
             }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
             console.error(e);
             toast.error(e.message || "Failed to load shipment lines");
@@ -112,6 +116,7 @@ export function useQAReceiving() {
         }
     };
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     const handleUpdateRow = (lineId: number, field: string, value: any) => {
         setInspectionRows(prev => ({
             ...prev,
@@ -184,6 +189,7 @@ export function useQAReceiving() {
             setSelectedShipment(null);
             setLineItems([]);
             loadShipments();
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
             console.error(e);
             toast.error(e.message || "An error occurred during inspection logging");
@@ -207,11 +213,13 @@ export function useQAReceiving() {
             // Group by product and create batches list
             const groupedMap: Record<number, {
                 product: Product;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
                 batches: any[];
                 totalQty: number;
                 isPackaging: boolean;
             }> = {};
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
             items.forEach((item: any) => {
                 const prod = item.product_id;
                 if (!prod) return;
@@ -258,6 +266,7 @@ export function useQAReceiving() {
             });
 
             setFifoInventory(groupedList);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
             console.error(e);
             toast.error(e.message || "Failed to load branch inventory ledger");

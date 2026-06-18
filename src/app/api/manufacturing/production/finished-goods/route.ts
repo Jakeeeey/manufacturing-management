@@ -35,6 +35,7 @@ function getFallbackData() {
     }
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function saveFallbackData(data: any[]) {
     ensureFallbackFile();
     fs.writeFileSync(FALLBACK_FILE, JSON.stringify(data, null, 2), "utf8");
@@ -63,12 +64,13 @@ export async function GET(request: Request) {
         // Fallback to local file
         const data = getFallbackData();
         if (joId) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
             return NextResponse.json(data.filter((item: any) => item.jo_id === joId));
         }
         return NextResponse.json(data);
-    } catch (e: any) {
+    } catch (e) {
         console.error("API Error in production finished-goods GET:", e);
-        return NextResponse.json({ error: e.message || "Failed to fetch finished goods receipts" }, { status: 500 });
+        return NextResponse.json({ error: (e as { message?: string }).message || "Failed to fetch finished goods receipts" }, { status: 500 });
     }
 }
 
@@ -178,6 +180,7 @@ export async function POST(request: Request) {
                 if (componentsConsumed && Array.isArray(componentsConsumed)) {
                     for (const comp of componentsConsumed) {
                         const compId = Number(comp.component_product_id || comp.product_id);
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
                         const compName = comp.component_name || comp.product_name || `Component ${compId}`;
                         const compQtyRequired = Number(comp.required || comp.quantity || 0);
 
@@ -218,8 +221,8 @@ export async function POST(request: Request) {
         }
 
         return NextResponse.json({ success: true, data: newReceipt });
-    } catch (e: any) {
+    } catch (e) {
         console.error("API Error in production finished-goods POST:", e);
-        return NextResponse.json({ error: e.message || "Failed to create finished goods receipt" }, { status: 500 });
+        return NextResponse.json({ error: (e as { message?: string }).message || "Failed to create finished goods receipt" }, { status: 500 });
     }
 }

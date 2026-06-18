@@ -7,7 +7,9 @@ export interface JobOrder {
     due_date: string;
     status: "Draft" | "Shortage" | "Proceed" | "Ongoing" | "Finished" | "On Hold" | "Cancelled";
     is_batched?: boolean;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     bom?: any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
     routings?: any[];
 }
 

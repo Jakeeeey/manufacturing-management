@@ -4,6 +4,7 @@ import { fetchShipments } from "../services/calendar-api";
 
 export function useCalendarOfSchedule() {
     const [currentDate, setCurrentDate] = useState(new Date());
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
     const [jobOrders, setJobOrders] = useState<JobOrder[]>(() => {
         if (typeof window !== "undefined") {
             const saved = localStorage.getItem("vos_job_orders");

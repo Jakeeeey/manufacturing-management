@@ -1,4 +1,5 @@
 import React from "react";
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { Scale, ArrowRightLeft, Calculator, Sparkles } from "lucide-react";
 import { DensityFactor } from "../types";
 

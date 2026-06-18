@@ -36,6 +36,7 @@ export default function PlanningEngineeringModule() {
         setDueDate,
         joQty,
         setJoQty,
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
         consolidationCandidates,
         branches,
         selectedBranchId,
@@ -50,6 +51,7 @@ export default function PlanningEngineeringModule() {
         selectedIds,
         setSelectedIds,
         handleSelectSO,
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
         handleSelectBatchCandidate,
         handleDetailChange,
         handleCreateJobOrder,

@@ -24,8 +24,8 @@ export async function GET() {
             batches,
             products
         });
-    } catch (e: any) {
+    } catch (e) {
         console.error("[Inventory BFF GET] Error:", e);
-        return NextResponse.json({ error: e.message || "Failed to fetch inventory logs" }, { status: 500 });
+        return NextResponse.json({ error: (e as { message?: string }).message || "Failed to fetch inventory logs" }, { status: 500 });
     }
 }

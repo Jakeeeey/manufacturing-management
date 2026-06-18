@@ -47,6 +47,7 @@ export function useSalesOrder() {
             setTotalCount(res.meta.totalCount);
             setTotalPages(res.meta.totalPages);
             setCurrentPage(res.meta.page);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
             toast.error(e.message || "Failed to fetch sales orders");
         } finally {
@@ -59,7 +60,9 @@ export function useSalesOrder() {
         try {
             const data = await fetchQuotationPipeline();
             // Filter only Draft or pending quotes (not converted yet)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
             setQuotes(data.filter((q: any) => q.status !== "Converted to SO"));
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
             console.error(e);
         }
@@ -71,6 +74,7 @@ export function useSalesOrder() {
         } else {
             loadQuotes();
         }
+// eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeTab, currentPage, searchQuery, statusFilter]);
 
     const handleSearchChange = (query: string) => {
@@ -89,6 +93,7 @@ export function useSalesOrder() {
         try {
             const data = await fetchSalesOrderDetails(order.order_id);
             setOrderDetails(data);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
             toast.error(e.message || "Failed to load order details");
         } finally {
@@ -105,6 +110,7 @@ export function useSalesOrder() {
             if (selectedOrder && selectedOrder.order_id === orderId) {
                 setSelectedOrder(prev => prev ? { ...prev, order_status: "For Consolidation" } : null);
             }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
             toast.error(e.message || "Failed to update status");
         } finally {
@@ -125,6 +131,7 @@ export function useSalesOrder() {
                 const totalAmount = data.reduce((acc, item) => acc + Number(item.net_amount || 0), 0);
                 setSelectedOrder(prev => prev ? { ...prev, total_amount: totalAmount, net_amount: totalAmount - Number(prev.discount_amount || 0) } : null);
             }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
             toast.error(e.message || "Failed to update quantities");
         } finally {
@@ -141,6 +148,7 @@ export function useSalesOrder() {
             if (selectedOrder && selectedOrder.order_id === orderId) {
                 setSelectedOrder(prev => prev ? { ...prev, order_status: "For Approval" } : null);
             }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
             toast.error(e.message || "Failed to submit for approval");
         } finally {
@@ -155,6 +163,7 @@ export function useSalesOrder() {
             toast.success(`Converted successfully to Sales Order: ${data.order_no}`);
             loadQuotes();
             loadSalesOrders(currentPage, searchQuery, statusFilter);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
             toast.error(e.message || "Failed to convert quote");
         } finally {

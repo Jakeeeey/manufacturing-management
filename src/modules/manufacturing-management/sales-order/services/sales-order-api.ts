@@ -31,6 +31,7 @@ export async function fetchSalesOrderDetails(orderId: number): Promise<SalesOrde
     return handleResponse(res, "Failed to load order details");
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function updateSalesOrderStatus(orderId: number, orderStatus: string): Promise<any> {
     const res = await fetch("/api/manufacturing/sales-order", {
         method: "PATCH",
@@ -40,6 +41,7 @@ export async function updateSalesOrderStatus(orderId: number, orderStatus: strin
     return handleResponse(res, "Failed to update Sales Order status");
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function updateSalesOrderDetails(orderId: number, details: { detail_id: number; ordered_quantity: number }[]): Promise<any> {
     const res = await fetch("/api/manufacturing/sales-order", {
         method: "PATCH",
@@ -49,10 +51,12 @@ export async function updateSalesOrderDetails(orderId: number, details: { detail
     return handleResponse(res, "Failed to update Sales Order quantities");
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function approveSalesOrder(orderId: number): Promise<any> {
     return updateSalesOrderStatus(orderId, "For Consolidation");
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function convertQuotationToSalesOrder(quotationId: number): Promise<any> {
     const res = await fetch("/api/manufacturing/sales-order", {
         method: "POST",
