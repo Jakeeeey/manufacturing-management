@@ -1,0 +1,339 @@
+import { useState, useEffect } from "react";
+import { Customer, StoreType } from "../types";
+import { toast } from "sonner";
+
+export function useClients() {
+    const [customers, setCustomers] = useState<Customer[]>([]);
+    const [storeTypes, setStoreTypes] = useState<StoreType[]>([]);
+    const [loading, setLoading] = useState(false);
+    const [searchText, setSearchText] = useState("");
+    const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
+
+    // Modal state
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
+
+    // Form inputs state
+    const [formData, setFormData] = useState({
+        customer_code: "",
+        customer_name: "",
+        customer_tin: "",
+        contact_number: "",
+        customer_email: "",
+        store_name: "",
+        store_type_id: "",
+        province: "",
+        city: "",
+        brgy: "",
+        isActive: true
+    });
+
+    // PSGC address data state
+    const [provinces, setProvinces] = useState<{ code: string; name: string }[]>([]);
+    const [cities, setCities] = useState<{ code: string; name: string; provinceCode: string | boolean }[]>([]);
+    const [barangays, setBarangays] = useState<{ code: string; name: string; cityCode: string }[]>([]);
+    
+    const [selectedProvinceCode, setSelectedProvinceCode] = useState("");
+    const [selectedCityCode, setSelectedCityCode] = useState("");
+
+    // Load customers and store types
+    const loadData = async () => {
+        setLoading(true);
+        try {
+            const [custRes, storeRes] = await Promise.all([
+                fetch("/api/manufacturing/finished-goods/customers?all=true"),
+                fetch("/api/manufacturing/finished-goods/store-types")
+            ]);
+            
+            if (custRes.ok) {
+                const custData = await custRes.json();
+                setCustomers(custData);
+            }
+            if (storeRes.ok) {
+                const storeData = await storeRes.json();
+                setStoreTypes(storeData);
+            }
+        } catch (err) {
+            console.error("Error loading client data:", err);
+            toast.error("Failed to load customer registry");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Load PSGC address references
+    const loadProvincesAndCities = async () => {
+        try {
+            const [provRes, cityRes] = await Promise.all([
+                fetch("/api/psgc/provinces"),
+                fetch("/api/psgc/cities")
+            ]);
+            
+            if (provRes.ok) {
+                const provList = await provRes.json();
+                setProvinces(provList);
+            }
+            if (cityRes.ok) {
+                const cityList = await cityRes.json();
+                setCities(cityList);
+            }
+        } catch (err) {
+            console.error("Error loading PSGC location list:", err);
+        }
+    };
+
+    useEffect(() => {
+        loadData();
+        loadProvincesAndCities();
+    }, []);
+
+    // Load barangays dynamically when city changes
+    useEffect(() => {
+        const loadBarangays = async () => {
+            if (!selectedCityCode) {
+                setBarangays([]);
+                return;
+            }
+            try {
+                const res = await fetch(`/api/psgc/cities/${selectedCityCode}/barangays`);
+                if (res.ok) {
+                    const list: { code: string; name: string; cityCode: string }[] = await res.json();
+                    setBarangays(list);
+                    
+                    // If we are editing, map the barangay name string to the correct code
+                    if (editingCustomer && editingCustomer.brgy) {
+                        const matchedBrgy = list.find((b) => b.name.toLowerCase() === editingCustomer.brgy!.toLowerCase());
+                        if (matchedBrgy) {
+                            setFormData(prev => ({ ...prev, brgy: matchedBrgy.code }));
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error("Error loading barangays:", err);
+            }
+        };
+        loadBarangays();
+    }, [selectedCityCode, editingCustomer]);
+
+    // Handle modal open for create or edit
+    const openCreateModal = () => {
+        setEditingCustomer(null);
+        setFormData({
+            customer_code: "",
+            customer_name: "",
+            customer_tin: "",
+            contact_number: "",
+            customer_email: "",
+            store_name: "",
+            store_type_id: "",
+            province: "",
+            city: "",
+            brgy: "",
+            isActive: true
+        });
+        setSelectedProvinceCode("");
+        setSelectedCityCode("");
+        setIsModalOpen(true);
+    };
+
+    const openEditModal = (c: Customer) => {
+        setEditingCustomer(c);
+        
+        // Find matching province and city codes from strings to bind select menus
+        const matchedProv = provinces.find(p => p.name.toLowerCase() === (c.province || "").toLowerCase());
+        const provCode = matchedProv ? matchedProv.code : "";
+        setSelectedProvinceCode(provCode);
+
+        const matchedCity = cities.find(ct => ct.name.toLowerCase() === (c.city || "").toLowerCase());
+        const ctCode = matchedCity ? matchedCity.code : "";
+        setSelectedCityCode(ctCode);
+
+        // Map store_type_id if it's an object
+        let storeTypeId = "";
+        if (c.store_type_id) {
+            storeTypeId = typeof c.store_type_id === "object" ? String(c.store_type_id.id) : String(c.store_type_id);
+        }
+
+        setFormData({
+            customer_code: c.customer_code,
+            customer_name: c.customer_name,
+            customer_tin: c.customer_tin || "",
+            contact_number: c.contact_number || "",
+            customer_email: c.customer_email || "",
+            store_name: c.store_name || "",
+            store_type_id: storeTypeId,
+            province: c.province || "",
+            city: c.city || "",
+            brgy: c.brgy || "",
+            isActive: c.isActive === 1 || c.isActive === true
+        });
+        setIsModalOpen(true);
+    };
+
+    // Auto-generate customer code based on name
+    const handleCustomerNameChange = (name: string) => {
+        setFormData(prev => {
+            const next = { ...prev, customer_name: name };
+            if (!editingCustomer && name.trim()) {
+                const words = name.trim().toUpperCase().split(/\s+/).slice(0, 3);
+                const prefix = words.map(w => w.replace(/[^A-Z0-9]/g, "").slice(0, 3)).join("-");
+                const random = Math.floor(100 + Math.random() * 900);
+                next.customer_code = `CUST-${prefix}-${random}`;
+            }
+            return next;
+        });
+    };
+
+    // Save customer (Create or Update)
+    const handleSaveCustomer = async (e: React.FormEvent) => {
+        e.preventDefault();
+        
+        if (!formData.customer_code.trim() || !formData.customer_name.trim()) {
+            toast.error("Customer Code and Customer Name are required");
+            return;
+        }
+
+        // Map province and city names from selected codes
+        const provName = provinces.find(p => p.code === selectedProvinceCode)?.name || formData.province;
+        const cityName = cities.find(c => c.code === selectedCityCode)?.name || formData.city;
+        const brgyName = barangays.find(b => b.code === formData.brgy)?.name || formData.brgy;
+
+        const payload = {
+            customer_code: formData.customer_code.trim(),
+            customer_name: formData.customer_name.trim(),
+            customer_tin: formData.customer_tin.trim() || undefined,
+            contact_number: formData.contact_number.trim() || undefined,
+            customer_email: formData.customer_email.trim() || undefined,
+            store_name: formData.store_name.trim() || undefined,
+            store_type_id: formData.store_type_id ? Number(formData.store_type_id) : null,
+            province: provName.trim() || undefined,
+            city: cityName.trim() || undefined,
+            brgy: brgyName.trim() || undefined,
+            isActive: formData.isActive ? 1 : 0
+        };
+
+        try {
+            if (editingCustomer) {
+                // Update
+                const res = await fetch(`/api/manufacturing/finished-goods/customers?id=${editingCustomer.id}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                });
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.error || "Failed to update client account");
+                }
+                toast.success("Client account updated successfully");
+            } else {
+                // Create
+                const res = await fetch("/api/manufacturing/finished-goods/customers", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                });
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.error || "Failed to create client account");
+                }
+                toast.success("Client account registered successfully");
+            }
+            
+            setIsModalOpen(false);
+            loadData();
+        } catch (err) {
+            console.error("Save client error:", err);
+            const message = err instanceof Error ? err.message : "Failed to save client details";
+            toast.error(message);
+        }
+    };
+
+    // Toggle active status directly
+    const handleToggleActive = async (c: Customer) => {
+        const nextActive = c.isActive === 1 || c.isActive === true ? 0 : 1;
+        try {
+            const res = await fetch(`/api/manufacturing/finished-goods/customers?id=${c.id}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ isActive: nextActive })
+            });
+            if (!res.ok) throw new Error();
+            
+            setCustomers(prev =>
+                prev.map(item => (item.id === c.id ? { ...item, isActive: nextActive } : item))
+            );
+            toast.success(`Client account ${nextActive ? "Activated" : "Deactivated"}`);
+        } catch {
+            toast.error("Failed to update status");
+        }
+    };
+
+    // Delete customer (soft delete)
+    const handleDeleteCustomer = async (id: number | string) => {
+        if (!confirm("Are you sure you want to delete this customer account? This will set their status to Inactive and restrict them from new transactions.")) {
+            return;
+        }
+        try {
+            const res = await fetch(`/api/manufacturing/finished-goods/customers?id=${id}`, {
+                method: "DELETE"
+            });
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.error || "Failed to delete client record");
+            }
+            toast.success("Client record deleted successfully");
+            loadData();
+        } catch (err) {
+            console.error("Delete client error:", err);
+            const message = err instanceof Error ? err.message : "Failed to delete client account";
+            toast.error(message);
+        }
+    };
+
+    // Client filtering logic
+    const filteredCustomers = customers.filter(c => {
+        const matchesSearch =
+            c.customer_name.toLowerCase().includes(searchText.toLowerCase()) ||
+            c.customer_code.toLowerCase().includes(searchText.toLowerCase()) ||
+            (c.customer_tin || "").toLowerCase().includes(searchText.toLowerCase()) ||
+            (c.customer_email || "").toLowerCase().includes(searchText.toLowerCase()) ||
+            (c.province || "").toLowerCase().includes(searchText.toLowerCase()) ||
+            (c.city || "").toLowerCase().includes(searchText.toLowerCase()) ||
+            (c.brgy || "").toLowerCase().includes(searchText.toLowerCase());
+
+        const activeBool = c.isActive === 1 || c.isActive === true;
+        if (statusFilter === "active") return matchesSearch && activeBool;
+        if (statusFilter === "inactive") return matchesSearch && !activeBool;
+        return matchesSearch;
+    });
+
+    return {
+        customers: filteredCustomers,
+        storeTypes,
+        setStoreTypes,
+        loading,
+        searchText,
+        setSearchText,
+        statusFilter,
+        setStatusFilter,
+        isModalOpen,
+        setIsModalOpen,
+        editingCustomer,
+        formData,
+        setFormData,
+        provinces,
+        cities,
+        barangays,
+        selectedProvinceCode,
+        setSelectedProvinceCode,
+        selectedCityCode,
+        setSelectedCityCode,
+        openCreateModal,
+        openEditModal,
+        handleCustomerNameChange,
+        handleSaveCustomer,
+        handleToggleActive,
+        handleDeleteCustomer,
+        refresh: loadData
+    };
+}

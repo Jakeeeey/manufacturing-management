@@ -181,6 +181,26 @@ export async function GET(request: Request) {
             console.error("Error joining customers in sales-order route:", err);
         }
 
+        try {
+            const termsRes = await fetch(`${DIRECTUS_URL}/items/payment_terms?limit=-1&fields=id,payment_name,payment_days`, { headers });
+            if (termsRes.ok) {
+                const termsData = (await termsRes.json()).data || [];
+                const termsMap = new Map<number, any>(termsData.map((t: any) => [Number(t.id), t]));
+                for (const so of salesOrders) {
+                    if (so.payment_terms) {
+                        const termId = Number(so.payment_terms);
+                        const matchedTerm = termsMap.get(termId);
+                        if (matchedTerm) {
+                            so.payment_term_name = matchedTerm.payment_name;
+                            so.payment_term_days = matchedTerm.payment_days;
+                        }
+                    }
+                }
+            }
+        } catch (err) {
+            console.error("Error joining payment terms in sales-order route:", err);
+        }
+
         return NextResponse.json({
             data: salesOrders,
             detailsMap,

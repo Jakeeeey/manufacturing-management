@@ -1084,9 +1084,12 @@ export async function saveQuotation(
 /**
  * Fetch all registered customers.
  */
-export async function fetchCustomers(search?: string): Promise<unknown[]> {
+export async function fetchCustomers(search?: string, includeInactive = false): Promise<unknown[]> {
     try {
-        let url = `${DIRECTUS_URL}/items/customer?limit=250&sort=customer_name&filter[isActive][_eq]=true`;
+        let url = `${DIRECTUS_URL}/items/customer?limit=250&sort=customer_name`;
+        if (!includeInactive) {
+            url += `&filter[isActive][_eq]=true`;
+        }
         if (search && search.trim()) {
             url += `&search=${encodeURIComponent(search.trim())}`;
         }
@@ -1137,6 +1140,60 @@ export async function createCustomer(payload: {
         throw e;
     }
 }
+
+/**
+ * Update a customer record.
+ */
+export async function updateCustomer(id: number | string, payload: Partial<{
+    customer_code: string;
+    customer_name: string;
+    customer_tin?: string;
+    contact_number?: string;
+    customer_email?: string;
+    store_name?: string;
+    brgy?: string;
+    city?: string;
+    province?: string;
+    isActive?: number;
+}>): Promise<any> {
+    try {
+        const url = `${DIRECTUS_URL}/items/customer/${id}`;
+        const res = await fetch(url, {
+            method: "PATCH",
+            headers,
+            body: JSON.stringify(payload)
+        });
+        if (!res.ok) {
+            const body = await res.json().catch(() => ({}));
+            const errMsg = body.errors?.[0]?.message || `Directus failed: ${res.status}`;
+            throw new Error(errMsg);
+        }
+        const json = await res.json();
+        return json.data;
+    } catch (e) {
+        console.error("[Manufacturing Directus API] Failed to update customer:", e);
+        throw e;
+    }
+}
+
+/**
+ * Delete a customer record.
+ */
+export async function deleteCustomer(id: number | string): Promise<boolean> {
+    try {
+        const url = `${DIRECTUS_URL}/items/customer/${id}`;
+        const res = await fetch(url, {
+            method: "PATCH",
+            headers,
+            body: JSON.stringify({ isActive: 0 })
+        });
+        return res.ok;
+    } catch (e) {
+        console.error("[Manufacturing Directus API] Failed to soft-delete customer:", e);
+        return false;
+    }
+}
+
 
 /**
  * Fetch all registered store types.
@@ -1867,5 +1924,71 @@ export async function deleteJobOrder(joId: string): Promise<boolean> {
         return false;
     }
 }
+
+/**
+ * Fetch all registered density factors.
+ */
+export async function fetchDensityFactors(): Promise<unknown[]> {
+    try {
+        const url = `${DIRECTUS_URL}/items/density_factors?limit=-1&sort=name&filter[isActive][_neq]=false`;
+        const res = await fetch(url, { headers, cache: "no-store" });
+        if (!res.ok) return [];
+        return (await res.json()).data || [];
+    } catch (e) {
+        console.error("[Manufacturing Directus API] Failed to fetch density factors:", e);
+        return [];
+    }
+}
+
+/**
+ * Create a new density factor.
+ */
+export async function createDensityFactor(payload: {
+    name: string;
+    density: number;
+    description?: string;
+    is_system?: boolean;
+}): Promise<any> {
+    try {
+        const url = `${DIRECTUS_URL}/items/density_factors`;
+        const res = await fetch(url, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+                ...payload,
+                is_system: !!payload.is_system,
+                isActive: true
+            })
+        });
+        if (!res.ok) {
+            const body = await res.json().catch(() => ({}));
+            const errMsg = body.errors?.[0]?.message || `Directus failed: ${res.status}`;
+            throw new Error(errMsg);
+        }
+        return (await res.json()).data;
+    } catch (e) {
+        console.error("[Manufacturing Directus API] Failed to create density factor:", e);
+        throw e;
+    }
+}
+
+/**
+ * Delete a density factor by ID.
+ */
+export async function deleteDensityFactor(id: number | string): Promise<boolean> {
+    try {
+        const url = `${DIRECTUS_URL}/items/density_factors/${id}`;
+        const res = await fetch(url, {
+            method: "PATCH",
+            headers,
+            body: JSON.stringify({ isActive: false })
+        });
+        return res.ok;
+    } catch (e) {
+        console.error("[Manufacturing Directus API] Failed to delete density factor:", e);
+        return false;
+    }
+}
+
 
 

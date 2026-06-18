@@ -10,7 +10,7 @@ export interface Shipment {
     status: string;
     total_php_value: string;
     created_at: string;
-    supplier_id: any;
+    supplier_id: unknown;
     date_received: string;
 }
 
@@ -19,13 +19,13 @@ export interface Product {
     product_name: string;
     product_code: string;
     description: string;
-    unit_of_measurement: any;
+    unit_of_measurement: unknown;
 }
 
 export interface ShipmentLineItem {
     line_id: number;
-    shipment_id: any;
-    product_id: any; // Can be object when queried with fields relation
+    shipment_id: unknown;
+    product_id: Product; // Can be object when queried with fields relation
     quantity_ordered: number;
     quantity_received: number;
     quantity_rejected: number;
@@ -44,4 +44,23 @@ export interface InspectionRow {
     rejectionReason: string;
     qaStatus: string;
     isPackaging: boolean;
+}
+
+export interface FIFOBatch {
+    lot_number: string;
+    expiration_date?: string;
+    reception_date: string;
+    received_qty: number;
+    shipment_ref: string;
+}
+
+export interface FIFOInventoryItem {
+    product: {
+        product_id: number;
+        product_name: string;
+        product_code: string;
+    };
+    isPackaging: boolean;
+    totalQty: number;
+    batches: FIFOBatch[];
 }

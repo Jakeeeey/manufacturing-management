@@ -1,6 +1,5 @@
 import React from "react";
 import { MapPin, AlertTriangle, CheckCircle2 } from "lucide-react";
-import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Shipment, ShipmentLineItem, Branch, InspectionRow } from "../types";
 
 interface ShipmentInspectionFormProps {
@@ -11,7 +10,7 @@ interface ShipmentInspectionFormProps {
     setSelectedBranchId: (val: string) => void;
     inspectionRows: Record<number, InspectionRow>;
     loadingLines: boolean;
-    handleUpdateRow: (lineId: number, field: string, value: any) => void;
+    handleUpdateRow: (lineId: number, field: string, value: string | number | boolean) => void;
     handleSubmitInspection: (e: React.FormEvent) => void;
     onCancel: () => void;
 }
@@ -37,13 +36,16 @@ export default function ShipmentInspectionForm({
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                     <MapPin className="h-3.5 w-3.5 text-primary" />
-                    <SearchableSelect
-                        options={branches.map(b => ({ value: b.id.toString(), label: b.branch_name }))}
+                    <select
                         value={selectedBranchId}
-                        onValueChange={setSelectedBranchId}
-                        placeholder="Receive Branch"
-                        className="w-[200px] text-xs font-semibold"
-                    />
+                        onChange={(e) => setSelectedBranchId(e.target.value)}
+                        className="w-[200px] h-9 rounded-lg border bg-background text-foreground text-xs font-semibold px-3 py-2 outline-none focus:ring-1 focus:ring-primary cursor-pointer transition-all"
+                    >
+                        <option value="">Receive Branch...</option>
+                        {branches.map(b => (
+                            <option key={b.id} value={b.id.toString()}>{b.branch_name}</option>
+                        ))}
+                    </select>
                 </div>
             </div>
 
@@ -62,7 +64,7 @@ export default function ShipmentInspectionForm({
                             isPackaging: false
                         };
 
-                        const prod = line.product_id || { product_name: `Product: ${line.product_id}` };
+                        const prod = line.product_id;
 
                         return (
                             <div key={line.line_id} className="border rounded-xl p-4 bg-muted/5 space-y-3.5 relative">
@@ -137,17 +139,16 @@ export default function ShipmentInspectionForm({
                                 <div className="grid gap-3 grid-cols-1 sm:grid-cols-3 pt-1">
                                     <div className="space-y-1">
                                         <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">QA Status Decision</label>
-                                        <SearchableSelect
-                                            options={[
-                                                { value: "Passed", label: "Passed" },
-                                                { value: "Partially Accepted", label: "Partially Accepted" },
-                                                { value: "Rejected", label: "Rejected" }
-                                            ]}
+                                        <select
                                             value={row.qaStatus}
-                                            onValueChange={val => handleUpdateRow(line.line_id, "qaStatus", val)}
-                                            placeholder="QA Decision"
-                                            className="w-full text-xs font-semibold"
-                                        />
+                                            onChange={(e) => handleUpdateRow(line.line_id, "qaStatus", e.target.value)}
+                                            className="w-full h-9 rounded-lg border bg-background text-foreground text-xs font-semibold px-3 py-2 outline-none focus:ring-1 focus:ring-primary cursor-pointer transition-all"
+                                        >
+                                            <option value="">QA Decision...</option>
+                                            <option value="Passed">Passed</option>
+                                            <option value="Partially Accepted">Partially Accepted</option>
+                                            <option value="Rejected">Rejected</option>
+                                        </select>
                                     </div>
 
                                     <div className="space-y-1 sm:col-span-2">

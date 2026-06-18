@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { fetchCustomers, createCustomer } from "../../directus-api";
+import { fetchCustomers, createCustomer, updateCustomer, deleteCustomer } from "../../directus-api";
 
 export async function GET(request: Request) {
     try {
         const { searchParams } = new URL(request.url);
         const search = searchParams.get("search") || "";
-        const customers = await fetchCustomers(search);
+        const all = searchParams.get("all") === "true";
+        const customers = await fetchCustomers(search, all);
         return NextResponse.json(customers);
     } catch (e) {
         console.error("API Error fetching customers:", e);
@@ -62,5 +63,37 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: (e as Error).message || "Failed to create customer" }, { status: 500 });
     }
 }
+
+export async function PATCH(request: Request) {
+    try {
+        const { searchParams } = new URL(request.url);
+        const id = searchParams.get("id");
+        if (!id) {
+            return NextResponse.json({ error: "Missing required 'id' parameter" }, { status: 400 });
+        }
+        const body = await request.json();
+        const updated = await updateCustomer(id, body);
+        return NextResponse.json(updated);
+    } catch (e: any) {
+        console.error("API Error updating customer:", e);
+        return NextResponse.json({ error: e.message || "Failed to update customer" }, { status: 500 });
+    }
+}
+
+export async function DELETE(request: Request) {
+    try {
+        const { searchParams } = new URL(request.url);
+        const id = searchParams.get("id");
+        if (!id) {
+            return NextResponse.json({ error: "Missing required 'id' parameter" }, { status: 400 });
+        }
+        const success = await deleteCustomer(id);
+        return NextResponse.json({ success });
+    } catch (e: any) {
+        console.error("API Error deleting customer:", e);
+        return NextResponse.json({ error: e.message || "Failed to delete customer" }, { status: 500 });
+    }
+}
+
 
 

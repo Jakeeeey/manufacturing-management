@@ -1,7 +1,9 @@
 export interface SalesOrder {
     order_id: number;
     order_no: string;
+    po_no?: string;
     customer_code: string;
+    customer_name?: string;
     order_date: string;
     order_status: string;
     total_amount: number;
@@ -9,6 +11,12 @@ export interface SalesOrder {
     remarks: string;
     created_date: string;
     discount_amount?: number;
+    delivery_date?: string;
+    due_date?: string;
+    payment_terms?: number;
+    payment_term_name?: string;
+    payment_term_days?: number;
+    salesman_id?: number;
 }
 
 export interface SalesOrderDetail {
@@ -18,7 +26,10 @@ export interface SalesOrderDetail {
         product_id: number;
         product_name: string;
         product_code: string;
-        price_per_unit: number;
+        uom: string;
+        uom_count: number;
+        brand: string;
+        category: string;
     };
     unit_price: number;
     ordered_quantity: number;

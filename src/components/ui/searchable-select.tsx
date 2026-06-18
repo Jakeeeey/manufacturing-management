@@ -66,7 +66,7 @@ export function SearchableSelect({
                             {options.map((opt) => (
                                 <CommandItem
                                     key={opt.value}
-                                    value={opt.label.toLowerCase()}
+                                    value={opt.label} // Use label for searching
                                     onSelect={() => {
                                         // We need to map back to the ID/value since CommandItem uses text content or value prop
                                         // Here we used label as value for search, so we find the option by label and call onValueChange with its value

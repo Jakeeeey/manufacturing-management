@@ -26,7 +26,16 @@ export default function SalesOrderModule() {
         handleConvertQuote,
         handleUpdateQuantities,
         handleSubmitForApproval,
-        refreshData
+        refreshData,
+        currentPage,
+        setCurrentPage,
+        limit,
+        searchQuery,
+        setSearchQuery,
+        statusFilter,
+        setStatusFilter,
+        totalCount,
+        totalPages
     } = useSalesOrder();
  
     return (
@@ -53,7 +62,7 @@ export default function SalesOrderModule() {
                         activeTab === "sales-orders"
                             ? "border-primary text-primary bg-background"
                             : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/30"
-                    }`}
+                     }`}
                 >
                     <DollarSign className="h-4 w-4" /> Active Sales Orders
                 </button>
@@ -63,7 +72,7 @@ export default function SalesOrderModule() {
                         activeTab === "quote-pipeline"
                             ? "border-primary text-primary bg-background"
                             : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/30"
-                    }`}
+                     }`}
                 >
                     <FileText className="h-4 w-4" /> Quotation Pipeline
                 </button>
@@ -83,6 +92,15 @@ export default function SalesOrderModule() {
                             updatingStatusId={updatingStatusId}
                             viewOrderDetails={viewOrderDetails}
                             handleApproveOrder={handleApproveOrder}
+                            currentPage={currentPage}
+                            setCurrentPage={setCurrentPage}
+                            searchQuery={searchQuery}
+                            setSearchQuery={setSearchQuery}
+                            statusFilter={statusFilter}
+                            setStatusFilter={setStatusFilter}
+                            totalCount={totalCount}
+                            totalPages={totalPages}
+                            limit={limit}
                         />
                     ) : (
                         <QuotationPipelineTable

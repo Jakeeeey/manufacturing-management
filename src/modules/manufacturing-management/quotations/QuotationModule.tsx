@@ -92,27 +92,27 @@ export default function QuotationModule() {
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
-                        {/* Left sidebar: quotation header form & product catalog */}
-                        <div className="space-y-5">
-                            <QuotationHeaderForm
-                                quoteNumber={quoteNumber}
-                                setQuoteNumber={setQuoteNumber}
-                                customerSearchText={customerSearchText}
-                                selectedCustomerId={selectedCustomerId}
-                                customers={customers}
-                                setCustomers={setCustomers}
-                                handleSearchCustomers={handleSearchCustomers}
-                                selectCustomer={selectCustomer}
-                                priceTypes={priceTypes}
-                                selectedPriceTypeId={selectedPriceTypeId}
-                                setSelectedPriceTypeId={setSelectedPriceTypeId}
-                                remarks={remarks}
-                                setRemarks={setRemarks}
-                                projectName={projectName}
-                                setProjectName={setProjectName}
-                            />
+                    <QuotationHeaderForm
+                        quoteNumber={quoteNumber}
+                        setQuoteNumber={setQuoteNumber}
+                        customerSearchText={customerSearchText}
+                        selectedCustomerId={selectedCustomerId}
+                        customers={customers}
+                        setCustomers={setCustomers}
+                        handleSearchCustomers={handleSearchCustomers}
+                        selectCustomer={selectCustomer}
+                        priceTypes={priceTypes}
+                        selectedPriceTypeId={selectedPriceTypeId}
+                        setSelectedPriceTypeId={setSelectedPriceTypeId}
+                        remarks={remarks}
+                        setRemarks={setRemarks}
+                        projectName={projectName}
+                        setProjectName={setProjectName}
+                    />
 
+                    <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
+                        {/* Left sidebar: product catalog */}
+                        <div className="lg:col-span-1">
                             <ProductCatalogTable
                                 loadingProducts={loadingProducts}
                                 searchQuery={searchQuery}

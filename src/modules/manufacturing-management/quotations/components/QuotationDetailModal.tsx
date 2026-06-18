@@ -314,7 +314,7 @@ export function QuotationDetailModal({
             {/* Sales Order Required Fields Sub-Form Popup Overlay */}
             {showSOFieldsForm && (
                 <div className="fixed inset-0 bg-[#020617]/75 backdrop-blur-sm flex items-center justify-center z-[60] p-4 animate-in fade-in duration-200">
-                    <div className="bg-[#0f172a] border border-slate-800 rounded-xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col animate-in zoom-in-95 duration-200 text-slate-100">
+                    <div className="bg-[#0f172a] border border-slate-800 rounded-xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200 text-slate-100">
                         {/* Header */}
                         <div className="px-6 py-4 border-b border-slate-800 flex justify-between items-center bg-[#1e293b]/35">
                             <div>
@@ -331,7 +331,7 @@ export function QuotationDetailModal({
                         </div>
 
                         {/* Form Body */}
-                        <form onSubmit={handleConvertToSalesOrder} className="p-6 space-y-4">
+                        <form onSubmit={handleConvertToSalesOrder} className="p-6 space-y-4 flex-1 overflow-y-auto custom-scrollbar">
                             {/* PO Number */}
                             <div>
                                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide block mb-1">

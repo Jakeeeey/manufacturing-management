@@ -25,12 +25,28 @@ export function useSalesOrder() {
     const [updatingStatusId, setUpdatingStatusId] = useState<number | null>(null);
     const [savingQuantities, setSavingQuantities] = useState(false);
 
+    // Pagination, Search, and Status states
+    const [currentPage, setCurrentPage] = useState(1);
+    const [limit, setLimit] = useState(10);
+    const [searchQuery, setSearchQuery] = useState("");
+    const [statusFilter, setStatusFilter] = useState("");
+    const [totalCount, setTotalCount] = useState(0);
+    const [totalPages, setTotalPages] = useState(0);
+
     // Load Sales Orders
-    const loadSalesOrders = async () => {
+    const loadSalesOrders = async (page = currentPage, search = searchQuery, status = statusFilter) => {
         setLoading(true);
         try {
-            const data = await fetchSalesOrders();
-            setSalesOrders(data);
+            const res = await fetchSalesOrders({
+                page,
+                limit,
+                search,
+                status: status === "All" ? "" : status
+            });
+            setSalesOrders(res.data);
+            setTotalCount(res.meta.totalCount);
+            setTotalPages(res.meta.totalPages);
+            setCurrentPage(res.meta.page);
         } catch (e: any) {
             toast.error(e.message || "Failed to fetch sales orders");
         } finally {
@@ -50,9 +66,22 @@ export function useSalesOrder() {
     };
 
     useEffect(() => {
-        loadSalesOrders();
-        loadQuotes();
-    }, [activeTab]);
+        if (activeTab === "sales-orders") {
+            loadSalesOrders(currentPage, searchQuery, statusFilter);
+        } else {
+            loadQuotes();
+        }
+    }, [activeTab, currentPage, searchQuery, statusFilter]);
+
+    const handleSearchChange = (query: string) => {
+        setSearchQuery(query);
+        setCurrentPage(1);
+    };
+
+    const handleStatusChange = (status: string) => {
+        setStatusFilter(status);
+        setCurrentPage(1);
+    };
 
     const viewOrderDetails = async (order: SalesOrder) => {
         setSelectedOrder(order);
@@ -72,7 +101,7 @@ export function useSalesOrder() {
         try {
             await approveSalesOrder(orderId);
             toast.success("Sales Order approved! Ready for Operations scheduling.");
-            loadSalesOrders();
+            loadSalesOrders(currentPage, searchQuery, statusFilter);
             if (selectedOrder && selectedOrder.order_id === orderId) {
                 setSelectedOrder(prev => prev ? { ...prev, order_status: "For Consolidation" } : null);
             }
@@ -88,7 +117,7 @@ export function useSalesOrder() {
         try {
             await updateSalesOrderDetails(orderId, details);
             toast.success("Quantities updated successfully!");
-            loadSalesOrders();
+            loadSalesOrders(currentPage, searchQuery, statusFilter);
             // Refresh details
             const data = await fetchSalesOrderDetails(orderId);
             setOrderDetails(data);
@@ -108,7 +137,7 @@ export function useSalesOrder() {
         try {
             await updateSalesOrderStatus(orderId, "For Approval");
             toast.success("Sales Order submitted for approval!");
-            loadSalesOrders();
+            loadSalesOrders(currentPage, searchQuery, statusFilter);
             if (selectedOrder && selectedOrder.order_id === orderId) {
                 setSelectedOrder(prev => prev ? { ...prev, order_status: "For Approval" } : null);
             }
@@ -125,7 +154,7 @@ export function useSalesOrder() {
             const data = await convertQuotationToSalesOrder(quoteId);
             toast.success(`Converted successfully to Sales Order: ${data.order_no}`);
             loadQuotes();
-            loadSalesOrders();
+            loadSalesOrders(currentPage, searchQuery, statusFilter);
         } catch (e: any) {
             toast.error(e.message || "Failed to convert quote");
         } finally {
@@ -134,7 +163,7 @@ export function useSalesOrder() {
     };
 
     const refreshData = () => {
-        loadSalesOrders();
+        loadSalesOrders(currentPage, searchQuery, statusFilter);
         loadQuotes();
     };
 
@@ -156,6 +185,16 @@ export function useSalesOrder() {
         handleConvertQuote,
         handleUpdateQuantities,
         handleSubmitForApproval,
-        refreshData
+        refreshData,
+        currentPage,
+        setCurrentPage,
+        limit,
+        setLimit,
+        searchQuery,
+        setSearchQuery: handleSearchChange,
+        statusFilter,
+        setStatusFilter: handleStatusChange,
+        totalCount,
+        totalPages
     };
 }

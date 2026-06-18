@@ -1,7 +1,6 @@
 import React from "react";
 import { Search, MapPin, ChevronDown, ChevronUp, Bookmark } from "lucide-react";
-import { SearchableSelect } from "@/components/ui/searchable-select";
-import { Branch } from "../types";
+import { Branch, FIFOInventoryItem, FIFOBatch } from "../types";
 
 interface FIFOInventoryListProps {
     branches: Branch[];
@@ -9,7 +8,7 @@ interface FIFOInventoryListProps {
     loadingFifo: boolean;
     fifoSearch: string;
     setFifoSearch: (val: string) => void;
-    filteredFifoList: any[];
+    filteredFifoList: FIFOInventoryItem[];
     expandedProducts: Record<number, boolean>;
     toggleProductExpand: (prodId: number) => void;
     handleLoadFifoInventory: (branchId: string) => void;
@@ -49,13 +48,16 @@ export default function FIFOInventoryList({
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3.5 border-b pb-4">
                 <div className="flex items-center gap-3 w-full sm:w-auto">
                     <MapPin className="h-4 w-4 text-primary shrink-0" />
-                    <SearchableSelect
-                        options={branches.map(b => ({ value: b.id.toString(), label: b.branch_name }))}
+                    <select
                         value={fifoBranchId}
-                        onValueChange={handleLoadFifoInventory}
-                        placeholder="Select Branch Location"
-                        className="w-full sm:w-64 text-xs font-bold"
-                    />
+                        onChange={(e) => handleLoadFifoInventory(e.target.value)}
+                        className="w-full sm:w-64 h-9 rounded-lg border bg-background text-foreground text-xs font-bold px-3 py-2 outline-none focus:ring-1 focus:ring-primary cursor-pointer transition-all"
+                    >
+                        <option value="">Select Branch Location...</option>
+                        {branches.map(b => (
+                            <option key={b.id} value={b.id.toString()}>{b.branch_name}</option>
+                        ))}
+                    </select>
                 </div>
 
                 <div className="relative w-full sm:w-72">
@@ -135,7 +137,7 @@ export default function FIFOInventoryList({
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                {item.batches.map((batch: any, index: number) => {
+                                                {item.batches.map((batch: FIFOBatch, index: number) => {
                                                     const expStatus = getExpirationStatus(batch.expiration_date);
                                                     return (
                                                         <tr key={index} className="border-b last:border-0 hover:bg-muted/10">
