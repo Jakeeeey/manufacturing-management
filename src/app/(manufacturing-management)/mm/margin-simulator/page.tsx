@@ -11,8 +11,8 @@ import { SidebarTrigger } from "@/components/ui/sidebar";
 import { NavUser } from "@/components/shared/app-sidebar/nav-user";
 import { cookies } from "next/headers";
 
-// ✅ Wire the requirements module
-import RequirementsSpecModule from "@/modules/manufacturing-management/shared/RequirementsSpecModule";
+// ✅ Wire the margin simulator module
+import MarginSimulatorModule from "@/modules/manufacturing-management/margin-simulator/MarginSimulatorModule";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -71,21 +71,12 @@ function buildHeaderUserFromToken(token: string | null | undefined) {
     };
 }
 
-export default async function CatchAllHRMPage(props: { params: Promise<{ slug: string[] }> }) {
-    const { slug } = await props.params;
-    const pathString = slug.join("/");
-    
+export default async function MarginSimulatorPage() {
     // ✅ Next.js 16: cookies() is async
     const cookieStore = await cookies();
     const token = cookieStore.get(COOKIE_NAME)?.value ?? null;
 
     const headerUser = buildHeaderUserFromToken(token);
-
-    // Format breadcrumb text
-    const breadcrumbText = pathString
-        .split("-")
-        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-        .join(" ");
 
     return (
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
@@ -108,7 +99,7 @@ export default async function CatchAllHRMPage(props: { params: Promise<{ slug: s
                                 <BreadcrumbSeparator className="hidden md:block shrink-0" />
                                 <BreadcrumbItem className="min-w-0 overflow-hidden">
                                     <BreadcrumbPage className="truncate max-w-[56vw] sm:max-w-[60vw] md:max-w-none">
-                                        {breadcrumbText}
+                                        Margin Simulator
                                     </BreadcrumbPage>
                                 </BreadcrumbItem>
                             </BreadcrumbList>
@@ -123,7 +114,7 @@ export default async function CatchAllHRMPage(props: { params: Promise<{ slug: s
 
             {/* Content area */}
             <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-4 bg-background">
-                <RequirementsSpecModule slug={pathString} />
+                <MarginSimulatorModule />
             </main>
         </div>
     );

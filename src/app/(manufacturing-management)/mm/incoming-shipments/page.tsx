@@ -10,9 +10,7 @@ import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { NavUser } from "@/components/shared/app-sidebar/nav-user";
 import { cookies } from "next/headers";
-
-// ✅ Wire the requirements module
-import RequirementsSpecModule from "@/modules/manufacturing-management/shared/RequirementsSpecModule";
+import ProcurementModule from "@/modules/manufacturing-management/procurement/ProcurementModule";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -71,21 +69,10 @@ function buildHeaderUserFromToken(token: string | null | undefined) {
     };
 }
 
-export default async function CatchAllHRMPage(props: { params: Promise<{ slug: string[] }> }) {
-    const { slug } = await props.params;
-    const pathString = slug.join("/");
-    
-    // ✅ Next.js 16: cookies() is async
+export default async function IncomingShipmentsPage() {
     const cookieStore = await cookies();
     const token = cookieStore.get(COOKIE_NAME)?.value ?? null;
-
     const headerUser = buildHeaderUserFromToken(token);
-
-    // Format breadcrumb text
-    const breadcrumbText = pathString
-        .split("-")
-        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-        .join(" ");
 
     return (
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
@@ -93,12 +80,7 @@ export default async function CatchAllHRMPage(props: { params: Promise<{ slug: s
             <header className="relative z-10 flex h-14 shrink-0 items-center justify-between border-b shadow-sm bg-background sm:h-16 overflow-hidden">
                 <div className="flex h-full min-w-0 items-center gap-2 px-3 sm:px-4 overflow-hidden">
                     <SidebarTrigger className="-ml-1 shrink-0" />
-
-                    <Separator
-                        orientation="vertical"
-                        className="hidden sm:block mr-2 data-[orientation=vertical]:h-4 shrink-0"
-                    />
-
+                    <Separator orientation="vertical" className="hidden sm:block mr-2 data-[orientation=vertical]:h-4 shrink-0" />
                     <div className="min-w-0 overflow-hidden">
                         <Breadcrumb>
                             <BreadcrumbList className="min-w-0 overflow-hidden">
@@ -107,23 +89,22 @@ export default async function CatchAllHRMPage(props: { params: Promise<{ slug: s
                                 </BreadcrumbItem>
                                 <BreadcrumbSeparator className="hidden md:block shrink-0" />
                                 <BreadcrumbItem className="min-w-0 overflow-hidden">
-                                    <BreadcrumbPage className="truncate max-w-[56vw] sm:max-w-[60vw] md:max-w-none">
-                                        {breadcrumbText}
+                                    <BreadcrumbPage className="truncate max-w-[56vw]">
+                                        Incoming Shipments & PO Logs
                                     </BreadcrumbPage>
                                 </BreadcrumbItem>
                             </BreadcrumbList>
                         </Breadcrumb>
                     </div>
                 </div>
-
                 <div className="flex h-full items-center px-2 sm:px-4 shrink-0 max-w-[48vw] sm:max-w-none overflow-hidden">
                     <NavUser user={headerUser} />
                 </div>
             </header>
 
-            {/* Content area */}
+            {/* Scrollable Content */}
             <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-4 bg-background">
-                <RequirementsSpecModule slug={pathString} />
+                <ProcurementModule initialTab="incoming-shipments" />
             </main>
         </div>
     );

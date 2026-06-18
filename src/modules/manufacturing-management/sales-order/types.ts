@@ -1,0 +1,51 @@
+export interface SalesOrder {
+    order_id: number;
+    order_no: string;
+    po_no?: string;
+    customer_code: string;
+    customer_name?: string;
+    order_date: string;
+    order_status: string;
+    total_amount: number;
+    net_amount: number;
+    remarks: string;
+    created_date: string;
+    discount_amount?: number;
+    delivery_date?: string;
+    due_date?: string;
+    payment_terms?: number;
+    payment_term_name?: string;
+    payment_term_days?: number;
+    salesman_id?: number;
+}
+
+export interface SalesOrderDetail {
+    detail_id: number;
+    order_id: number;
+    product_id: {
+        product_id: number;
+        product_name: string;
+        product_code: string;
+        uom: string;
+        uom_count: number;
+        brand: string;
+        category: string;
+    };
+    unit_price: number;
+    ordered_quantity: number;
+    net_amount: number;
+}
+
+export interface QuotationHeader {
+    id: number;
+    quote_number: string;
+    customer_id: {
+        customer_name: string;
+        customer_code: string;
+    } | null;
+    total_selling_price: number;
+    total_simulated_cost: number;
+    quote_date: string;
+    status: string;
+    remarks: string;
+}

@@ -1,0 +1,182 @@
+"use client";
+
+import * as React from "react";
+import { Check, ChevronsUpDown, Loader2 } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import {
+    Command,
+    CommandEmpty,
+    CommandGroup,
+    CommandInput,
+    CommandItem,
+    CommandList,
+} from "@/components/ui/command";
+import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from "@/components/ui/popover";
+import { useDebounce } from "use-debounce";
+import { BFFCatalogProduct } from "../types";
+
+interface BOMMaterialSelectProps {
+    value?: number;
+    onSelectProduct: (product: BFFCatalogProduct) => void;
+    placeholder?: string;
+    disabled?: boolean;
+}
+
+export function BOMMaterialSelect({
+    value,
+    onSelectProduct,
+    placeholder = "Choose Material...",
+    disabled = false,
+}: BOMMaterialSelectProps) {
+    const [open, setOpen] = React.useState(false);
+    const [options, setOptions] = React.useState<BFFCatalogProduct[]>([]);
+    const [loading, setLoading] = React.useState(false);
+    const [searchValue, setSearchValue] = React.useState("");
+    const [debouncedSearch] = useDebounce(searchValue, 250);
+
+    // Keep track of the currently selected product details so we can display the label even when closed
+    const [selectedProduct, setSelectedProduct] = React.useState<BFFCatalogProduct | null>(null);
+
+    // Resolve the selected product label on mount or value change
+    React.useEffect(() => {
+        if (!value) {
+            setSelectedProduct(null);
+            return;
+        }
+
+        async function fetchSelected() {
+            try {
+                // Fetch the product by id or search
+                const res = await fetch(`/api/manufacturing/finished-goods/products?search=${value}&limit=1`);
+                if (res.ok) {
+                    const data = await res.json();
+                    const found = data.find((p: BFFCatalogProduct) => p.product_id === value);
+                    if (found) {
+                        setSelectedProduct(found);
+                    }
+                }
+            } catch (e) {
+                console.error("Failed to fetch selected product details:", e);
+            }
+        }
+
+        fetchSelected();
+    }, [value]);
+
+    // Load initial recommendations when popover opens
+    React.useEffect(() => {
+        if (!open) return;
+
+        async function loadDefaults() {
+            setLoading(true);
+            try {
+                const res = await fetch("/api/manufacturing/finished-goods/products?limit=50");
+                if (res.ok) {
+                    const data = await res.json();
+                    setOptions(data);
+                }
+            } catch (e) {
+                console.error("Failed to load default materials list:", e);
+            } finally {
+                setLoading(false);
+            }
+        }
+        loadDefaults();
+    }, [open]);
+
+    // Query matching materials as the user types
+    React.useEffect(() => {
+        if (!open || !debouncedSearch.trim()) return;
+
+        async function searchMaterials() {
+            setLoading(true);
+            try {
+                const res = await fetch(`/api/manufacturing/finished-goods/products?search=${encodeURIComponent(debouncedSearch.trim())}&limit=30`);
+                if (res.ok) {
+                    const data = await res.json();
+                    
+                    // Always guarantee the current selection is present in the list
+                    const union = [...data];
+                    if (selectedProduct && !union.some(u => u.product_id === selectedProduct.product_id)) {
+                        union.push(selectedProduct);
+                    }
+                    setOptions(union);
+                }
+            } catch (e) {
+                console.error("Failed searching materials dynamically:", e);
+            } finally {
+                setLoading(false);
+            }
+        }
+        searchMaterials();
+    }, [debouncedSearch, open, selectedProduct]);
+
+    const displayLabel = React.useMemo(() => {
+        if (!selectedProduct) return placeholder;
+        return `${selectedProduct.product_name} (${selectedProduct.product_code || `ID-${selectedProduct.product_id}`})`;
+    }, [selectedProduct, placeholder]);
+
+    return (
+        <Popover open={open} onOpenChange={setOpen}>
+            <PopoverTrigger asChild>
+                <Button
+                    variant="ghost"
+                    role="combobox"
+                    aria-expanded={open}
+                    className={cn("w-full justify-between font-normal text-left hover:bg-muted/10 shadow-none py-1.5 px-2.5 h-auto rounded-sm border-0 focus:ring-1 focus:ring-primary focus:bg-background", !value && "text-muted-foreground")}
+                    disabled={disabled}
+                >
+                    <span className="truncate">{displayLabel}</span>
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[320px] p-0" align="start">
+                <Command shouldFilter={false}>
+                    <CommandInput 
+                        placeholder="Type material name or SKU..." 
+                        value={searchValue}
+                        onValueChange={setSearchValue}
+                    />
+                    <CommandList>
+                        {loading && (
+                            <div className="flex items-center justify-center p-2 text-muted-foreground gap-1">
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                <span className="text-xs">Loading materials...</span>
+                            </div>
+                        )}
+                        {!loading && options.length === 0 && (
+                            <CommandEmpty>No materials found.</CommandEmpty>
+                        )}
+                        <CommandGroup>
+                            {options.map((opt) => (
+                                <CommandItem
+                                    key={opt.product_id}
+                                    value={String(opt.product_id)}
+                                    onSelect={() => {
+                                        onSelectProduct(opt);
+                                        setSelectedProduct(opt);
+                                        setOpen(false);
+                                        setSearchValue("");
+                                    }}
+                                >
+                                    <Check
+                                        className={cn(
+                                            "mr-2 h-4 w-4",
+                                            value === opt.product_id ? "opacity-100" : "opacity-0"
+                                        )}
+                                    />
+                                    {opt.product_name} ({opt.product_code || `ID-${opt.product_id}`})
+                                </CommandItem>
+                            ))}
+                        </CommandGroup>
+                    </CommandList>
+                </Command>
+            </PopoverContent>
+        </Popover>
+    );
+}
