@@ -23,6 +23,7 @@ export interface RoutingStep {
     laborFlatRate: number;
     machineHourlyRate: number;
     durationHours: number;
+    requiresQA?: boolean;
 }
 
 
@@ -51,6 +52,7 @@ export interface Product {
     product_image?: string;
     customOverhead?: number;
     has_versions?: boolean;
+    production_capacity_per_hour?: number;
 }
 
 export interface Supplier {
@@ -134,6 +136,7 @@ export interface BFFCatalogProduct {
     unit_of_measurement_count?: number | null;
     product_image?: string | null;
     has_versions?: boolean;
+    production_capacity_per_hour?: number | null;
 }
 
 export interface OperationType {

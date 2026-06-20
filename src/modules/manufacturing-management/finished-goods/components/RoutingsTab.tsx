@@ -142,7 +142,8 @@ export const RoutingsTab: React.FC<RoutingsTabProps> = ({
                                     <th className="p-3">Step Name</th>
                                     <th className="p-3">Labor Flat Rate</th>
                                     <th className="p-3">Machine Rate / Hr</th>
-                                    <th className="p-3">Duration (Hrs)</th>
+                                    <th className="p-3">Duration (H:M)</th>
+                                    <th className="p-3 text-center w-28">Requires QA</th>
                                     <th className="p-3 text-right">Computed Cost</th>
                                     <th className="p-3"></th>
                                 </tr>
@@ -284,38 +285,97 @@ export const RoutingsTab: React.FC<RoutingsTabProps> = ({
                                                     />
                                                 </div>
                                             </td>
-                                            <td className="p-1 border-r border-muted/20 w-28 align-middle">
-                                                <input 
-                                                    type="number" 
-                                                    step="0.0001"
-                                                    value={step.durationHours || ""} 
-                                                    data-index={index}
-                                                    onChange={e => handleRoutingChange(step.id, "durationHours", parseFloat(e.target.value) || 0)}
-                                                    onKeyDown={e => {
-                                                        if (e.key === "Enter") {
-                                                            e.preventDefault();
-                                                            const isLastRow = index === editedRoutings.length - 1;
-                                                            if (isLastRow) {
-                                                                addRoutingStep();
-                                                            } else {
-                                                                const el = document.querySelector(`.rt-name-input[data-index="${index + 1}"]`) as HTMLInputElement;
+                                            <td className="p-1 border-r border-muted/20 w-36 align-middle">
+                                                <div className="flex items-center gap-1 bg-slate-950/20 px-2 py-0.5 rounded-sm border border-slate-800/80 focus-within:ring-1 focus-within:ring-primary focus-within:bg-background w-full">
+                                                    {/* Hours input */}
+                                                    <input 
+                                                        type="number" 
+                                                        min="0"
+                                                        value={Math.floor(Math.round((step.durationHours || 0) * 60) / 60) || ""} 
+                                                        data-index={index}
+                                                        onChange={e => {
+                                                            const h = parseInt(e.target.value) || 0;
+                                                            const currentMins = Math.round((step.durationHours || 0) * 60) % 60;
+                                                            handleRoutingChange(step.id, "durationHours", h + (currentMins / 60));
+                                                        }}
+                                                        onKeyDown={e => {
+                                                            if (e.key === "Enter") {
+                                                                e.preventDefault();
+                                                                const isLastRow = index === editedRoutings.length - 1;
+                                                                if (isLastRow) {
+                                                                    addRoutingStep();
+                                                                } else {
+                                                                    const el = document.querySelector(`.rt-name-input[data-index="${index + 1}"]`) as HTMLInputElement;
+                                                                    if (el) el.focus();
+                                                                }
+                                                            } else if (e.key === "ArrowDown") {
+                                                                e.preventDefault();
+                                                                const el = document.querySelector(`.rt-duration-input[data-index="${index + 1}"]`) as HTMLInputElement;
+                                                                if (el) el.focus();
+                                                            } else if (e.key === "ArrowUp") {
+                                                                e.preventDefault();
+                                                                const el = document.querySelector(`.rt-duration-input[data-index="${index - 1}"]`) as HTMLInputElement;
+                                                                if (el) el.focus();
+                                                            } else if (e.key === "ArrowLeft") {
+                                                                const el = document.querySelector(`.rt-machine-input[data-index="${index}"]`) as HTMLInputElement;
+                                                                if (el) el.focus();
+                                                            } else if (e.key === "ArrowRight") {
+                                                                const el = document.querySelector(`.rt-minutes-input[data-index="${index}"]`) as HTMLInputElement;
                                                                 if (el) el.focus();
                                                             }
-                                                        } else if (e.key === "ArrowDown") {
-                                                            e.preventDefault();
-                                                            const el = document.querySelector(`.rt-duration-input[data-index="${index + 1}"]`) as HTMLInputElement;
-                                                            if (el) el.focus();
-                                                        } else if (e.key === "ArrowUp") {
-                                                            e.preventDefault();
-                                                            const el = document.querySelector(`.rt-duration-input[data-index="${index - 1}"]`) as HTMLInputElement;
-                                                            if (el) el.focus();
-                                                        } else if (e.key === "ArrowLeft") {
-                                                            const el = document.querySelector(`.rt-machine-input[data-index="${index}"]`) as HTMLInputElement;
-                                                            if (el) el.focus();
-                                                        }
-                                                    }}
-                                                    className="rt-duration-input w-full bg-transparent border-0 focus:ring-1 focus:ring-primary focus:bg-background focus:outline-hidden py-1 px-2 text-sm text-foreground rounded-sm"
-                                                    placeholder="0.00"
+                                                        }}
+                                                        className="rt-duration-input w-12 bg-transparent border-0 outline-hidden py-0.5 px-1 text-sm text-right text-foreground focus:ring-0 placeholder:text-muted-foreground/30 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                                        placeholder="0"
+                                                    />
+                                                    <span className="text-[10px] font-bold text-muted-foreground/50 select-none">h</span>
+                                                    <span className="text-muted-foreground/20 font-bold select-none">:</span>
+                                                    {/* Minutes input */}
+                                                    <input 
+                                                        type="number" 
+                                                        min="0"
+                                                        max="59"
+                                                        value={Math.round((step.durationHours || 0) * 60) % 60 || ""} 
+                                                        data-index={index}
+                                                        onChange={e => {
+                                                            const m = Math.min(59, Math.max(0, parseInt(e.target.value) || 0));
+                                                            const currentHrs = Math.floor(Math.round((step.durationHours || 0) * 60) / 60);
+                                                            handleRoutingChange(step.id, "durationHours", currentHrs + (m / 60));
+                                                        }}
+                                                        onKeyDown={e => {
+                                                            if (e.key === "Enter") {
+                                                                e.preventDefault();
+                                                                const isLastRow = index === editedRoutings.length - 1;
+                                                                if (isLastRow) {
+                                                                    addRoutingStep();
+                                                                } else {
+                                                                    const el = document.querySelector(`.rt-name-input[data-index="${index + 1}"]`) as HTMLInputElement;
+                                                                    if (el) el.focus();
+                                                                }
+                                                            } else if (e.key === "ArrowDown") {
+                                                                e.preventDefault();
+                                                                const el = document.querySelector(`.rt-minutes-input[data-index="${index + 1}"]`) as HTMLInputElement;
+                                                                if (el) el.focus();
+                                                            } else if (e.key === "ArrowUp") {
+                                                                e.preventDefault();
+                                                                const el = document.querySelector(`.rt-minutes-input[data-index="${index - 1}"]`) as HTMLInputElement;
+                                                                if (el) el.focus();
+                                                            } else if (e.key === "ArrowLeft") {
+                                                                const el = document.querySelector(`.rt-duration-input[data-index="${index}"]`) as HTMLInputElement;
+                                                                if (el) el.focus();
+                                                            }
+                                                        }}
+                                                        className="rt-minutes-input w-10 bg-transparent border-0 outline-hidden py-0.5 px-1 text-sm text-left text-foreground focus:ring-0 placeholder:text-muted-foreground/30 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                                        placeholder="00"
+                                                    />
+                                                    <span className="text-[10px] font-bold text-muted-foreground/50 select-none">m</span>
+                                                </div>
+                                            </td>
+                                            <td className="p-1 border-r border-muted/20 w-28 align-middle text-center">
+                                                <input 
+                                                    type="checkbox"
+                                                    checked={step.requiresQA || false}
+                                                    onChange={e => handleRoutingChange(step.id, "requiresQA", e.target.checked)}
+                                                    className="h-4 w-4 rounded border-muted/30 text-primary focus:ring-primary cursor-pointer align-middle"
                                                 />
                                             </td>
                                             <td className="p-3 text-right font-medium text-foreground">
@@ -334,7 +394,7 @@ export const RoutingsTab: React.FC<RoutingsTabProps> = ({
                                 })}
                                 {editedRoutings.length === 0 && (
                                     <tr>
-                                        <td colSpan={7} className="p-8 text-center text-muted-foreground">
+                                        <td colSpan={8} className="p-8 text-center text-muted-foreground">
                                             No routing stages defined. Click &quot;Add Stage Step&quot; to begin.
                                         </td>
                                     </tr>
