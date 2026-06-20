@@ -107,15 +107,27 @@ export function CalendarGrid({
                     const cellDayStr = String(dayNum).padStart(2, "0");
                     const cellDateStr = `${year}-${cellMonthStr}-${cellDayStr}`;
 
-                    // Find JOS and Shipments matching this cell's date
+                    // Find JOS, Shipments, and Daily runs matching this cell's date
                     const cellJOs = (filterMode === "all" || filterMode === "jo") 
                         ? jobOrders.filter(jo => jo.due_date === cellDateStr)
                         : [];
                         
+                    const cellDailyRuns: { jo: JobOrder; run: any }[] = [];
+                    if (filterMode === "all" || filterMode === "jo") {
+                        jobOrders.forEach(jo => {
+                            if (jo.dailyBreakdown && Array.isArray(jo.dailyBreakdown)) {
+                                const matchedRun = jo.dailyBreakdown.find((run: any) => run.date === cellDateStr);
+                                if (matchedRun) {
+                                    cellDailyRuns.push({ jo, run: matchedRun });
+                                }
+                            }
+                        });
+                    }
+                        
                     const cellShipments = (filterMode === "all" || filterMode === "shipments")
                         ? shipments.filter(s => {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                            const deliveryDate = s.estimated_delivery_date || s.actual_delivery_date || (s as any).date_received || (s as any).created_at || "";
+                            const deliveryDate = (s as any).lead_time_receiving || s.estimated_delivery_date || s.actual_delivery_date || (s as any).date_received || (s as any).created_at || "";
                             return deliveryDate.split("T")[0] === cellDateStr;
                         })
                         : [];
@@ -148,7 +160,28 @@ export function CalendarGrid({
                                     </button>
                                 ))}
 
-                                {/* Job Orders Events */}
+                                {/* Job Order Daily Production Runs */}
+                                {cellDailyRuns.map(({ jo, run }) => {
+                                    let runStatusBg = "bg-primary/5 text-primary border-primary/20 hover:bg-primary/10";
+                                    if (run.status === "Finished" || run.status === "Completed") {
+                                        runStatusBg = "bg-emerald-500/10 text-emerald-500 border-emerald-500/20 hover:bg-emerald-500/20";
+                                    } else if (run.status === "Ongoing" || run.status === "In Progress") {
+                                        runStatusBg = "bg-amber-500/10 text-amber-500 border-amber-500/20 hover:bg-amber-500/20";
+                                    }
+                                    
+                                    return (
+                                        <button
+                                            key={`jo-run-${jo.jo_id}-${run.day}`}
+                                            onClick={() => handleSelectJO(jo)}
+                                            className={`w-full text-left truncate px-1.5 py-0.5 rounded text-[9px] font-medium border ${runStatusBg} transition-transform hover:scale-98`}
+                                            title={`JO Production Run: Day ${run.day} of ${jo.jo_id} (${run.quantity.toLocaleString()} units) - Status: ${run.status}`}
+                                        >
+                                            🛠️ Day {run.day}: {jo.jo_id.replace("JO-", "")} ({run.quantity.toLocaleString()})
+                                        </button>
+                                    );
+                                })}
+
+                                {/* Job Orders Events (Due Dates) */}
                                 {cellJOs.map(jo => {
                                     let bgClass = "bg-muted text-muted-foreground border-border";
                                     if (jo.status === "Proceed") bgClass = "bg-emerald-500/10 text-emerald-600 border-emerald-500/20";
@@ -159,10 +192,9 @@ export function CalendarGrid({
                                             key={`jo-${jo.jo_id}`}
                                             onClick={() => handleSelectJO(jo)}
                                             className={`w-full text-left truncate px-1.5 py-0.5 rounded text-[10px] font-semibold border ${bgClass} transition-transform hover:scale-98`}
-                                            title={`Job Order: ${jo.jo_id} - ${jo.product_name}`}
+                                            title={`Job Order Due: ${jo.jo_id} - ${jo.product_name}`}
                                         >
-                                            {jo.is_batched ? "🔄 " : "⚙️ "}
-                                            {jo.jo_id.replace("JO-", "")}
+                                            🏁 Due: {jo.jo_id.replace("JO-", "")}
                                         </button>
                                     );
                                 })}

@@ -13,7 +13,7 @@ import { NavUser } from "@/components/shared/app-sidebar/nav-user";
 import { cookies } from "next/headers";
 
 // ✅ Wire the module you asked for
-import ComingSoon from "../../mm/_components/ComingSoon";
+import BiAndFinancialsModule from "@/modules/manufacturing-management/bi-and-financials/BiAndFinancialsModule";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -96,12 +96,12 @@ export default async function Page() {
                         <Breadcrumb>
                             <BreadcrumbList className="min-w-0 overflow-hidden">
                                 <BreadcrumbItem className="hidden md:block shrink-0">
-                                    <BreadcrumbLink href="#">Invoicing</BreadcrumbLink>
+                                    <BreadcrumbLink href="#">BI & Financials</BreadcrumbLink>
                                 </BreadcrumbItem>
                                 <BreadcrumbSeparator className="hidden md:block shrink-0" />
                                 <BreadcrumbItem className="min-w-0 overflow-hidden">
                                     <BreadcrumbPage className="truncate max-w-[56vw] sm:max-w-[60vw] md:max-w-none">
-                                        Invoicing
+                                        Sales Forecasting
                                     </BreadcrumbPage>
                                 </BreadcrumbItem>
                             </BreadcrumbList>
@@ -116,7 +116,7 @@ export default async function Page() {
 
             {/* ✅ Only content scrolls inside RIGHT column */}
             <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-4">
-                <ComingSoon />
+                <BiAndFinancialsModule />
             </main>
         </div>
     );

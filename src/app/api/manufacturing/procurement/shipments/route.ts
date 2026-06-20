@@ -4,7 +4,7 @@ import {
     fetchShipmentLineItems, 
     createIncomingShipment,
     updateIncomingShipmentStatus
-} from "../../directus-api";
+} from "./shipments-helper";
 
 export async function GET(request: Request) {
     try {

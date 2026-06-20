@@ -60,6 +60,8 @@ export function QuotationHeaderForm({
         province: "",
         city: "",
         brgy: "",
+        latitude: "",
+        longitude: "",
         isActive: true
     });
     
@@ -128,6 +130,8 @@ export function QuotationHeaderForm({
                 province: "",
                 city: "",
                 brgy: "",
+                latitude: "",
+                longitude: "",
                 isActive: true
             });
         }
@@ -206,6 +210,12 @@ export function QuotationHeaderForm({
             const cityName = cities.find(c => c.code === selectedCityCode)?.name || formData.city;
             const brgyName = barangays.find(b => b.code === formData.brgy)?.name || formData.brgy;
 
+            // Parse coordinates
+            const latVal = formData.latitude.trim();
+            const lngVal = formData.longitude.trim();
+            const parsedLatitude = latVal ? parseFloat(latVal) : null;
+            const parsedLongitude = lngVal ? parseFloat(lngVal) : null;
+
             const response = await fetch("/api/manufacturing/finished-goods/customers", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -220,6 +230,8 @@ export function QuotationHeaderForm({
                     city: cityName.trim() || undefined,
                     province: provName.trim() || undefined,
                     store_type: formData.store_type_id ? Number(formData.store_type_id) : undefined,
+                    latitude: parsedLatitude !== null && !isNaN(parsedLatitude) ? parsedLatitude : null,
+                    longitude: parsedLongitude !== null && !isNaN(parsedLongitude) ? parsedLongitude : null,
                     isActive: 1
                 })
             });

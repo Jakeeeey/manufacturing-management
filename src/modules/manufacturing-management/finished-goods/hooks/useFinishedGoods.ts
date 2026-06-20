@@ -37,6 +37,7 @@ export function useFinishedGoods(initialTab: string = "details") {
     const [overheadTypes, setOverheadTypes] = useState<OverheadType[]>([]);
     const [operationTypes, setOperationTypes] = useState<OperationType[]>([]);
     const [simulatedForexRate, setSimulatedForexRate] = useState<number>(61.39);
+    const [debouncedForexRate] = useDebounce(simulatedForexRate, 300);
 
 
     // Loading & Saving indicators
@@ -78,6 +79,7 @@ export function useFinishedGoods(initialTab: string = "details") {
         shelfLife: "",
         productImage: "",
         parentId: "",
+        productionCapacityPerHour: "",
         supplierIds: [] as string[]
     });
 
@@ -186,15 +188,18 @@ export function useFinishedGoods(initialTab: string = "details") {
                         cost_per_unit: p.cost_per_unit ? Number(p.cost_per_unit) : undefined,
                         unit_of_measurement_count: p.unit_of_measurement_count ? Number(p.unit_of_measurement_count) : undefined,
                         product_image: p.product_image || undefined,
+                        production_capacity_per_hour: p.production_capacity_per_hour ? Number(p.production_capacity_per_hour) : undefined,
                         has_versions: !!p.has_versions
                     };
                 });
 
                 setProducts(mapped);
 
-                const exists = mapped.some((p: Product) => p.id === selectedProductId);
-                if (!exists && mapped.length > 0) {
-                    setSelectedProductId(mapped[0].id);
+                if (mapped.length > 0) {
+                    setSelectedProductId(prev => {
+                        const exists = mapped.some((p: Product) => p.id === prev);
+                        return exists ? prev : mapped[0].id;
+                    });
                 }
             } catch (e) {
                 console.error("Failed loading products catalog:", e);
@@ -204,7 +209,7 @@ export function useFinishedGoods(initialTab: string = "details") {
             }
         }
         loadCatalog();
-    }, [debouncedSearchQuery, selectedProductId]);
+    }, [debouncedSearchQuery]);
 
     // Load Versions when Selected Product changes
     useEffect(() => {
@@ -249,7 +254,7 @@ export function useFinishedGoods(initialTab: string = "details") {
             Promise.all(versions.map(async (v) => {
                 try {
                     // Call a custom endpoint to get version cost without loading full details if possible, or handle silently
-                    const res = await fetch(`/api/manufacturing/finished-goods/bom-cost?productId=${numericId}&versionId=${v.id}&forexRate=${simulatedForexRate}`);
+                    const res = await fetch(`/api/manufacturing/finished-goods/bom-cost?productId=${numericId}&versionId=${v.id}&forexRate=${debouncedForexRate}`);
                     if (res.ok) {
                         const costData = await res.json();
                         costs[v.id] = costData.cost;
@@ -264,7 +269,7 @@ export function useFinishedGoods(initialTab: string = "details") {
             });
         }
         loadAllVersionCosts();
-    }, [versions, selectedProductId, simulatedForexRate]);
+    }, [versions, selectedProductId, debouncedForexRate]);
 
 
     // Load BOM & Routings when Selected Version or simulatedForexRate changes
@@ -283,7 +288,7 @@ export function useFinishedGoods(initialTab: string = "details") {
         async function loadRecipe() {
             setLoadingBOM(true);
             try {
-                const details = await fetchBOMDetails(numericId, selectedVersionId!, simulatedForexRate);
+                const details = await fetchBOMDetails(numericId, selectedVersionId!, debouncedForexRate);
                 if (details) {
                     setActiveBOMId(details.bomId);
                     setEditedDetails({
@@ -305,7 +310,8 @@ export function useFinishedGoods(initialTab: string = "details") {
                         unit_of_measurement_count: selectedProduct.unit_of_measurement_count,
                         product_image: selectedProduct.product_image,
                         parent_id: selectedProduct.parent_id,
-                        customOverhead: details.customOverhead || 0
+                        customOverhead: details.customOverhead || 0,
+                        production_capacity_per_hour: selectedProduct.production_capacity_per_hour || 0
                     });
                     setEditedBOM(details.ingredients);
                     setEditedRoutings(details.routings);
@@ -366,7 +372,8 @@ export function useFinishedGoods(initialTab: string = "details") {
                     product_section: sectionVal,
                     product_shelf_life: shelfLifeVal,
                     product_image: registerForm.productImage || undefined,
-                    parent_id: registerForm.parentId ? Number(registerForm.parentId) : null
+                    parent_id: registerForm.parentId ? Number(registerForm.parentId) : null,
+                    production_capacity_per_hour: Number(registerForm.productionCapacityPerHour) || 0
                 },
                 registerForm.versionName.trim(),
                 registerForm.supplierIds.map(Number)
@@ -396,6 +403,7 @@ export function useFinishedGoods(initialTab: string = "details") {
                     shelfLife: "",
                     productImage: "",
                     parentId: "",
+                    productionCapacityPerHour: "",
                     supplierIds: [] as string[]
                 });
 
@@ -431,6 +439,7 @@ export function useFinishedGoods(initialTab: string = "details") {
                         cost_per_unit: p.cost_per_unit ? Number(p.cost_per_unit) : undefined,
                         unit_of_measurement_count: p.unit_of_measurement_count ? Number(p.unit_of_measurement_count) : undefined,
                         product_image: p.product_image || undefined,
+                        production_capacity_per_hour: p.production_capacity_per_hour ? Number(p.production_capacity_per_hour) : undefined,
                         has_versions: !!p.has_versions
                      };
                   });
@@ -530,7 +539,8 @@ export function useFinishedGoods(initialTab: string = "details") {
                     productShelfLife: editedDetails.product_shelf_life,
                     productImage: editedDetails.product_image,
                     parent_id: editedDetails.parent_id !== undefined ? (editedDetails.parent_id ? Number(editedDetails.parent_id) : null) : null,
-                    customOverhead: editedDetails.customOverhead || 0
+                    customOverhead: editedDetails.customOverhead || 0,
+                    productionCapacityPerHour: editedDetails.production_capacity_per_hour
                 },
                 editedBOM,
                 editedRoutings,
@@ -562,7 +572,8 @@ export function useFinishedGoods(initialTab: string = "details") {
                             product_image: editedDetails.product_image,
                             parent_id: updatedParentId,
                             parentProduct: updatedParentId === null,
-                            customOverhead: editedDetails.customOverhead
+                            customOverhead: editedDetails.customOverhead,
+                            production_capacity_per_hour: editedDetails.production_capacity_per_hour !== undefined ? editedDetails.production_capacity_per_hour : p.production_capacity_per_hour
                         };
                     }
                     return p;

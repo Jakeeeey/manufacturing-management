@@ -49,10 +49,15 @@ export function BOMMaterialSelect({
             return;
         }
 
+        // Avoid refetching if the current selection is already this product ID
+        if (selectedProduct && selectedProduct.product_id === value) {
+            return;
+        }
+
         async function fetchSelected() {
             try {
-                // Fetch the product by id or search
-                const res = await fetch(`/api/manufacturing/finished-goods/products?search=${value}&limit=1`);
+                // Fetch the product by id or search with excludeRollup for speed
+                const res = await fetch(`/api/manufacturing/finished-goods/products?search=${value}&limit=1&excludeRollup=true`);
                 if (res.ok) {
                     const data = await res.json();
                     const found = data.find((p: BFFCatalogProduct) => p.product_id === value);
@@ -66,7 +71,7 @@ export function BOMMaterialSelect({
         }
 
         fetchSelected();
-    }, [value]);
+    }, [value, selectedProduct]);
 
     // Load initial recommendations when popover opens
     React.useEffect(() => {
@@ -75,7 +80,7 @@ export function BOMMaterialSelect({
         async function loadDefaults() {
             setLoading(true);
             try {
-                const res = await fetch("/api/manufacturing/finished-goods/products?limit=50");
+                const res = await fetch("/api/manufacturing/finished-goods/products?limit=50&excludeRollup=true");
                 if (res.ok) {
                     const data = await res.json();
                     setOptions(data);
@@ -96,7 +101,7 @@ export function BOMMaterialSelect({
         async function searchMaterials() {
             setLoading(true);
             try {
-                const res = await fetch(`/api/manufacturing/finished-goods/products?search=${encodeURIComponent(debouncedSearch.trim())}&limit=30`);
+                const res = await fetch(`/api/manufacturing/finished-goods/products?search=${encodeURIComponent(debouncedSearch.trim())}&limit=30&excludeRollup=true`);
                 if (res.ok) {
                     const data = await res.json();
                     
@@ -118,7 +123,8 @@ export function BOMMaterialSelect({
 
     const displayLabel = React.useMemo(() => {
         if (!selectedProduct) return placeholder;
-        return `${selectedProduct.product_name} (${selectedProduct.product_code || `ID-${selectedProduct.product_id}`})`;
+        const uom = selectedProduct.unit_of_measurement?.unit_shortcut || "N/A";
+        return `${selectedProduct.product_name} (${selectedProduct.product_code || `ID-${selectedProduct.product_id}`}) [${uom}]`;
     }, [selectedProduct, placeholder]);
 
     return (
@@ -170,7 +176,7 @@ export function BOMMaterialSelect({
                                             value === opt.product_id ? "opacity-100" : "opacity-0"
                                         )}
                                     />
-                                    {opt.product_name} ({opt.product_code || `ID-${opt.product_id}`})
+                                    {opt.product_name} ({opt.product_code || `ID-${opt.product_id}`}) [{opt.unit_of_measurement?.unit_shortcut || "N/A"}]
                                 </CommandItem>
                             ))}
                         </CommandGroup>

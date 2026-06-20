@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { DIRECTUS_URL, headers } from "../../directus-api";
+import { DIRECTUS_URL, headers } from "@/app/api/manufacturing/directus-api";
 
 // Types
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -215,3 +215,5 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: (e as { message?: string }).message || "Failed to register version" }, { status: 500 });
     }
 }
+
+

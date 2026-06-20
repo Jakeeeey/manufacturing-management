@@ -56,8 +56,62 @@ export interface JobOrder {
     procurementStatus?: "Idle" | "Ordered" | "Approved" | "En Route" | "Received QA";
     branch_id?: number;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    assignedPersonnel?: any[];
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
     products?: any[];
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+    assignedPersonnel?: any[];
+    routing_tasks?: JobOrderRoutingTask[];
+    shiftOption?: string;
+    dailyBreakdown?: { 
+        day: number; 
+        date: string; 
+        quantity: number; 
+        status: string;
+        completed_steps?: number[];
+        actual_yield?: number;
+        qa_logs?: Record<string, {
+            expected_quantity: number;
+            actual_quantity: number;
+            qa_status: string;
+            comments: string;
+            photos: string[];
+            completed_at?: string;
+        }>;
+    }[] | null;
+}
+
+export interface JobOrderRoutingTask {
+    id: number;
+    jo_id: string;
+    routing_id: number;
+    name: string;
+    sequence_order: number;
+    status: "Pending" | "In Progress" | "Completed";
+    started_at?: string | null;
+    completed_at?: string | null;
+    completed_by?: number | null;
+    assignments?: JobOrderTaskAssignment[];
+    qa_logs?: JobOrderQALog[];
+    requires_qa?: boolean;
+}
+
+export interface JobOrderTaskAssignment {
+    id: number;
+    task_id: number;
+    user_id: number;
+    is_team_lead: boolean;
+    user_name?: string;
+    email?: string;
+}
+
+export interface JobOrderQALog {
+    id: number;
+    task_id: number;
+    expected_quantity: number;
+    actual_quantity: number;
+    deviation_quantity: number;
+    qa_status: "Passed" | "Failed";
+    recorded_at: string;
+    comments?: string;
+    photos?: string[] | null;
 }
 

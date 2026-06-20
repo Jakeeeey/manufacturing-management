@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { fetchStoreTypes, createStoreType } from "../../directus-api";
+import { fetchStoreTypes, createStoreType } from "./store-types-helper";
 
 export async function GET() {
     try {

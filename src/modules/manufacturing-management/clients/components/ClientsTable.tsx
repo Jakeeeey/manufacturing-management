@@ -118,11 +118,19 @@ export default function ClientsTable({
                                     </td>
 
                                     <td className="p-4 max-w-xs">
-                                        <div className="flex gap-1.5 items-start text-muted-foreground leading-normal font-medium">
-                                            <MapPin className="h-3.5 w-3.5 text-primary shrink-0 mt-0.5" />
-                                            <span className="truncate" title={fullAddress}>
-                                                {fullAddress}
-                                            </span>
+                                        <div className="flex flex-col gap-1">
+                                            <div className="flex gap-1.5 items-start text-muted-foreground leading-normal font-medium">
+                                                <MapPin className={`h-3.5 w-3.5 shrink-0 mt-0.5 ${c.latitude && c.longitude ? "text-emerald-500 font-bold" : "text-primary"}`} />
+                                                <span className="truncate font-semibold text-foreground" title={fullAddress}>
+                                                    {fullAddress}
+                                                </span>
+                                            </div>
+                                            {c.latitude !== undefined && c.latitude !== null && c.longitude !== undefined && c.longitude !== null && (
+                                                <span className="text-[9px] text-muted-foreground font-mono font-bold pl-5 flex items-center gap-1">
+                                                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                                    GPS: {Number(c.latitude).toFixed(6)}, {Number(c.longitude).toFixed(6)}
+                                                </span>
+                                            )}
                                         </div>
                                     </td>
 

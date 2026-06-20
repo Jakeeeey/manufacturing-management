@@ -3,10 +3,12 @@ import {
     fetchJobOrders, 
     createJobOrder, 
     updateJobOrder, 
-    deleteJobOrder,
+    deleteJobOrder
+} from "./planning-helper";
+import {
     DIRECTUS_URL,
     headers
-} from "../directus-api";
+} from "@/app/api/manufacturing/directus-api";
 
 export async function GET(request: Request) {
     try {
@@ -18,6 +20,14 @@ export async function GET(request: Request) {
             const url = `${DIRECTUS_URL}/items/user?limit=-1`;
             const res = await fetch(url, { headers, cache: "no-store" });
             if (!res.ok) throw new Error("Failed to fetch users");
+            const data = await res.json();
+            return NextResponse.json(data.data || []);
+        }
+
+        if (action === "qa-logs") {
+            const url = `${DIRECTUS_URL}/items/job_order_qa_logs?limit=500&sort=-recorded_at&fields=*,task_id.*`;
+            const res = await fetch(url, { headers, cache: "no-store" });
+            if (!res.ok) throw new Error("Failed to fetch QA logs");
             const data = await res.json();
             return NextResponse.json(data.data || []);
         }
@@ -74,7 +84,11 @@ export async function GET(request: Request) {
                 procurementStatus: item.procurement_status,
                 branch_id: item.branch_id,
                 products: item.products || [],
-                assignedPersonnel: item.assigned_personnel || []
+                assignedPersonnel: item.assigned_personnel || [],
+                routing_tasks: item.routing_tasks || [],
+                routingTasks: item.routing_tasks || [],
+                shiftOption: item.shift_option || "8",
+                dailyBreakdown: item.daily_breakdown || null
             }));
             return NextResponse.json(camelCaseList);
         }
@@ -111,6 +125,8 @@ export async function POST(request: Request) {
             procurement_status: jo.procurementStatus || "Idle",
             branch_id: jo.branch_id || null,
             assigned_personnel: jo.assignedPersonnel || null,
+            shift_option: jo.shiftOption || "8",
+            daily_breakdown: jo.dailyBreakdown || null,
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
             products: jo.products ? jo.products.map((p: any) => ({
                 product_id: p.product_id,
@@ -134,6 +150,86 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
     try {
         const body = await request.json();
+
+        // 1. Task status/completion update
+        if (body.taskId !== undefined && body.taskPatch !== undefined) {
+            const { taskId, taskPatch } = body;
+            const res = await fetch(`${DIRECTUS_URL}/items/job_order_routing_tasks/${taskId}`, {
+                method: "PATCH",
+                headers,
+                body: JSON.stringify(taskPatch)
+            });
+            if (!res.ok) throw new Error(`Failed to patch routing task: ${res.status}`);
+            const result = await res.json();
+            return NextResponse.json({ success: true, data: result.data });
+        }
+
+        // 2. Task personnel assignment update
+        if (body.taskId !== undefined && body.assignments !== undefined) {
+            const { taskId, assignments } = body as { taskId: number; assignments: { user_id: number; is_team_lead: boolean }[] };
+            
+            // Delete existing assignments for this task
+            const existingRes = await fetch(`${DIRECTUS_URL}/items/job_order_task_assignments?filter[task_id][_eq]=${taskId}&limit=-1`, { headers });
+            if (existingRes.ok) {
+                const existingData = (await existingRes.json()).data || [];
+                for (const item of existingData) {
+                    await fetch(`${DIRECTUS_URL}/items/job_order_task_assignments/${item.id}`, { method: "DELETE", headers }).catch(() => {});
+                }
+            }
+
+            // Create new assignments
+            const results = [];
+            for (const ass of assignments) {
+                const addRes = await fetch(`${DIRECTUS_URL}/items/job_order_task_assignments`, {
+                    method: "POST",
+                    headers,
+                    body: JSON.stringify({
+                        task_id: taskId,
+                        user_id: ass.user_id,
+                        is_team_lead: !!ass.is_team_lead
+                    })
+                });
+                if (addRes.ok) {
+                    results.push((await addRes.json()).data);
+                }
+            }
+            return NextResponse.json({ success: true, data: results });
+        }
+
+        // 3. QA Log logging
+        if (body.taskId !== undefined && body.qaLog !== undefined) {
+            const { taskId, qaLog, productId, branchId } = body;
+            const expected = Number(qaLog.expected_quantity || 0);
+            const actual = Number(qaLog.actual_quantity || 0);
+            const deviation = expected - actual;
+
+            const qaPayload = {
+                task_id: taskId,
+                expected_quantity: expected,
+                actual_quantity: actual,
+                deviation_quantity: deviation,
+                qa_status: qaLog.qa_status || "Passed",
+                recorded_at: new Date().toISOString(),
+                comments: qaLog.comments || "",
+                photos: qaLog.photos || null
+            };
+
+            const addRes = await fetch(`${DIRECTUS_URL}/items/job_order_qa_logs`, {
+                method: "POST",
+                headers,
+                body: JSON.stringify(qaPayload)
+            });
+            if (!addRes.ok) throw new Error(`Failed to create QA log: ${addRes.status}`);
+            const result = await addRes.json();
+
+            // NOTE: Under Option A, QA deviations on routing tasks do NOT deduct finished inventory
+            // in the product_ledger to keep the physical warehouse stock balance accurate. 
+            // Wastage is instead aggregated directly from the QA logs table in the dashboard metrics.
+
+            return NextResponse.json({ success: true, data: result.data });
+        }
+
+        // 4. Default: Standard Job Order patch
         const { joId, patch } = body;
 
         if (!joId || !patch) {
@@ -155,6 +251,8 @@ export async function PATCH(request: Request) {
         if (patch.branchId !== undefined) dbPatch.branch_id = patch.branchId;
         if (patch.assignedPersonnel !== undefined) dbPatch.assigned_personnel = patch.assignedPersonnel;
         if (patch.products !== undefined) dbPatch.products = patch.products;
+        if (patch.shiftOption !== undefined) dbPatch.shift_option = patch.shiftOption;
+        if (patch.dailyBreakdown !== undefined) dbPatch.daily_breakdown = patch.dailyBreakdown;
 
         const result = await updateJobOrder(joId, dbPatch);
         return NextResponse.json({ success: true, data: result });
@@ -180,3 +278,5 @@ export async function DELETE(request: Request) {
         return NextResponse.json({ error: (e as { message?: string }).message || "Failed to delete Job Order" }, { status: 500 });
     }
 }
+
+

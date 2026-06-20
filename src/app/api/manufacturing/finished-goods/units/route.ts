@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { fetchAllUnits } from "../../directus-api";
+import { fetchAllUnits } from "./units-helper";
 
 export async function GET() {
     try {

@@ -5,23 +5,12 @@ import { fetchShipments } from "../services/calendar-api";
 export function useCalendarOfSchedule() {
     const [currentDate, setCurrentDate] = useState(new Date());
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const [jobOrders, setJobOrders] = useState<JobOrder[]>(() => {
-        if (typeof window !== "undefined") {
-            const saved = localStorage.getItem("vos_job_orders");
-            if (saved) {
-                try {
-                    return JSON.parse(saved);
-                } catch (e) {
-                    console.error(e);
-                }
-            }
-        }
-        return [];
-    });
+    const [jobOrders, setJobOrders] = useState<JobOrder[]>([]);
     
     // Shipments state
     const [shipments, setShipments] = useState<IncomingShipment[]>([]);
     const [loadingShipments, setLoadingShipments] = useState(false);
+    const [loadingJOs, setLoadingJOs] = useState(false);
     
     // Filter controls
     const [filterMode, setFilterMode] = useState<"all" | "jo" | "shipments">("all");
@@ -32,13 +21,33 @@ export function useCalendarOfSchedule() {
 
     const loadData = async () => {
         setLoadingShipments(true);
+        setLoadingJOs(true);
         try {
-            const data = await fetchShipments();
-            setShipments(data);
+            const [shipmentsRes, joRes] = await Promise.allSettled([
+                fetchShipments(),
+                fetch("/api/manufacturing/planning-engineering").then(res => {
+                    if (!res.ok) throw new Error("Failed to load Job Orders");
+                    return res.json();
+                })
+            ]);
+            
+            if (shipmentsRes.status === "fulfilled") {
+                setShipments(shipmentsRes.value);
+            } else {
+                console.error("Error fetching shipments:", shipmentsRes.reason);
+            }
+            
+            if (joRes.status === "fulfilled") {
+                // Map camelCase fields if necessary, but route.ts already returns mapped fields
+                setJobOrders(joRes.value);
+            } else {
+                console.error("Error fetching job orders:", joRes.reason);
+            }
         } catch (e) {
-            console.error(e);
+            console.error("Error loading calendar schedule data:", e);
         } finally {
             setLoadingShipments(false);
+            setLoadingJOs(false);
         }
     };
 

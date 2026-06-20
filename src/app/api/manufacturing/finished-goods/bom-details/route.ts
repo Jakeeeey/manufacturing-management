@@ -1,23 +1,24 @@
 import { NextResponse } from "next/server";
 import { 
     getBOMDetailsForVersion,
-    fetchAllProducts,
-    fetchAllUnits,
-    getLatestLandedCost,
-    updateProductDetails,
     saveActiveBOMDetails,
     syncBOMComponents,
     syncRoutingSteps,
+    updateProductVersionOverhead
+} from "./bom-details-helper";
+import {
+    fetchAllProducts,
+    getLatestLandedCost,
+    updateProductDetails,
     calculateRollupCost,
-    updateProductStandardCost,
-    updateProductVersionOverhead,
     getProductOverheads,
-    syncProductOverheads,
-    fetchAllOverheadTypes,
-    fetchAllOperations,
-    DIRECTUS_URL,
-    headers
-} from "../../directus-api";
+    syncProductOverheads
+} from "../products/products-helper";
+import { updateProductStandardCost } from "../versions/versions-helper";
+import { fetchAllUnits } from "../units/units-helper";
+import { fetchAllOperations } from "../operations/operations-helper";
+import { fetchAllOverheadTypes } from "../overhead-types/overhead-types-helper";
+import { DIRECTUS_URL, headers } from "@/app/api/manufacturing/directus-api";
 
 export async function GET(request: Request) {
     try {
@@ -85,7 +86,8 @@ export async function GET(request: Request) {
                 operationId: opId || undefined,
                 laborFlatRate: Number(r.estimated_labor_cost),
                 machineHourlyRate: Number(r.estimated_overhead_cost),
-                durationHours: Number(r.duration_hours)
+                durationHours: Number(r.duration_hours),
+                requiresQA: r.requires_qa || false
             };
         });
 
@@ -163,7 +165,8 @@ export async function POST(request: Request) {
             product_segment: details.productSegment,
             product_section: details.productSection,
             product_shelf_life: details.productShelfLife,
-            product_image: details.productImage
+            product_image: details.productImage,
+            production_capacity_per_hour: details.productionCapacityPerHour
         });
         if (!prodOk) throw new Error("Failed to update product details in Directus");
 
@@ -219,3 +222,5 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: (error as { message?: string }).message || "Failed to save BOM details" }, { status: 500 });
     }
 }
+
+

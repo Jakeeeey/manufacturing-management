@@ -71,6 +71,23 @@ export function ScheduleDetailsPanel({
                         </p>
                     </div>
 
+                    {selectedJO.dailyBreakdown && selectedJO.dailyBreakdown.length > 0 && (
+                        <div className="space-y-2 border-t pt-3">
+                            <span className="text-[10px] font-bold text-muted-foreground uppercase block">Daily production breakdown</span>
+                            <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                                {selectedJO.dailyBreakdown.map((run: any) => (
+                                    <div key={run.day} className="flex justify-between items-center bg-muted/20 border p-2 rounded-lg text-[10px]">
+                                        <div className="flex flex-col">
+                                            <span className="font-bold text-foreground">Day {run.day} ({run.date})</span>
+                                            <span className="text-[8px] text-muted-foreground uppercase font-bold">{run.status}</span>
+                                        </div>
+                                        <span className="font-extrabold text-primary">{run.quantity.toLocaleString()} PCS</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
                     {selectedJO.routings && selectedJO.routings.length > 0 && (
                         <div className="space-y-2 border-t pt-3">
                             <span className="text-[10px] font-bold text-muted-foreground uppercase block">Floor routing timeline</span>
@@ -131,7 +148,12 @@ export function ScheduleDetailsPanel({
                         <div className="col-span-2 pt-2 border-t mt-2">
                             <span className="text-muted-foreground block font-bold uppercase text-[9px]">Estimated Time of Arrival (ETA)</span>
 {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                            <span className="font-bold text-foreground block">{selectedShipment.estimated_delivery_date?.split("T")[0] || (selectedShipment as any).date_received?.split("T")[0] || "No ETA"}</span>
+                            <span className="font-bold text-foreground block">
+                                {(selectedShipment as any).lead_time_receiving?.split("T")[0] || 
+                                 selectedShipment.estimated_delivery_date?.split("T")[0] || 
+                                 (selectedShipment as any).date_received?.split("T")[0] || 
+                                 "No ETA"}
+                            </span>
                         </div>
                     </div>
 

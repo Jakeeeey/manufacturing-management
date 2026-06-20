@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { DIRECTUS_URL, headers } from "../../directus-api";
+import { DIRECTUS_URL, headers } from "@/app/api/manufacturing/directus-api";
 
 export async function POST(request: Request) {
     try {
@@ -83,3 +83,5 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: (e as { message?: string }).message || "Failed to register raw material" }, { status: 500 });
     }
 }
+
+

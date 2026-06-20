@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Cpu, Merge, Loader2, Layers, AlertTriangle, ArrowRight, CheckCircle, Clock, DollarSign, Users, UserPlus, CheckSquare, Square } from "lucide-react";
+import { Cpu, Merge, Loader2, Layers, AlertTriangle, ArrowRight, CheckCircle, Clock, DollarSign, Users, UserPlus, CheckSquare, Square, Calendar, Play } from "lucide-react";
 import { JobOrder } from "../types";
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { toast } from "sonner";
@@ -16,7 +16,15 @@ interface JobOrdersListProps {
     handleDeleteJO: (joId: string) => void;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
     branches: any[];
-    handleCreatePrerequisiteJobOrder: (parentJo: JobOrder, compName: string, compProductId: number, suggestedQty: number) => void;
+    handleCreatePrerequisiteJobOrder: (
+        parentJo: JobOrder,
+        compName: string,
+        compProductId: number,
+        suggestedQty: number,
+        customCapacity?: number,
+        customShift?: string
+    ) => void;
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
     users: any[];
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -47,6 +55,82 @@ export function JobOrdersList({
 }: JobOrdersListProps) {
     const [assigningJoId, setAssigningJoId] = useState<string | null>(null);
     const [selectedUserIds, setSelectedUserIds] = useState<number[]>([]);
+
+    const [prereqParentJo, setPrereqParentJo] = useState<JobOrder | null>(null);
+    const [prereqCompName, setPrereqCompName] = useState<string>("");
+    const [prereqCompProductId, setPrereqCompProductId] = useState<number | null>(null);
+    const [prereqQty, setPrereqQty] = useState<number>(0);
+    const [prereqCapacity, setPrereqCapacity] = useState<string>("");
+    const [prereqShiftOption, setPrereqShiftOption] = useState<string>("8");
+    const [isPrereqModalOpen, setIsPrereqModalOpen] = useState<boolean>(false);
+
+    const getProductCapacityLocal = (productId: number) => {
+        const p = products.find(prod => Number(prod.product_id) === Number(productId));
+        if (!p) return 0;
+        if (p.production_capacity_per_hour && Number(p.production_capacity_per_hour) > 0) {
+            return Number(p.production_capacity_per_hour);
+        }
+        const parentId = p.parent_id && typeof p.parent_id === "object"
+            ? Number((p.parent_id as any).product_id)
+            : (p.parent_id ? Number(p.parent_id) : null);
+        if (parentId) {
+            const parent = products.find(prod => Number(prod.product_id) === Number(parentId));
+            if (parent && parent.production_capacity_per_hour && Number(parent.production_capacity_per_hour) > 0) {
+                const uomCount = Number(p.unit_of_measurement_count || 1);
+                return Number(parent.production_capacity_per_hour) * uomCount;
+            }
+        }
+        return 0;
+    };
+
+    const openPrereqModal = (parentJo: JobOrder, compName: string, compProductId: number, qty: number) => {
+        setPrereqParentJo(parentJo);
+        setPrereqCompName(compName);
+        setPrereqCompProductId(compProductId);
+        setPrereqQty(qty);
+        const cap = getProductCapacityLocal(compProductId);
+        setPrereqCapacity(cap > 0 ? String(cap) : "");
+        setPrereqShiftOption("8");
+        setIsPrereqModalOpen(true);
+    };
+
+    const previewDailyBreakdown = React.useMemo(() => {
+        if (!prereqCompProductId || prereqQty <= 0) return null;
+        const capacityPerHour = Number(prereqCapacity) || 0;
+        if (capacityPerHour <= 0) return null;
+        
+        const hoursPerDay = Number(prereqShiftOption);
+        const dailyCapacity = capacityPerHour * hoursPerDay;
+        const totalDays = Math.ceil(prereqQty / dailyCapacity);
+        
+        const breakdown = [];
+        let remainingQty = prereqQty;
+        const startDate = new Date();
+        startDate.setDate(startDate.getDate() + 1);
+        
+        const limitDays = Math.min(totalDays, 100);
+        for (let i = 1; i <= limitDays; i++) {
+            const dayQty = Math.min(remainingQty, dailyCapacity);
+            const currentDate = new Date(startDate);
+            currentDate.setDate(startDate.getDate() + (i - 1));
+            const dateString = currentDate.toISOString().split("T")[0];
+            
+            breakdown.push({
+                day: i,
+                date: dateString,
+                quantity: dayQty
+            });
+            remainingQty -= dayQty;
+            if (remainingQty <= 0) break;
+        }
+        return {
+            breakdown,
+            totalDays,
+            dailyRate: dailyCapacity,
+            hasTruncated: totalDays > 100
+        };
+    }, [prereqCompProductId, prereqQty, prereqCapacity, prereqShiftOption]);
+
 
     const userWorkloads = React.useMemo(() => {
         const loads: Record<string, number> = {};
@@ -99,6 +183,8 @@ export function JobOrdersList({
         }>;
     }>>({});
 
+    const [assigningStepKeys, setAssigningStepKeys] = useState<Record<string, boolean>>({});
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const updateProcInput = (joId: string, patch: any) => {
         setProcurementInputs(prev => {
@@ -129,39 +215,49 @@ export function JobOrdersList({
     };
 
     const handleAssignPersonnelToTask = async (jo: JobOrder, productId: number, routingId: number, userId: string) => {
-        const userObj = users.find(u => Number(u.user_id) === Number(userId));
-        const productsList = jo.products && jo.products.length > 0 ? jo.products : [{
-            product_id: jo.product_id,
-            product_name: jo.product_name,
-            quantity: jo.quantity,
-            bom: jo.bom,
-            components: jo.components,
-            routings: jo.routings,
-            allocationResults: jo.allocationResults
-        }];
+        const stepKey = `${jo.jo_id}-${productId}-${routingId}`;
+        setAssigningStepKeys(prev => ({ ...prev, [stepKey]: true }));
+        try {
+            const userObj = users.find(u => Number(u.user_id) === Number(userId));
+            const productsList = jo.products && jo.products.length > 0 ? jo.products : [{
+                product_id: jo.product_id,
+                product_name: jo.product_name,
+                quantity: jo.quantity,
+                bom: jo.bom,
+                components: jo.components,
+                routings: jo.routings,
+                allocationResults: jo.allocationResults
+            }];
 
-        const updatedProductsList = productsList.map(p => {
-            if (Number(p.product_id) === Number(productId)) {
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const updatedRoutings = (p.routings || []).map((r: any) => {
-                    if (Number(r.routing_id) === Number(routingId)) {
-                        return { 
-                            ...r, 
-                            assigned_personnel: userObj ? { 
-                                id: userObj.user_id, 
-                                name: `${userObj.user_fname} ${userObj.user_lname}`, 
-                                position: userObj.user_position 
-                            } : null 
-                        };
-                    }
-                    return r;
-                });
-                return { ...p, routings: updatedRoutings };
-            }
-            return p;
-        });
+            const updatedProductsList = productsList.map(p => {
+                if (Number(p.product_id) === Number(productId)) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    const updatedRoutings = (p.routings || []).map((r: any) => {
+                        if (Number(r.routing_id) === Number(routingId)) {
+                            return { 
+                                ...r, 
+                                assigned_personnel: userObj ? { 
+                                    id: userObj.user_id, 
+                                    name: `${userObj.user_fname} ${userObj.user_lname}`, 
+                                    position: userObj.user_position 
+                                } : null 
+                            };
+                        }
+                        return r;
+                    });
+                    return { ...p, routings: updatedRoutings };
+                }
+                return p;
+            });
 
-        await modifyJobOrder(jo.jo_id, { products: updatedProductsList });
+            await modifyJobOrder(jo.jo_id, { products: updatedProductsList });
+            toast.success("Personnel assigned to step successfully.");
+        } catch (err) {
+            console.error("[JobOrdersList] Assign operator error:", err);
+            toast.error("Failed to assign operator.");
+        } finally {
+            setAssigningStepKeys(prev => ({ ...prev, [stepKey]: false }));
+        }
     };
 
     const handleVerifyQAForTask = async (jo: JobOrder, productId: number, routingId: number, qaStatus: "Passed" | "Pending") => {
@@ -346,6 +442,80 @@ export function JobOrdersList({
                             </div>
                         </div>
 
+                        {/* Daily runs breakdown section */}
+                        {jo.dailyBreakdown && jo.dailyBreakdown.length > 0 && (
+                            <div className="mt-3 border-t border-slate-800/80 pt-3 space-y-2.5">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-[10px] font-extrabold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                                        <Calendar className="h-3.5 w-3.5 text-primary" />
+                                        Daily Production Runs Breakdown
+                                    </span>
+                                    {jo.shiftOption && (
+                                        <span className="text-[9px] font-semibold bg-primary/10 text-primary border border-primary/20 px-2 py-0.5 rounded-full">
+                                            {jo.shiftOption === "8" ? "Single Shift (8h)" : jo.shiftOption === "16" ? "Double Shift (16h)" : "Triple Shift (24h)"}
+                                        </span>
+                                    )}
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2">
+                                    {jo.dailyBreakdown.map((run: any) => (
+                                        <div 
+                                            key={run.day} 
+                                            className="bg-slate-950/20 border border-slate-800/80 p-2.5 rounded-xl text-[10px] flex flex-col gap-1.5 hover:border-slate-700/80 transition-colors"
+                                        >
+                                            <div className="flex justify-between items-center">
+                                                <span className="font-extrabold text-primary">Day {run.day}</span>
+                                                <span className={`text-[8px] border px-1.5 py-0.2 rounded font-bold uppercase ${
+                                                    run.status === "Finished" || run.status === "Completed"
+                                                        ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
+                                                        : run.status === "Ongoing" || run.status === "In Progress"
+                                                        ? "bg-amber-500/10 text-amber-500 border-amber-500/20"
+                                                        : "bg-slate-800 text-muted-foreground border-slate-700"
+                                                }`}>
+                                                    {run.status}
+                                                </span>
+                                            </div>
+                                            <div className="text-muted-foreground font-semibold space-y-1">
+                                                <div className="flex justify-between">
+                                                    <span>{run.date}</span>
+                                                    <span className="font-bold text-foreground">Target: {run.quantity.toLocaleString()}</span>
+                                                </div>
+                                                {(run.status === "Finished" || run.status === "Completed") && (
+                                                    <div className="flex justify-between items-center border-t border-slate-800/40 pt-1 text-[9.5px]">
+                                                        <span className="text-muted-foreground">Yielded:</span>
+                                                        {(() => {
+                                                            const actual = run.actual_yield ?? run.quantity;
+                                                            const target = run.quantity;
+                                                            const diff = actual - target;
+                                                            
+                                                            if (diff < 0) {
+                                                                return (
+                                                                    <span className="font-extrabold text-rose-500">
+                                                                        {actual.toLocaleString()} ({diff.toLocaleString()})
+                                                                    </span>
+                                                                );
+                                                            } else if (diff > 0) {
+                                                                return (
+                                                                    <span className="font-extrabold text-sky-500">
+                                                                        {actual.toLocaleString()} (+{diff.toLocaleString()})
+                                                                    </span>
+                                                                );
+                                                            } else {
+                                                                return (
+                                                                    <span className="font-extrabold text-emerald-500">
+                                                                        {actual.toLocaleString()}
+                                                                    </span>
+                                                                );
+                                                            }
+                                                        })()}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
                         {/* Allocation Check Action */}
                         {jo.status === "Draft" && (
                             <button
@@ -416,7 +586,7 @@ export function JobOrdersList({
                                                                         onClick={() => {
                                                                             const base = Number(alloc.base_quantity || 1);
                                                                             const suggested = Math.max(base, Math.ceil(alloc.deficit / base) * base);
-                                                                            handleCreatePrerequisiteJobOrder(jo, alloc.component_name, alloc.component_product_id!, suggested);
+                                                                            openPrereqModal(jo, alloc.component_name, alloc.component_product_id!, suggested);
                                                                         }}
                                                                         className="bg-primary text-primary-foreground font-bold hover:bg-primary/95 text-[9px] px-2 py-0.5 rounded shadow-sm transition-all cursor-pointer"
                                                                     >
@@ -445,7 +615,7 @@ export function JobOrdersList({
                         {/* Shortage Path / Procurement trigger */}
                         {jo.status === "Shortage" && (() => {
                             const defaultSelectedIds = jo.allocationResults
-                                ?.filter(alloc => alloc.deficit > 0)
+                                ?.filter(alloc => alloc.deficit > 0 && !alloc.has_bom)
                                 .map(alloc => alloc.component_product_id || 0) || [];
 
                             const currentProcInput = procurementInputs[jo.jo_id] || {
@@ -472,23 +642,42 @@ export function JobOrdersList({
                                                 <p className="text-[10px]">Production halted. Consolidated shortages must be requested, approved, and QA inspected.</p>
                                             </div>
                                         </div>
-                                        <button
-                                            disabled={checkingInventoryId === jo.jo_id}
-                                            onClick={() => handleRunFIFOInventoryCheck(jo)}
-                                            className="inline-flex items-center gap-1.5 bg-amber-600/10 hover:bg-amber-600/20 text-amber-700 text-[10px] font-bold px-2.5 py-1 rounded border border-amber-600/30 transition-all cursor-pointer"
-                                        >
-                                            {checkingInventoryId === jo.jo_id ? (
-                                                <>
-                                                    <Loader2 className="h-3 w-3 animate-spin" />
-                                                    Re-checking...
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <Cpu className="h-3 w-3" />
-                                                    Re-check Stock Allocation
-                                                </>
-                                            )}
-                                        </button>
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                disabled={checkingInventoryId === jo.jo_id}
+                                                onClick={() => handleRunFIFOInventoryCheck(jo)}
+                                                className="inline-flex items-center gap-1.5 bg-amber-600/10 hover:bg-amber-600/20 text-amber-700 text-[10px] font-bold px-2.5 py-1 rounded border border-amber-600/30 transition-all cursor-pointer"
+                                            >
+                                                {checkingInventoryId === jo.jo_id ? (
+                                                    <>
+                                                        <Loader2 className="h-3 w-3 animate-spin" />
+                                                        Re-checking...
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <Cpu className="h-3 w-3" />
+                                                        Re-check Stock Allocation
+                                                    </>
+                                                )}
+                                            </button>
+                                            <button
+                                                disabled={checkingInventoryId === jo.jo_id}
+                                                onClick={async () => {
+                                                    if (confirm("Are you sure you want to bypass the shortage block and release this Job Order to the shop floor? This allows daily production runs to start using existing inventory.")) {
+                                                        try {
+                                                            await modifyJobOrder(jo.jo_id, { status: "Proceed" });
+                                                            toast.success("Job Order successfully released to production!");
+                                                        } catch (err: any) {
+                                                            toast.error("Failed to release Job Order.");
+                                                        }
+                                                    }
+                                                }}
+                                                className="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold px-2.5 py-1 rounded transition-all cursor-pointer border-none shadow-sm font-sans"
+                                            >
+                                                <Play className="h-3 w-3 fill-white" />
+                                                Release to Production Anyway
+                                            </button>
+                                        </div>
                                     </div>
 
                                     {jo.procurementStatus === "Idle" && (
@@ -712,7 +901,7 @@ export function JobOrdersList({
                                                                 </tr>
                                                             </thead>
                                                             <tbody className="divide-y">
-                                                                {jo.allocationResults?.filter(alloc => alloc.deficit > 0).map(alloc => {
+                                                                {jo.allocationResults?.filter(alloc => alloc.deficit > 0 && !alloc.has_bom).map(alloc => {
                                                                     const compId = alloc.component_product_id || 0;
                                                                     
                                                                     const matchProduct = products.find(p => Number(p.product_id) === Number(compId));
@@ -798,7 +987,7 @@ export function JobOrdersList({
                                                             disabled={procurementLoadingId === jo.jo_id || !currentQaInput.inspectorId}
                                                             onClick={async () => {
                                                                 const lines = jo.allocationResults
-                                                                    ?.filter(alloc => alloc.deficit > 0)
+                                                                    ?.filter(alloc => alloc.deficit > 0 && !alloc.has_bom)
                                                                     .map(alloc => {
                                                                         const compId = alloc.component_product_id || 0;
                                                                         
@@ -1018,129 +1207,193 @@ export function JobOrdersList({
                                                     <span className="text-[10px] font-extrabold uppercase text-primary block">
                                                         Routing Sequence: {p.product_name || jo.product_name} ({p.quantity} PCS)
                                                     </span>
-                                                    <div className="relative pl-3 border-l-2 border-emerald-500/30 space-y-4">
+                                                    <div className="flex items-stretch gap-3 overflow-x-auto pb-4 pt-1 px-1 scrollbar-thin scrollbar-thumb-slate-850 scrollbar-track-transparent">
 {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                                                        {p.routings.map((rout: any) => {
+                                                        {p.routings.map((rout: any, rIdx: number) => {
                                                             const labor = Number(rout.estimated_labor_cost) || 0;
                                                             const overhead = Number(rout.estimated_overhead_cost) || 0;
                                                             const stepHours = (Number(rout.duration_hours) || 0) * Number(p.quantity);
                                                             const stepManpower = Math.max(1, Math.ceil(stepHours / 8));
+
+                                                            const relTask = jo.routing_tasks?.find(t => Number(t.routing_id) === Number(rout.routing_id));
+                                                            const taskQAStatus = relTask ? (relTask.status === "Completed" ? "Passed" : "Pending") : (rout.qa_status || "Pending");
+                                                            const isCompleted = taskQAStatus === "Passed";
+
+                                                            // QA Log parsing
+                                                            const latestQaLog = relTask?.qa_logs?.[relTask.qa_logs.length - 1];
+                                                            const qaPhotos = Array.isArray(latestQaLog?.photos) ? latestQaLog.photos : [];
+                                                            const qaComments = latestQaLog?.comments;
+                                                            const actualYield = latestQaLog?.actual_quantity;
+
                                                             return (
-                                                                <div key={rout.routing_id} className="relative space-y-2 bg-slate-950/20 border border-slate-800/50 rounded-lg p-3">
-                                                                    <div className="absolute -left-[20px] top-4 h-2.5 w-2.5 rounded-full bg-emerald-500 border border-card" />
-                                                                    <div className="space-y-1 text-[10px]">
-                                                                        <div className="flex justify-between font-bold text-foreground">
-                                                                            <span>Step {rout.sequence_order}: {rout.operation_name}</span>
-                                                                            <span>{rout.duration_hours} Hrs/Unit ({stepHours.toFixed(1)} Total Hrs)</span>
-                                                                        </div>
-                                                                        <div className="flex justify-between text-muted-foreground">
-                                                                            <span>Labor: ₱{labor.toFixed(2)} | Overhead: ₱{overhead.toFixed(2)}</span>
-                                                                            <span className="text-primary font-bold">Suggested Manpower: {stepManpower} Workers</span>
-                                                                        </div>
-
-                                                                        {/* Operator Assignment per Task */}
-                                                                        {jo.status === "Ongoing" ? (
-                                                                            <div className="flex items-center gap-2 mt-2 pt-2 border-t border-slate-800/40">
-                                                                                <span className="text-[9px] font-bold text-muted-foreground uppercase">Assign Operator:</span>
-                                                                                <select
-                                                                                    className="bg-background border rounded px-1.5 py-0.5 text-[10px] text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                                                                                    value={rout.assigned_personnel?.id?.toString() || ""}
-                                                                                    onChange={(e) => handleAssignPersonnelToTask(jo, p.product_id, rout.routing_id, e.target.value)}
-                                                                                >
-                                                                                    <option value="">-- Choose Operator --</option>
-                                                                                    {[...users].map(u => {
-                                                                                        const workload = userWorkloads[String(u.user_id)] || 0;
-                                                                                        const isOver = workload > 40;
-                                                                                        const opName = (rout.operation_name || "").toLowerCase();
-                                                                                        const pos = (u.user_position || "").toLowerCase();
-                                                                                        const isRoleMatch = pos && opName && (opName.includes(pos) || pos.includes(opName) ||
-                                                                                            (pos.includes("welder") && opName.includes("weld")) ||
-                                                                                            (pos.includes("mixer") && opName.includes("mix")) ||
-                                                                                            (pos.includes("operator") && opName.includes("assemble")) ||
-                                                                                            (pos.includes("baker") && opName.includes("bake")) ||
-                                                                                            (pos.includes("packer") && opName.includes("pack")));
-                                                                                        return { ...u, workload, isRoleMatch, isOver };
-                                                                                    }).sort((a, b) => {
-                                                                                        if (a.isRoleMatch && !b.isRoleMatch) return -1;
-                                                                                        if (!a.isRoleMatch && b.isRoleMatch) return 1;
-                                                                                        return a.workload - b.workload;
-                                                                                    }).map(u => {
-                                                                                        const statusStr = u.isOver ? "⚠️ OVERLOADED" : `${u.workload.toFixed(1)} hrs`;
-                                                                                        const prefix = u.isRoleMatch ? "⭐ [Match] " : "";
-                                                                                        return (
-                                                                                            <option key={u.user_id} value={u.user_id}>
-                                                                                                {prefix}{u.user_fname} {u.user_lname} ({u.user_position || "Operator"}) — {statusStr}
-                                                                                            </option>
-                                                                                        );
-                                                                                    })}
-                                                                                </select>
-                                                                                {rout.assigned_personnel && (
-                                                                                    <span className="bg-emerald-500/10 text-emerald-600 font-bold border border-emerald-500/20 text-[9px] px-2 py-0.5 rounded">
-                                                                                        {rout.assigned_personnel.name} ({rout.assigned_personnel.position})
-                                                                                    </span>
-                                                                                )}
+                                                                <React.Fragment key={rout.routing_id}>
+                                                                    <div className="w-80 shrink-0 flex flex-col justify-between bg-slate-900/35 hover:bg-slate-900/50 border border-slate-800/80 rounded-xl p-3.5 shadow-lg relative transition-all duration-200 space-y-3 overflow-hidden">
+                                                                        <div className="space-y-2.5 text-[10px]">
+                                                                            <div className="flex justify-between font-bold text-foreground">
+                                                                                <span className="text-[9px] text-primary font-extrabold uppercase tracking-wider">Step {rout.sequence_order}</span>
+                                                                                <span className="text-muted-foreground">{rout.duration_hours} Hrs/Unit ({stepHours.toFixed(1)}h total)</span>
                                                                             </div>
-                                                                        ) : (
-                                                                            <div className="text-[10px] mt-2 pt-2 border-t border-slate-800/40 text-muted-foreground font-semibold flex items-center gap-1.5">
-                                                                                <span>Assigned Worker:</span>
-                                                                                {rout.assigned_personnel ? (
-                                                                                    <span className="bg-slate-800 text-foreground border border-slate-700 text-[9px] px-2 py-0.5 rounded">
-                                                                                        {rout.assigned_personnel.name} ({rout.assigned_personnel.position})
-                                                                                    </span>
-                                                                                ) : (
-                                                                                    <span className="italic text-muted-foreground/50">None</span>
-                                                                                )}
+                                                                            <div className="font-extrabold text-foreground text-xs min-h-[28px] flex items-center">
+                                                                                {rout.operation_name}
                                                                             </div>
-                                                                        )}
+                                                                            <div className="flex justify-between text-muted-foreground pt-1.5 border-t border-slate-800/40">
+                                                                                <span>Labor: ₱{labor.toFixed(2)} | OH: ₱{overhead.toFixed(2)}</span>
+                                                                                <span className="text-primary font-bold">{stepManpower} Workers suggested</span>
+                                                                            </div>
+                                                                            
+                                                                            {/* Operator Assignment per Task */}
+                                                                            {jo.status === "Ongoing" ? (
+                                                                                <div className="flex flex-col gap-1.5 mt-2 pt-2 border-t border-slate-800/40">
+                                                                                    <div className="flex items-center justify-between gap-2">
+                                                                                        <span className="text-[9px] font-bold text-muted-foreground uppercase flex items-center gap-1 shrink-0">
+                                                                                            Assign Operator:
+                                                                                            {assigningStepKeys[`${jo.jo_id}-${p.product_id}-${rout.routing_id}`] && (
+                                                                                                <Loader2 className="h-2.5 w-2.5 animate-spin text-emerald-500" />
+                                                                                            )}
+                                                                                        </span>
+                                                                                        <select
+                                                                                            disabled={assigningStepKeys[`${jo.jo_id}-${p.product_id}-${rout.routing_id}`]}
+                                                                                            className="bg-background border border-slate-800 rounded px-1.5 py-0.5 text-[10px] text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500 disabled:opacity-50 max-w-[140px] truncate"
+                                                                                            value={rout.assigned_personnel?.id?.toString() || ""}
+                                                                                            onChange={(e) => handleAssignPersonnelToTask(jo, p.product_id, rout.routing_id, e.target.value)}
+                                                                                        >
+                                                                                            <option value="">-- Choose Operator --</option>
+                                                                                            {[...users].map(u => {
+                                                                                                const workload = userWorkloads[String(u.user_id)] || 0;
+                                                                                                const isOver = workload > 40;
+                                                                                                const opName = (rout.operation_name || "").toLowerCase();
+                                                                                                const pos = (u.user_position || "").toLowerCase();
+                                                                                                const isRoleMatch = pos && opName && (opName.includes(pos) || pos.includes(opName) ||
+                                                                                                    (pos.includes("welder") && opName.includes("weld")) ||
+                                                                                                    (pos.includes("mixer") && opName.includes("mix")) ||
+                                                                                                    (pos.includes("operator") && opName.includes("assemble")) ||
+                                                                                                    (pos.includes("baker") && opName.includes("bake")) ||
+                                                                                                    (pos.includes("packer") && opName.includes("pack")));
+                                                                                                return { ...u, workload, isRoleMatch, isOver };
+                                                                                            }).sort((a, b) => {
+                                                                                                if (a.isRoleMatch && !b.isRoleMatch) return -1;
+                                                                                                if (!a.isRoleMatch && b.isRoleMatch) return 1;
+                                                                                                return a.workload - b.workload;
+                                                                                            }).map(u => {
+                                                                                                const statusStr = u.isOver ? "⚠️ OVERLOADED" : `${u.workload.toFixed(1)} hrs`;
+                                                                                                const prefix = u.isRoleMatch ? "⭐ [Match] " : "";
+                                                                                                return (
+                                                                                                    <option key={u.user_id} value={u.user_id}>
+                                                                                                        {prefix}{u.user_fname} {u.user_lname} ({u.user_position || "Operator"}) — {statusStr}
+                                                                                                    </option>
+                                                                                                );
+                                                                                            })}
+                                                                                        </select>
+                                                                                    </div>
+                                                                                    {rout.assigned_personnel && (
+                                                                                        <div className="flex flex-wrap gap-1 mt-0.5">
+                                                                                            <span className="bg-emerald-500/10 text-emerald-600 font-bold border border-emerald-500/20 text-[9px] px-2 py-0.5 rounded leading-normal">
+                                                                                                {rout.assigned_personnel.name} ({rout.assigned_personnel.position})
+                                                                                            </span>
+                                                                                        </div>
+                                                                                    )}
+                                                                                </div>
+                                                                            ) : (
+                                                                                <div className="text-[10px] mt-2 pt-2 border-t border-slate-800/40 text-muted-foreground font-semibold flex flex-col gap-1">
+                                                                                    <span>Assigned Worker:</span>
+                                                                                    {rout.assigned_personnel ? (
+                                                                                        <div className="flex flex-wrap gap-1">
+                                                                                            <span className="bg-slate-800 text-foreground border border-slate-700 text-[9px] px-2 py-0.5 rounded leading-normal">
+                                                                                                {rout.assigned_personnel.name} ({rout.assigned_personnel.position})
+                                                                                            </span>
+                                                                                        </div>
+                                                                                    ) : (
+                                                                                        <span className="italic text-muted-foreground/50 text-[9px]">None</span>
+                                                                                    )}
+                                                                                </div>
+                                                                            )}
 
-                                                                        {/* Task Status & QA Verification */}
-                                                                        {jo.status === "Ongoing" ? (
-                                                                            <div className="flex items-center justify-between border-t border-slate-800/40 pt-2 mt-2">
-                                                                                <div className="flex items-center gap-1.5">
-                                                                                    <span className="text-[9px] font-bold text-muted-foreground uppercase">Task QA:</span>
-                                                                                    {rout.qa_status === "Passed" ? (
-                                                                                        <span className="inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-600 text-[9px] font-extrabold px-2 py-0.5 rounded border border-emerald-500/20 uppercase">
-                                                                                            <CheckCircle className="h-2.5 w-2.5" /> Passed
+                                                                            {/* If completed, show QA Log details */}
+                                                                            {isCompleted && latestQaLog && (
+                                                                                <div className="mt-2 p-2 bg-slate-950/40 border border-slate-850 rounded-lg space-y-1 text-[9px] text-muted-foreground">
+                                                                                    <div className="flex justify-between font-semibold">
+                                                                                        <span>Yield: <strong className="text-foreground">{actualYield ?? p.quantity}</strong> / {p.quantity} PCS</span>
+                                                                                        {latestQaLog.recorded_at && (
+                                                                                            <span>{new Date(latestQaLog.recorded_at).toLocaleDateString()}</span>
+                                                                                        )}
+                                                                                    </div>
+                                                                                    {qaComments && (
+                                                                                        <div className="text-slate-300 italic border-l border-slate-700 pl-1.5 py-0.5">
+                                                                                            &quot;{qaComments}&quot;
+                                                                                        </div>
+                                                                                    )}
+                                                                                    {qaPhotos.length > 0 && (
+                                                                                        <div className="flex gap-1 overflow-x-auto pt-1 scrollbar-none">
+                                                                                            {qaPhotos.map((photoId: string) => (
+                                                                                                <div key={photoId} className="h-8 w-8 shrink-0 rounded overflow-hidden border border-slate-850 bg-slate-900">
+                                                                                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                                                                    <img
+                                                                                                        src={`http://vtc:8074/assets/${photoId}`}
+                                                                                                        alt="QA thumbnail"
+                                                                                                        className="w-full h-full object-cover cursor-zoom-in"
+                                                                                                        onClick={() => window.open(`http://vtc:8074/assets/${photoId}`, '_blank')}
+                                                                                                    />
+                                                                                                </div>
+                                                                                            ))}
+                                                                                        </div>
+                                                                                    )}
+                                                                                </div>
+                                                                            )}
+
+                                                                            {/* Task Status & QA Verification */}
+                                                                            {jo.status === "Ongoing" ? (
+                                                                                <div className="flex items-center justify-between border-t border-slate-800/40 pt-2 mt-2">
+                                                                                    <div className="flex items-center gap-1.5">
+                                                                                        <span className="text-[9px] font-bold text-muted-foreground uppercase">Task QA:</span>
+                                                                                        {isCompleted ? (
+                                                                                            <span className="inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-600 text-[9px] font-extrabold px-2 py-0.5 rounded border border-emerald-500/20 uppercase">
+                                                                                                <CheckCircle className="h-2.5 w-2.5" /> Passed
+                                                                                            </span>
+                                                                                        ) : (
+                                                                                            <span className="bg-amber-500/10 text-amber-600 text-[9px] font-extrabold px-2 py-0.5 rounded border border-amber-500/20 uppercase">
+                                                                                                Pending
+                                                                                            </span>
+                                                                                        )}
+                                                                                    </div>
+                                                                                    
+                                                                                    {!isCompleted ? (
+                                                                                        <button
+                                                                                            onClick={() => handleVerifyQAForTask(jo, p.product_id, rout.routing_id, "Passed")}
+                                                                                            className="bg-emerald-600 hover:bg-emerald-700 text-white text-[9px] font-bold px-2 py-1 rounded shadow-sm border-none cursor-pointer flex items-center gap-1"
+                                                                                        >
+                                                                                            <CheckCircle className="h-2.5 w-2.5" /> QA Pass & Complete Task
+                                                                                        </button>
+                                                                                    ) : (
+                                                                                        <button
+                                                                                            onClick={() => handleVerifyQAForTask(jo, p.product_id, rout.routing_id, "Pending")}
+                                                                                            className="bg-slate-800 hover:bg-slate-700 text-muted-foreground hover:text-foreground text-[9px] font-bold px-2 py-1 rounded shadow-sm border-none cursor-pointer flex items-center gap-1"
+                                                                                        >
+                                                                                            Reset Task
+                                                                                        </button>
+                                                                                    )}
+                                                                                </div>
+                                                                            ) : (
+                                                                                <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-slate-800/40 text-[9px]">
+                                                                                    <span className="font-bold text-muted-foreground uppercase">Task QA:</span>
+                                                                                    {isCompleted ? (
+                                                                                        <span className="inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-600 font-extrabold px-2 py-0.5 rounded border border-emerald-500/20 uppercase">
+                                                                                            <CheckCircle className="h-2.5 w-2.5" /> QA Passed {rout.completed_at && `(at ${new Date(rout.completed_at).toLocaleString()})`}
                                                                                         </span>
                                                                                     ) : (
-                                                                                        <span className="bg-amber-500/10 text-amber-600 text-[9px] font-extrabold px-2 py-0.5 rounded border border-amber-500/20 uppercase">
-                                                                                            Pending
+                                                                                        <span className="bg-slate-800 text-muted-foreground font-extrabold px-2 py-0.5 rounded border border-slate-700 uppercase">
+                                                                                            Not Started
                                                                                         </span>
                                                                                     )}
                                                                                 </div>
-                                                                                
-                                                                                {rout.qa_status !== "Passed" ? (
-                                                                                    <button
-                                                                                        onClick={() => handleVerifyQAForTask(jo, p.product_id, rout.routing_id, "Passed")}
-                                                                                        className="bg-emerald-600 hover:bg-emerald-700 text-white text-[9px] font-bold px-2 py-1 rounded shadow-sm border-none cursor-pointer flex items-center gap-1"
-                                                                                    >
-                                                                                        <CheckCircle className="h-2.5 w-2.5" /> QA Pass & Complete Task
-                                                                                    </button>
-                                                                                ) : (
-                                                                                    <button
-                                                                                        onClick={() => handleVerifyQAForTask(jo, p.product_id, rout.routing_id, "Pending")}
-                                                                                        className="bg-slate-800 hover:bg-slate-700 text-muted-foreground hover:text-foreground text-[9px] font-bold px-2 py-1 rounded shadow-sm border-none cursor-pointer flex items-center gap-1"
-                                                                                    >
-                                                                                        Reset Task
-                                                                                    </button>
-                                                                                )}
-                                                                            </div>
-                                                                        ) : (
-                                                                            <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-slate-800/40 text-[9px]">
-                                                                                <span className="font-bold text-muted-foreground uppercase">Task QA:</span>
-                                                                                {rout.qa_status === "Passed" ? (
-                                                                                    <span className="inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-600 font-extrabold px-2 py-0.5 rounded border border-emerald-500/20 uppercase">
-                                                                                        <CheckCircle className="h-2.5 w-2.5" /> QA Passed {rout.completed_at && `(at ${new Date(rout.completed_at).toLocaleString()})`}
-                                                                                    </span>
-                                                                                ) : (
-                                                                                    <span className="bg-slate-800 text-muted-foreground font-extrabold px-2 py-0.5 rounded border border-slate-700 uppercase">
-                                                                                        Not Started
-                                                                                    </span>
-                                                                                )}
-                                                                            </div>
-                                                                        )}
+                                                                            )}
+                                                                        </div>
                                                                     </div>
-                                                                </div>
+                                                                    {rIdx < p.routings.length - 1 && (
+                                                                        <div className="flex items-center justify-center shrink-0 self-center text-slate-700 animate-pulse px-1">
+                                                                            <ArrowRight className="h-4 w-4" />
+                                                                        </div>
+                                                                    )}
+                                                                </React.Fragment>
                                                             );
                                                         })}
                                                     </div>
@@ -1259,6 +1512,169 @@ export function JobOrdersList({
                     </div>
                 );
             })}
+
+            {/* Prerequisite Parameters Modal */}
+            {isPrereqModalOpen && prereqCompProductId && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+                        {/* Header */}
+                        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-950/50">
+                            <div className="flex items-center gap-2.5">
+                                <div className="p-1.5 rounded-lg bg-primary/10 text-primary">
+                                    <Cpu className="h-5 w-5" />
+                                </div>
+                                <div>
+                                    <h3 className="font-bold text-foreground text-sm">Configure Prerequisite Job Order</h3>
+                                    <p className="text-[10px] text-muted-foreground">Setup daily production capacity & shift parameters</p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setIsPrereqModalOpen(false)}
+                                className="text-muted-foreground hover:text-foreground p-1 rounded-lg transition-colors cursor-pointer"
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        {/* Content */}
+                        <div className="p-6 space-y-5 overflow-y-auto flex-1">
+                            {/* SKU Info */}
+                            <div className="grid grid-cols-2 gap-4 p-3 bg-slate-950/40 border border-slate-800/40 rounded-xl text-xs">
+                                <div>
+                                    <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Sub-Assembly SKU</div>
+                                    <div className="font-semibold text-foreground mt-0.5">{prereqCompName}</div>
+                                </div>
+                                <div>
+                                    <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Suggested Quantity</div>
+                                    <div className="font-bold text-primary mt-0.5">{prereqQty.toLocaleString()} Units</div>
+                                </div>
+                            </div>
+
+                            {/* Parameter Settings */}
+                            <div className="space-y-4">
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">
+                                        Hourly Production Capacity (SKU Master)
+                                    </label>
+                                    <input
+                                        type="number"
+                                        min="0.01"
+                                        step="0.01"
+                                        value={prereqCapacity}
+                                        onChange={(e) => setPrereqCapacity(e.target.value)}
+                                        placeholder="Units producible per hour..."
+                                        className="w-full rounded-lg border border-slate-800 bg-slate-950/20 px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary text-foreground font-semibold"
+                                    />
+                                    <span className="text-[9px] text-muted-foreground block">
+                                        Adjust rate. Creating the Job Order will also update this rate in the Finished Goods master.
+                                    </span>
+                                </div>
+
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">
+                                        Shift Schedule Option
+                                    </label>
+                                    <select
+                                        value={prereqShiftOption}
+                                        onChange={(e) => setPrereqShiftOption(e.target.value)}
+                                        className="w-full rounded-lg border border-slate-800 bg-slate-950/20 px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary text-foreground font-semibold"
+                                    >
+                                        <option value="8">Single Shift (8h Run/Day)</option>
+                                        <option value="16">Double Shift (16h Run/Day)</option>
+                                        <option value="24">Triple Shift (24h Run/Day)</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            {/* Live Stats Preview */}
+                            {previewDailyBreakdown && typeof previewDailyBreakdown === "object" && (
+                                <div className="space-y-3">
+                                    <div className="border border-slate-800 rounded-xl p-4 bg-slate-950/20 space-y-3">
+                                        <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Estimated Metrics</div>
+                                        <div className="grid grid-cols-3 gap-2 text-center">
+                                            <div className="p-2.5 bg-slate-950/50 border border-slate-800/40 rounded-lg">
+                                                <div className="text-[8px] font-bold text-muted-foreground uppercase">Duration</div>
+                                                <div className="text-xs font-extrabold text-foreground mt-0.5">
+                                                    {(previewDailyBreakdown as any).totalDays} Day{(previewDailyBreakdown as any).totalDays !== 1 ? "s" : ""}
+                                                </div>
+                                            </div>
+                                            <div className="p-2.5 bg-slate-950/50 border border-slate-800/40 rounded-lg">
+                                                <div className="text-[8px] font-bold text-muted-foreground uppercase">Daily Output</div>
+                                                <div className="text-xs font-extrabold text-primary mt-0.5">
+                                                    {(previewDailyBreakdown as any).dailyRate.toLocaleString()}
+                                                </div>
+                                            </div>
+                                            <div className="p-2.5 bg-slate-950/50 border border-slate-800/40 rounded-lg">
+                                                <div className="text-[8px] font-bold text-muted-foreground uppercase">Rate / Hour</div>
+                                                <div className="text-xs font-extrabold text-emerald-600 mt-0.5">
+                                                    {Number(prereqCapacity) || 0}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Daily Breakdown Day-by-Day scrollable list */}
+                                    {((previewDailyBreakdown as any).breakdown || []).length > 0 && (
+                                        <div className="space-y-1.5">
+                                            <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider flex items-center justify-between">
+                                                <span>Proposed Daily Breakdown Preview</span>
+                                                {(previewDailyBreakdown as any).hasTruncated && (
+                                                    <span className="text-[9px] text-amber-500 font-semibold normal-case">Showing first 100 days</span>
+                                                )}
+                                            </div>
+                                            <div className="max-h-40 overflow-y-auto border border-slate-800 rounded-xl divide-y divide-slate-800 bg-slate-950/10">
+                                                {((previewDailyBreakdown as any).breakdown || []).map((day: any) => (
+                                                    <div key={day.day} className="px-4 py-2 flex items-center justify-between hover:bg-slate-900/50 text-xs">
+                                                        <div className="flex items-center gap-2">
+                                                            <Calendar className="h-3.5 w-3.5 text-muted-foreground/60" />
+                                                            <span className="font-semibold text-foreground">Day {day.day}</span>
+                                                            <span className="text-muted-foreground text-[10px]">({day.date})</span>
+                                                        </div>
+                                                        <div className="font-bold text-primary">{day.quantity.toLocaleString()} pcs</div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Footer */}
+                        <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-800 bg-slate-950/50 text-xs font-bold">
+                            <button
+                                onClick={() => setIsPrereqModalOpen(false)}
+                                className="px-4 py-2 rounded-lg bg-slate-850 hover:bg-slate-800 text-foreground cursor-pointer transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={async () => {
+                                    const capNum = parseFloat(prereqCapacity) || 0;
+                                    if (capNum <= 0) {
+                                        toast.error("Please enter a valid production capacity greater than zero.");
+                                        return;
+                                    }
+                                    if (prereqParentJo && prereqCompProductId) {
+                                        await handleCreatePrerequisiteJobOrder(
+                                            prereqParentJo,
+                                            prereqCompName,
+                                            prereqCompProductId,
+                                            prereqQty,
+                                            capNum,
+                                            prereqShiftOption
+                                        );
+                                        setIsPrereqModalOpen(false);
+                                    }
+                                }}
+                                className="px-5 py-2 rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground cursor-pointer transition-colors flex items-center gap-1.5"
+                            >
+                                Confirm and Create Job Order
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

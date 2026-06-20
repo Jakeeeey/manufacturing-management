@@ -1,0 +1,645 @@
+import { NextResponse } from "next/server";
+
+const DIRECTUS_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://vtc:8074";
+const DIRECTUS_STATIC_TOKEN = process.env.DIRECTUS_STATIC_TOKEN || "test";
+
+const headers: Record<string, string> = {
+    "Content-Type": "application/json"
+};
+if (DIRECTUS_STATIC_TOKEN) {
+    headers["Authorization"] = `Bearer ${DIRECTUS_STATIC_TOKEN}`;
+}
+
+interface DirectusInvoice {
+    invoice_id: number | string;
+    invoice_date?: string;
+    created_date?: string;
+    invoice_no?: string;
+}
+
+interface DirectusInvoiceDetail {
+    invoice_no: number | string;
+    product_id: number;
+    quantity: number | string;
+}
+
+interface DirectusReturn {
+    return_id: number | string;
+    return_number?: string;
+    return_date?: string;
+    created_at?: string;
+}
+
+interface DirectusReturnDetail {
+    return_no: string;
+    product_id: number;
+    quantity: number | string;
+    net_amount?: number | string;
+}
+
+interface DirectusProduct {
+    product_id: number;
+    product_name: string;
+    product_code: string;
+    unit_of_measurement?: {
+        unit_shortcut?: string;
+    };
+    unit_of_measurement_count?: number | string;
+    product_brand?: {
+        brand_name?: string;
+    };
+    product_category?: {
+        category_name?: string;
+    };
+}
+
+export async function GET(request: Request) {
+    try {
+        const { searchParams } = new URL(request.url);
+        const invoiceId = searchParams.get("invoiceId") || searchParams.get("id");
+
+        if (invoiceId) {
+            const parsedId = Number(invoiceId);
+            const isReturn = parsedId >= 1000000;
+            
+            let details: any[] = [];
+            if (isReturn) {
+                const returnId = parsedId - 1000000;
+                const retRes = await fetch(`${DIRECTUS_URL}/items/sales_return/${returnId}`, { headers });
+                if (retRes.ok) {
+                    const retData = (await retRes.json()).data || {};
+                    const returnNo = retData.return_number;
+                    if (returnNo) {
+                        const escReturnNo = encodeURIComponent(returnNo);
+                        const retDetailsRes = await fetch(`${DIRECTUS_URL}/items/sales_return_details?filter[return_no][_eq]=${escReturnNo}&limit=-1`, { headers, cache: "no-store" });
+                        if (retDetailsRes.ok) {
+                            details = (await retDetailsRes.json()).data || [];
+                        }
+                    }
+                }
+            } else {
+                const invDetailsRes = await fetch(`${DIRECTUS_URL}/items/sales_invoice_details?filter[invoice_no][_eq]=${invoiceId}&limit=-1`, { headers, cache: "no-store" });
+                if (invDetailsRes.ok) {
+                    details = (await invDetailsRes.json()).data || [];
+                }
+            }
+
+            // Resolve products metadata
+            const productIds = Array.from(new Set(details.map(d => Number(d.product_id)).filter(Boolean)));
+            let prodMap = new Map<number, DirectusProduct>();
+            if (productIds.length > 0) {
+                const prodRes = await fetch(`${DIRECTUS_URL}/items/products?filter[product_id][_in]=${productIds.join(",")}&limit=-1&fields=product_id,product_name,product_code,unit_of_measurement.unit_shortcut,unit_of_measurement_count,product_brand.brand_name,product_category.category_name`, { headers });
+                if (prodRes.ok) {
+                    const prodData: DirectusProduct[] = (await prodRes.json()).data || [];
+                    prodMap = new Map(prodData.map((p) => [p.product_id, p]));
+                }
+            }
+
+            const formatProduct = (productId: number) => {
+                const matched = prodMap.get(productId);
+                return matched ? {
+                    product_id: matched.product_id,
+                    product_name: matched.product_name,
+                    product_code: matched.product_code,
+                    uom: matched.unit_of_measurement?.unit_shortcut || "PCS",
+                    uom_count: matched.unit_of_measurement_count ? Number(matched.unit_of_measurement_count) : 1,
+                    brand: matched.product_brand?.brand_name || "N/A",
+                    category: matched.product_category?.category_name || "N/A"
+                } : {
+                    product_id: productId,
+                    product_name: `Product #${productId}`,
+                    product_code: `CODE-${productId}`,
+                    uom: "PCS",
+                    uom_count: 1,
+                    brand: "N/A",
+                    category: "N/A"
+                };
+            };
+
+            const formattedDetails = details.map(d => ({
+                id: d.id,
+                invoice_no: d.invoice_no || d.return_no,
+                order_id: parsedId,
+                product_id: formatProduct(Number(d.product_id)),
+                quantity: isReturn ? -(Number(d.quantity) || 0) : Number(d.quantity || 0),
+                unit_price: Number(d.unit_price || 0),
+                net_amount: Number(d.net_amount || 0)
+            }));
+
+            return NextResponse.json({ details: formattedDetails });
+        }
+
+        const limit = searchParams.get("limit") || "250";
+        const includeDetails = searchParams.get("includeDetails") === "true";
+
+        // 1. Fetch Invoices and Invoices Details
+        const invoicesRes = await fetch(`${DIRECTUS_URL}/items/sales_invoice?limit=${limit}&sort=-created_date`, { headers, cache: "no-store" });
+        if (!invoicesRes.ok) throw new Error(`Failed to fetch sales invoices: ${invoicesRes.status}`);
+        const invoicesJson = await invoicesRes.json();
+        const invoices: any[] = invoicesJson.data || [];
+
+        // Fetch referenced sales orders to resolve order_no manually
+        const orderIds = [...new Set(invoices.map((inv) => inv.order_id).filter(Boolean))];
+        let soMap = new Map<number, string>();
+        if (orderIds.length > 0) {
+            try {
+                const soRes = await fetch(`${DIRECTUS_URL}/items/sales_order?filter[order_id][_in]=${orderIds.join(",")}&limit=-1&fields=order_id,order_no`, { headers });
+                if (soRes.ok) {
+                    const soData = (await soRes.json()).data || [];
+                    soMap = new Map(soData.map((s: any) => [Number(s.order_id), s.order_no]));
+                }
+            } catch (err) {
+                console.error("Error fetching sales orders for invoice mapping:", err);
+            }
+        }
+
+        // Fetch customers to resolve customer_name manually
+        const customerCodes = [...new Set(invoices.map((inv) => inv.customer_code).filter(Boolean))];
+        let customerMap = new Map<string, any>();
+        if (customerCodes.length > 0) {
+            try {
+                const escCodes = customerCodes.map(c => encodeURIComponent(c)).join(",");
+                const custRes = await fetch(`${DIRECTUS_URL}/items/customer?filter[customer_code][_in]=${escCodes}&limit=-1&fields=customer_code,customer_name,customer_tin,brgy,city,province,latitude,longitude,location`, { headers });
+                if (custRes.ok) {
+                    const custData = (await custRes.json()).data || [];
+                    customerMap = new Map(custData.map((c: any) => [c.customer_code, c]));
+                }
+            } catch (err) {
+                console.error("Error fetching customers for invoice mapping:", err);
+            }
+        }
+
+        const invoiceIds = invoices.map((inv) => Number(inv.invoice_id)).filter(Boolean);
+        let invoiceDetails: DirectusInvoiceDetail[] = [];
+        if (includeDetails && invoiceIds.length > 0) {
+            const invDetailsRes = await fetch(`${DIRECTUS_URL}/items/sales_invoice_details?filter[invoice_no][_in]=${invoiceIds.join(",")}&limit=-1`, { headers, cache: "no-store" });
+            if (invDetailsRes.ok) {
+                const json = await invDetailsRes.json();
+                invoiceDetails = json.data || [];
+            }
+        }
+
+        // 2. Fetch Sales Returns and Returns Details
+        const returnsRes = await fetch(`${DIRECTUS_URL}/items/sales_return?limit=${limit}&sort=-created_at`, { headers, cache: "no-store" });
+        if (!returnsRes.ok) throw new Error(`Failed to fetch sales returns: ${returnsRes.status}`);
+        const returnsJson = await returnsRes.json();
+        const returns: DirectusReturn[] = returnsJson.data || [];
+
+        const returnNumbers = returns.map((ret) => ret.return_number).filter(Boolean);
+        let returnDetails: DirectusReturnDetail[] = [];
+        if (includeDetails && returnNumbers.length > 0) {
+            // Filter using string return_no
+            const escReturnNumbers = returnNumbers.map((no) => encodeURIComponent(no || "")).join(",");
+            const retDetailsRes = await fetch(`${DIRECTUS_URL}/items/sales_return_details?filter[return_no][_in]=${escReturnNumbers}&limit=-1`, { headers, cache: "no-store" });
+            if (retDetailsRes.ok) {
+                const json = await retDetailsRes.json();
+                returnDetails = json.data || [];
+            }
+        }
+
+        // 3. Resolve Product Metadata for both Invoices and Returns details
+        const allProductIds = new Set<number>();
+        if (includeDetails) {
+            invoiceDetails.forEach((d) => {
+                if (d.product_id) allProductIds.add(Number(d.product_id));
+            });
+            returnDetails.forEach((d) => {
+                if (d.product_id) allProductIds.add(Number(d.product_id));
+            });
+        }
+
+        const productIdsArray = Array.from(allProductIds);
+        let prodMap = new Map<number, DirectusProduct>();
+        if (productIdsArray.length > 0) {
+            try {
+                const prodRes = await fetch(`${DIRECTUS_URL}/items/products?filter[product_id][_in]=${productIdsArray.join(",")}&limit=-1&fields=product_id,product_name,product_code,unit_of_measurement.unit_shortcut,unit_of_measurement_count,product_brand.brand_name,product_category.category_name`, { headers });
+                if (prodRes.ok) {
+                    const prodData: DirectusProduct[] = (await prodRes.json()).data || [];
+                    prodMap = new Map(prodData.map((p) => [p.product_id, p]));
+                }
+            } catch (err) {
+                console.error("Error fetching product metadata for invoices:", err);
+            }
+        }
+
+        // Helper to format product details object for the frontend
+        const formatProduct = (productId: number) => {
+            const matched = prodMap.get(productId);
+            return matched ? {
+                product_id: matched.product_id,
+                product_name: matched.product_name,
+                product_code: matched.product_code,
+                uom: matched.unit_of_measurement?.unit_shortcut || "PCS",
+                uom_count: matched.unit_of_measurement_count ? Number(matched.unit_of_measurement_count) : 1,
+                brand: matched.product_brand?.brand_name || "N/A",
+                category: matched.product_category?.category_name || "N/A"
+            } : {
+                product_id: productId,
+                product_name: `Product #${productId}`,
+                product_code: `CODE-${productId}`,
+                uom: "PCS",
+                uom_count: 1,
+                brand: "N/A",
+                category: "N/A"
+            };
+        };
+
+        // 4. Assemble output documents and details map
+        interface ClientDocument {
+            order_id: number;
+            invoice_id?: number;
+            invoice_no?: string;
+            created_date?: string;
+            date?: string;
+            invoice_date?: string;
+            due_date?: string;
+            document_type: "invoice" | "return";
+            document_no?: string;
+            customer_id?: string;
+            customer_name?: string;
+            customer_code?: string;
+            customer_address?: string;
+            customer_tin?: string;
+            customer_latitude?: number | null;
+            customer_longitude?: number | null;
+            customer_location?: string | null;
+            customer_city?: string | null;
+            sales_order_id?: number | null;
+            sales_order_no?: string;
+            total_amount?: number;
+            discount_amount?: number;
+            vat_amount?: number;
+            net_amount?: number;
+            status?: string;
+            payment_status?: string;
+            remarks?: string;
+        }
+
+        interface ClientDocumentDetail {
+            order_id: number;
+            product_id: {
+                product_id: number;
+                product_name: string;
+                product_code: string;
+                uom: string;
+                uom_count: number;
+                brand: string;
+                category: string;
+            };
+            quantity: number;
+        }
+
+        const dataList: ClientDocument[] = [];
+        const detailsMap: Record<number, ClientDocumentDetail[]> = {};
+
+        // Process Invoices
+        invoices.forEach((inv: any) => {
+            const invId = Number(inv.invoice_id);
+            const salesOrderId = inv.order_id ? Number(inv.order_id) : null;
+            const salesOrderNo = salesOrderId ? soMap.get(salesOrderId) : null;
+            const custCode = inv.customer_code || "GEN";
+            const cust = customerMap.get(custCode);
+            const custName = cust ? cust.customer_name : `Customer: ${custCode}`;
+            const custAddress = cust ? [cust.brgy, cust.city, cust.province].filter(Boolean).join(", ") : "N/A";
+            const custTin = cust ? cust.customer_tin : "N/A";
+
+            dataList.push({
+                order_id: invId,
+                invoice_id: invId,
+                invoice_no: inv.invoice_no,
+                document_no: inv.invoice_no,
+                created_date: inv.created_date,
+                date: inv.invoice_date || inv.created_date,
+                invoice_date: inv.invoice_date || inv.created_date,
+                due_date: inv.due_date,
+                document_type: "invoice",
+                customer_id: custCode,
+                customer_name: custName,
+                customer_code: custCode,
+                customer_address: custAddress,
+                customer_tin: custTin,
+                customer_latitude: cust ? (cust.latitude ? Number(cust.latitude) : null) : null,
+                customer_longitude: cust ? (cust.longitude ? Number(cust.longitude) : null) : null,
+                customer_location: cust ? cust.location : null,
+                customer_city: cust ? cust.city : null,
+                sales_order_id: salesOrderId,
+                sales_order_no: salesOrderNo || "Manual",
+                total_amount: Number(inv.total_amount || 0),
+                discount_amount: Number(inv.discount_amount || 0),
+                vat_amount: Number(inv.vat_amount || 0),
+                net_amount: Number(inv.net_amount || 0),
+                status: inv.transaction_status || "Unpaid",
+                payment_status: inv.payment_status || "[]",
+                remarks: inv.remarks || ""
+            });
+
+            if (includeDetails) {
+                const matchingDetails = invoiceDetails.filter((d) => Number(d.invoice_no) === invId);
+                detailsMap[invId] = matchingDetails.map((d) => ({
+                    order_id: invId,
+                    product_id: formatProduct(Number(d.product_id)),
+                    quantity: Number(d.quantity) || 0
+                }));
+            }
+        });
+
+        // Process Returns (Returns represent negative sales)
+        returns.forEach((ret: any) => {
+            const retId = Number(ret.return_id);
+            const virtualId = retId + 1000000; // virtual ID to avoid collision with invoice_id
+            
+            const matchingDetails = returnDetails.filter((d) => String(d.return_no) === String(ret.return_number));
+            const retNetAmount = matchingDetails.reduce((sum, d) => sum + Number(d.net_amount || 0), 0);
+
+            dataList.push({
+                order_id: virtualId,
+                invoice_id: virtualId,
+                invoice_no: ret.return_number,
+                document_no: ret.return_number,
+                created_date: ret.return_date || ret.created_at,
+                date: ret.return_date || ret.created_at,
+                invoice_date: ret.return_date || ret.created_at,
+                due_date: ret.return_date || ret.created_at,
+                document_type: "return",
+                customer_id: ret.customer_id,
+                customer_name: ret.customer_name || `Customer #${ret.customer_id}`,
+                customer_code: "GEN",
+                sales_order_id: null,
+                sales_order_no: "N/A",
+                total_amount: -retNetAmount,
+                discount_amount: 0,
+                vat_amount: 0,
+                net_amount: -retNetAmount, // NEGATIVE amount for returns
+                status: "Paid",
+                remarks: ret.remarks || ""
+            });
+
+            if (includeDetails) {
+                detailsMap[virtualId] = matchingDetails.map((d) => ({
+                    order_id: virtualId,
+                    product_id: formatProduct(Number(d.product_id)),
+                    quantity: -(Number(d.quantity) || 0) // NEGATIVE quantity to subtract from sales totals
+                }));
+            }
+        });
+
+        return NextResponse.json({
+            data: dataList,
+            detailsMap
+        });
+    } catch (e) {
+        console.error("API Error in sales-invoice GET:", e);
+        return NextResponse.json({ error: (e as { message?: string }).message || "Failed to fetch invoice sales data" }, { status: 500 });
+    }
+}
+
+export async function POST(request: Request) {
+    try {
+        const body = await request.json();
+        const {
+            invoice_no,
+            invoice_date,
+            due_date,
+            customer_id,
+            sales_order_id,
+            total_amount,
+            discount_amount,
+            vat_amount,
+            net_amount,
+            remarks,
+            items
+        } = body;
+
+        if (!invoice_no || !customer_id || !items || !Array.isArray(items) || items.length === 0) {
+            return NextResponse.json({ error: "Missing required fields (invoice_no, customer_id, items)" }, { status: 400 });
+        }
+
+        // Validate invoice_no is globally unique in sales_invoice table
+        try {
+            const checkUrl = `${DIRECTUS_URL}/items/sales_invoice?filter[invoice_no][_eq]=${encodeURIComponent(invoice_no.trim())}`;
+            const checkRes = await fetch(checkUrl, { headers });
+            if (checkRes.ok) {
+                const checkData = await checkRes.json();
+                if (checkData.data && checkData.data.length > 0) {
+                    return NextResponse.json({ error: `Invoice number "${invoice_no}" already exists. Please enter a unique invoice number.` }, { status: 400 });
+                }
+            }
+        } catch (err) {
+            console.error("Failed to verify unique invoice number:", err);
+        }
+
+        // 1. Resolve values from Sales Order or Customer
+        let customerCode = "GEN";
+        let salesmanId = null;
+        let branchId = 1;
+        let paymentTerms = null;
+
+        if (sales_order_id) {
+            try {
+                const soRes = await fetch(`${DIRECTUS_URL}/items/sales_order/${sales_order_id}`, { headers });
+                if (soRes.ok) {
+                    const soData = (await soRes.json()).data;
+                    if (soData) {
+                        customerCode = soData.customer_code || "GEN";
+                        salesmanId = soData.salesman_id || null;
+                        branchId = soData.branch_id || 1;
+                        paymentTerms = soData.payment_terms || null;
+                    }
+                }
+            } catch (err) {
+                console.error("Failed to query sales order details:", err);
+            }
+        } else if (customer_id) {
+            try {
+                const custRes = await fetch(`${DIRECTUS_URL}/items/customer/${customer_id}`, { headers });
+                if (custRes.ok) {
+                    const custData = (await custRes.json()).data;
+                    if (custData) {
+                        customerCode = custData.customer_code || "GEN";
+                    }
+                }
+            } catch (err) {
+                console.error("Failed to query customer details:", err);
+            }
+        }
+
+        // 2. Create Sales Invoice Header
+        const invoicePayload = {
+            invoice_no,
+            invoice_date: invoice_date || new Date().toISOString(),
+            created_date: new Date().toISOString(),
+            due_date: due_date || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+            customer_code: customerCode,
+            order_id: sales_order_id ? String(sales_order_id) : null,
+            salesman_id: salesmanId,
+            branch_id: branchId,
+            payment_terms: paymentTerms,
+            transaction_status: "Unpaid",
+            total_amount: Number(total_amount || 0),
+            gross_amount: Number(total_amount || 0),
+            discount_amount: Number(discount_amount || 0),
+            vat_amount: Number(vat_amount || 0),
+            net_amount: Number(net_amount || 0),
+            remarks: remarks || ""
+        };
+
+        const createInvoiceRes = await fetch(`${DIRECTUS_URL}/items/sales_invoice`, {
+            method: "POST",
+            headers,
+            body: JSON.stringify(invoicePayload)
+        });
+
+        if (!createInvoiceRes.ok) {
+            const errText = await createInvoiceRes.text();
+            throw new Error(`Failed to create sales invoice header: ${createInvoiceRes.status} - ${errText}`);
+        }
+
+        const newInvoice = (await createInvoiceRes.json()).data;
+        const newInvoiceId = newInvoice.invoice_id;
+
+        // 3. Create Sales Invoice Details
+        for (const item of items) {
+            const qty = Number(item.quantity || 0);
+            const price = Number(item.unit_price || 0);
+            const discount = Number(item.discount_amount || 0);
+            const gross = qty * price;
+            const total = gross - discount;
+
+            const detailPayload = {
+                order_id: sales_order_id ? String(sales_order_id) : "",
+                invoice_no: newInvoiceId, // Column named invoice_no maps to primary key invoice_id in details
+                product_id: Number(item.product_id),
+                unit: 1, // Default unit value to satisfy NOT NULL constraint
+                unit_price: price,
+                quantity: qty,
+                discount_amount: discount,
+                gross_amount: gross,
+                total_amount: total
+            };
+
+            const detailRes = await fetch(`${DIRECTUS_URL}/items/sales_invoice_details`, {
+                method: "POST",
+                headers,
+                body: JSON.stringify(detailPayload)
+            });
+
+            if (!detailRes.ok) {
+                console.error(`Failed to insert sales invoice detail: ${detailRes.status}`);
+            }
+        }
+
+        // 4. Update Sales Order status if sales_order_id is provided
+        if (sales_order_id) {
+            try {
+                await fetch(`${DIRECTUS_URL}/items/sales_order/${sales_order_id}`, {
+                    method: "PATCH",
+                    headers,
+                    body: JSON.stringify({ order_status: "For Loading" })
+                });
+            } catch (err) {
+                console.error("Failed to update sales order status:", err);
+            }
+        }
+
+        return NextResponse.json({ success: true, invoice_id: newInvoiceId, invoice_no });
+    } catch (e) {
+        console.error("API Error in sales-invoice POST:", e);
+        return NextResponse.json({ error: (e as { message?: string }).message || "Failed to create invoice" }, { status: 500 });
+    }
+}
+
+export async function PATCH(request: Request) {
+    try {
+        const body = await request.json();
+        const { invoiceId, status, remarks, payment } = body;
+
+        if (!invoiceId) {
+            return NextResponse.json({ error: "Missing invoiceId" }, { status: 400 });
+        }
+
+        // Fetch current invoice state from Directus to calculate payment logs
+        const getRes = await fetch(`${DIRECTUS_URL}/items/sales_invoice/${invoiceId}`, { headers });
+        if (!getRes.ok) {
+            throw new Error(`Failed to load invoice to update: ${getRes.status}`);
+        }
+        const currentInvoice = (await getRes.json()).data;
+        if (!currentInvoice) {
+            return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
+        }
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const updatePayload: Record<string, any> = {};
+
+        if (payment) {
+            // Process payment recording and dynamically transition status
+            let history: any[] = [];
+            if (currentInvoice.payment_status) {
+                try {
+                    history = JSON.parse(currentInvoice.payment_status);
+                    if (!Array.isArray(history)) history = [];
+                } catch {
+                    history = [];
+                }
+            }
+
+            const newPayment = {
+                amount: Number(payment.amount || 0),
+                method: payment.method || "Cash",
+                reference: payment.reference || "",
+                date: new Date().toISOString()
+            };
+
+            history.push(newPayment);
+            
+            const totalPaid = history.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+            const netAmount = Number(currentInvoice.net_amount || 0);
+
+            let nextStatus = "Unpaid";
+            if (totalPaid >= netAmount) {
+                nextStatus = "Paid";
+            } else if (totalPaid > 0) {
+                nextStatus = "Partially Paid";
+            }
+
+            updatePayload.transaction_status = nextStatus;
+            updatePayload.payment_status = JSON.stringify(history);
+
+            // Append payment record to remarks log
+            const paymentLog = `[Collection] ₱${newPayment.amount.toLocaleString(undefined, {minimumFractionDigits: 2})} via ${newPayment.method} (Ref: ${newPayment.reference}) on ${new Date(newPayment.date).toLocaleDateString()}`;
+            updatePayload.remarks = currentInvoice.remarks 
+                ? `${currentInvoice.remarks}\n${paymentLog}`
+                : paymentLog;
+        } else {
+            // Direct status / remarks update (e.g. Cancelled)
+            if (status) updatePayload.transaction_status = status;
+            if (remarks !== undefined) updatePayload.remarks = remarks;
+        }
+
+        const res = await fetch(`${DIRECTUS_URL}/items/sales_invoice/${invoiceId}`, {
+            method: "PATCH",
+            headers,
+            body: JSON.stringify(updatePayload)
+        });
+
+        if (!res.ok) throw new Error(`Failed to update invoice in Directus: ${res.status}`);
+
+        // If status was changed to Cancelled, revert the Sales Order status back to For Invoicing
+        if ((status === "Cancelled" || updatePayload.transaction_status === "Cancelled") && currentInvoice.order_id) {
+            try {
+                await fetch(`${DIRECTUS_URL}/items/sales_order/${currentInvoice.order_id}`, {
+                    method: "PATCH",
+                    headers,
+                    body: JSON.stringify({ order_status: "For Invoicing" })
+                });
+            } catch (err) {
+                console.error("Failed to revert sales order status on invoice cancellation:", err);
+            }
+        }
+
+        return NextResponse.json({ success: true });
+    } catch (e) {
+        console.error("API Error in sales-invoice PATCH:", e);
+        return NextResponse.json({ error: (e as { message?: string }).message || "Failed to update invoice" }, { status: 500 });
+    }
+}
+

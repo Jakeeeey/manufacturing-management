@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { DIRECTUS_URL, headers, calculateRollupCost } from "../../directus-api";
+import { DIRECTUS_URL, headers } from "@/app/api/manufacturing/directus-api";
+import { calculateRollupCost } from "./products-helper";
 
 interface DirectusProductCurrencyProfile {
     id: number;
@@ -21,6 +22,7 @@ interface DirectusProduct {
     barcode?: string | null;
     parent_id?: number | null;
     density_factor?: number | null;
+    production_capacity_per_hour?: number | null;
     has_versions?: boolean;
     currency_profile?: DirectusProductCurrencyProfile | null;
     has_cogs?: boolean;
@@ -31,8 +33,9 @@ export async function GET(request: Request) {
         const { searchParams } = new URL(request.url);
         const search = searchParams.get("search") || "";
         const limit = parseInt(searchParams.get("limit") || "-1");
+        const excludeRollup = searchParams.get("excludeRollup") === "true";
 
-        const explicitFields = "product_id,product_name,product_code,description,isActive,cost_per_unit,price_per_unit,product_brand,parent_id,product_category,product_class,product_segment,product_section,product_shelf_life,product_image,unit_of_measurement.unit_shortcut,unit_of_measurement.unit_name,unit_of_measurement_count,density_factor";
+        const explicitFields = "product_id,product_name,product_code,description,isActive,cost_per_unit,price_per_unit,product_brand,parent_id,product_category,product_class,product_segment,product_section,product_shelf_life,product_image,unit_of_measurement.unit_shortcut,unit_of_measurement.unit_name,unit_of_measurement_count,density_factor,production_capacity_per_hour";
         let url = `${DIRECTUS_URL}/items/products?limit=${limit}&fields=${explicitFields}`;
         if (search && search.trim()) {
             url += `&search=${encodeURIComponent(search.trim())}`;
@@ -73,6 +76,11 @@ export async function GET(request: Request) {
             productCopy.has_versions = versionProductIds.has(Number(p.product_id));
             productCopy.currency_profile = profilesMap.get(Number(p.product_id)) || null;
             
+            if (excludeRollup) {
+                productCopy.has_cogs = false;
+                return productCopy;
+            }
+
             try {
                 // Get rolled up cost (COGS) using current active BOM recipe & routings
                 const costRollup = await calculateRollupCost(p.product_id);
@@ -220,3 +228,32 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: (e as { message?: string }).message || "Failed to register product" }, { status: 500 });
     }
 }
+
+export async function PATCH(request: Request) {
+    try {
+        const body = await request.json();
+        const { product_id, production_capacity_per_hour } = body;
+        if (!product_id) {
+            return NextResponse.json({ error: "Missing product_id" }, { status: 400 });
+        }
+        
+        const res = await fetch(`${DIRECTUS_URL}/items/products/${product_id}`, {
+            method: "PATCH",
+            headers,
+            body: JSON.stringify({ production_capacity_per_hour: Number(production_capacity_per_hour) })
+        });
+        
+        if (!res.ok) {
+            const errText = await res.text();
+            throw new Error(`Directus PATCH failed: ${res.status} - ${errText}`);
+        }
+        
+        const json = await res.json();
+        return NextResponse.json({ success: true, data: json.data });
+    } catch (e) {
+        console.error("API Error patching product:", e);
+        return NextResponse.json({ error: (e as { message?: string }).message || "Failed to update product" }, { status: 500 });
+    }
+}
+
+

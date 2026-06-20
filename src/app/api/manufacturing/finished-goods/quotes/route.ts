@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { 
     fetchQuotations, 
     saveQuotation 
-} from "../../directus-api";
+} from "./quotes-helper";
 
 export async function GET() {
     try {

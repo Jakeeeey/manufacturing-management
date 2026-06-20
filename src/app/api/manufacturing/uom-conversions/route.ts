@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { fetchDensityFactors, createDensityFactor, deleteDensityFactor } from "../directus-api";
+import { fetchDensityFactors, createDensityFactor, deleteDensityFactor } from "./uom-helper";
 
 export async function GET() {
     try {

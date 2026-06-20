@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { 
     fetchShipmentExpenses, 
     processShipmentLandedCosts 
-} from "../../directus-api";
+} from "./expenses-helper";
 
 export async function GET(request: Request) {
     try {
