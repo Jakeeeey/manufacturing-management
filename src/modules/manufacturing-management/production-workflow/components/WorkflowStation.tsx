@@ -16,9 +16,11 @@ import {
     RotateCcw, 
     Info, 
     UserPlus, 
-    Camera 
+    Camera,
+    Copy
 } from "lucide-react";
 import { JobOrder, ActiveAssigningTask } from "../types";
+import { toast } from "sonner";
 
 interface UserMin {
     user_id: number;
@@ -111,6 +113,76 @@ export function WorkflowStation({
     onBackToQueue
 }: WorkflowStationProps) {
     const [filterStatus, setFilterStatus] = React.useState<"All" | "Pending" | "Ongoing" | "Completed">("All");
+    const [duplicatingStepId, setDuplicatingStepId] = React.useState<number | null>(null);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const handleDuplicateTask = async (productId: number, step: any) => {
+        if (!selectedJO) return;
+        setDuplicatingStepId(step.routing_id);
+        try {
+            const productsList = selectedJO.products && selectedJO.products.length > 0 ? selectedJO.products : [{
+                product_id: selectedJO.product_id,
+                product_name: selectedJO.product_name,
+                quantity: selectedJO.quantity,
+                bom: selectedJO.bom,
+                components: selectedJO.components,
+                routings: selectedJO.routings,
+                allocationResults: selectedJO.allocationResults
+            }];
+
+            const updatedProductsList = productsList.map(p => {
+                if (Number(p.product_id) === Number(productId)) {
+                    const currentRoutings = p.routings || [];
+                    
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    const maxRId = currentRoutings.reduce((max: number, r: any) => Math.max(max, Number(r.routing_id || r.id || 0)), 0);
+                    const newRoutingId = maxRId + 1;
+                    
+                    const newStep = {
+                        ...step,
+                        routing_id: newRoutingId,
+                        id: newRoutingId,
+                        status: "Pending",
+                        qa_status: "Pending",
+                        started_at: null,
+                        completed_at: null,
+                        completed_by: null,
+                        assigned_personnel: null,
+                        assignments: [],
+                        qa_logs: []
+                    };
+                    
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    const targetIndex = currentRoutings.findIndex((r: any) => Number(r.routing_id) === Number(step.routing_id));
+                    const newRoutings = [...currentRoutings];
+                    if (targetIndex !== -1) {
+                        newRoutings.splice(targetIndex + 1, 0, newStep);
+                    } else {
+                        newRoutings.push(newStep);
+                    }
+                    
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    const resequencedRoutings = newRoutings.map((r: any, idx: number) => ({
+                        ...r,
+                        sequence_order: idx + 1
+                    }));
+                    
+                    return { ...p, routings: resequencedRoutings };
+                }
+                return p;
+            });
+
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            await handleUpdateJO(selectedJO.jo_id, { products: updatedProductsList } as any);
+            toast.success(`Task "${step.operation_name || step.name}" duplicated successfully.`);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } catch (err: any) {
+            console.error("[WorkflowStation] Duplicate task error:", err);
+            toast.error(err.message || "Failed to duplicate task.");
+        } finally {
+            setDuplicatingStepId(null);
+        }
+    };
 
     const activeDay = React.useMemo(() => {
         if (!selectedJO || !selectedJO.dailyBreakdown) return null;
@@ -526,13 +598,29 @@ export function WorkflowStation({
                                                     {/* Header Info */}
                                                     <div className="flex justify-between items-start gap-4">
                                                         <div className="space-y-1">
-                                                            <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded border ${
-                                                                isCompleted
-                                                                    ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
-                                                                    : "bg-slate-950 border-slate-800 text-muted-foreground"
-                                                                }`}>
-                                                                Step {rout.sequence_order} • OP {rout.routing_id}
-                                                            </span>
+                                                            <div className="flex items-center gap-2">
+                                                                <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded border ${
+                                                                    isCompleted
+                                                                        ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+                                                                        : "bg-slate-950 border-slate-800 text-muted-foreground"
+                                                                    }`}>
+                                                                    Step {rout.sequence_order} • OP {rout.routing_id}
+                                                                </span>
+                                                                {["Proceed", "Ongoing", "On Hold"].includes(selectedJO.status) && !isDayCompleted && (
+                                                                    <button
+                                                                        title="Duplicate Task"
+                                                                        disabled={duplicatingStepId === rout.routing_id}
+                                                                        onClick={() => handleDuplicateTask(p.product_id, rout)}
+                                                                        className="p-1 rounded bg-slate-955 hover:bg-slate-800 text-muted-foreground hover:text-foreground transition-colors inline-flex items-center justify-center border border-slate-800 disabled:opacity-55"
+                                                                    >
+                                                                        {duplicatingStepId === rout.routing_id ? (
+                                                                            <Loader2 className="h-3 w-3 animate-spin text-primary" />
+                                                                        ) : (
+                                                                            <Copy className="h-3 w-3" />
+                                                                        )}
+                                                                    </button>
+                                                                )}
+                                                            </div>
                                                             <h3 className="font-extrabold text-foreground text-sm tracking-tight pt-1">
                                                                 {rout.operation_name}
                                                             </h3>

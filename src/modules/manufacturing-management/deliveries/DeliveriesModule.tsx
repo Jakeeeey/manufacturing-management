@@ -9,16 +9,12 @@ import DispatchDetailModal from "./components/DispatchDetailModal";
 import { 
     Truck, 
     Navigation, 
-    User as UserIcon, 
-    Calendar, 
     Search, 
     SlidersHorizontal, 
     Plus, 
     Loader2, 
     CheckCircle2, 
-    AlertCircle, 
-    Clock, 
-    DollarSign 
+    Clock 
 } from "lucide-react";
 import { DispatchPlan } from "./types";
 
@@ -33,8 +29,7 @@ export default function DeliveriesModule() {
         loading,
         handleCreateDispatchPlan,
         handleUpdatePlanStatus,
-        handleUpdateStopStatus,
-        refresh
+        handleUpdateStopStatus
     } = useDeliveries();
 
     const [searchQuery, setSearchQuery] = useState("");
@@ -46,11 +41,11 @@ export default function DeliveriesModule() {
 
     // Compute metric aggregates
     const metrics = useMemo(() => {
-        let totalTrips = plans.length;
-        let activeRuns = plans.filter(p => p.status === "For Inbound" || p.status === "For Dispatch").length;
-        let clearances = plans.filter(p => p.status === "For Clearance").length;
-        let closed = plans.filter(p => p.status === "Posted").length;
-        let expenses = plans.reduce((acc, curr) => acc + Number(curr.amount || 0), 0);
+        const totalTrips = plans.length;
+        const activeRuns = plans.filter(p => p.status === "For Inbound" || p.status === "For Dispatch").length;
+        const clearances = plans.filter(p => p.status === "For Clearance").length;
+        const closed = plans.filter(p => p.status === "Posted").length;
+        const expenses = plans.reduce((acc, curr) => acc + Number(curr.amount || 0), 0);
 
         return { totalTrips, activeRuns, clearances, closed, expenses };
     }, [plans]);

@@ -1,10 +1,10 @@
 import React from "react";
-import { ClipboardList, CheckCircle, ShieldCheck, Eye } from "lucide-react";
-import { JobOrder } from "../types";
+import { ClipboardList, ShieldCheck, Eye } from "lucide-react";
+import { JobOrder, Branch } from "../types";
 
 interface ActiveJOAuditTableProps {
     jobOrders: JobOrder[];
-    branches: any[];
+    branches: Branch[];
     handleOpenAudit: (jo: JobOrder) => void;
 }
 

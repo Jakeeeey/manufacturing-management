@@ -1,6 +1,41 @@
 // src/modules/manufacturing-management/deliveries/services/deliveries-api.ts
 
-import { DispatchPlan, DispatchInvoice, Vehicle, User, Branch } from "../types";
+import { DispatchPlan, DispatchInvoice, Vehicle, User, Branch, PendingInvoice } from "../types";
+
+interface DirectusVehicle {
+    vehicle_id?: number;
+    id?: number;
+    name?: string;
+    plate?: string;
+    type?: string;
+}
+
+interface DirectusUser {
+    user_id: number;
+    user_fname?: string;
+    first_name?: string;
+    user_lname?: string;
+    last_name?: string;
+    user_email?: string;
+    email?: string;
+    role?: string;
+}
+
+interface DirectusInvoiceData {
+    order_id: string | number;
+    document_no?: string;
+    invoice_no?: string;
+    date?: string;
+    created_date?: string;
+    customer_name?: string;
+    customer_id?: number;
+    customer_code?: string;
+    net_amount?: number | string;
+    customer_latitude?: string | number;
+    customer_longitude?: string | number;
+    customer_location?: string;
+    customer_city?: string;
+}
 
 async function handleResponse(res: Response, fallbackMessage: string) {
     if (!res.ok) {
@@ -72,7 +107,7 @@ export async function fetchVehiclesList(): Promise<Vehicle[]> {
     const res = await fetch("/api/manufacturing/logistics-profiles");
     const json = await handleResponse(res, "Failed to load vehicles");
     // Directus vehicles response maps to vehicles array
-    return (json.vehicles || []).map((v: any) => ({
+    return (json.vehicles || []).map((v: DirectusVehicle) => ({
         id: v.vehicle_id || v.id,
         name: v.name,
         plate: v.plate,
@@ -83,7 +118,7 @@ export async function fetchVehiclesList(): Promise<Vehicle[]> {
 export async function fetchUsersList(): Promise<User[]> {
     const res = await fetch("/api/manufacturing/planning-engineering?action=users");
     const list = await handleResponse(res, "Failed to load users list");
-    return (list || []).map((u: any) => ({
+    return (list || []).map((u: DirectusUser) => ({
         user_id: u.user_id,
         first_name: u.user_fname || u.first_name || "",
         last_name: u.user_lname || u.last_name || "",
@@ -97,7 +132,7 @@ export async function fetchBranchesList(): Promise<Branch[]> {
     return handleResponse(res, "Failed to load branches list");
 }
 
-export async function fetchPendingDeliveryInvoices(): Promise<any[]> {
+export async function fetchPendingDeliveryInvoices(): Promise<PendingInvoice[]> {
     // Fetch all invoices
     const res = await fetch("/api/manufacturing/sales-invoice?limit=250");
     const json = await handleResponse(res, "Failed to load invoices");
@@ -131,11 +166,11 @@ export async function fetchPendingDeliveryInvoices(): Promise<any[]> {
     }
     
     // Filter out invoices that have already been assigned to a dispatch plan
-    const pendingInvoices = allInvoices.filter((inv: any) => 
+    const pendingInvoices = allInvoices.filter((inv: DirectusInvoiceData) => 
         !dispatchedInvoiceIds.has(Number(inv.order_id)) // In sales-invoice endpoint, order_id holds invoice_id
     );
 
-    return pendingInvoices.map((inv: any) => ({
+    return pendingInvoices.map((inv: DirectusInvoiceData) => ({
         invoice_id: Number(inv.order_id), // maps invoice_id
         invoice_no: inv.document_no || inv.invoice_no,
         invoice_date: inv.date || inv.created_date,

@@ -1,7 +1,7 @@
 // src/modules/manufacturing-management/deliveries/hooks/useDeliveries.ts
 
 import { useState, useEffect, useCallback } from "react";
-import { DispatchPlan, DispatchInvoice, Vehicle, User, Branch } from "../types";
+import { DispatchPlan, DispatchInvoice, Vehicle, User, Branch, PendingInvoice } from "../types";
 import { 
     fetchDispatchPlans, 
     fetchDispatchPlanStops, 
@@ -25,7 +25,7 @@ export function useDeliveries() {
     const [branches, setBranches] = useState<Branch[]>([]);
     
     // Pending items
-    const [pendingInvoices, setPendingInvoices] = useState<any[]>([]);
+    const [pendingInvoices, setPendingInvoices] = useState<PendingInvoice[]>([]);
     
     const [loading, setLoading] = useState<boolean>(true);
     const [submitting, setSubmitting] = useState<boolean>(false);
@@ -63,9 +63,10 @@ export function useDeliveries() {
                 }
             }
             setStopsMap(map);
-        } catch (e: any) {
+        } catch (e) {
+            const error = e as Error;
             console.error("Error loading deliveries master data:", e);
-            toast.error(e.message || "Failed to load logistics & delivery data");
+            toast.error(error.message || "Failed to load logistics & delivery data");
         } finally {
             setLoading(false);
         }
@@ -94,9 +95,10 @@ export function useDeliveries() {
             toast.success("Dispatch plan generated successfully!");
             await loadData();
             return true;
-        } catch (e: any) {
+        } catch (e) {
+            const error = e as Error;
             console.error("Error creating dispatch plan:", e);
-            toast.error(e.message || "Failed to create dispatch plan");
+            toast.error(error.message || "Failed to create dispatch plan");
             return false;
         } finally {
             setSubmitting(false);
@@ -106,7 +108,12 @@ export function useDeliveries() {
     const handleUpdatePlanStatus = async (planId: number, status: string, remarks?: string, dispatchTime?: string, arrivalTime?: string) => {
         setSubmitting(true);
         try {
-            const updatePayload: any = { status };
+            const updatePayload: {
+                status: string;
+                remarks?: string;
+                time_of_dispatch?: string;
+                time_of_arrival?: string;
+            } = { status };
             if (remarks !== undefined) updatePayload.remarks = remarks;
             if (dispatchTime) updatePayload.time_of_dispatch = dispatchTime;
             if (arrivalTime) updatePayload.time_of_arrival = arrivalTime;
@@ -115,9 +122,10 @@ export function useDeliveries() {
             toast.success(`Trip status updated to: ${status}`);
             await loadData();
             return true;
-        } catch (e: any) {
+        } catch (e) {
+            const error = e as Error;
             console.error("Error updating trip status:", e);
-            toast.error(e.message || "Failed to update dispatch status");
+            toast.error(error.message || "Failed to update dispatch status");
             return false;
         } finally {
             setSubmitting(false);
@@ -142,9 +150,10 @@ export function useDeliveries() {
             setPendingInvoices(pInvoices || []);
             
             return true;
-        } catch (e: any) {
+        } catch (e) {
+            const error = e as Error;
             console.error("Error updating stop status:", e);
-            toast.error(e.message || "Failed to submit delivery verification");
+            toast.error(error.message || "Failed to submit delivery verification");
             return false;
         } finally {
             setSubmitting(false);

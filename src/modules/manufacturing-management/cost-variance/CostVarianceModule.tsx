@@ -4,18 +4,43 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { TrendingUp, TrendingDown, ClipboardList, Hammer, AlertTriangle, CheckCircle, BarChart3, Plus, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
+interface CostVarianceJobOrder {
+    jo_id: string;
+    product_id: string | number;
+    product_name?: string;
+    quantity?: string | number;
+    status: string;
+    branch_id?: string | number;
+    allocationResults?: unknown[];
+    components?: unknown[];
+}
+
+interface CostVarianceFinishedGood {
+    id: number;
+    jo_id: string;
+    product_name?: string;
+    quantity_produced?: string | number;
+    unit_cost?: string | number;
+    date_received?: string;
+}
+
+interface CostVarianceCatalogProduct {
+    product_id: number;
+    cost_per_unit?: number | string;
+}
+
 export default function CostVarianceModule() {
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
     
     // Database states
-    const [jobOrders, setJobOrders] = useState<any[]>([]);
-    const [finishedGoods, setFinishedGoods] = useState<any[]>([]);
-    const [catalogProducts, setCatalogProducts] = useState<any[]>([]);
+    const [jobOrders, setJobOrders] = useState<CostVarianceJobOrder[]>([]);
+    const [finishedGoods, setFinishedGoods] = useState<CostVarianceFinishedGood[]>([]);
+    const [catalogProducts, setCatalogProducts] = useState<CostVarianceCatalogProduct[]>([]);
     
     // Selection state for form
     const [selectedJoId, setSelectedJoId] = useState("");
-    const [selectedJO, setSelectedJO] = useState<any | null>(null);
+    const [selectedJO, setSelectedJO] = useState<CostVarianceJobOrder | null>(null);
 
     // Logging form state
     const [form, setForm] = useState({
@@ -49,9 +74,10 @@ export default function CostVarianceModule() {
             } else {
                 throw new Error("Failed to load production cost data.");
             }
-        } catch (e: any) {
-            console.error("Fetch cost variance error:", e);
-            toast.error(e.message || "Failed to fetch cost variance data.");
+        } catch (e) {
+            const err = e as { message?: string };
+            console.error("Fetch cost variance error:", err);
+            toast.error(err.message || "Failed to fetch cost variance data.");
         } finally {
             setLoading(false);
         }
@@ -63,7 +89,7 @@ export default function CostVarianceModule() {
 
     // Map database receipts to cost variance logs list
     const logs = useMemo(() => {
-        return finishedGoods.map((fg: any) => {
+        return finishedGoods.map((fg: CostVarianceFinishedGood) => {
             const jo = jobOrders.find(j => j.jo_id === fg.jo_id);
             const expectedQty = Number(jo?.quantity || fg.quantity_produced || 0);
             const actualQty = Number(fg.quantity_produced || 0);
@@ -200,9 +226,10 @@ export default function CostVarianceModule() {
 
             // Re-load data to sync tables and stats
             loadData();
-        } catch (e: any) {
-            console.error("Submit shopfloor run error:", e);
-            toast.error(e.message || "Failed to submit production run.");
+        } catch (e) {
+            const err = e as { message?: string };
+            console.error("Submit shopfloor run error:", err);
+            toast.error(err.message || "Failed to submit production run.");
         } finally {
             setSubmitting(false);
         }

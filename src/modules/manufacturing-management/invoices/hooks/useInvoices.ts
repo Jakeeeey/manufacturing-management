@@ -1,7 +1,7 @@
 // src/modules/manufacturing-management/invoices/hooks/useInvoices.ts
 
 import { useState, useEffect, useCallback } from "react";
-import { Invoice, InvoiceLineItem, PendingSalesOrder, PrinterAlignmentSettings } from "../types";
+import { Invoice, InvoiceLineItem, PendingSalesOrder, PrinterAlignmentSettings, SalesOrderLineItem } from "../types";
 import { 
     fetchInvoices, 
     createInvoice, 
@@ -38,7 +38,7 @@ export function useInvoices() {
     const [invoices, setInvoices] = useState<Invoice[]>([]);
     const [detailsMap, setDetailsMap] = useState<Record<number, InvoiceLineItem[]>>({});
     const [pendingOrders, setPendingOrders] = useState<PendingSalesOrder[]>([]);
-    const [pendingDetailsMap, setPendingDetailsMap] = useState<Record<number, any[]>>({});
+    const [pendingDetailsMap, setPendingDetailsMap] = useState<Record<number, SalesOrderLineItem[]>>({});
     const [loading, setLoading] = useState<boolean>(true);
     const [submitting, setSubmitting] = useState<boolean>(false);
     const [loadingDetails, setLoadingDetails] = useState<Record<number, boolean>>({});
@@ -107,9 +107,10 @@ export function useInvoices() {
             const pendingResult = await fetchPendingInvoicesSalesOrders();
             setPendingOrders(pendingResult.data || []);
             setPendingDetailsMap(pendingResult.detailsMap || {});
-        } catch (e: any) {
+        } catch (e) {
+            const error = e as Error;
             console.error("Error loading invoices data:", e);
-            toast.error(e.message || "Failed to load invoices or pending orders");
+            toast.error(error.message || "Failed to load invoices or pending orders");
         } finally {
             setLoading(false);
         }
@@ -139,9 +140,10 @@ export function useInvoices() {
             toast.success(`Invoice ${payload.invoice_no} created successfully!`);
             await loadData();
             return true;
-        } catch (e: any) {
+        } catch (e) {
+            const error = e as Error;
             console.error("Error creating invoice:", e);
-            toast.error(e.message || "Failed to create invoice");
+            toast.error(error.message || "Failed to create invoice");
             return false;
         } finally {
             setSubmitting(false);
@@ -160,9 +162,10 @@ export function useInvoices() {
             toast.success("Payment successfully recorded!");
             await loadData();
             return true;
-        } catch (e: any) {
+        } catch (e) {
+            const error = e as Error;
             console.error("Error recording payment:", e);
-            toast.error(e.message || "Failed to record payment");
+            toast.error(error.message || "Failed to record payment");
             return false;
         } finally {
             setSubmitting(false);
@@ -177,9 +180,10 @@ export function useInvoices() {
             toast.success("Invoice cancelled successfully!");
             await loadData();
             return true;
-        } catch (e: any) {
+        } catch (e) {
+            const error = e as Error;
             console.error("Error cancelling invoice:", e);
-            toast.error(e.message || "Failed to cancel invoice");
+            toast.error(error.message || "Failed to cancel invoice");
             return false;
         } finally {
             setSubmitting(false);

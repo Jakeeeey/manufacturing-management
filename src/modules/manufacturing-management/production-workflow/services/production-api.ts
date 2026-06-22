@@ -1,4 +1,5 @@
 import { FinishedGoodsReceiptPayload } from "../types";
+import { JobOrder, JobOrderQALog } from "../../planning-engineering/types";
 
 async function handleResponse(res: Response, fallbackMessage: string) {
     if (!res.ok) {
@@ -32,7 +33,7 @@ export async function fetchProducts() {
     return handleResponse(res, "Failed to fetch products");
 }
 
-export async function updateJobOrder(joId: string, patch: any) {
+export async function updateJobOrder(joId: string, patch: Partial<JobOrder>) {
     const res = await fetch("/api/manufacturing/planning-engineering", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -50,7 +51,7 @@ export async function updateTaskAssignments(taskId: number, assignments: { user_
     return handleResponse(res, "Failed to update task assignments");
 }
 
-export async function updateTaskQA(taskId: number, productId: number, branchId: number, qaLog: any) {
+export async function updateTaskQA(taskId: number, productId: number, branchId: number, qaLog: Partial<JobOrderQALog>) {
     const res = await fetch("/api/manufacturing/planning-engineering", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },

@@ -1,5 +1,50 @@
 import { NextResponse } from "next/server";
 
+interface LedgerEntry {
+    id: number;
+    documentNo: string;
+    documentDate?: string;
+    documentDescription?: string;
+    productId: string | number;
+    quantity: string | number;
+    branchId: string | number;
+    documentType?: string;
+}
+
+interface Product {
+    product_id: number;
+    product_name?: string;
+    cost_per_unit?: string | number;
+}
+
+interface InventoryLot {
+    id: number;
+    lot_number: string;
+    expiry_date?: string | null;
+    unit_cost?: string | number;
+    quantity?: string | number;
+    created_on?: string;
+}
+
+interface ConsumeComponentBody {
+    component_product_id?: string | number;
+    product_id?: string | number;
+    required?: string | number;
+    quantity?: string | number;
+    component_name?: string;
+    product_name?: string;
+}
+
+interface ComponentConsumed {
+    component_product_id: number;
+    product_id?: string | number;
+    required?: string | number;
+    quantity?: string | number;
+    scaledQuantity: number;
+    component_name?: string;
+    product_name?: string;
+}
+
 const DIRECTUS_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://vtc:8074";
 const DIRECTUS_STATIC_TOKEN = process.env.DIRECTUS_STATIC_TOKEN || "test";
 
@@ -33,16 +78,16 @@ export async function GET(request: Request) {
             fetch(`${DIRECTUS_URL}/items/inventory_lots?limit=500`, { headers, cache: "no-store" })
         ]);
 
-        const products = productsRes.ok ? (await productsRes.json()).data || [] : [];
-        const porData = porRes.ok ? (await porRes.json()).data || [] : [];
+        const products: Product[] = productsRes.ok ? (await productsRes.json()).data || [] : [];
+        const porData: InventoryLot[] = porRes.ok ? (await porRes.json()).data || [] : [];
 
-        const data = ledgerEntries.map((entry: any) => {
+        const data = ledgerEntries.map((entry: LedgerEntry) => {
             const lotNumber = entry.documentDescription?.startsWith("MFG Run: ")
                 ? entry.documentDescription.substring("MFG Run: ".length)
                 : (entry.documentDescription || `MFG-${entry.documentNo}`);
 
-            const matchedProduct = products.find((p: any) => Number(p.product_id) === Number(entry.productId));
-            const matchedPOR = porData.find((p: any) => p.lot_number === lotNumber);
+            const matchedProduct = products.find((p: Product) => Number(p.product_id) === Number(entry.productId));
+            const matchedPOR = porData.find((p: InventoryLot) => p.lot_number === lotNumber);
 
             return {
                 id: entry.id,
@@ -98,8 +143,8 @@ export async function POST(request: Request) {
             console.error("[BFF Finished Goods] Error calculating raw material scale factor:", scaleErr);
         }
 
-        const scaledComponents = (componentsConsumed && Array.isArray(componentsConsumed))
-            ? componentsConsumed.map((comp: any) => {
+        const scaledComponents: ComponentConsumed[] = (componentsConsumed && Array.isArray(componentsConsumed))
+            ? componentsConsumed.map((comp: ConsumeComponentBody) => {
                 const compId = Number(comp.component_product_id || comp.product_id);
                 const baseQty = Number(comp.required || comp.quantity || 0);
                 return {
@@ -118,7 +163,7 @@ export async function POST(request: Request) {
 
             if (compIds.length > 0) {
                 const compIdsStr = compIds.join(",");
-                let ledgerData: any[] = [];
+                let ledgerData: LedgerEntry[] = [];
                 try {
                     const ledgerRes = await fetch(`${DIRECTUS_URL}/items/product_ledger?filter[productId][_in]=${compIdsStr}&filter[branchId][_eq]=${bId}&limit=-1`, { 
                         headers, 
@@ -272,7 +317,7 @@ export async function POST(request: Request) {
                             const activeLots = (await lotsRes.json()).data || [];
                             
                             // Sort in JS to guarantee FIFO/FEFO (expiry date closest first, then oldest created first)
-                            activeLots.sort((a: any, b: any) => {
+                            activeLots.sort((a: InventoryLot, b: InventoryLot) => {
                                 if (a.expiry_date && b.expiry_date) {
                                     return new Date(a.expiry_date).getTime() - new Date(b.expiry_date).getTime();
                                 }

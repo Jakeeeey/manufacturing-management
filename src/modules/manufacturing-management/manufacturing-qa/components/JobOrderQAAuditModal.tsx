@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { X, CheckCircle2, ShieldAlert, Package, Calendar, Tag, Plus, Trash2, Camera, AlertCircle, FileText } from "lucide-react";
+import { X, CheckCircle2, ShieldAlert, Package, Calendar, Tag, Trash2, Camera, AlertCircle, FileText } from "lucide-react";
 import { JobOrder, JobOrderRoutingTask, QALogEntry } from "../types";
 
 interface JobOrderQAAuditModalProps {
@@ -86,7 +86,15 @@ export function JobOrderQAAuditModal({
         const initialExpirations: Record<number, string> = {};
         const oneYearFromNow = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
 
-        productsList.forEach(p => {
+        const innerProductsList = jo.products && jo.products.length > 0 
+            ? jo.products 
+            : [{
+                product_id: jo.product_id,
+                product_name: jo.product_name,
+                quantity: jo.quantity
+            }];
+
+        innerProductsList.forEach(p => {
             const pId = Number(p.product_id);
             // Default yield is original quantity
             initialYields[pId] = p.quantity;
@@ -96,9 +104,11 @@ export function JobOrderQAAuditModal({
             initialExpirations[pId] = oneYearFromNow;
         });
 
-        setYieldQties(initialYields);
-        setLotNumbers(initialLots);
-        setExpiryDates(initialExpirations);
+        setTimeout(() => {
+            setYieldQties(initialYields);
+            setLotNumbers(initialLots);
+            setExpiryDates(initialExpirations);
+        }, 0);
     }, [jo]);
 
     if (!isOpen || !jo) return null;
@@ -191,7 +201,6 @@ export function JobOrderQAAuditModal({
                                     const isFirst = idx === 0;
                                     const previousCompleted = isFirst ? true : routingTasks[idx - 1].status === "Completed";
                                     const isLocked = !previousCompleted && task.status !== "Completed";
-                                    const isCurrent = previousCompleted && task.status !== "Completed";
                                     
                                     // Match historic log if completed
                                     const logEntry = qaHistory.find(log => Number(log.task_id) === Number(task.id));
@@ -276,11 +285,12 @@ export function JobOrderQAAuditModal({
                                                         )}
                                                     </div>
                                                     {logEntry.comments && (
-                                                        <p className="italic text-muted-foreground mt-1">" {logEntry.comments} "</p>
+                                                        <p className="italic text-muted-foreground mt-1">&quot; {logEntry.comments} &quot;</p>
                                                     )}
                                                     {logEntry.photos && logEntry.photos.length > 0 && (
                                                         <div className="flex gap-1.5 overflow-x-auto pt-1.5">
                                                             {logEntry.photos.map((p, pIdx) => (
+                                                                /* eslint-disable-next-line @next/next/no-img-element */
                                                                 <img 
                                                                     key={pIdx} 
                                                                     src={p} 
@@ -393,6 +403,7 @@ export function JobOrderQAAuditModal({
                                                         <div className="flex gap-2 flex-wrap">
                                                             {photos.map((url, idx) => (
                                                                 <div key={idx} className="relative group/img h-14 w-14 border rounded-lg overflow-hidden">
+                                                                    {/* eslint-disable-next-line @next/next/no-img-element */}
                                                                     <img src={url} alt="Evid" className="h-full w-full object-cover" />
                                                                     <button 
                                                                         onClick={() => handleRemovePhoto(url)}

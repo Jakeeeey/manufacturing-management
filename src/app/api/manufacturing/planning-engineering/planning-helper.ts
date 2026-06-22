@@ -3,6 +3,53 @@ import { DirectusJobOrder } from "@/types/manufacturing";
 
 const headersNoCache = { ...headers, "cache": "no-store" as const };
 
+interface DirectusMfgBom {
+    product_id: string | number;
+    bom_id: string | number;
+}
+
+interface DirectusMfgRouting {
+    routing_id?: string | number;
+    id?: string | number;
+    requires_qa?: number | boolean;
+    requiresQA?: number | boolean;
+    bom_id?: string | number;
+    operation_name?: string;
+    name?: string;
+}
+
+interface JobOrderProductRouting {
+    routing_id?: string | number;
+    id?: string | number;
+    operation_name?: string;
+    name?: string;
+    requires_qa?: number | boolean;
+    requiresQA?: number | boolean;
+    sequence_order?: number;
+}
+
+interface JobOrderProduct {
+    product_id: string | number;
+    product_name?: string;
+    quantity?: string | number;
+    bom?: unknown;
+    components?: unknown;
+    routings?: JobOrderProductRouting[] | null;
+    allocation_results?: unknown;
+}
+
+interface JobOrderRoutingTask {
+    id: number;
+    jo_id: number;
+    routing_id: string | number;
+    name?: string;
+    sequence_order?: number;
+    status?: string;
+    requires_qa?: number;
+    assignments?: unknown[];
+    qa_logs?: unknown[];
+}
+
 export async function fetchJobOrders(): Promise<DirectusJobOrder[]> {
     try {
         const [joRes, jopRes, josoRes, tasksRes, assignsRes, qaRes, mfgRoutingsRes, mfgBomsRes] = await Promise.all([
@@ -33,27 +80,27 @@ export async function fetchJobOrders(): Promise<DirectusJobOrder[]> {
             
             // Get all BOM IDs associated with this product
             const productBomIds = mfgBoms
-                .filter((b: any) => Number(b.product_id) === Number(mainProductId))
-                .map((b: any) => Number(b.bom_id));
+                .filter((b: DirectusMfgBom) => Number(b.product_id) === Number(mainProductId))
+                .map((b: DirectusMfgBom) => Number(b.bom_id));
 
             // Map product routings to update requires_qa/requiresQA dynamically from the live template
-            const products = rawProducts.map((p: any) => {
+            const products = rawProducts.map((p: JobOrderProduct) => {
                 const pId = p.product_id || mainProductId;
                 const pBomIds = mfgBoms
-                    .filter((b: any) => Number(b.product_id) === Number(pId))
-                    .map((b: any) => Number(b.bom_id));
+                    .filter((b: DirectusMfgBom) => Number(b.product_id) === Number(pId))
+                    .map((b: DirectusMfgBom) => Number(b.bom_id));
 
-                const mappedRoutings = (p.routings || []).map((r: any) => {
+                const mappedRoutings = (p.routings || []).map((r: JobOrderProductRouting) => {
                     const rId = Number(r.routing_id || r.id);
                     const rName = String(r.operation_name || r.name || "").trim().toLowerCase();
                     // Match by routing ID first, or fall back to finding any routing step for this product with the same name that requires QA
-                    const liveRout = mfgRoutings.find((mr: any) => Number(mr.routing_id || mr.id) === rId);
+                    const liveRout = mfgRoutings.find((mr: DirectusMfgRouting) => Number(mr.routing_id || mr.id) === rId);
                     let reqQA = liveRout 
                         ? (liveRout.requires_qa == 1 || liveRout.requires_qa === true || liveRout.requiresQA === true || liveRout.requiresQA == 1)
                         : (r.requires_qa === true || r.requires_qa == 1 || r.requiresQA === true || r.requiresQA == 1);
 
                     if (!reqQA && rName) {
-                        reqQA = mfgRoutings.some((mr: any) => 
+                        reqQA = mfgRoutings.some((mr: DirectusMfgRouting) => 
                             pBomIds.includes(Number(mr.bom_id)) && 
                             String(mr.operation_name || mr.name || "").trim().toLowerCase() === rName &&
                             (mr.requires_qa == 1 || mr.requires_qa === true || mr.requiresQA === true || mr.requiresQA == 1)
@@ -75,19 +122,18 @@ export async function fetchJobOrders(): Promise<DirectusJobOrder[]> {
             // Map routing tasks relationally and update requires_qa dynamically
             const routingTasks = tasks
                 .filter((t: { jo_id?: unknown }) => t.jo_id === jo.jo_id)
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-                .map((task: any) => {
+                .map((task: JobOrderRoutingTask) => {
                     const taskAssigns = assigns.filter((a: { task_id?: unknown }) => Number(a.task_id) === Number(task.id));
                     const taskQAs = qaLogs.filter((q: { task_id?: unknown }) => Number(q.task_id) === Number(task.id));
                     const taskName = String(task.name || "").trim().toLowerCase();
                     
-                    const liveRout = mfgRoutings.find((mr: any) => Number(mr.routing_id || mr.id) === Number(task.routing_id));
+                    const liveRout = mfgRoutings.find((mr: DirectusMfgRouting) => Number(mr.routing_id || mr.id) === Number(task.routing_id));
                     let reqQA = liveRout 
                         ? (liveRout.requires_qa == 1 || liveRout.requires_qa === true || liveRout.requiresQA === true || liveRout.requiresQA == 1)
-                        : (task.requires_qa === true || task.requires_qa == 1 || task.requiresQA === true || task.requiresQA == 1);
+                        : (task.requires_qa === 1 || task.requires_qa === Number(1) || (task.requires_qa as unknown) === true);
 
                     if (!reqQA && taskName) {
-                        reqQA = mfgRoutings.some((mr: any) => 
+                        reqQA = mfgRoutings.some((mr: DirectusMfgRouting) => 
                             productBomIds.includes(Number(mr.bom_id)) && 
                             String(mr.operation_name || mr.name || "").trim().toLowerCase() === taskName &&
                             (mr.requires_qa == 1 || mr.requires_qa === true || mr.requiresQA === true || mr.requiresQA == 1)
@@ -328,16 +374,6 @@ export async function updateJobOrder(joId: string, patchData: Record<string, unk
                         if (joData && productsList.length > 0) {
                             const bId = joData.branch_id ? Number(joData.branch_id) : null;
                             
-                            // 1. Create a purchase_order record for the completed job order
-                            let supplierId = 309;
-                            try {
-                                const supRes = await fetch(`${DIRECTUS_URL}/items/suppliers?limit=1`, { headers });
-                                const suppliers = supRes.ok ? (await supRes.json()).data || [] : [];
-                                if (suppliers.length > 0) supplierId = suppliers[0].id;
-                            } catch (e) {
-                                console.error("Error fetching supplier for JO auto-pass:", e);
-                            }
-
                             for (const p of productsList) {
                                 const qty = Number(p.quantity || 0);
                                 if (qty > 0) {

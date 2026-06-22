@@ -1,6 +1,6 @@
 // src/modules/manufacturing-management/sales-return/services/sales-return-api.ts
 
-import { SalesReturn, SalesReturnDetail, PendingInvoiceForReturn } from "../types";
+import { SalesReturn, SalesReturnDetail, PendingInvoiceForReturn, InvoiceDetailItem } from "../types";
 
 async function handleResponse(res: Response, fallbackMessage: string) {
     if (!res.ok) {
@@ -41,15 +41,27 @@ export async function createSalesReturn(payload: {
     return handleResponse(res, "Failed to create sales return");
 }
 
-export async function fetchInvoicesForReturn(): Promise<{ data: PendingInvoiceForReturn[]; detailsMap: Record<number, any[]> }> {
+export async function fetchInvoicesForReturn(): Promise<{ data: PendingInvoiceForReturn[]; detailsMap: Record<number, InvoiceDetailItem[]> }> {
     const res = await fetch("/api/manufacturing/sales-invoice?limit=250");
     const json = await handleResponse(res, "Failed to load invoices for returns mapping");
     
     const allInvoices = json.data || [];
     const detailsMap = json.detailsMap || {};
 
+    interface RawInvoice {
+        order_id: number | string;
+        document_no?: string;
+        invoice_no?: string;
+        date?: string;
+        created_date?: string;
+        customer_name?: string;
+        customer_id?: number | string;
+        customer_code?: string;
+        net_amount?: number | string;
+    }
+
     return {
-        data: allInvoices.map((inv: any) => ({
+        data: allInvoices.map((inv: RawInvoice) => ({
             invoice_id: Number(inv.order_id), // maps invoice_id
             invoice_no: inv.document_no || inv.invoice_no,
             invoice_date: inv.date || inv.created_date,

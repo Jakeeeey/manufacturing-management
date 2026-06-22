@@ -1,7 +1,7 @@
 // src/modules/manufacturing-management/sales-return/hooks/useSalesReturn.ts
 
 import { useState, useEffect, useCallback } from "react";
-import { SalesReturn, SalesReturnDetail, PendingInvoiceForReturn } from "../types";
+import { SalesReturn, SalesReturnDetail, PendingInvoiceForReturn, InvoiceDetailItem } from "../types";
 import { 
     fetchSalesReturns, 
     fetchSalesReturnDetails, 
@@ -16,7 +16,7 @@ export function useSalesReturn() {
     
     // Pending Invoices
     const [invoices, setInvoices] = useState<PendingInvoiceForReturn[]>([]);
-    const [invoicesDetailsMap, setInvoicesDetailsMap] = useState<Record<number, any[]>>({});
+    const [invoicesDetailsMap, setInvoicesDetailsMap] = useState<Record<number, InvoiceDetailItem[]>>({});
     
     const [loading, setLoading] = useState<boolean>(true);
     const [submitting, setSubmitting] = useState<boolean>(false);
@@ -50,9 +50,9 @@ export function useSalesReturn() {
                 map[item.key] = item.data;
             });
             setDetailsMap(map);
-        } catch (e: any) {
+        } catch (e) {
             console.error("Error loading sales returns data:", e);
-            toast.error(e.message || "Failed to load customer returns data");
+            toast.error((e as { message?: string }).message || "Failed to load customer returns data");
         } finally {
             setLoading(false);
         }
@@ -77,9 +77,9 @@ export function useSalesReturn() {
             toast.success(`Sales Return successfully processed! Items returned to stock.`);
             await loadData();
             return true;
-        } catch (e: any) {
+        } catch (e) {
             console.error("Error submitting sales return:", e);
-            toast.error(e.message || "Failed to submit sales return");
+            toast.error((e as { message?: string }).message || "Failed to submit sales return");
             return false;
         } finally {
             setSubmitting(false);

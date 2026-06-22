@@ -18,6 +18,14 @@ export interface QaTaskInfo {
     taskName: string;
 }
 
+export interface ComponentConsumption {
+    component_product_id: number;
+    component_name: string;
+    product_name?: string;
+    quantity: number;
+    required?: number;
+}
+
 export interface FinishedGoodsReceiptPayload {
     joId: string;
     productId: number;
@@ -27,7 +35,7 @@ export interface FinishedGoodsReceiptPayload {
     lotNumber: string;
     expirationDate: string;
     unitCost: number;
-    componentsConsumed: any[];
+    componentsConsumed: ComponentConsumption[];
     completeJobOrder?: boolean;
     uom?: string;
 }

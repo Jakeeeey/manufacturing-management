@@ -102,16 +102,7 @@ export function PlanningSidebarForm({
         ? selectedProductsList.reduce((sum, p) => sum + Number(p.quantity || 0), 0)
         : joQty;
 
-    useEffect(() => {
-        if (activeProductId) {
-            const cap = getProductCapacity(activeProductId);
-            setEditingCapacity(cap > 0 ? String(cap) : "");
-        } else {
-            setEditingCapacity("");
-        }
-    }, [activeProductId, products]);
-
-    const getProductCapacity = (productId: number) => {
+    function getProductCapacity(productId: number) {
         const p = products.find(prod => Number(prod.product_id) === Number(productId));
         if (!p) return 0;
 
@@ -120,7 +111,7 @@ export function PlanningSidebarForm({
         }
 
         const parentId = p.parent_id && typeof p.parent_id === "object"
-            ? Number((p.parent_id as any).product_id)
+            ? Number((p.parent_id as { product_id?: number }).product_id)
             : (p.parent_id ? Number(p.parent_id) : null);
 
         if (parentId) {
@@ -132,7 +123,17 @@ export function PlanningSidebarForm({
         }
 
         return 0;
-    };
+    }
+
+    useEffect(() => {
+        if (activeProductId) {
+            const cap = getProductCapacity(activeProductId);
+            setEditingCapacity(cap > 0 ? String(cap) : "");
+        } else {
+            setEditingCapacity("");
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeProductId, products]);
 
 
     const calculateDaysCount = (productId: number, qty: number, shift: string) => {
@@ -245,7 +246,7 @@ export function PlanningSidebarForm({
                                         </button>
                                     </div>
                                     <span className="text-[9px] text-muted-foreground block">
-                                        Directly updates the finished good's production capacity in Finished Goods Master.
+                                        Directly updates the finished good&apos;s production capacity in Finished Goods Master.
                                     </span>
                                 </div>
 

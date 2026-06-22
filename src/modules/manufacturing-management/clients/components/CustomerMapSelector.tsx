@@ -10,6 +10,12 @@ interface CustomerMapSelectorProps {
     onChange: (lat: string, lng: string) => void;
 }
 
+interface GeocodeResult {
+    lat: string;
+    lon: string;
+    display_name: string;
+}
+
 export default function CustomerMapSelector({
     latitude,
     longitude,
@@ -19,7 +25,7 @@ export default function CustomerMapSelector({
     const mapRef = useRef<maplibregl.Map | null>(null);
     const markerRef = useRef<maplibregl.Marker | null>(null);
     const [searchQuery, setSearchQuery] = useState("");
-    const [searchResults, setSearchResults] = useState<any[]>([]);
+    const [searchResults, setSearchResults] = useState<GeocodeResult[]>([]);
     const [searching, setSearching] = useState(false);
     const [showResults, setShowResults] = useState(false);
     const [mapStyle, setMapStyle] = useState<"street" | "satellite">("street");
@@ -136,6 +142,7 @@ export default function CustomerMapSelector({
         return () => {
             map.remove();
         };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // Sync map marker and view from parents inputs changes
@@ -212,7 +219,7 @@ export default function CustomerMapSelector({
         }
     };
 
-    const selectResult = (result: any) => {
+    const selectResult = (result: GeocodeResult) => {
         const lat = parseFloat(result.lat);
         const lng = parseFloat(result.lon);
         if (isNaN(lat) || isNaN(lng)) return;

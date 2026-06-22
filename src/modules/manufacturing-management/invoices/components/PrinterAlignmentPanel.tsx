@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { PrinterAlignmentSettings } from "../types";
-import { Sliders, RotateCcw, Save, Move, HelpCircle, Plus, Trash2, Layout } from "lucide-react";
+import { Sliders, RotateCcw, Save, HelpCircle, Plus, Trash2, Layout } from "lucide-react";
 import { toast } from "sonner";
 
 interface PrinterAlignmentPanelProps {
@@ -104,12 +104,15 @@ export default function PrinterAlignmentPanel({
                 localStorage.setItem(TEMPLATES_STORAGE_KEY, JSON.stringify(loadedTemplates));
             }
             
-            setTemplates(loadedTemplates);
-            if (savedActive) {
-                setSelectedTemplateName(savedActive);
-            } else {
-                setSelectedTemplateName(loadedTemplates[0]?.name || "Standard Layout (Letter)");
-            }
+            const list = loadedTemplates;
+            setTimeout(() => {
+                setTemplates(list);
+                if (savedActive) {
+                    setSelectedTemplateName(savedActive);
+                } else {
+                    setSelectedTemplateName(list[0]?.name || "Standard Layout (Letter)");
+                }
+            }, 0);
         }
     }, []);
 
@@ -122,20 +125,20 @@ export default function PrinterAlignmentPanel({
         const updated = { ...alignment };
         
         if (section === "global") {
-            // @ts-ignore
+            // @ts-expect-error key is keyof global settings
             updated[key] = value;
         } else if (section === "offset") {
             if (coord) {
-                // @ts-ignore
+                // @ts-expect-error coordinate section key
                 updated.offsets[key] = {
-                    // @ts-ignore
+                    // @ts-expect-error coordinate sections values
                     ...updated.offsets[key],
                     [coord]: value
                 };
             } else {
-                // @ts-ignore
+                // @ts-expect-error coordinates sections key
                 updated.offsets[key] = {
-                    // @ts-ignore
+                    // @ts-expect-error coordinates sections values
                     ...updated.offsets[key],
                     y: value // For tableStart which only has y
                 };
@@ -161,12 +164,12 @@ export default function PrinterAlignmentPanel({
         if (key === "tableStart") {
             initialY = alignment.offsets.tableStart.y;
         } else if (key.startsWith("col")) {
-            // @ts-ignore
+            // @ts-expect-error dynamic coordinate check
             initialX = alignment.offsets[key].x;
         } else {
-            // @ts-ignore
+            // @ts-expect-error dynamic coordinate check
             initialX = alignment.offsets[key].x;
-            // @ts-ignore
+            // @ts-expect-error dynamic coordinate check
             initialY = alignment.offsets[key].y;
         }
         
@@ -192,12 +195,12 @@ export default function PrinterAlignmentPanel({
                 updated.offsets.tableStart = { y: newY };
             } else if (draggingKey.startsWith("col")) {
                 const newX = Math.max(0, Math.round(dragInitialCoords.current.x + dxMm));
-                // @ts-ignore
+                // @ts-expect-error dynamic offset coordinates
                 updated.offsets[draggingKey] = { x: newX };
             } else {
                 const newX = Math.max(0, Math.round(dragInitialCoords.current.x + dxMm));
                 const newY = Math.max(0, Math.round(dragInitialCoords.current.y + dyMm));
-                // @ts-ignore
+                // @ts-expect-error dynamic offset coordinates
                 updated.offsets[draggingKey] = { x: newX, y: newY };
             }
             

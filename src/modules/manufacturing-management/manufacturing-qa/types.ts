@@ -2,7 +2,7 @@
 
 export interface QALogEntry {
     id: number;
-    task_id: number;
+    task_id: number | { id: number };
     jo_id: string;
     task_name: string;
     product_name: string;
@@ -32,9 +32,15 @@ export interface JobOrderProduct {
     product_id: number;
     product_name: string;
     quantity: number;
-    routings?: any[];
-    components?: any[];
-    allocation_results?: any[];
+    routings?: unknown[];
+    components?: unknown[];
+    allocation_results?: unknown[];
+}
+
+export interface Branch {
+    id: number;
+    branch_name: string;
+    branch_code: string;
 }
 
 export interface JobOrder {
@@ -45,7 +51,23 @@ export interface JobOrder {
     due_date: string;
     status: "Draft" | "Shortage" | "Proceed" | "Ongoing" | "Finished" | "On Hold" | "Cancelled";
     branch_id?: number;
+    order_no?: string;
     products?: JobOrderProduct[];
     routing_tasks?: JobOrderRoutingTask[];
-    [key: string]: any;
+    [key: string]: unknown;
 }
+
+export interface CatalogProduct {
+    product_id: number;
+    product_name: string;
+    cost_per_unit?: number | string;
+}
+
+export interface FinishedGoodsReceipt {
+    jo_id: string;
+    quantity_produced: number;
+    lot_number?: string;
+    date_received?: string;
+    [key: string]: unknown;
+}
+

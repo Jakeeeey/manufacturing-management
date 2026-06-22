@@ -11,14 +11,9 @@ import {
     RotateCcw, 
     Receipt, 
     Search, 
-    Calendar, 
     DollarSign, 
-    FileText, 
     AlertCircle, 
-    Filter,
-    ArrowUpDown,
     CornerDownLeft,
-    ChevronRight,
     RefreshCw
 } from "lucide-react";
 

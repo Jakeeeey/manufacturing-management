@@ -1,15 +1,15 @@
 // src/modules/manufacturing-management/invoices/components/CreateInvoiceModal.tsx
 
-import React, { useState, useEffect } from "react";
-import { PendingSalesOrder, InvoiceLineItem } from "../types";
-import { X, Calendar, DollarSign, FileText, Percent, AlertCircle } from "lucide-react";
+import React, { useState } from "react";
+import { PendingSalesOrder, SalesOrderLineItem, CreateInvoicePayload } from "../types";
+import { X, Calendar, FileText, Percent, AlertCircle } from "lucide-react";
 
 interface CreateInvoiceModalProps {
     order: PendingSalesOrder;
-    orderDetails: any[];
+    orderDetails: SalesOrderLineItem[];
     isOpen: boolean;
     onClose: () => void;
-    onSubmit: (payload: any) => Promise<boolean>;
+    onSubmit: (payload: CreateInvoicePayload) => Promise<boolean>;
     existingInvoiceNos: string[];
 }
 
@@ -21,35 +21,27 @@ export default function CreateInvoiceModal({
     onSubmit,
     existingInvoiceNos
 }: CreateInvoiceModalProps) {
-    const [invoiceNo, setInvoiceNo] = useState("");
-    const [invoiceDate, setInvoiceDate] = useState("");
-    const [dueDate, setDueDate] = useState("");
+    const [invoiceNo, setInvoiceNo] = useState(() => {
+        const randNo = Math.floor(1000 + Math.random() * 9000);
+        return `INV-${order.order_no.replace("SO-", "") || randNo}`;
+    });
+    const [invoiceDate, setInvoiceDate] = useState(() => {
+        return new Date().toISOString().split("T")[0];
+    });
+    const [dueDate, setDueDate] = useState(() => {
+        const thirtyDays = new Date();
+        thirtyDays.setDate(thirtyDays.getDate() + 30);
+        return thirtyDays.toISOString().split("T")[0];
+    });
     const [discountAmount, setDiscountAmount] = useState(0);
-    const [remarks, setRemarks] = useState("");
+    const [remarks, setRemarks] = useState(() => {
+        return `Billing for Sales Order ${order.order_no}`;
+    });
     const [submitting, setSubmitting] = useState(false);
 
     const isDuplicate = existingInvoiceNos.some(
         (no) => no.trim().toLowerCase() === invoiceNo.trim().toLowerCase()
     );
-
-    // Default pre-fill values when order changes
-    useEffect(() => {
-        if (order) {
-            const randNo = Math.floor(1000 + Math.random() * 9000);
-            setInvoiceNo(`INV-${order.order_no.replace("SO-", "") || randNo}`);
-            
-            const today = new Date().toISOString().split("T")[0];
-            setInvoiceDate(today);
-
-            // Default 30 days due date
-            const thirtyDays = new Date();
-            thirtyDays.setDate(thirtyDays.getDate() + 30);
-            setDueDate(thirtyDays.toISOString().split("T")[0]);
-            
-            setDiscountAmount(0);
-            setRemarks(`Billing for Sales Order ${order.order_no}`);
-        }
-    }, [order]);
 
     if (!isOpen || !order) return null;
 
@@ -81,7 +73,7 @@ export default function CreateInvoiceModal({
             net_amount: finalAmount,
             remarks: remarks,
             items: orderDetails.map((item) => ({
-                product_id: item.product_id?.product_id || item.product_id,
+                product_id: typeof item.product_id === "object" && item.product_id !== null ? item.product_id.product_id : Number(item.product_id),
                 quantity: item.ordered_quantity,
                 unit_price: item.unit_price,
                 net_amount: item.net_amount
@@ -180,9 +172,11 @@ export default function CreateInvoiceModal({
                             {orderDetails.map((item, index) => (
                                 <div key={index} className="px-4 py-2 flex items-center justify-between text-xs">
                                     <div className="min-w-0">
-                                        <p className="font-bold text-foreground truncate">{item.product_id?.product_name || `Product #${item.product_id}`}</p>
+                                        <p className="font-bold text-foreground truncate">
+                                            {typeof item.product_id === "object" && item.product_id !== null ? item.product_id.product_name : `Product #${item.product_id}`}
+                                        </p>
                                         <p className="text-[9px] text-muted-foreground mt-0.5">
-                                            Code: {item.product_id?.product_code || "N/A"} | UOM: {item.product_id?.uom || "PCS"}
+                                            Code: {typeof item.product_id === "object" && item.product_id !== null ? item.product_id.product_code : "N/A"} | UOM: {typeof item.product_id === "object" && item.product_id !== null ? item.product_id.uom || "PCS" : "PCS"}
                                         </p>
                                     </div>
                                     <div className="text-right shrink-0">

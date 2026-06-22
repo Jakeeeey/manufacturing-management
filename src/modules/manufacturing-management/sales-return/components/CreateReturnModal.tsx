@@ -1,16 +1,30 @@
 // src/modules/manufacturing-management/sales-return/components/CreateReturnModal.tsx
 
-import React, { useState, useEffect } from "react";
-import { PendingInvoiceForReturn } from "../types";
-import { X, Calendar, FileText, CornerDownLeft, AlertTriangle } from "lucide-react";
+import React, { useState } from "react";
+import { PendingInvoiceForReturn, InvoiceDetailItem } from "../types";
+import { X, Calendar, CornerDownLeft, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
+
+interface ReturnPayload {
+    invoice_id: number;
+    return_number: string;
+    return_date: string;
+    customer_id: number;
+    remarks: string;
+    items: {
+        product_id: number;
+        quantity: number;
+        unit_price: number;
+        reason: string;
+    }[];
+}
 
 interface CreateReturnModalProps {
     invoice: PendingInvoiceForReturn;
-    invoiceDetails: any[];
+    invoiceDetails: InvoiceDetailItem[];
     isOpen: boolean;
     onClose: () => void;
-    onSubmit: (payload: any) => Promise<boolean>;
+    onSubmit: (payload: ReturnPayload) => Promise<boolean>;
 }
 
 export default function CreateReturnModal({
@@ -20,37 +34,48 @@ export default function CreateReturnModal({
     onClose,
     onSubmit
 }: CreateReturnModalProps) {
-    const [returnNo, setReturnNo] = useState("");
-    const [returnDate, setReturnDate] = useState("");
-    const [remarks, setRemarks] = useState("");
+    const [returnNo, setReturnNo] = useState(() => {
+        const randNo = Math.floor(1000 + Math.random() * 9000);
+        return `RET-${invoice.invoice_no.replace("INV-", "") || randNo}`;
+    });
+    const [returnDate, setReturnDate] = useState(() => {
+        return new Date().toISOString().split("T")[0];
+    });
+    const [remarks, setRemarks] = useState(() => {
+        return `Returns for Invoice ${invoice.invoice_no}`;
+    });
     
-    // Returned quantities map
-    const [returnedQtys, setReturnedQtys] = useState<Record<number, number>>({});
-    const [returnReasons, setReturnReasons] = useState<Record<number, string>>({});
-    const [submitting, setSubmitting] = useState(false);
+    // Helper helper functions
+    const getProdId = (item: InvoiceDetailItem): number => {
+        return typeof item.product_id === "object" && item.product_id !== null 
+            ? item.product_id.product_id 
+            : Number(item.product_id);
+    };
 
-    useEffect(() => {
-        if (invoice) {
-            const randNo = Math.floor(1000 + Math.random() * 9000);
-            setReturnNo(`RET-${invoice.invoice_no.replace("INV-", "") || randNo}`);
-            
-            const today = new Date().toISOString().split("T")[0];
-            setReturnDate(today);
-            
-            setRemarks(`Returns for Invoice ${invoice.invoice_no}`);
-            
-            // Default 0 returned quantity
-            const qtys: Record<number, number> = {};
-            const reasons: Record<number, string> = {};
-            invoiceDetails.forEach(item => {
-                const prodId = item.product_id?.product_id || item.product_id;
-                qtys[prodId] = 0;
-                reasons[prodId] = "Defective";
-            });
-            setReturnedQtys(qtys);
-            setReturnReasons(reasons);
-        }
-    }, [invoice, invoiceDetails]);
+    const getProdName = (item: InvoiceDetailItem): string => {
+        return typeof item.product_id === "object" && item.product_id !== null && item.product_id.product_name
+            ? item.product_id.product_name 
+            : `Product #${getProdId(item)}`;
+    };
+
+    // Returned quantities map
+    const [returnedQtys, setReturnedQtys] = useState<Record<number, number>>(() => {
+        const qtys: Record<number, number> = {};
+        invoiceDetails.forEach(item => {
+            const prodId = getProdId(item);
+            qtys[prodId] = 0;
+        });
+        return qtys;
+    });
+    const [returnReasons, setReturnReasons] = useState<Record<number, string>>(() => {
+        const reasons: Record<number, string> = {};
+        invoiceDetails.forEach(item => {
+            const prodId = getProdId(item);
+            reasons[prodId] = "Defective";
+        });
+        return reasons;
+    });
+    const [submitting, setSubmitting] = useState(false);
 
     if (!isOpen || !invoice) return null;
 
@@ -75,7 +100,7 @@ export default function CreateReturnModal({
         // Filter out items that have 0 return quantity
         const itemsToReturn = invoiceDetails
             .map(item => {
-                const prodId = item.product_id?.product_id || item.product_id;
+                const prodId = getProdId(item);
                 const qty = returnedQtys[prodId] || 0;
                 return {
                     product_id: prodId,
@@ -110,7 +135,7 @@ export default function CreateReturnModal({
 
     // Calculate total refund/credit value
     const totalRefund = invoiceDetails.reduce((acc, item) => {
-        const prodId = item.product_id?.product_id || item.product_id;
+        const prodId = getProdId(item);
         const qty = returnedQtys[prodId] || 0;
         const price = item.unit_price || item.base_unit_cost_php || 0;
         return acc + (qty * price);
@@ -174,13 +199,13 @@ export default function CreateReturnModal({
                         </div>
                         <div className="divide-y max-h-56 overflow-y-auto">
                             {invoiceDetails.map((item, index) => {
-                                const prodId = item.product_id?.product_id || item.product_id;
+                                const prodId = getProdId(item);
                                 const maxQty = item.quantity || item.ordered_quantity || 1;
                                 const currentQty = returnedQtys[prodId] || 0;
                                 return (
                                     <div key={index} className="px-4 py-3 grid grid-cols-12 gap-3 items-center text-xs hover:bg-muted/5">
                                         <div className="col-span-5 min-w-0">
-                                            <p className="font-bold text-foreground truncate">{item.product_id?.product_name || `Product #${item.product_id}`}</p>
+                                            <p className="font-bold text-foreground truncate">{getProdName(item)}</p>
                                             <p className="text-[9px] text-muted-foreground mt-0.5">
                                                 Invoiced: {maxQty} | Price: ₱{Number(item.unit_price || 0).toLocaleString()}
                                             </p>

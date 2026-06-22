@@ -42,7 +42,7 @@ export async function submitQARoutingTaskVerification(
     comments: string,
     photos: string[],
     completedBy?: number | null
-): Promise<any> {
+): Promise<unknown> {
     // 1. Submit the QA Log entry
     const logRes = await fetch("/api/manufacturing/planning-engineering", {
         method: "PATCH",
@@ -89,7 +89,7 @@ export async function updateRoutingTask(
         completed_at?: string | null;
         completed_by?: number | null;
     }
-): Promise<any> {
+): Promise<unknown> {
     const res = await fetch("/api/manufacturing/planning-engineering", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -113,8 +113,8 @@ export async function releaseFinishedGoodsReceipt(payload: {
     lotNumber: string;
     expirationDate: string;
     unitCost: number;
-    componentsConsumed: any[];
-}): Promise<any> {
+    componentsConsumed: unknown[];
+}): Promise<unknown> {
     const res = await fetch("/api/manufacturing/production/finished-goods", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -126,7 +126,7 @@ export async function releaseFinishedGoodsReceipt(payload: {
 /**
  * Update the Job Order status (e.g. to Finished or Cancelled) directly.
  */
-export async function updateJobOrderStatus(joId: string, status: string): Promise<any> {
+export async function updateJobOrderStatus(joId: string, status: string): Promise<unknown> {
     const res = await fetch("/api/manufacturing/planning-engineering", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },

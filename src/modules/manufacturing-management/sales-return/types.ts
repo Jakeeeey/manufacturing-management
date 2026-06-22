@@ -34,3 +34,11 @@ export interface PendingInvoiceForReturn {
     customer_code: string;
     net_amount: number;
 }
+
+export interface InvoiceDetailItem {
+    product_id: number | { product_id: number; product_name?: string };
+    quantity?: number;
+    ordered_quantity?: number;
+    unit_price?: number;
+    base_unit_cost_php?: number;
+}

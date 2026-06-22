@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { History, Image, MessageSquare, ShieldAlert, CheckCircle } from "lucide-react";
+import { History, Image as ImageIcon, CheckCircle } from "lucide-react";
 import { QALogEntry } from "../types";
 
 interface QALogHistoryTableProps {
@@ -74,7 +74,7 @@ export function QALogHistoryTable({
                                         <div className="flex items-center gap-2 max-w-full">
                                             {log.comments ? (
                                                 <span className="truncate italic flex-1" title={log.comments}>
-                                                    "{log.comments}"
+                                                     &quot;{log.comments}&quot;
                                                 </span>
                                             ) : (
                                                 <span className="text-[10px] text-muted-foreground/40 italic flex-1">No comments</span>
@@ -88,7 +88,7 @@ export function QALogHistoryTable({
                                                         className="p-1 rounded-md bg-muted text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all"
                                                         title="View Inspection Evidence"
                                                     >
-                                                        <Image className="h-3.5 w-3.5" />
+                                                        <ImageIcon className="h-3.5 w-3.5" />
                                                     </button>
                                                 </div>
                                             )}
@@ -105,6 +105,7 @@ export function QALogHistoryTable({
             {selectedPhoto && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-150">
                     <div className="relative max-w-lg bg-card border rounded-2xl overflow-hidden shadow-2xl p-2 animate-in zoom-in-95 duration-150">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img src={selectedPhoto} alt="Inspection Evidence" className="w-full max-h-[70vh] object-contain rounded-xl" />
                         <button
                             onClick={() => setSelectedPhoto(null)}

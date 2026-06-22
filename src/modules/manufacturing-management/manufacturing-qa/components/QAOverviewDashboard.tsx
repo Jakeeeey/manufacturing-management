@@ -1,11 +1,11 @@
 import React, { useMemo } from "react";
 import { CheckCircle2, AlertTriangle, TrendingDown, ClipboardCheck, ArrowUpRight } from "lucide-react";
-import { QALogEntry, JobOrder } from "../types";
+import { QALogEntry, JobOrder, CatalogProduct } from "../types";
 
 interface QAOverviewDashboardProps {
     qaHistory: QALogEntry[];
     activeJOs: JobOrder[];
-    catalogProducts: any[];
+    catalogProducts: CatalogProduct[];
 }
 
 export function QAOverviewDashboard({

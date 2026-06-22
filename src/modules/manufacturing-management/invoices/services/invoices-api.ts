@@ -1,6 +1,18 @@
 // src/modules/manufacturing-management/invoices/services/invoices-api.ts
 
-import { Invoice, InvoiceLineItem, PendingSalesOrder } from "../types";
+import { Invoice, InvoiceLineItem, PendingSalesOrder, SalesOrderLineItem } from "../types";
+
+interface DirectusSalesOrder {
+    order_id: string | number;
+    order_no: string;
+    customer_code: string;
+    customer_name?: string;
+    order_date: string;
+    net_amount?: number | string;
+    total_amount?: number | string;
+    remarks?: string;
+    order_status?: string;
+}
 
 async function handleResponse(res: Response, fallbackMessage: string) {
     if (!res.ok) {
@@ -66,19 +78,19 @@ export async function updateInvoiceStatus(
 /**
  * Fetch Sales Orders that are eligible for invoicing (e.g. status: "For Consolidation" or "Completed")
  */
-export async function fetchPendingInvoicesSalesOrders(): Promise<{ data: PendingSalesOrder[]; detailsMap: Record<number, any[]> }> {
+export async function fetchPendingInvoicesSalesOrders(): Promise<{ data: PendingSalesOrder[]; detailsMap: Record<number, SalesOrderLineItem[]> }> {
     // We can fetch Sales Orders with status "For Consolidation" as they are approved and ready to be billed
     const res = await fetch("/api/manufacturing/sales-order?limit=250");
     const json = await handleResponse(res, "Failed to load pending sales orders");
     
     // Filter only orders that are ready for invoicing ('For Invoicing')
     // (Translating backend schema objects into light PendingSalesOrder list)
-    const filteredData = (json.data || []).filter((so: any) => 
+    const filteredData = (json.data || []).filter((so: DirectusSalesOrder) => 
         so.order_status === "For Invoicing"
     );
     
     return {
-        data: filteredData.map((so: any) => ({
+        data: filteredData.map((so: DirectusSalesOrder) => ({
             order_id: Number(so.order_id),
             order_no: so.order_no,
             customer_code: so.customer_code,

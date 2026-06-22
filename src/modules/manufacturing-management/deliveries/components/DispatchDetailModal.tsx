@@ -1,8 +1,8 @@
 // src/modules/manufacturing-management/deliveries/components/DispatchDetailModal.tsx
 
 import React, { useState, useRef, useEffect } from "react";
-import { DispatchPlan, DispatchInvoice } from "../types";
-import { X, Truck, User as UserIcon, Navigation, Calendar, CheckCircle2, ChevronRight, MapPin, Signature, Camera, FileText } from "lucide-react";
+import { DispatchPlan, DispatchInvoice, DispatchPlanStaff } from "../types";
+import { X, Truck, User as UserIcon, CheckCircle2, ChevronRight, MapPin, Signature, Camera } from "lucide-react";
 import { toast } from "sonner";
 
 interface DispatchDetailModalProps {
@@ -34,14 +34,6 @@ export default function DispatchDetailModal({
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const [isDrawing, setIsDrawing] = useState(false);
 
-    useEffect(() => {
-        if (activeStop && canvasRef.current) {
-            initCanvas();
-        }
-    }, [activeStop]);
-
-    if (!isOpen || !plan) return null;
-
     // Canvas drawing helper function for capture
     const initCanvas = () => {
         const canvas = canvasRef.current;
@@ -60,6 +52,14 @@ export default function DispatchDetailModal({
         ctx.fillStyle = "#ffffff";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
     };
+
+    useEffect(() => {
+        if (activeStop && canvasRef.current) {
+            initCanvas();
+        }
+    }, [activeStop]);
+
+    if (!isOpen || !plan) return null;
 
     const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
         const canvas = canvasRef.current;
@@ -94,10 +94,17 @@ export default function DispatchDetailModal({
         initCanvas();
     };
 
-    const getPos = (e: any, canvas: HTMLCanvasElement) => {
+    const getPos = (e: React.MouseEvent | React.TouchEvent, canvas: HTMLCanvasElement) => {
         const rect = canvas.getBoundingClientRect();
-        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        let clientX: number;
+        let clientY: number;
+        if ("touches" in e) {
+            clientX = e.touches[0].clientX;
+            clientY = e.touches[0].clientY;
+        } else {
+            clientX = e.clientX;
+            clientY = e.clientY;
+        }
         return {
             x: clientX - rect.left,
             y: clientY - rect.top
@@ -320,11 +327,11 @@ export default function DispatchDetailModal({
                                     </div>
 
                                     {/* Helpers list rendering */}
-                                    {plan.staff && plan.staff.filter((s: any) => s.role === "Helper").length > 0 && (
+                                    {plan.staff && plan.staff.filter((s: DispatchPlanStaff) => s.role === "Helper").length > 0 && (
                                         <div className="bg-muted/10 border rounded-xl p-4 text-xs space-y-2">
                                             <span className="text-[9px] font-bold text-muted-foreground uppercase block">Route Helper Personnel</span>
                                             <div className="flex flex-wrap gap-2">
-                                                {plan.staff.filter((s: any) => s.role === "Helper").map((s: any) => (
+                                                {plan.staff.filter((s: DispatchPlanStaff) => s.role === "Helper").map((s: DispatchPlanStaff) => (
                                                     <span 
                                                         key={s.id || s.user_id} 
                                                         className="px-2.5 py-1 bg-background border rounded-lg text-[10px] font-bold text-foreground flex items-center gap-1.5 shadow-sm"
@@ -352,11 +359,11 @@ export default function DispatchDetailModal({
                                     </div>
 
                                     {/* Helpers in mobile portal */}
-                                    {plan.staff && plan.staff.filter((s: any) => s.role === "Helper").length > 0 && (
+                                    {plan.staff && plan.staff.filter((s: DispatchPlanStaff) => s.role === "Helper").length > 0 && (
                                         <div className="border-t border-slate-800 pt-2.5">
                                             <span className="text-[9px] text-muted-foreground uppercase block font-bold mb-1">Helpers Crew</span>
                                             <div className="flex flex-wrap gap-1.5">
-                                                {plan.staff.filter((s: any) => s.role === "Helper").map((s: any) => (
+                                                {plan.staff.filter((s: DispatchPlanStaff) => s.role === "Helper").map((s: DispatchPlanStaff) => (
                                                     <span 
                                                         key={s.id || s.user_id} 
                                                         className="px-2 py-0.5 bg-slate-900 border border-slate-800 text-foreground text-[9px] font-medium rounded-md"

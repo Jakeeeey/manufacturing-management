@@ -198,7 +198,7 @@ export async function PATCH(request: Request) {
 
         // 3. QA Log logging
         if (body.taskId !== undefined && body.qaLog !== undefined) {
-            const { taskId, qaLog, productId, branchId } = body;
+            const { taskId, qaLog } = body;
             const expected = Number(qaLog.expected_quantity || 0);
             const actual = Number(qaLog.actual_quantity || 0);
             const deviation = expected - actual;
@@ -237,8 +237,7 @@ export async function PATCH(request: Request) {
         }
 
         // Map camelCase patch fields to snake_case fields
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const dbPatch: Record<string, any> = {};
+        const dbPatch: Record<string, unknown> = {};
         if (patch.status !== undefined) dbPatch.status = patch.status;
         if (patch.bom !== undefined) dbPatch.bom = patch.bom;
         if (patch.components !== undefined) dbPatch.components = patch.components;

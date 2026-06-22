@@ -2,13 +2,12 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { toast } from "sonner";
-import { JobOrder, QALogEntry } from "../types";
+import { JobOrder, QALogEntry, Branch, CatalogProduct, JobOrderRoutingTask, FinishedGoodsReceipt } from "../types";
 import {
     fetchJobOrders,
     fetchQALogsHistory,
     submitQARoutingTaskVerification,
     releaseFinishedGoodsReceipt,
-    updateJobOrderStatus,
     updateRoutingTask
 } from "../services/qa-api";
 
@@ -16,9 +15,9 @@ export function useManufacturingQA(userId?: number) {
     const [activeTab, setActiveTab] = useState<"pending" | "history" | "released">("pending");
     const [jobOrders, setJobOrders] = useState<JobOrder[]>([]);
     const [qaHistory, setQaHistory] = useState<QALogEntry[]>([]);
-    const [catalogProducts, setCatalogProducts] = useState<any[]>([]);
-    const [branches, setBranches] = useState<any[]>([]);
-    const [finishedGoodsReceipts, setFinishedGoodsReceipts] = useState<any[]>([]);
+    const [catalogProducts, setCatalogProducts] = useState<CatalogProduct[]>([]);
+    const [branches, setBranches] = useState<Branch[]>([]);
+    const [finishedGoodsReceipts, setFinishedGoodsReceipts] = useState<FinishedGoodsReceipt[]>([]);
     const [loading, setLoading] = useState(true);
 
     const [searchQuery, setSearchQuery] = useState("");
@@ -43,15 +42,15 @@ export function useManufacturingQA(userId?: number) {
             setJobOrders(joData);
             
             // Format history data to resolve task references
-            const taskMap = new Map<number, { task: any; jo: any }>();
-            (joData || []).forEach((jo: any) => {
-                const tasks = jo.routing_tasks || jo.routingTasks || [];
-                tasks.forEach((t: any) => {
+            const taskMap = new Map<number, { task: JobOrderRoutingTask; jo: JobOrder }>();
+            (joData || []).forEach((jo: JobOrder) => {
+                const tasks = jo.routing_tasks || [];
+                tasks.forEach((t: JobOrderRoutingTask) => {
                     taskMap.set(Number(t.id), { task: t, jo });
                 });
             });
 
-            const formattedHistory: QALogEntry[] = (historyData || []).map((log: any) => {
+            const formattedHistory: QALogEntry[] = (historyData || []).map((log: QALogEntry) => {
                 const taskId = typeof log.task_id === "object" && log.task_id !== null 
                     ? Number(log.task_id.id) 
                     : Number(log.task_id);
@@ -89,9 +88,10 @@ export function useManufacturingQA(userId?: number) {
                 const fgJson = await fgRes.json();
                 setFinishedGoodsReceipts(fgJson || []);
             }
-        } catch (e: any) {
+        } catch (e) {
+            const error = e as Error;
             console.error("Failed to load QA data:", e);
-            toast.error(e.message || "Failed to sync quality control data.");
+            toast.error(error.message || "Failed to sync quality control data.");
         } finally {
             setLoading(false);
         }
@@ -136,7 +136,7 @@ export function useManufacturingQA(userId?: number) {
             const receipts = finishedGoodsReceipts.filter(r => r.jo_id === jo.jo_id);
             const totalYielded = receipts.reduce((sum, r) => sum + Number(r.quantity_produced || 0), 0);
             const lotCodes = receipts.map(r => r.lot_number).filter(Boolean).join(", ");
-            const dateReleased = receipts[0]?.date_received || jo.due_date;
+            const dateReleased = receipts[0]?.date_received || jo.due_date || "";
 
             return {
                 jo_id: jo.jo_id,
@@ -195,9 +195,10 @@ export function useManufacturingQA(userId?: number) {
                 setSelectedJO(updatedJO);
             }
             loadData(); // Sync history
-        } catch (e: any) {
+        } catch (e) {
+            const error = e as Error;
             console.error("QA task submit error:", e);
-            toast.error(e.message || "Failed to submit stage inspection.");
+            toast.error(error.message || "Failed to submit stage inspection.");
         } finally {
             setSubmittingAudit(false);
         }
@@ -228,8 +229,8 @@ export function useManufacturingQA(userId?: number) {
                     branchId: Number(selectedJO.branch_id),
                     lotNumber: lotNumbers[prodId] || `LOT-QA-${selectedJO.jo_id}-${prodId}`,
                     expirationDate: expiryDates[prodId] || new Date(Date.now() + 1000 * 60 * 60 * 24 * 365).toISOString().split("T")[0],
-                    unitCost: catalogProduct?.cost_per_unit || 0,
-                    componentsConsumed: p.allocation_results || p.components || []
+                    unitCost: Number(catalogProduct?.cost_per_unit || 0),
+                    componentsConsumed: (p.allocation_results || p.components || []) as unknown[]
                 };
 
                 await releaseFinishedGoodsReceipt(payload);
@@ -239,9 +240,10 @@ export function useManufacturingQA(userId?: number) {
             setIsAuditModalOpen(false);
             setSelectedJO(null);
             loadData();
-        } catch (e: any) {
+        } catch (e) {
+            const error = e as Error;
             console.error("Goods release error:", e);
-            toast.error(e.message || "Failed to release finished goods to inventory.");
+            toast.error(error.message || "Failed to release finished goods to inventory.");
         } finally {
             setReleasingGoods(false);
         }
@@ -266,9 +268,10 @@ export function useManufacturingQA(userId?: number) {
                 }
             }
             loadData(); // Sync history
-        } catch (e: any) {
+        } catch (e) {
+            const error = e as Error;
             console.error("Start stage error:", e);
-            toast.error(e.message || "Failed to start stage.");
+            toast.error(error.message || "Failed to start stage.");
         } finally {
             setSubmittingAudit(false);
         }

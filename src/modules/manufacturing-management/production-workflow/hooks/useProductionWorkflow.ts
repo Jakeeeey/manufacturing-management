@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { toast } from "sonner";
-import { JobOrder, ActiveAssigningTask, QaTaskInfo, FinishedGoodsReceiptPayload } from "../types";
+import { JobOrder, ActiveAssigningTask, QaTaskInfo, FinishedGoodsReceiptPayload, ComponentConsumption } from "../types";
 import {
     fetchJobOrders,
     fetchUsers,
@@ -42,7 +42,6 @@ export function useProductionWorkflow() {
     const [qaTaskInfo, setQaTaskInfo] = useState<QaTaskInfo | null>(null);
     const [actualQty, setActualQty] = useState<string>("");
     const [qaComments, setQaComments] = useState<string>("");
-    const [isQALoading, setIsQALoading] = useState(false);
     const [uploadedPhotos, setUploadedPhotos] = useState<string[]>([]);
     const [uploading, setUploading] = useState(false);
 
@@ -121,7 +120,7 @@ export function useProductionWorkflow() {
 
         // Get completed routing steps (routes finished)
         const completedRoutings = selectedJO && selectedJO.jo_id === joId
-            ? (selectedJO.routing_tasks || []).filter((task: any) => task.status === "Completed")
+            ? (selectedJO.routing_tasks || []).filter((task: { status: string; name: string; completed_at?: string | null }) => task.status === "Completed")
             : [];
         
         const completedRoutingsHtml = completedRoutings.length > 0
@@ -130,7 +129,7 @@ export function useProductionWorkflow() {
                     <div class="table-title">Production Routes / Steps Finished</div>
                     <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px;">
                         <ul style="margin: 0; padding-left: 20px; font-size: 11px; font-weight: 600; color: #334155; line-height: 1.6;">
-                            ${completedRoutings.map((task: any) => `
+                            ${completedRoutings.map((task: { status: string; name: string; completed_at?: string | null }) => `
                                 <li>
                                     <span style="color: #0f172a;">${task.name}</span> 
                                     <span style="color: #64748b; font-weight: normal; font-size: 10px; margin-left: 8px;">
@@ -147,7 +146,7 @@ export function useProductionWorkflow() {
         // Aggregate raw materials consumed
         const materialsMap: Record<string, { name: string; quantity: number; uom: string }> = {};
         receipts.forEach(receipt => {
-            (receipt.componentsConsumed || []).forEach((comp: any) => {
+            (receipt.componentsConsumed || []).forEach((comp: ComponentConsumption) => {
                 const name = comp.component_name || comp.product_name || `Component #${comp.component_product_id}`;
                 const key = `${comp.component_product_id || name}`;
                 const qty = Number(comp.quantity || comp.required || 0);
@@ -497,16 +496,17 @@ export function useProductionWorkflow() {
 
     useEffect(() => {
         if (selectedJO && selectedJO.dailyBreakdown && selectedJO.dailyBreakdown.length > 0) {
-            const isValid = selectedJO.dailyBreakdown.some((d: any) => d.day === selectedDayNum);
+            const isValid = selectedJO.dailyBreakdown.some((d: { day: number }) => d.day === selectedDayNum);
             if (!isValid) {
-                const firstActiveDay = selectedJO.dailyBreakdown.find((d: any) => d.status === "Ongoing") || 
-                                       selectedJO.dailyBreakdown.find((d: any) => d.status === "Pending") || 
+                const firstActiveDay = selectedJO.dailyBreakdown.find((d: { status: string }) => d.status === "Ongoing") || 
+                                       selectedJO.dailyBreakdown.find((d: { status: string }) => d.status === "Pending") || 
                                        selectedJO.dailyBreakdown[0];
                 setSelectedDayNum(firstActiveDay.day);
             }
         } else {
             setSelectedDayNum(null);
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [selectedJoId, selectedJO]);
 
     const userWorkloads = useMemo(() => {
@@ -561,13 +561,12 @@ export function useProductionWorkflow() {
             const initialLots: Record<number, string> = {};
             const initialExpirations: Record<number, string> = {};
 
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            productsList.forEach((p: any) => {
+            productsList.forEach((p: { product_id: number | string; quantity: number }) => {
                 const prodId = Number(p.product_id);
                 
                 // Get target qty for today if a specific day is selected, fallback to total JO qty
                 const dayObj = selectedDayNum 
-                    ? selectedJO.dailyBreakdown?.find((d: any) => d.day === selectedDayNum)
+                    ? selectedJO.dailyBreakdown?.find((d: { day: number }) => d.day === selectedDayNum)
                     : null;
                 const targetQty = dayObj ? Number(dayObj.quantity) : p.quantity;
                 
@@ -603,7 +602,7 @@ export function useProductionWorkflow() {
             try {
                 await handleUpdateJO(jo.jo_id, { status: jo.status });
                 toast.success("Tasks initialized! Please choose the operator again.", { id: "init-tasks" });
-            } catch (err) {
+            } catch {
                 toast.error("Failed to initialize execution tasks.", { id: "init-tasks" });
             }
             return;
@@ -694,11 +693,11 @@ export function useProductionWorkflow() {
         skipQA = false
     ) => {
         if (selectedDayNum !== null) {
-            const dayObj = jo.dailyBreakdown?.find((d: any) => d.day === selectedDayNum);
+            const dayObj = jo.dailyBreakdown?.find((d: { day: number }) => d.day === selectedDayNum);
             const expectedQty = dayObj ? Number(dayObj.quantity) : jo.quantity;
             const actual = actualQty !== undefined ? actualQty : expectedQty;
             
-            const updatedBreakdown = (jo.dailyBreakdown || []).map((day: any) => {
+            const updatedBreakdown = (jo.dailyBreakdown || []).map((day: { day: number; date: string; quantity: number; completed_steps?: number[]; qa_logs?: Record<string, { expected_quantity: number; actual_quantity: number; qa_status: string; comments: string; photos: string[]; completed_at?: string }>; status: string }) => {
                 if (day.day === selectedDayNum) {
                     const completedSteps = day.completed_steps ? [...day.completed_steps] : [];
                     const qaLogs = day.qa_logs ? { ...day.qa_logs } : {};
@@ -740,14 +739,14 @@ export function useProductionWorkflow() {
                 return day;
             });
             
-            const allDaysCompleted = updatedBreakdown.every((day: any) => day.status === "Completed");
-            const parentJoPatch: any = {
+            const allDaysCompleted = updatedBreakdown.every((day: { status: string }) => day.status === "Completed");
+            const parentJoPatch: Partial<JobOrder> = {
                 dailyBreakdown: updatedBreakdown
             };
             if (allDaysCompleted) {
                 parentJoPatch.status = "Finished";
             } else {
-                const anyDayStarted = updatedBreakdown.some((day: any) => day.status === "Ongoing" || day.status === "Completed");
+                const anyDayStarted = updatedBreakdown.some((day: { status: string }) => day.status === "Ongoing" || day.status === "Completed");
                 if (anyDayStarted && jo.status !== "Ongoing") {
                     parentJoPatch.status = "Ongoing";
                 }
@@ -826,7 +825,7 @@ export function useProductionWorkflow() {
             try {
                 await handleUpdateJO(jo.jo_id, { status: jo.status });
                 toast.success("Tasks initialized! Please click QA Pass again.", { id: "init-tasks" });
-            } catch (err) {
+            } catch {
                 toast.error("Failed to initialize execution tasks.", { id: "init-tasks" });
             }
             return;
@@ -852,12 +851,11 @@ export function useProductionWorkflow() {
         setSubmittingReceipt(true);
         try {
             const productsList = selectedJO.products && selectedJO.products.length > 0 ? selectedJO.products : [selectedJO];
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const receiptPayloads: any[] = [];
+            const receiptPayloads: FinishedGoodsReceiptPayload[] = [];
 
             // Determine if this is the final stocking that completes the whole Job Order
             const isLastDay = selectedDayNum !== null && selectedJO.dailyBreakdown
-                ? selectedJO.dailyBreakdown.every((day: any) => 
+                ? selectedJO.dailyBreakdown.every((day: { day: number; status: string }) => 
                     day.day === selectedDayNum ? true : day.status === "Completed"
                   )
                 : true;
@@ -869,13 +867,13 @@ export function useProductionWorkflow() {
                 
                 // If in daily mode, we should deduct a fraction of components consumed corresponding to today's yield quantity
                 const targetQty = selectedDayNum !== null && selectedJO.dailyBreakdown
-                    ? (selectedJO.dailyBreakdown.find((d: any) => d.day === selectedDayNum)?.quantity || p.quantity)
+                    ? (selectedJO.dailyBreakdown.find((d: { day: number; quantity: number }) => d.day === selectedDayNum)?.quantity || p.quantity)
                     : p.quantity;
                 const actualYieldQty = yieldQties[prodId] || targetQty;
                 const dailyRatio = p.quantity > 0 ? actualYieldQty / p.quantity : 1.0;
 
                 const baseComponents = p.allocationResults || p.allocation_results || p.components || [];
-                const dailyComponents = baseComponents.map((comp: any) => {
+                const dailyComponents = baseComponents.map((comp: { required?: number; quantity?: number; component_product_id: number; component_name: string; product_name?: string }) => {
                     const originalQty = Number(comp.required || comp.quantity || 0);
                     return {
                         ...comp,
@@ -906,12 +904,12 @@ export function useProductionWorkflow() {
 
             // If we completed a daily run, we should update the daily run status in the database to Completed
             if (selectedDayNum !== null) {
-                const totalYielded = productsList.reduce((sum: number, p: any) => {
+                const totalYielded = productsList.reduce((sum: number, p: { product_id: number | string }) => {
                     const prodId = Number(p.product_id);
                     return sum + (yieldQties[prodId] || 0);
                 }, 0);
 
-                const updatedBreakdown = (selectedJO.dailyBreakdown || []).map((day: any) => {
+                const updatedBreakdown = (selectedJO.dailyBreakdown || []).map((day: { day: number; date: string; quantity: number; status: string; actual_yield?: number }) => {
                     if (day.day === selectedDayNum) {
                         return {
                             ...day,
@@ -922,7 +920,7 @@ export function useProductionWorkflow() {
                     return day;
                 });
                 
-                const parentJoPatch: any = {
+                const parentJoPatch: Partial<JobOrder> = {
                     dailyBreakdown: updatedBreakdown
                 };
                 if (completeJobOrder) {
@@ -968,13 +966,13 @@ export function useProductionWorkflow() {
 
     const allStepsCompleted = useMemo(() => {
         if (!selectedJO || productsList.length === 0) return false;
-        return productsList.every((p: any) => 
-            p.routings && p.routings.length > 0 && p.routings.every((r: any) => {
+        return productsList.every((p: { routings?: Array<{ routing_id: number; qa_status?: string }> }) => 
+            p.routings && p.routings.length > 0 && p.routings.every((r: { routing_id: number; qa_status?: string }) => {
                 const relTask = selectedJO.routing_tasks?.find(t => Number(t.routing_id) === Number(r.routing_id));
                 const taskQAStatus = relTask ? (relTask.status === "Completed" ? "Passed" : "Pending") : (r.qa_status || "Pending");
                 
                 if (selectedDayNum !== null) {
-                    const dayObj = selectedJO.dailyBreakdown?.find((d: any) => d.day === selectedDayNum);
+                    const dayObj = selectedJO.dailyBreakdown?.find((d: { day: number; completed_steps?: number[] }) => d.day === selectedDayNum);
                     return dayObj?.completed_steps?.includes(Number(r.routing_id)) || false;
                 }
                 return taskQAStatus === "Passed";
@@ -1014,7 +1012,7 @@ export function useProductionWorkflow() {
         setActualQty,
         qaComments,
         setQaComments,
-        isQALoading,
+        isQALoading: false,
         uploadedPhotos,
         setUploadedPhotos,
         uploading,

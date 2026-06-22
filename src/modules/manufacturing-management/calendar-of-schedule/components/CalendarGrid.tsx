@@ -1,6 +1,6 @@
 import React from "react";
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
-import { JobOrder, IncomingShipment } from "../types";
+import { JobOrder, IncomingShipment, DailyBreakdownItem } from "../types";
 
 interface CalendarGridProps {
     currentDate: Date;
@@ -112,11 +112,11 @@ export function CalendarGrid({
                         ? jobOrders.filter(jo => jo.due_date === cellDateStr)
                         : [];
                         
-                    const cellDailyRuns: { jo: JobOrder; run: any }[] = [];
+                    const cellDailyRuns: { jo: JobOrder; run: DailyBreakdownItem }[] = [];
                     if (filterMode === "all" || filterMode === "jo") {
                         jobOrders.forEach(jo => {
                             if (jo.dailyBreakdown && Array.isArray(jo.dailyBreakdown)) {
-                                const matchedRun = jo.dailyBreakdown.find((run: any) => run.date === cellDateStr);
+                                const matchedRun = jo.dailyBreakdown.find((run: DailyBreakdownItem) => run.date === cellDateStr);
                                 if (matchedRun) {
                                     cellDailyRuns.push({ jo, run: matchedRun });
                                 }
@@ -126,8 +126,7 @@ export function CalendarGrid({
                         
                     const cellShipments = (filterMode === "all" || filterMode === "shipments")
                         ? shipments.filter(s => {
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-                            const deliveryDate = (s as any).lead_time_receiving || s.estimated_delivery_date || s.actual_delivery_date || (s as any).date_received || (s as any).created_at || "";
+                            const deliveryDate = s.lead_time_receiving || s.estimated_delivery_date || s.actual_delivery_date || s.date_received || s.created_at || "";
                             return deliveryDate.split("T")[0] === cellDateStr;
                         })
                         : [];

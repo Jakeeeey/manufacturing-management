@@ -6,15 +6,11 @@ import {
     DollarSign, 
     Layers, 
     AlertTriangle,
-    ArrowRight,
     ClipboardList,
-    Calendar,
     Loader2,
     RefreshCw,
     Search,
     ChevronRight,
-    FolderOpen,
-    Tag,
     Trash2,
     ShoppingBag,
     Boxes,
@@ -52,6 +48,16 @@ interface ProducibleGood {
         available: number;
         max_producible_with_this: number;
     }>;
+}
+
+interface ProductionRun {
+    jo_id: string;
+    status: string;
+    product_name: string;
+    quantity: number;
+    percentage: number;
+    progress_text: string;
+    due_date: string | null;
 }
 
 interface DashboardData {
@@ -110,15 +116,7 @@ interface DashboardData {
     branches: Array<{ id: number; branch_name: string }>;
     ongoingProduction?: {
         overallPercentage: number;
-        runs: Array<{
-            jo_id: string;
-            status: string;
-            product_name: string;
-            quantity: number;
-            percentage: number;
-            progress_text: string;
-            due_date: string | null;
-        }>;
+        runs: ProductionRun[];
     };
 }
 
@@ -163,9 +161,10 @@ export default function DashboardModule() {
             } else {
                 throw new Error("Failed to load dashboard metrics from backend");
             }
-        } catch (e: any) {
-            console.error(e);
-            toast.error(e.message || "Error loading dashboard metrics");
+        } catch (e) {
+            const error = e as Error;
+            console.error(error);
+            toast.error(error.message || "Error loading dashboard metrics");
         } finally {
             setLoading(false);
         }
@@ -173,6 +172,7 @@ export default function DashboardModule() {
 
     useEffect(() => {
         loadDashboardData(startDate, endDate);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // Apply presets
@@ -285,7 +285,7 @@ export default function DashboardModule() {
                         ].map((p) => (
                             <button
                                 key={p.id}
-                                onClick={() => handlePresetChange(p.id as any)}
+                                onClick={() => handlePresetChange(p.id as "7d" | "30d" | "month" | "last_month" | "all")}
                                 className={`px-2.5 py-1 rounded-md text-[10px] font-bold border-none transition-all cursor-pointer ${
                                     activePreset === p.id 
                                         ? "bg-primary text-primary-foreground shadow-xs" 
@@ -419,7 +419,7 @@ export default function DashboardModule() {
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {data.ongoingProduction.runs.map((run: any) => (
+                        {data.ongoingProduction.runs.map((run: ProductionRun) => (
                             <div key={run.jo_id} className="bg-slate-950/20 border border-slate-850 rounded-xl p-4 space-y-3 hover:border-slate-800 transition-colors">
                                 <div className="flex justify-between items-start gap-3">
                                     <div className="space-y-0.5">
@@ -850,7 +850,7 @@ export default function DashboardModule() {
                                                         ))}
                                                     </Pie>
                                                     <Tooltip 
-                                                        formatter={(value: any) => `₱${value.toLocaleString()}`}
+                                                        formatter={(value: number | string) => `₱${Number(value).toLocaleString()}`}
                                                     />
                                                     <Legend 
                                                         layout="horizontal" 
@@ -971,7 +971,7 @@ export default function DashboardModule() {
                                                 good.product_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                                                 good.product_code.toLowerCase().includes(searchQuery.toLowerCase())
                                             )
-                                            .map((good: any, idx: number) => {
+                                            .map((good: ProducibleGood, idx: number) => {
                                                 const isExpanded = expandedRows[good.product_id] || false;
                                                 return (
                                                     <div key={`${good.product_id}-${idx}`} className="border border-slate-800/80 rounded-xl overflow-hidden bg-slate-950/20">
@@ -1013,7 +1013,7 @@ export default function DashboardModule() {
                                                                 
                                                                 {/* Component Cards for Mobile, Table for Desktop */}
                                                                 <div className="space-y-3 sm:hidden">
-                                                                    {good.components.map((c: any, ci: number) => {
+                                                                    {good.components.map((c, ci: number) => {
                                                                         const isBottleneck = c.max_producible_with_this === good.max_producible;
                                                                         return (
                                                                             <div key={ci} className={`bg-slate-950/40 p-3 rounded-lg border text-xs space-y-2 ${
@@ -1056,7 +1056,7 @@ export default function DashboardModule() {
                                                                             </tr>
                                                                         </thead>
                                                                         <tbody>
-                                                                            {good.components.map((c: any, ci: number) => {
+                                                                            {good.components.map((c, ci: number) => {
                                                                                 const isBottleneck = c.max_producible_with_this === good.max_producible;
                                                                                 return (
                                                                                     <tr key={ci} className={`border-b border-slate-850/40 last:border-0 hover:bg-slate-900/10 ${

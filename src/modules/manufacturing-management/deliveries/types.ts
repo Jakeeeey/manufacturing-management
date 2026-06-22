@@ -72,3 +72,17 @@ export interface DispatchInvoice {
         customer_code: string;
     } | null;
 }
+
+export interface PendingInvoice {
+    invoice_id: number;
+    invoice_no: string;
+    invoice_date: string;
+    customer_name: string;
+    customer_code: string;
+    net_amount: number;
+    customer_latitude: string | number | null;
+    customer_longitude: string | number | null;
+    customer_location: string | null;
+    customer_city: string | null;
+}
+

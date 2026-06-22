@@ -329,7 +329,7 @@ export function useFinishedGoods(initialTab: string = "details") {
             }
         }
         loadRecipe();
-    }, [selectedVersionId, selectedProductId, selectedProduct, simulatedForexRate]);
+    }, [selectedVersionId, selectedProductId, selectedProduct, simulatedForexRate, debouncedForexRate]);
 
 
     // Handlers

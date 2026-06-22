@@ -1,6 +1,6 @@
 import React, { useState } from "react";
-import { Vehicle, User, Branch } from "../types";
-import { X, Truck, User as UserIcon, Navigation, Calendar, DollarSign, ListOrdered, FileText, Sparkles } from "lucide-react";
+import { PendingInvoice, Vehicle, User, Branch } from "../types";
+import { X, Truck, User as UserIcon, Navigation, ListOrdered, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
 const cityCoordinates: Record<string, { lat: number; lng: number }> = {
@@ -26,14 +26,37 @@ function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
     return R * c;
 }
 
+export interface CreateDispatchPayload {
+    doc_no: string;
+    driver_id: number;
+    vehicle_id: number;
+    starting_point: number | null;
+    total_distance: number;
+    amount: number;
+    estimated_time_of_dispatch: string | null;
+    estimated_time_of_arrival: string | null;
+    remarks: string;
+    invoices: Array<{
+        invoice_id: number;
+        distance: number;
+        sequence: number;
+        remarks: string;
+    }>;
+    staff: Array<{
+        user_id: number;
+        role: string;
+        is_present: number;
+    }>;
+}
+
 interface CreateDispatchModalProps {
     isOpen: boolean;
     onClose: () => void;
     vehicles: Vehicle[];
     users: User[];
     branches: Branch[];
-    pendingInvoices: any[];
-    onSubmit: (payload: any) => Promise<boolean>;
+    pendingInvoices: PendingInvoice[];
+    onSubmit: (payload: CreateDispatchPayload) => Promise<boolean>;
 }
 
 export default function CreateDispatchModal({
@@ -74,12 +97,12 @@ export default function CreateDispatchModal({
         }
     };
 
-    const resolveCoordinates = (inv: any) => {
-        if (inv.customer_latitude && inv.customer_longitude) {
+    const resolveCoordinates = (inv?: PendingInvoice) => {
+        if (inv && inv.customer_latitude && inv.customer_longitude) {
             return { lat: Number(inv.customer_latitude), lng: Number(inv.customer_longitude) };
         }
         
-        const city = (inv.customer_city || "").toLowerCase().trim();
+        const city = (inv?.customer_city || "").toLowerCase().trim();
         for (const key of Object.keys(cityCoordinates)) {
             if (city.includes(key)) {
                 return cityCoordinates[key];
@@ -119,7 +142,7 @@ export default function CreateDispatchModal({
         // 2. Build list of stops with coordinates
         const unvisited = selectedInvoiceIds.map(id => {
             const inv = pendingInvoices.find(item => item.invoice_id === id);
-            const coords = resolveCoordinates(inv || {});
+            const coords = resolveCoordinates(inv);
             return { id, coords };
         });
 
@@ -197,7 +220,7 @@ export default function CreateDispatchModal({
         }
     };
 
-    const handleStopDetailChange = (id: number, field: string, value: any) => {
+    const handleStopDetailChange = (id: number, field: string, value: string | number) => {
         setStopDetails(prev => ({
             ...prev,
             [id]: {

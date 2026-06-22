@@ -2,6 +2,91 @@
 
 import { NextResponse } from "next/server";
 
+interface DispatchItemInvoice {
+    invoice_id: number;
+    invoice_no?: string;
+    net_amount?: number;
+    customer_name?: string;
+    customer_code?: string;
+}
+
+interface DispatchInvoiceItem {
+    id: number;
+    post_dispatch_plan_id: number;
+    invoice_id: number;
+    sequence?: number;
+    distance?: number;
+    status?: string;
+    remarks?: string;
+    invoice?: DispatchItemInvoice;
+}
+
+interface Customer {
+    id: number;
+    customer_name: string;
+    customer_code: string;
+}
+
+interface SalesInvoice {
+    invoice_id: number;
+    invoice_no: string;
+    net_amount: number;
+    customer_id: number;
+}
+
+interface DirectusUser {
+    user_id: number;
+    user_fname?: string;
+    user_lname?: string;
+    Firstname?: string;
+    first_name?: string;
+    LastName?: string;
+    last_name?: string;
+}
+
+interface Vehicle {
+    vehicle_id?: number;
+    id?: number;
+    name?: string;
+    plate?: string;
+    type?: string;
+}
+
+interface Branch {
+    id: number;
+    branch_name: string;
+}
+
+interface PostDispatchPlanStaff {
+    id: number;
+    post_dispatch_plan_id: number;
+    user_id: number;
+    role?: string;
+    is_present?: number | boolean;
+}
+
+interface PostDispatchPlanStaffMapped {
+    id: number;
+    user_id: number;
+    role?: string;
+    is_present: boolean;
+    user_name: string;
+}
+
+interface PostDispatchPlan {
+    id: number;
+    doc_no?: string;
+    driver_id?: number;
+    driver_name?: string;
+    encoder_id?: number;
+    encoder_name?: string;
+    vehicle_id?: number;
+    vehicle?: Vehicle | null;
+    starting_point?: number;
+    starting_point_name?: string;
+    staff?: PostDispatchPlanStaffMapped[];
+}
+
 const DIRECTUS_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://vtc:8074";
 const DIRECTUS_STATIC_TOKEN = process.env.DIRECTUS_STATIC_TOKEN || "";
 
@@ -22,21 +107,21 @@ export async function GET(request: Request) {
             const res = await fetch(`${DIRECTUS_URL}/items/post_dispatch_invoices?filter[post_dispatch_plan_id][_eq]=${planId}&limit=-1&sort=sequence`, { headers, cache: "no-store" });
             if (!res.ok) throw new Error(`Failed to fetch dispatch invoices: ${res.status}`);
             const json = await res.json();
-            const items = json.data || [];
+            const items: DispatchInvoiceItem[] = json.data || [];
 
             // Resolve invoice details
-            const invoiceIds = [...new Set(items.map((i: any) => Number(i.invoice_id)).filter(Boolean))];
+            const invoiceIds = [...new Set(items.map((i: DispatchInvoiceItem) => Number(i.invoice_id)).filter(Boolean))];
             if (invoiceIds.length > 0) {
                 try {
                     const invRes = await fetch(`${DIRECTUS_URL}/items/sales_invoice?filter[invoice_id][_in]=${invoiceIds.join(",")}&limit=-1`, { headers });
                     if (invRes.ok) {
-                        const invData = (await invRes.json()).data || [];
-                        const invMap = new Map<number, any>(invData.map((inv: any) => [Number(inv.invoice_id), inv]));
+                        const invData: SalesInvoice[] = (await invRes.json()).data || [];
+                        const invMap = new Map<number, SalesInvoice>(invData.map((inv: SalesInvoice) => [Number(inv.invoice_id), inv]));
                         
                         // Resolve client details for the invoices
                         const customersRes = await fetch(`${DIRECTUS_URL}/items/customer?limit=-1&fields=id,customer_name,customer_code`, { headers });
-                        const customersData = customersRes.ok ? (await customersRes.json()).data || [] : [];
-                        const customerMap = new Map<number, any>(customersData.map((c: any) => [Number(c.id), c]));
+                        const customersData: Customer[] = customersRes.ok ? (await customersRes.json()).data || [] : [];
+                        const customerMap = new Map<number, Customer>(customersData.map((c: Customer) => [Number(c.id), c]));
 
                         for (const item of items) {
                             const matchedInvoice = invMap.get(Number(item.invoice_id));
@@ -65,30 +150,30 @@ export async function GET(request: Request) {
         const res = await fetch(`${DIRECTUS_URL}/items/post_dispatch_plan?limit=250&sort=-date_encoded`, { headers, cache: "no-store" });
         if (!res.ok) throw new Error(`Failed to fetch dispatch plans: ${res.status}`);
         const json = await res.json();
-        const plans = json.data || [];
+        const plans: PostDispatchPlan[] = json.data || [];
 
         // Join Drivers, Vehicles, origin branches, and staff crew
         try {
             // Fetch drivers & encoders (from user table)
             const usersRes = await fetch(`${DIRECTUS_URL}/items/user?limit=-1`, { headers });
-            const users = usersRes.ok ? (await usersRes.json()).data || [] : [];
-            const userMap = new Map<number, any>(users.map((u: any) => [Number(u.user_id), u]));
+            const users: DirectusUser[] = usersRes.ok ? (await usersRes.json()).data || [] : [];
+            const userMap = new Map<number, DirectusUser>(users.map((u: DirectusUser) => [Number(u.user_id), u]));
 
             // Fetch vehicles
             const vehiclesRes = await fetch(`${DIRECTUS_URL}/items/vehicles?limit=-1`, { headers });
-            const vehicles = vehiclesRes.ok ? (await vehiclesRes.json()).data || [] : [];
-            const vehicleMap = new Map<number, any>(vehicles.map((v: any) => [Number(v.vehicle_id || v.id), v]));
+            const vehicles: Vehicle[] = vehiclesRes.ok ? (await vehiclesRes.json()).data || [] : [];
+            const vehicleMap = new Map<number, Vehicle>(vehicles.map((v: Vehicle) => [Number(v.vehicle_id || v.id), v]));
 
             // Fetch origin branches
             const branchesRes = await fetch(`${DIRECTUS_URL}/items/branches?limit=-1`, { headers });
-            const branches = branchesRes.ok ? (await branchesRes.json()).data || [] : [];
-            const branchMap = new Map<number, any>(branches.map((b: any) => [Number(b.id), b]));
+            const branches: Branch[] = branchesRes.ok ? (await branchesRes.json()).data || [] : [];
+            const branchMap = new Map<number, Branch>(branches.map((b: Branch) => [Number(b.id), b]));
 
             // Fetch dispatch plan staff members
             const staffRes = await fetch(`${DIRECTUS_URL}/items/post_dispatch_plan_staff?limit=-1`, { headers });
-            const allStaff = staffRes.ok ? (await staffRes.json()).data || [] : [];
+            const allStaff: PostDispatchPlanStaff[] = staffRes.ok ? (await staffRes.json()).data || [] : [];
             
-            const staffMap = new Map<number, any[]>();
+            const staffMap = new Map<number, PostDispatchPlanStaffMapped[]>();
             for (const st of allStaff) {
                 const planId = Number(st.post_dispatch_plan_id);
                 const u = userMap.get(Number(st.user_id));
@@ -287,7 +372,7 @@ export async function PATCH(request: Request) {
 
         // Route 1: Update a specific invoice stop (Proof of Delivery signature/photo check)
         if (stopId) {
-            const stopPayload: Record<string, any> = {};
+            const stopPayload: Record<string, string | number> = {};
             if (stopStatus) stopPayload.status = stopStatus;
             if (stopRemarks !== undefined) stopPayload.remarks = stopRemarks;
             if (driverUserId) {
@@ -337,7 +422,7 @@ export async function PATCH(request: Request) {
             return NextResponse.json({ error: "Missing planId or stopId" }, { status: 400 });
         }
 
-        const planPayload: Record<string, any> = {};
+        const planPayload: Record<string, string> = {};
         if (status) planPayload.status = status;
         if (time_of_dispatch) planPayload.time_of_dispatch = time_of_dispatch;
         if (time_of_arrival) planPayload.time_of_arrival = time_of_arrival;

@@ -1,6 +1,108 @@
 import { NextResponse } from "next/server";
 import { DIRECTUS_URL, headers } from "@/app/api/manufacturing/directus-api";
 
+interface LedgerEntry {
+    productId?: string | number;
+    quantity?: string | number;
+    documentDate?: string;
+    created_date?: string;
+    documentType?: string;
+    documentDescription?: string;
+}
+
+interface Product {
+    product_id: number;
+    product_name?: string;
+    product_code?: string;
+    cost_per_unit?: string | number;
+    price_per_unit?: string | number;
+    product_category?: {
+        category_name?: string;
+    } | null;
+    unit_of_measurement?: {
+        unit_name?: string;
+        unit_shortcut?: string;
+    } | null;
+}
+
+interface QaLog {
+    recorded_at: string;
+    deviation_quantity?: string | number;
+    task_id?: string | number;
+}
+
+interface Task {
+    id: number;
+    jo_id: number;
+    status?: string;
+}
+
+interface JoProduct {
+    jo_id: number;
+    product_id: number;
+    product_name?: string;
+    quantity?: string | number;
+    routings?: Array<{ id: number; name?: string }> | null;
+}
+
+interface DailyBreakdownDay {
+    status?: string;
+    completed_steps?: unknown[] | null;
+}
+
+interface JobOrder {
+    jo_id: number;
+    status: string;
+    product_name?: string;
+    quantity?: string | number;
+    due_date?: string;
+    daily_breakdown?: DailyBreakdownDay[] | null;
+}
+
+interface Invoice {
+    invoice_no?: string;
+    invoice_id?: string;
+    status?: string;
+    invoice_date?: string;
+    created_date?: string;
+}
+
+interface InvoiceDetail {
+    invoice_no: string | number;
+    product_id: string | number;
+    quantity?: string | number;
+    unit_price?: string | number;
+    net_amount?: string | number;
+}
+
+interface BomComponent {
+    bom_id: number;
+    component_product_id: number;
+    wastage_factor_percentage?: string | number;
+    quantity_required?: string | number;
+    component_type?: string;
+}
+
+interface Bom {
+    bom_id: number;
+    product_id: number;
+    base_quantity?: string | number;
+    bom_name?: string;
+}
+
+interface DashboardProductItem {
+    product_id: number;
+    product_name: string;
+    product_code: string;
+    category: string;
+    unit: string;
+    unit_shortcut: string;
+    cost: number;
+    price: number;
+    stock: number;
+    value: number;
+}
+
 export async function GET(request: Request) {
     try {
         const { searchParams } = new URL(request.url);
@@ -28,12 +130,12 @@ export async function GET(request: Request) {
         if (!invoiceDetailsRes.ok) throw new Error("Failed to fetch sales invoice details");
         if (!branchesRes.ok) throw new Error("Failed to fetch branches");
 
-        const ledger = (await ledgerRes.json()).data || [];
-        const products = (await productsRes.json()).data || [];
-        const qaLogs = qaLogsRes && qaLogsRes.ok ? (await qaLogsRes.json()).data || [] : [];
-        const tasks = tasksRes && tasksRes.ok ? (await tasksRes.json()).data || [] : [];
-        const joProds = joProdsRes && joProdsRes.ok ? (await joProdsRes.json()).data || [] : [];
-        const jobOrders = joRes && joRes.ok ? (await joRes.json()).data || [] : [];
+        const ledger: LedgerEntry[] = (await ledgerRes.json()).data || [];
+        const products: Product[] = (await productsRes.json()).data || [];
+        const qaLogs: QaLog[] = qaLogsRes && qaLogsRes.ok ? (await qaLogsRes.json()).data || [] : [];
+        const tasks: Task[] = tasksRes && tasksRes.ok ? (await tasksRes.json()).data || [] : [];
+        const joProds: JoProduct[] = joProdsRes && joProdsRes.ok ? (await joProdsRes.json()).data || [] : [];
+        const jobOrders: JobOrder[] = joRes && joRes.ok ? (await joRes.json()).data || [] : [];
         
         // Resolve versions for has_versions check
         const versionProductIds = new Set<number>();
@@ -45,23 +147,23 @@ export async function GET(request: Request) {
             });
         }
 
-        const invoices = (await invoiceRes.json()).data || [];
-        const invoiceDetails = (await invoiceDetailsRes.json()).data || [];
+        const invoices: Invoice[] = (await invoiceRes.json()).data || [];
+        const invoiceDetails: InvoiceDetail[] = (await invoiceDetailsRes.json()).data || [];
         const branches = (await branchesRes.json()).data || [];
 
         // 1. Group ledger entries by product for correct inventory levels
         const stockMap: Record<number, number> = {};
-        ledger.forEach((entry: any) => {
+        ledger.forEach((entry: LedgerEntry) => {
             const pId = Number(entry.productId);
             const qty = Number(entry.quantity) || 0;
             stockMap[pId] = (stockMap[pId] || 0) + qty;
         });
 
         // 2. Classify products into Raw Materials vs Finished Goods
-        const rawMaterials: any[] = [];
-        const finishedGoods: any[] = [];
+        const rawMaterials: DashboardProductItem[] = [];
+        const finishedGoods: DashboardProductItem[] = [];
 
-        products.forEach((prod: any) => {
+        products.forEach((prod: Product) => {
             const pId = Number(prod.product_id);
             const stock = stockMap[pId] || 0;
             const value = stock * (Number(prod.cost_per_unit) || 0);
@@ -113,8 +215,9 @@ export async function GET(request: Request) {
         const wastageItems: Record<number, { name: string; code: string; qty: number; value: number; reason: string }> = {};
 
         // A. Aggregate Raw Material / Stock Scrap from ledger adjustments
-        ledger.forEach((entry: any) => {
-            if (!isWithinRange(entry.documentDate || entry.created_date)) return;
+        ledger.forEach((entry: LedgerEntry) => {
+            const dateStr = entry.documentDate || entry.created_date;
+            if (!dateStr || !isWithinRange(dateStr)) return;
 
             const qty = Number(entry.quantity) || 0;
             const type = entry.documentType || "";
@@ -130,7 +233,7 @@ export async function GET(request: Request) {
             // Exclude Quality Scrap Deduction to avoid double counting legacy entries
             if (isWaste && type !== "Quality Scrap Deduction") {
                 const absQty = Math.abs(qty);
-                const prod = products.find((p: any) => Number(p.product_id) === Number(entry.productId));
+                const prod = products.find((p: Product) => Number(p.product_id) === Number(entry.productId));
                 const cost = prod ? (Number(prod.cost_per_unit) || 0) : 0;
                 const value = absQty * cost;
 
@@ -153,19 +256,19 @@ export async function GET(request: Request) {
         });
 
         // B. Aggregate Production Yield Wastage from QA logs
-        qaLogs.forEach((log: any) => {
+        qaLogs.forEach((log: QaLog) => {
             if (!isWithinRange(log.recorded_at)) return;
 
             const deviation = Number(log.deviation_quantity) || 0;
             if (deviation > 0) {
-                const task = tasks.find((t: any) => Number(t.id) === Number(log.task_id));
+                const task = tasks.find((t: Task) => Number(t.id) === Number(log.task_id));
                 if (!task) return;
 
-                const joProduct = joProds.find((jp: any) => jp.jo_id === task.jo_id);
+                const joProduct = joProds.find((jp: JoProduct) => jp.jo_id === task.jo_id);
                 if (!joProduct) return;
 
                 const pId = Number(joProduct.product_id);
-                const prod = products.find((p: any) => Number(p.product_id) === pId);
+                const prod = products.find((p: Product) => Number(p.product_id) === pId);
                 const cost = prod ? (Number(prod.cost_per_unit) || 0) : 0;
                 const value = deviation * cost;
 
@@ -191,12 +294,13 @@ export async function GET(request: Request) {
         let totalProducedVal = 0;
         const producedItems: Record<number, { name: string; code: string; qty: number; value: number }> = {};
 
-        ledger.forEach((entry: any) => {
+        ledger.forEach((entry: LedgerEntry) => {
             if (entry.documentType !== "QA Receive" || Number(entry.quantity) <= 0) return;
-            if (!isWithinRange(entry.documentDate || entry.created_date)) return;
+            const dateStr = entry.documentDate || entry.created_date;
+            if (!dateStr || !isWithinRange(dateStr)) return;
 
             const qty = Number(entry.quantity) || 0;
-            const prod = products.find((p: any) => Number(p.product_id) === Number(entry.productId));
+            const prod = products.find((p: Product) => Number(p.product_id) === Number(entry.productId));
             const cost = prod ? (Number(prod.cost_per_unit) || 0) : 0;
             const value = qty * cost;
 
@@ -221,14 +325,15 @@ export async function GET(request: Request) {
         let totalSalesRevenue = 0;
         const salesItems: Record<number, { name: string; code: string; qty: number; revenue: number }> = {};
 
-        invoices.forEach((inv: any) => {
+        invoices.forEach((inv: Invoice) => {
             if (inv.status?.toLowerCase() === "cancelled") return;
-            if (!isWithinRange(inv.invoice_date || inv.created_date)) return;
+            const dateStr = inv.invoice_date || inv.created_date;
+            if (!dateStr || !isWithinRange(dateStr)) return;
 
             const invNo = inv.invoice_no || inv.invoice_id;
-            const details = invoiceDetails.filter((d: any) => String(d.invoice_no) === String(invNo));
+            const details = invoiceDetails.filter((d: InvoiceDetail) => String(d.invoice_no) === String(invNo));
 
-            details.forEach((d: any) => {
+            details.forEach((d: InvoiceDetail) => {
                 const qty = Number(d.quantity) || 0;
                 const price = Number(d.unit_price) || 0;
                 const net = Number(d.net_amount) || (qty * price);
@@ -238,7 +343,7 @@ export async function GET(request: Request) {
 
                 const pId = Number(d.product_id);
                 if (!salesItems[pId]) {
-                    const prod = products.find((p: any) => Number(p.product_id) === pId);
+                    const prod = products.find((p: Product) => Number(p.product_id) === pId);
                     salesItems[pId] = {
                         name: prod?.product_name || `Product #${pId}`,
                         code: prod?.product_code || `SKU-${pId}`,
@@ -252,31 +357,31 @@ export async function GET(request: Request) {
         });
 
         // 6. Calculate Maximum Producible finished goods based on current Raw Material Inventory
-        const bomsRaw = bomsRes && bomsRes.ok ? (await bomsRes.json()).data || [] : [];
-        const bomComponents = bomCompsRes && bomCompsRes.ok ? (await bomCompsRes.json()).data || [] : [];
+        const bomsRaw: Bom[] = bomsRes && bomsRes.ok ? (await bomsRes.json()).data || [] : [];
+        const bomComponents: BomComponent[] = bomCompsRes && bomCompsRes.ok ? (await bomCompsRes.json()).data || [] : [];
 
         // Deduplicate BOMs: keep only the latest active BOM per unique product_id
-        const uniqueBomsMap: Record<number, any> = {};
-        bomsRaw.forEach((bom: any) => {
+        const uniqueBomsMap: Record<number, Bom> = {};
+        bomsRaw.forEach((bom: Bom) => {
             if (bom && bom.product_id) {
                 const pId = Number(bom.product_id);
-                if (!uniqueBomsMap[pId] || bom.bom_id > uniqueBomsMap[pId].bom_id) {
+                if (!uniqueBomsMap[pId] || (bom.bom_id && uniqueBomsMap[pId].bom_id && bom.bom_id > uniqueBomsMap[pId].bom_id)) {
                     uniqueBomsMap[pId] = bom;
                 }
             }
         });
         const boms = Object.values(uniqueBomsMap);
 
-        const producibleGoods = boms.map((bom: any) => {
-            const fgProduct = products.find((p: any) => p.product_id === bom.product_id);
+        const producibleGoods = boms.map((bom: Bom) => {
+            const fgProduct = products.find((p: Product) => p.product_id === bom.product_id);
             if (!fgProduct) return null;
 
-            const comps = bomComponents.filter((bc: any) => bc.bom_id === bom.bom_id);
+            const comps = bomComponents.filter((bc: BomComponent) => bc.bom_id === bom.bom_id);
             if (comps.length === 0) return null;
 
             let minProducible = Infinity;
-            const componentsDetails = comps.map((comp: any) => {
-                const compProduct = products.find((p: any) => p.product_id === comp.component_product_id);
+            const componentsDetails = comps.map((comp: BomComponent) => {
+                const compProduct = products.find((p: Product) => p.product_id === comp.component_product_id);
                 const name = compProduct ? compProduct.product_name : `Component ID: ${comp.component_product_id}`;
                 const code = compProduct ? compProduct.product_code : `ID-${comp.component_product_id}`;
                 const unit = compProduct?.unit_of_measurement?.unit_shortcut || "pcs";
@@ -325,17 +430,17 @@ export async function GET(request: Request) {
         }).filter(Boolean);
 
         // Calculate ongoing production runs progress breakdown
-        const ongoingRuns = jobOrders.filter((jo: any) => ["Ongoing", "Proceed", "On Hold"].includes(jo.status));
-        const ongoingBreakdown = ongoingRuns.map((jo: any) => {
-            const joProducts = joProds.filter((jp: any) => jp.jo_id === jo.jo_id);
+        const ongoingRuns = jobOrders.filter((jo: JobOrder) => ["Ongoing", "Proceed", "On Hold"].includes(jo.status));
+        const ongoingBreakdown = ongoingRuns.map((jo: JobOrder) => {
+            const joProducts = joProds.filter((jp: JoProduct) => jp.jo_id === jo.jo_id);
             const mainProduct = joProducts[0] || {};
             const productName = mainProduct.product_name || jo.product_name || "Unknown Product";
             const targetQty = Number(mainProduct.quantity || jo.quantity || 0);
 
             // Fetch tasks for this job order
-            const joTasks = tasks.filter((t: any) => t.jo_id === jo.jo_id);
+            const joTasks = tasks.filter((t: Task) => t.jo_id === jo.jo_id);
             const totalTasks = joTasks.length;
-            const completedTasks = joTasks.filter((t: any) => t.status === "Completed").length;
+            const completedTasks = joTasks.filter((t: Task) => t.status === "Completed").length;
 
             let percentage = 0;
             let progressText = "";
@@ -345,7 +450,7 @@ export async function GET(request: Request) {
                 const totalPossibleSteps = jo.daily_breakdown.length * routingsCount;
                 
                 let completedStepsCount = 0;
-                jo.daily_breakdown.forEach((day: any) => {
+                jo.daily_breakdown.forEach((day: DailyBreakdownDay) => {
                     if (day.completed_steps && Array.isArray(day.completed_steps)) {
                         completedStepsCount += day.completed_steps.length;
                     } else if (day.status === "Completed") {
@@ -374,7 +479,7 @@ export async function GET(request: Request) {
         });
 
         const totalPercentage = ongoingBreakdown.length > 0
-            ? ongoingBreakdown.reduce((sum: number, run: any) => sum + run.percentage, 0) / ongoingBreakdown.length
+            ? ongoingBreakdown.reduce((sum: number, run) => sum + run.percentage, 0) / ongoingBreakdown.length
             : 0;
 
         return NextResponse.json({

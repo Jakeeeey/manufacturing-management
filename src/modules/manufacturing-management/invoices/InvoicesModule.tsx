@@ -11,7 +11,6 @@ import {
     Receipt, 
     FileText, 
     Settings, 
-    DollarSign, 
     Loader2, 
     Search, 
     SlidersHorizontal, 
@@ -36,8 +35,7 @@ export default function InvoicesModule() {
         resetAlignmentSettings,
         handleCreateInvoice,
         handleRecordPayment,
-        handleCancelInvoice,
-        refresh
+        handleCancelInvoice
     } = useInvoices();
 
     const [activeTab, setActiveTab] = useState<"registry" | "pipeline" | "calibration">("registry");
@@ -172,7 +170,7 @@ export default function InvoicesModule() {
                         <button
                             key={t.id}
                             onClick={() => {
-                                setActiveTab(t.id as any);
+                                setActiveTab(t.id as "registry" | "pipeline" | "calibration");
                                 setSearchQuery("");
                             }}
                             className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-3.5 text-xs font-bold border-b-2 transition-all -mb-[1px] ${

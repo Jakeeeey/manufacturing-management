@@ -2,7 +2,14 @@
 
 import React, { useState, useMemo } from "react";
 import { Invoice, InvoiceLineItem, PrinterAlignmentSettings } from "../types";
-import { X, Printer, DollarSign, Calendar, CreditCard, FileText, CheckCircle2, Loader2 } from "lucide-react";
+import { X, Printer, DollarSign, Loader2 } from "lucide-react";
+
+interface PaymentHistoryItem {
+    amount: number;
+    method: string;
+    reference: string;
+    date: string;
+}
 
 interface InvoiceDetailModalProps {
     invoice: Invoice;
@@ -32,7 +39,7 @@ export default function InvoiceDetailModal({
     const [submitting, setSubmitting] = useState(false);
 
     // Parse collection payments history
-    const payments = useMemo(() => {
+    const payments = useMemo<PaymentHistoryItem[]>(() => {
         if (!invoice.payment_status) return [];
         try {
             const parsed = JSON.parse(invoice.payment_status);
@@ -43,7 +50,7 @@ export default function InvoiceDetailModal({
     }, [invoice.payment_status]);
 
     const totalPaid = useMemo(() => {
-        return payments.reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0);
+        return payments.reduce((sum: number, p: PaymentHistoryItem) => sum + Number(p.amount || 0), 0);
     }, [payments]);
 
     const remainingBalance = invoice.net_amount - totalPaid;
@@ -137,7 +144,6 @@ export default function InvoiceDetailModal({
                     ${invoiceDetails.map((item, idx) => {
                         const rowY = alignment.topMargin + alignment.offsets.tableStart.y + (idx * alignment.lineHeight);
                         const pName = typeof item.product_id === "object" && item.product_id ? item.product_id.product_name : `Product #${item.product_id}`;
-                        const pCode = typeof item.product_id === "object" && item.product_id ? item.product_id.product_code : "N/A";
                         const pUom = typeof item.product_id === "object" && item.product_id ? (item.product_id.uom || "PCS") : "PCS";
                         return `
                             <div class="absolute text-right" style="left: ${alignment.leftMargin + alignment.offsets.colQty.x}mm; top: ${rowY}mm; width: 12mm;">
@@ -403,7 +409,7 @@ export default function InvoiceDetailModal({
                                 <span className="text-[9px] font-extrabold uppercase text-muted-foreground tracking-wider">Payment Collection History</span>
                             </div>
                             <div className="divide-y max-h-32 overflow-y-auto">
-                                {payments.map((p: any, idx: number) => (
+                                {payments.map((p: PaymentHistoryItem, idx: number) => (
                                     <div key={idx} className="px-4 py-2 flex justify-between items-center text-xs hover:bg-muted/5">
                                         <div>
                                             <p className="font-bold text-foreground">{p.method} (Ref: {p.reference || "N/A"})</p>

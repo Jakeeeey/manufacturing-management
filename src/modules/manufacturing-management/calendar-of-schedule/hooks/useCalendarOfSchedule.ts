@@ -4,13 +4,11 @@ import { fetchShipments } from "../services/calendar-api";
 
 export function useCalendarOfSchedule() {
     const [currentDate, setCurrentDate] = useState(new Date());
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
     const [jobOrders, setJobOrders] = useState<JobOrder[]>([]);
     
     // Shipments state
     const [shipments, setShipments] = useState<IncomingShipment[]>([]);
     const [loadingShipments, setLoadingShipments] = useState(false);
-    const [loadingJOs, setLoadingJOs] = useState(false);
     
     // Filter controls
     const [filterMode, setFilterMode] = useState<"all" | "jo" | "shipments">("all");
@@ -21,7 +19,6 @@ export function useCalendarOfSchedule() {
 
     const loadData = async () => {
         setLoadingShipments(true);
-        setLoadingJOs(true);
         try {
             const [shipmentsRes, joRes] = await Promise.allSettled([
                 fetchShipments(),
@@ -47,7 +44,6 @@ export function useCalendarOfSchedule() {
             console.error("Error loading calendar schedule data:", e);
         } finally {
             setLoadingShipments(false);
-            setLoadingJOs(false);
         }
     };
 

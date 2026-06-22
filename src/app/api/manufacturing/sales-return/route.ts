@@ -12,6 +12,41 @@ if (DIRECTUS_STATIC_TOKEN) {
     headers["Authorization"] = `Bearer ${DIRECTUS_STATIC_TOKEN}`;
 }
 
+interface ReturnDetail {
+    product_id: string | number;
+    quantity: string | number;
+    return_no?: string;
+    product?: {
+        product_id: number;
+        product_name: string;
+        product_code: string;
+        uom: string;
+    } | null;
+}
+
+interface Product {
+    product_id: number;
+    product_name: string;
+    product_code: string;
+    unit_of_measurement?: {
+        unit_shortcut?: string;
+    };
+}
+
+interface Customer {
+    id: number | string;
+    customer_name: string;
+}
+
+interface SalesReturnHeader {
+    return_id: number | string;
+    return_number?: string;
+    return_date?: string;
+    customer_id?: number | string;
+    customer_name?: string;
+    remarks?: string;
+}
+
 export async function GET(request: Request) {
     try {
         const { searchParams } = new URL(request.url);
@@ -25,13 +60,13 @@ export async function GET(request: Request) {
             const details = json.data || [];
 
             // Resolve product details
-            const productIds = [...new Set(details.map((d: any) => Number(d.product_id)).filter(Boolean))];
+            const productIds = [...new Set(details.map((d: ReturnDetail) => Number(d.product_id)).filter(Boolean))];
             if (productIds.length > 0) {
                 try {
                     const prodRes = await fetch(`${DIRECTUS_URL}/items/products?filter[product_id][_in]=${productIds.join(",")}&limit=-1&fields=product_id,product_name,product_code,unit_of_measurement.unit_shortcut`, { headers });
                     if (prodRes.ok) {
-                        const prodData = (await prodRes.json()).data || [];
-                        const prodMap = new Map<number, any>(prodData.map((p: any) => [p.product_id, p]));
+                        const prodData: Product[] = (await prodRes.json()).data || [];
+                        const prodMap = new Map<number, Product>(prodData.map((p: Product) => [p.product_id, p]));
                         for (const det of details) {
                             const matched = prodMap.get(Number(det.product_id));
                             det.product = matched ? {
@@ -54,14 +89,14 @@ export async function GET(request: Request) {
         const res = await fetch(`${DIRECTUS_URL}/items/sales_return?limit=250&sort=-created_at`, { headers, cache: "no-store" });
         if (!res.ok) throw new Error(`Failed to fetch sales returns: ${res.status}`);
         const json = await res.json();
-        const returns = json.data || [];
+        const returns: SalesReturnHeader[] = json.data || [];
 
         // Join customer names
         try {
             const custRes = await fetch(`${DIRECTUS_URL}/items/customer?limit=-1&fields=id,customer_name,customer_code`, { headers });
             if (custRes.ok) {
-                const custData = (await custRes.json()).data || [];
-                const custMap = new Map(custData.map((c: any) => [Number(c.id), c.customer_name]));
+                const custData: Customer[] = (await custRes.json()).data || [];
+                const custMap = new Map<number, string>(custData.map((c: Customer) => [Number(c.id), c.customer_name]));
                 for (const ret of returns) {
                     ret.customer_name = custMap.get(Number(ret.customer_id)) || `Customer #${ret.customer_id}`;
                 }

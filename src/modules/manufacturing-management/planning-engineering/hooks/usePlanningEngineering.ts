@@ -287,7 +287,7 @@ export function usePlanningEngineering() {
         }
 
         const parentId = p.parent_id && typeof p.parent_id === "object"
-            ? Number((p.parent_id as any).product_id)
+            ? Number((p.parent_id as { product_id: number | string }).product_id)
             : (p.parent_id ? Number(p.parent_id) : null);
 
         if (parentId) {
@@ -485,7 +485,7 @@ export function usePlanningEngineering() {
         }
     };
 
-    const handleAssignPersonnel = async (joId: string, personnel: any[]) => {
+    const handleAssignPersonnel = async (joId: string, personnel: { user_id: number; user_fname?: string; user_lname?: string; user_position?: string }[]) => {
         const toastId = toast.loading("Saving personnel assignments...");
         try {
             await modifyJobOrder(joId, { assignedPersonnel: personnel });
@@ -790,10 +790,24 @@ export function usePlanningEngineering() {
                 if (!linesRes.ok) throw new Error("Failed to load shipment lines");
                 const shipmentLines = await linesRes.json();
 
-                const lineItemUpdates = qaData.lineItems
-                    .filter((item: any) => shipmentLines.some((sl: any) => Number(sl.product_id?.product_id || sl.product_id) === Number(item.product_id)))
-                    .map((item: any) => {
-                        const matchLine = shipmentLines.find((sl: any) => Number(sl.product_id?.product_id || sl.product_id) === Number(item.product_id));
+                interface QALineItem {
+                    product_id: number;
+                    quantity_received: number;
+                    quantity_rejected?: number;
+                    lot_number?: string;
+                    expiration_date?: string;
+                    rejection_reason?: string;
+                    qa_status?: string;
+                }
+                interface ShipmentLine {
+                    line_id: number;
+                    product_id: number | { product_id: number };
+                }
+
+                const lineItemUpdates = (qaData.lineItems as QALineItem[])
+                    .filter((item: QALineItem) => shipmentLines.some((sl: ShipmentLine) => Number(typeof sl.product_id === "object" && sl.product_id !== null ? sl.product_id.product_id : sl.product_id) === Number(item.product_id)))
+                    .map((item: QALineItem) => {
+                        const matchLine = shipmentLines.find((sl: ShipmentLine) => Number(typeof sl.product_id === "object" && sl.product_id !== null ? sl.product_id.product_id : sl.product_id) === Number(item.product_id)) as ShipmentLine;
                         return {
                             line_id: matchLine.line_id,
                             product_id: item.product_id,

@@ -10,13 +10,6 @@ if (DIRECTUS_STATIC_TOKEN) {
     headers["Authorization"] = `Bearer ${DIRECTUS_STATIC_TOKEN}`;
 }
 
-interface DirectusInvoice {
-    invoice_id: number | string;
-    invoice_date?: string;
-    created_date?: string;
-    invoice_no?: string;
-}
-
 interface DirectusInvoiceDetail {
     invoice_no: number | string;
     product_id: number;
@@ -28,6 +21,9 @@ interface DirectusReturn {
     return_number?: string;
     return_date?: string;
     created_at?: string;
+    customer_id?: string | number;
+    customer_name?: string;
+    remarks?: string;
 }
 
 interface DirectusReturnDetail {
@@ -53,6 +49,57 @@ interface DirectusProduct {
     };
 }
 
+interface DetailsItem {
+    id?: number;
+    invoice_no?: string | number;
+    return_no?: string;
+    product_id: string | number;
+    quantity: string | number;
+    unit_price?: string | number;
+    net_amount?: string | number;
+}
+
+interface SalesInvoiceHeader {
+    invoice_id: number | string;
+    order_id?: number | string;
+    customer_code?: string;
+    invoice_no?: string;
+    created_date?: string;
+    invoice_date?: string;
+    due_date?: string;
+    total_amount?: string | number;
+    discount_amount?: string | number;
+    vat_amount?: string | number;
+    net_amount?: string | number;
+    transaction_status?: string;
+    payment_status?: string;
+    remarks?: string;
+}
+
+interface SalesOrderHeader {
+    order_id: number;
+    order_no: string;
+}
+
+interface DirectusCustomer {
+    customer_code: string;
+    customer_name: string;
+    customer_tin?: string;
+    brgy?: string;
+    city?: string;
+    province?: string;
+    latitude?: string | number;
+    longitude?: string | number;
+    location?: string;
+}
+
+interface PaymentHistoryItem {
+    amount: number;
+    method: string;
+    reference: string;
+    date: string;
+}
+
 export async function GET(request: Request) {
     try {
         const { searchParams } = new URL(request.url);
@@ -62,7 +109,7 @@ export async function GET(request: Request) {
             const parsedId = Number(invoiceId);
             const isReturn = parsedId >= 1000000;
             
-            let details: any[] = [];
+            let details: DetailsItem[] = [];
             if (isReturn) {
                 const returnId = parsedId - 1000000;
                 const retRes = await fetch(`${DIRECTUS_URL}/items/sales_return/${returnId}`, { headers });
@@ -136,7 +183,7 @@ export async function GET(request: Request) {
         const invoicesRes = await fetch(`${DIRECTUS_URL}/items/sales_invoice?limit=${limit}&sort=-created_date`, { headers, cache: "no-store" });
         if (!invoicesRes.ok) throw new Error(`Failed to fetch sales invoices: ${invoicesRes.status}`);
         const invoicesJson = await invoicesRes.json();
-        const invoices: any[] = invoicesJson.data || [];
+        const invoices: SalesInvoiceHeader[] = invoicesJson.data || [];
 
         // Fetch referenced sales orders to resolve order_no manually
         const orderIds = [...new Set(invoices.map((inv) => inv.order_id).filter(Boolean))];
@@ -146,7 +193,7 @@ export async function GET(request: Request) {
                 const soRes = await fetch(`${DIRECTUS_URL}/items/sales_order?filter[order_id][_in]=${orderIds.join(",")}&limit=-1&fields=order_id,order_no`, { headers });
                 if (soRes.ok) {
                     const soData = (await soRes.json()).data || [];
-                    soMap = new Map(soData.map((s: any) => [Number(s.order_id), s.order_no]));
+                    soMap = new Map(soData.map((s: SalesOrderHeader) => [Number(s.order_id), s.order_no]));
                 }
             } catch (err) {
                 console.error("Error fetching sales orders for invoice mapping:", err);
@@ -154,15 +201,15 @@ export async function GET(request: Request) {
         }
 
         // Fetch customers to resolve customer_name manually
-        const customerCodes = [...new Set(invoices.map((inv) => inv.customer_code).filter(Boolean))];
-        let customerMap = new Map<string, any>();
+        const customerCodes = [...new Set(invoices.map((inv) => inv.customer_code).filter((c): c is string => !!c))];
+        let customerMap = new Map<string, DirectusCustomer>();
         if (customerCodes.length > 0) {
             try {
                 const escCodes = customerCodes.map(c => encodeURIComponent(c)).join(",");
                 const custRes = await fetch(`${DIRECTUS_URL}/items/customer?filter[customer_code][_in]=${escCodes}&limit=-1&fields=customer_code,customer_name,customer_tin,brgy,city,province,latitude,longitude,location`, { headers });
                 if (custRes.ok) {
                     const custData = (await custRes.json()).data || [];
-                    customerMap = new Map(custData.map((c: any) => [c.customer_code, c]));
+                    customerMap = new Map(custData.map((c: DirectusCustomer) => [c.customer_code, c]));
                 }
             } catch (err) {
                 console.error("Error fetching customers for invoice mapping:", err);
@@ -293,7 +340,7 @@ export async function GET(request: Request) {
         const detailsMap: Record<number, ClientDocumentDetail[]> = {};
 
         // Process Invoices
-        invoices.forEach((inv: any) => {
+        invoices.forEach((inv: SalesInvoiceHeader) => {
             const invId = Number(inv.invoice_id);
             const salesOrderId = inv.order_id ? Number(inv.order_id) : null;
             const salesOrderNo = salesOrderId ? soMap.get(salesOrderId) : null;
@@ -344,7 +391,7 @@ export async function GET(request: Request) {
         });
 
         // Process Returns (Returns represent negative sales)
-        returns.forEach((ret: any) => {
+        returns.forEach((ret: DirectusReturn) => {
             const retId = Number(ret.return_id);
             const virtualId = retId + 1000000; // virtual ID to avoid collision with invoice_id
             
@@ -361,7 +408,7 @@ export async function GET(request: Request) {
                 invoice_date: ret.return_date || ret.created_at,
                 due_date: ret.return_date || ret.created_at,
                 document_type: "return",
-                customer_id: ret.customer_id,
+                customer_id: ret.customer_id !== null && ret.customer_id !== undefined ? String(ret.customer_id) : undefined,
                 customer_name: ret.customer_name || `Customer #${ret.customer_id}`,
                 customer_code: "GEN",
                 sales_order_id: null,
@@ -567,12 +614,11 @@ export async function PATCH(request: Request) {
             return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
         }
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const updatePayload: Record<string, any> = {};
+        const updatePayload: Record<string, unknown> = {};
 
         if (payment) {
             // Process payment recording and dynamically transition status
-            let history: any[] = [];
+            let history: PaymentHistoryItem[] = [];
             if (currentInvoice.payment_status) {
                 try {
                     history = JSON.parse(currentInvoice.payment_status);

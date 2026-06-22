@@ -1,8 +1,33 @@
 import React, { useState } from "react";
-import { Cpu, Merge, Loader2, Layers, AlertTriangle, ArrowRight, CheckCircle, Clock, DollarSign, Users, UserPlus, CheckSquare, Square, Calendar, Play } from "lucide-react";
+import { Cpu, Merge, Loader2, Layers, AlertTriangle, ArrowRight, CheckCircle, Clock, DollarSign, Users, UserPlus, CheckSquare, Square, Calendar, Play, Copy } from "lucide-react";
 import { JobOrder } from "../types";
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { toast } from "sonner";
+
+interface PreviewBreakdown {
+    totalDays: number;
+    dailyRate: number;
+    breakdown: Array<{ day: number; date: string; quantity: number }>;
+    hasTruncated: boolean;
+}
+
+interface JobRoutingItem {
+    routing_id: number;
+    estimated_labor_cost?: number | string;
+    estimated_overhead_cost?: number | string;
+    duration_hours?: number | string;
+    sequence_order?: number;
+    operation_name?: string;
+    assigned_personnel?: { id?: number | string; name?: string; position?: string };
+    completed_at?: string;
+    qa_status?: string;
+}
+
+interface JobProductItem {
+    product_id?: number | string;
+    product_name?: string;
+    quantity?: number;
+    routings?: JobRoutingItem[];
+}
 
 interface JobOrdersListProps {
     jobOrders: JobOrder[];
@@ -71,7 +96,7 @@ export function JobOrdersList({
             return Number(p.production_capacity_per_hour);
         }
         const parentId = p.parent_id && typeof p.parent_id === "object"
-            ? Number((p.parent_id as any).product_id)
+            ? Number((p.parent_id as { product_id?: number }).product_id)
             : (p.parent_id ? Number(p.parent_id) : null);
         if (parentId) {
             const parent = products.find(prod => Number(prod.product_id) === Number(parentId));
@@ -94,7 +119,7 @@ export function JobOrdersList({
         setIsPrereqModalOpen(true);
     };
 
-    const previewDailyBreakdown = React.useMemo(() => {
+    const previewDailyBreakdown = React.useMemo<PreviewBreakdown | null>(() => {
         if (!prereqCompProductId || prereqQty <= 0) return null;
         const capacityPerHour = Number(prereqCapacity) || 0;
         if (capacityPerHour <= 0) return null;
@@ -292,6 +317,70 @@ export function JobOrdersList({
         await modifyJobOrder(jo.jo_id, { products: updatedProductsList });
     };
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const handleDuplicateTask = async (jo: JobOrder, productId: number, step: any) => {
+        try {
+            const productsList = jo.products && jo.products.length > 0 ? jo.products : [{
+                product_id: jo.product_id,
+                product_name: jo.product_name,
+                quantity: jo.quantity,
+                bom: jo.bom,
+                components: jo.components,
+                routings: jo.routings,
+                allocationResults: jo.allocationResults
+            }];
+
+            const updatedProductsList = productsList.map(p => {
+                if (Number(p.product_id) === Number(productId)) {
+                    const currentRoutings = p.routings || [];
+                    
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    const maxRId = currentRoutings.reduce((max: number, r: any) => Math.max(max, Number(r.routing_id || r.id || 0)), 0);
+                    const newRoutingId = maxRId + 1;
+                    
+                    const newStep = {
+                        ...step,
+                        routing_id: newRoutingId,
+                        id: newRoutingId,
+                        status: "Pending",
+                        qa_status: "Pending",
+                        started_at: null,
+                        completed_at: null,
+                        completed_by: null,
+                        assigned_personnel: null,
+                        assignments: [],
+                        qa_logs: []
+                    };
+                    
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    const targetIndex = currentRoutings.findIndex((r: any) => Number(r.routing_id) === Number(step.routing_id));
+                    const newRoutings = [...currentRoutings];
+                    if (targetIndex !== -1) {
+                        newRoutings.splice(targetIndex + 1, 0, newStep);
+                    } else {
+                        newRoutings.push(newStep);
+                    }
+                    
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    const resequencedRoutings = newRoutings.map((r: any, idx: number) => ({
+                        ...r,
+                        sequence_order: idx + 1
+                    }));
+                    
+                    return { ...p, routings: resequencedRoutings };
+                }
+                return p;
+            });
+
+            await modifyJobOrder(jo.jo_id, { products: updatedProductsList });
+            toast.success(`Task "${step.operation_name || step.name}" duplicated successfully.`);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } catch (err: any) {
+            console.error("[JobOrdersList] Duplicate task error:", err);
+            toast.error(err.message || "Failed to duplicate task.");
+        }
+    };
+
     if (jobOrders.length === 0) {
         return (
             <div className="text-center p-12 border rounded-xl bg-card">
@@ -457,7 +546,7 @@ export function JobOrdersList({
                                     )}
                                 </div>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2">
-                                    {jo.dailyBreakdown.map((run: any) => (
+                                    {jo.dailyBreakdown.map((run) => (
                                         <div 
                                             key={run.day} 
                                             className="bg-slate-950/20 border border-slate-800/80 p-2.5 rounded-xl text-[10px] flex flex-col gap-1.5 hover:border-slate-700/80 transition-colors"
@@ -667,7 +756,7 @@ export function JobOrdersList({
                                                         try {
                                                             await modifyJobOrder(jo.jo_id, { status: "Proceed" });
                                                             toast.success("Job Order successfully released to production!");
-                                                        } catch (err: any) {
+                                                        } catch {
                                                             toast.error("Failed to release Job Order.");
                                                         }
                                                     }
@@ -921,9 +1010,7 @@ export function JobOrdersList({
                                                                         qaStatus: "Passed"
                                                                     };
 
-                                                                    // Update line item in inputs helper
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-                                                                    const setItemField = (field: string, value: any) => {
+                                                                    const setItemField = (field: string, value: string) => {
                                                                         const currentLine = currentQaInput.lineItems[compId] || {
                                                                             lotNumber: `LOT-${jo.jo_id}-${compId}-${Math.floor(1000 + Math.random() * 9000)}`,
                                                                             expirationDate: defaultExpDate,
@@ -1087,10 +1174,8 @@ export function JobOrdersList({
                                                 </button>
                                                 {(() => {
                                                     const productsList = jo.products && jo.products.length > 0 ? jo.products : [jo];
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-                                                    const allQA = productsList.every((p: any) => 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-                                                        p.routings && p.routings.length > 0 && p.routings.every((r: any) => r.qa_status === "Passed")
+                                                    const allQA = productsList.every((p: { routings?: Array<{ qa_status?: string }> }) => 
+                                                         p.routings && p.routings.length > 0 && p.routings.every((r: { qa_status?: string }) => r.qa_status === "Passed")
                                                     );
                                                     if (allQA) {
                                                         return (
@@ -1157,8 +1242,7 @@ export function JobOrdersList({
                                                     }];
                                                     let sumHours = 0;
                                                     productsList.forEach(p => {
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-                                                        const pHours = p.routings ? p.routings.reduce((s: number, r: any) => s + (Number(r.duration_hours) || 0), 0) : 0;
+                                                        const pHours = p.routings ? p.routings.reduce((s: number, r: { duration_hours?: number | string }) => s + (Number(r.duration_hours) || 0), 0) : 0;
                                                         sumHours += pHours * Number(p.quantity);
                                                     });
                                                     return sumHours.toFixed(1);
@@ -1180,8 +1264,7 @@ export function JobOrdersList({
                                                     }];
                                                     let sumCost = 0;
                                                     productsList.forEach(p => {
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-                                                        const pCost = p.routings ? p.routings.reduce((s: number, r: any) => s + (Number(r.estimated_labor_cost) || 0), 0) : 0;
+                                                        const pCost = p.routings ? p.routings.reduce((s: number, r: { estimated_labor_cost?: number | string }) => s + (Number(r.estimated_labor_cost) || 0), 0) : 0;
                                                         sumCost += pCost * Number(p.quantity);
                                                     });
                                                     return sumCost.toLocaleString(undefined, { minimumFractionDigits: 2 });
@@ -1199,8 +1282,7 @@ export function JobOrdersList({
                                             quantity: jo.quantity,
                                             routings: jo.routings
                                         }];
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-                                        return productsList.map((p: any, pIdx: number) => {
+                                        return productsList.map((p: JobProductItem, pIdx: number) => {
                                             if (!p.routings || p.routings.length === 0) return null;
                                             return (
                                                 <div key={pIdx} className="space-y-2 border-t pt-3 first:border-t-0 first:pt-0 border-emerald-500/10">
@@ -1208,8 +1290,7 @@ export function JobOrdersList({
                                                         Routing Sequence: {p.product_name || jo.product_name} ({p.quantity} PCS)
                                                     </span>
                                                     <div className="flex items-stretch gap-3 overflow-x-auto pb-4 pt-1 px-1 scrollbar-thin scrollbar-thumb-slate-850 scrollbar-track-transparent">
-{/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                                                        {p.routings.map((rout: any, rIdx: number) => {
+                                                        {p.routings.map((rout: JobRoutingItem, rIdx: number) => {
                                                             const labor = Number(rout.estimated_labor_cost) || 0;
                                                             const overhead = Number(rout.estimated_overhead_cost) || 0;
                                                             const stepHours = (Number(rout.duration_hours) || 0) * Number(p.quantity);
@@ -1219,7 +1300,6 @@ export function JobOrdersList({
                                                             const taskQAStatus = relTask ? (relTask.status === "Completed" ? "Passed" : "Pending") : (rout.qa_status || "Pending");
                                                             const isCompleted = taskQAStatus === "Passed";
 
-                                                            // QA Log parsing
                                                             const latestQaLog = relTask?.qa_logs?.[relTask.qa_logs.length - 1];
                                                             const qaPhotos = Array.isArray(latestQaLog?.photos) ? latestQaLog.photos : [];
                                                             const qaComments = latestQaLog?.comments;
@@ -1230,7 +1310,18 @@ export function JobOrdersList({
                                                                     <div className="w-80 shrink-0 flex flex-col justify-between bg-slate-900/35 hover:bg-slate-900/50 border border-slate-800/80 rounded-xl p-3.5 shadow-lg relative transition-all duration-200 space-y-3 overflow-hidden">
                                                                         <div className="space-y-2.5 text-[10px]">
                                                                             <div className="flex justify-between font-bold text-foreground">
-                                                                                <span className="text-[9px] text-primary font-extrabold uppercase tracking-wider">Step {rout.sequence_order}</span>
+                                                                                <span className="text-[9px] text-primary font-extrabold uppercase tracking-wider flex items-center gap-1.5">
+                                                                                    Step {rout.sequence_order}
+                                                                                    {["Draft", "Shortage", "Proceed", "Ongoing"].includes(jo.status) && (
+                                                                                        <button
+                                                                                            title="Duplicate Task"
+                                                                                            onClick={() => handleDuplicateTask(jo, Number(p.product_id), rout)}
+                                                                                            className="p-0.5 rounded bg-slate-800 hover:bg-slate-700 text-muted-foreground hover:text-foreground transition-colors inline-flex items-center justify-center border border-slate-700"
+                                                                                        >
+                                                                                            <Copy className="h-2.5 w-2.5" />
+                                                                                        </button>
+                                                                                    )}
+                                                                                </span>
                                                                                 <span className="text-muted-foreground">{rout.duration_hours} Hrs/Unit ({stepHours.toFixed(1)}h total)</span>
                                                                             </div>
                                                                             <div className="font-extrabold text-foreground text-xs min-h-[28px] flex items-center">
@@ -1255,7 +1346,7 @@ export function JobOrdersList({
                                                                                             disabled={assigningStepKeys[`${jo.jo_id}-${p.product_id}-${rout.routing_id}`]}
                                                                                             className="bg-background border border-slate-800 rounded px-1.5 py-0.5 text-[10px] text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500 disabled:opacity-50 max-w-[140px] truncate"
                                                                                             value={rout.assigned_personnel?.id?.toString() || ""}
-                                                                                            onChange={(e) => handleAssignPersonnelToTask(jo, p.product_id, rout.routing_id, e.target.value)}
+                                                                                            onChange={(e) => handleAssignPersonnelToTask(jo, Number(p.product_id), rout.routing_id, e.target.value)}
                                                                                         >
                                                                                             <option value="">-- Choose Operator --</option>
                                                                                             {[...users].map(u => {
@@ -1358,14 +1449,14 @@ export function JobOrdersList({
                                                                                     
                                                                                     {!isCompleted ? (
                                                                                         <button
-                                                                                            onClick={() => handleVerifyQAForTask(jo, p.product_id, rout.routing_id, "Passed")}
+                                                                                            onClick={() => handleVerifyQAForTask(jo, Number(p.product_id), rout.routing_id, "Passed")}
                                                                                             className="bg-emerald-600 hover:bg-emerald-700 text-white text-[9px] font-bold px-2 py-1 rounded shadow-sm border-none cursor-pointer flex items-center gap-1"
                                                                                         >
                                                                                             <CheckCircle className="h-2.5 w-2.5" /> QA Pass & Complete Task
                                                                                         </button>
                                                                                     ) : (
                                                                                         <button
-                                                                                            onClick={() => handleVerifyQAForTask(jo, p.product_id, rout.routing_id, "Pending")}
+                                                                                            onClick={() => handleVerifyQAForTask(jo, Number(p.product_id), rout.routing_id, "Pending")}
                                                                                             className="bg-slate-800 hover:bg-slate-700 text-muted-foreground hover:text-foreground text-[9px] font-bold px-2 py-1 rounded shadow-sm border-none cursor-pointer flex items-center gap-1"
                                                                                         >
                                                                                             Reset Task
@@ -1388,7 +1479,7 @@ export function JobOrdersList({
                                                                             )}
                                                                         </div>
                                                                     </div>
-                                                                    {rIdx < p.routings.length - 1 && (
+                                                                    {rIdx < p.routings!.length - 1 && (
                                                                         <div className="flex items-center justify-center shrink-0 self-center text-slate-700 animate-pulse px-1">
                                                                             <ArrowRight className="h-4 w-4" />
                                                                         </div>
@@ -1420,8 +1511,7 @@ export function JobOrdersList({
                             {/* Assigned badges list */}
                             <div className="flex flex-wrap gap-2">
                                 {currentAssigned.length > 0 ? (
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-                                    currentAssigned.map((u: any, uIdx: number) => (
+                                    currentAssigned.map((u: { user_fname?: string; user_lname?: string; user_position?: string }, uIdx: number) => (
                                         <span key={uIdx} className="inline-flex items-center gap-1 bg-slate-800 border border-slate-700 rounded-md px-2 py-0.5 text-[10px] font-semibold text-foreground">
                                             <span className="h-1.5 w-1.5 rounded-full bg-primary" />
                                             {u.user_fname} {u.user_lname} ({u.user_position || "Operator"})
@@ -1441,8 +1531,7 @@ export function JobOrdersList({
                                             const workload = userWorkloads[String(u.user_id)] || 0;
                                             const isOver = workload > 40;
                                             return { ...u, workload, isOver };
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-                                        }).sort((a, b) => a.workload - b.workload).map((u: any) => {
+                                        }).sort((a, b) => a.workload - b.workload).map((u: { user_id: number; user_fname?: string; user_lname?: string; user_position?: string; workload: number; isOver: boolean }) => {
                                             const isSelected = selectedUserIds.includes(Number(u.user_id));
                                             return (
                                                 <button
@@ -1499,8 +1588,7 @@ export function JobOrdersList({
                                 <button
                                     onClick={() => {
                                         setAssigningJoId(jo.jo_id);
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-                                        setSelectedUserIds(currentAssigned.map((u: any) => Number(u.id || u.user_id || u)));
+                                        setSelectedUserIds(currentAssigned.map((u: { id?: number; user_id?: number } | number | string) => typeof u === "object" && u !== null ? Number(u.id || u.user_id) : Number(u)));
                                     }}
                                     className="inline-flex items-center gap-1 bg-primary/10 border border-primary/20 hover:bg-primary/20 text-primary text-[10px] font-bold px-2.5 py-1 rounded-md cursor-pointer transition-colors"
                                 >
@@ -1587,7 +1675,7 @@ export function JobOrdersList({
                             </div>
 
                             {/* Live Stats Preview */}
-                            {previewDailyBreakdown && typeof previewDailyBreakdown === "object" && (
+                            {previewDailyBreakdown && (
                                 <div className="space-y-3">
                                     <div className="border border-slate-800 rounded-xl p-4 bg-slate-950/20 space-y-3">
                                         <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Estimated Metrics</div>
@@ -1595,13 +1683,13 @@ export function JobOrdersList({
                                             <div className="p-2.5 bg-slate-950/50 border border-slate-800/40 rounded-lg">
                                                 <div className="text-[8px] font-bold text-muted-foreground uppercase">Duration</div>
                                                 <div className="text-xs font-extrabold text-foreground mt-0.5">
-                                                    {(previewDailyBreakdown as any).totalDays} Day{(previewDailyBreakdown as any).totalDays !== 1 ? "s" : ""}
+                                                    {previewDailyBreakdown.totalDays} Day{previewDailyBreakdown.totalDays !== 1 ? "s" : ""}
                                                 </div>
                                             </div>
                                             <div className="p-2.5 bg-slate-950/50 border border-slate-800/40 rounded-lg">
                                                 <div className="text-[8px] font-bold text-muted-foreground uppercase">Daily Output</div>
                                                 <div className="text-xs font-extrabold text-primary mt-0.5">
-                                                    {(previewDailyBreakdown as any).dailyRate.toLocaleString()}
+                                                    {previewDailyBreakdown.dailyRate.toLocaleString()}
                                                 </div>
                                             </div>
                                             <div className="p-2.5 bg-slate-950/50 border border-slate-800/40 rounded-lg">
@@ -1614,16 +1702,16 @@ export function JobOrdersList({
                                     </div>
 
                                     {/* Daily Breakdown Day-by-Day scrollable list */}
-                                    {((previewDailyBreakdown as any).breakdown || []).length > 0 && (
+                                    {(previewDailyBreakdown.breakdown || []).length > 0 && (
                                         <div className="space-y-1.5">
                                             <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider flex items-center justify-between">
                                                 <span>Proposed Daily Breakdown Preview</span>
-                                                {(previewDailyBreakdown as any).hasTruncated && (
+                                                {previewDailyBreakdown.hasTruncated && (
                                                     <span className="text-[9px] text-amber-500 font-semibold normal-case">Showing first 100 days</span>
                                                 )}
                                             </div>
                                             <div className="max-h-40 overflow-y-auto border border-slate-800 rounded-xl divide-y divide-slate-800 bg-slate-950/10">
-                                                {((previewDailyBreakdown as any).breakdown || []).map((day: any) => (
+                                                {previewDailyBreakdown.breakdown.map((day: { day: number, date: string, quantity: number }) => (
                                                     <div key={day.day} className="px-4 py-2 flex items-center justify-between hover:bg-slate-900/50 text-xs">
                                                         <div className="flex items-center gap-2">
                                                             <Calendar className="h-3.5 w-3.5 text-muted-foreground/60" />

@@ -1,5 +1,11 @@
 import React, { useState, useEffect } from "react";
 import { IncomingShipment, ShipmentLineItem, Supplier, RawMaterial } from "../types";
+
+interface UOMOption {
+    product_id: number;
+    unit_shortcut: string;
+    cost_per_unit: number;
+}
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { Search, Plus, Calendar, ShieldCheck, Truck, Layers, Anchor, AlertCircle, Info, Landmark, Edit, RefreshCw, Loader2 } from "lucide-react";
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -78,6 +84,7 @@ function RawProductSelector({
         setIsOpen(true);
         const currentName = productName || rawMaterials.find(m => String(m.product_id) === String(parentProductId || selectedProductId))?.product_name || "";
         setSearchQuery(currentName);
+        setHighlightedIndex(0);
     };
 
     const displayValue = isOpen 
@@ -156,13 +163,13 @@ function RawProductSelector({
         const list: Array<{
             product_id: number;
             parent: RawMaterial;
-            option: any;
+            option: RawMaterial;
             uom_shortcut: string;
             cost: number;
-            groupOptions: any[];
+            groupOptions: RawMaterial[];
         }> = [];
         groupedResults.forEach(group => {
-            group.options.forEach((opt: any) => {
+            group.options.forEach((opt: RawMaterial) => {
                 list.push({
                     product_id: opt.product_id,
                     parent: group.parent,
@@ -176,10 +183,7 @@ function RawProductSelector({
         return list;
     }, [groupedResults]);
 
-    // Reset highlighted index when searchQuery changes
-    useEffect(() => {
-        setHighlightedIndex(0);
-    }, [searchQuery]);
+    // React-safe index updates are triggered directly in event handlers to avoid cascading render warnings
 
     // Scroll highlighted item into view automatically
     useEffect(() => {
@@ -229,7 +233,7 @@ function RawProductSelector({
                     product_code: sel.option.product_code || "",
                     selected_uom: sel.uom_shortcut,
                     base_unit_cost_php: String(sel.cost),
-                    uom_options: sel.groupOptions.map((x: any) => ({
+                    uom_options: sel.groupOptions.map((x: RawMaterial) => ({
                         product_id: x.product_id,
                         unit_shortcut: x.unit_of_measurement?.unit_shortcut || "PCS",
                         cost_per_unit: x.cost_per_unit || x.estimated_unit_cost || 0
@@ -253,7 +257,7 @@ function RawProductSelector({
                     type="text"
                     placeholder="Type to search product..."
                     value={displayValue}
-                    onChange={e => setSearchQuery(e.target.value)}
+                    onChange={e => { setSearchQuery(e.target.value); setHighlightedIndex(0); }}
                     onFocus={handleFocus}
                     onKeyDown={handleKeyDown}
                     className="w-full rounded-lg border bg-background pl-3 pr-8 py-2 text-xs h-9 font-semibold text-foreground placeholder:text-muted-foreground focus:ring-1 focus:ring-primary outline-none"
@@ -270,7 +274,7 @@ function RawProductSelector({
                         className="absolute left-0 right-0 top-full mt-1 bg-card border rounded-xl shadow-2xl z-[50] max-h-60 overflow-y-auto divide-y"
                     >
                         {groupedResults.map((group) => {
-                            const hasHighlightedOption = group.options.some((x: any) => {
+                            const hasHighlightedOption = group.options.some((x: RawMaterial) => {
                                 const idx = flatOptions.findIndex(f => f.product_id === x.product_id);
                                 return idx === highlightedIndex;
                             });
@@ -287,7 +291,7 @@ function RawProductSelector({
                                         <div className="text-[9px] text-muted-foreground font-mono">Base SKU: {group.parent.product_code || `ID-${group.parent.product_id}`}</div>
                                     </div>
                                     <div className="flex flex-wrap gap-1.5 mt-0.5">
-                                        {group.options.map((opt: any) => {
+                                        {group.options.map((opt: RawMaterial) => {
                                             const cost = Number(opt.cost_per_unit || opt.estimated_unit_cost || 0);
                                             const flatIndex = flatOptions.findIndex(x => x.product_id === opt.product_id);
                                             const isHighlighted = flatIndex === highlightedIndex;
@@ -306,7 +310,7 @@ function RawProductSelector({
                                                             product_code: opt.product_code || "",
                                                             selected_uom: opt.unit_of_measurement?.unit_shortcut || "PCS",
                                                             base_unit_cost_php: String(cost),
-                                                            uom_options: group.options.map((x: any) => ({
+                                                            uom_options: group.options.map((x: RawMaterial) => ({
                                                                 product_id: x.product_id,
                                                                 unit_shortcut: x.unit_of_measurement?.unit_shortcut || "PCS",
                                                                 cost_per_unit: x.cost_per_unit || x.estimated_unit_cost || 0
@@ -332,7 +336,7 @@ function RawProductSelector({
                         })}
                         {groupedResults.length === 0 && (
                             <div className="p-4 text-center text-xs text-muted-foreground italic">
-                                No ingredients found matching "{searchQuery}"
+                                No ingredients found matching &quot;{searchQuery}&quot;
                             </div>
                         )}
                     </div>
@@ -794,7 +798,7 @@ export default function IncomingShipments({
                                                         value={line.product_id}
                                                         onChange={(e) => {
                                                             const selectedId = e.target.value;
-                                                            const opt = line.uom_options?.find((o: any) => String(o.product_id) === String(selectedId));
+                                                            const opt = line.uom_options?.find((o: UOMOption) => String(o.product_id) === String(selectedId));
                                                             if (opt) {
                                                                 handleLineFormChange(idx, {
                                                                     product_id: String(selectedId),
@@ -805,7 +809,7 @@ export default function IncomingShipments({
                                                         }}
                                                         className="w-full rounded-lg border bg-background px-2.5 py-1.5 text-xs outline-none h-9 text-foreground font-semibold"
                                                     >
-                                                        {line.uom_options.map((o: any) => (
+                                                        {line.uom_options.map((o: UOMOption) => (
                                                             <option key={o.product_id} value={o.product_id}>
                                                                 {o.unit_shortcut} (₱{Number(o.cost_per_unit || 0).toFixed(2)})
                                                             </option>

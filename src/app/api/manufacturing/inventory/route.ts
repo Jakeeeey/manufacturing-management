@@ -1,6 +1,21 @@
 import { NextResponse } from "next/server";
 import { DIRECTUS_URL, headers } from "@/app/api/manufacturing/directus-api";
 
+interface InventoryLot {
+    id: number;
+    product_id: number;
+    branch_id: number;
+    lot_number?: string;
+    expiry_date?: string | null;
+    quantity?: string | number;
+    unit_cost?: string | number;
+    qa_status?: string;
+}
+
+interface LedgerEntry {
+    quantity?: string | number;
+}
+
 export async function GET() {
     try {
         const [ledgerRes, batchesRes, productsRes, branchesRes] = await Promise.all([
@@ -30,7 +45,7 @@ export async function GET() {
         const branches = (await branchesRes.json()).data || [];
 
         // Map inventory lots to the Batch format expected by the frontend
-        const batches = porData.map((b: any) => ({
+        const batches = porData.map((b: InventoryLot) => ({
             line_id: b.id,
             product_id: b.product_id,
             branch_id: b.branch_id,
@@ -81,7 +96,7 @@ export async function POST(request: Request) {
                 ledger = (await ledgerRes.json()).data || [];
             }
             
-            currentStock = ledger.reduce((sum: number, entry: any) => sum + (Number(entry.quantity) || 0), 0);
+            currentStock = ledger.reduce((sum: number, entry: LedgerEntry) => sum + (Number(entry.quantity) || 0), 0);
 
             if (currentStock + qtyChange < 0) {
                 return NextResponse.json({ 
