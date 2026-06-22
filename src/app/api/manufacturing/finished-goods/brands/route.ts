@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { DIRECTUS_URL, headers } from "../../directus-api";
+import { DIRECTUS_URL, headers } from "@/app/api/manufacturing/directus-api";
 export async function GET() {
     try {
         const url = `${DIRECTUS_URL}/items/brand?limit=-1&sort=brand_name`;
@@ -50,3 +50,5 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: (e as Error).message || "Failed to create brand" }, { status: 500 });
     }
 }
+
+

@@ -49,6 +49,7 @@ export function usePlanningEngineering() {
     const [joNumber, setJoNumber] = useState("");
     const [dueDate, setDueDate] = useState("");
     const [joQty, setJoQty] = useState(1);
+    const [shiftOption, setShiftOption] = useState<string>("8");
     
     // Branches data
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -233,7 +234,7 @@ export function usePlanningEngineering() {
         setSelectedBatchCandidate(null);
         setSelectedSO(so);
         setLoadingDetails(true);
-        setSelectedDetailId("");
+        setSelectedDetailId("all"); // Default to scheduling all products inside the Sales Order
         
         // Generate Default JO Number
         setJoNumber(`JO-${so.order_no}-${Math.floor(1000 + Math.random() * 9000)}`);
@@ -242,8 +243,9 @@ export function usePlanningEngineering() {
             const data = await fetchSalesOrderDetails(so.order_id);
             setSoDetails(data);
             if (data.length > 0) {
-                setSelectedDetailId(String(data[0].detail_id));
-                setJoQty(Number(data[0].ordered_quantity));
+                // Default quantity is the sum of all ordered items in the SO
+                const totalQty = data.reduce((sum, d) => sum + Number(d.ordered_quantity || 0), 0);
+                setJoQty(totalQty);
             }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
@@ -265,11 +267,71 @@ export function usePlanningEngineering() {
     // Triggered when selected item to schedule changes (1:1 Flow)
     const handleDetailChange = (detailIdStr: string) => {
         setSelectedDetailId(detailIdStr);
-        const match = soDetails.find(d => String(d.detail_id) === detailIdStr);
-        if (match) {
-            setJoQty(Number(match.ordered_quantity));
+        if (detailIdStr === "all") {
+            const totalQty = soDetails.reduce((sum, d) => sum + Number(d.ordered_quantity || 0), 0);
+            setJoQty(totalQty);
+        } else {
+            const match = soDetails.find(d => String(d.detail_id) === detailIdStr);
+            if (match) {
+                setJoQty(Number(match.ordered_quantity));
+            }
         }
     };
+
+    const getProductCapacity = (productId: number) => {
+        const p = products.find(prod => Number(prod.product_id) === Number(productId));
+        if (!p) return 0;
+
+        if (p.production_capacity_per_hour && Number(p.production_capacity_per_hour) > 0) {
+            return Number(p.production_capacity_per_hour);
+        }
+
+        const parentId = p.parent_id && typeof p.parent_id === "object"
+            ? Number((p.parent_id as { product_id: number | string }).product_id)
+            : (p.parent_id ? Number(p.parent_id) : null);
+
+        if (parentId) {
+            const parent = products.find(prod => Number(prod.product_id) === Number(parentId));
+            if (parent && parent.production_capacity_per_hour && Number(parent.production_capacity_per_hour) > 0) {
+                const uomCount = Number(p.unit_of_measurement_count || 1);
+                return Number(parent.production_capacity_per_hour) * uomCount;
+            }
+        }
+
+        return 0;
+    };
+
+
+    const calculateDailyBreakdown = (productId: number, qty: number, shift: string, customCapacity?: number) => {
+        const capacityPerHour = customCapacity !== undefined ? customCapacity : getProductCapacity(productId);
+        if (!capacityPerHour || capacityPerHour <= 0) return null;
+        
+        const hoursPerDay = Number(shift);
+        const dailyCapacity = capacityPerHour * hoursPerDay;
+        const totalDays = Math.ceil(qty / dailyCapacity);
+        
+        const breakdown = [];
+        let remainingQty = qty;
+        const startDate = new Date();
+        startDate.setDate(startDate.getDate() + 1);
+        
+        for (let i = 1; i <= totalDays; i++) {
+            const dayQty = Math.min(remainingQty, dailyCapacity);
+            const currentDate = new Date(startDate);
+            currentDate.setDate(startDate.getDate() + (i - 1));
+            const dateString = currentDate.toISOString().split("T")[0];
+            
+            breakdown.push({
+                day: i,
+                date: dateString,
+                quantity: dayQty,
+                status: "Pending"
+            });
+            remainingQty -= dayQty;
+        }
+        return breakdown;
+    };
+
 
     const handleCreateJobOrder = async () => {
         if (!dueDate || !joNumber.trim() || joQty <= 0) {
@@ -287,27 +349,61 @@ export function usePlanningEngineering() {
 
         if (selectedSO) {
             // 1:1 Flow
-            const detail = soDetails.find(d => String(d.detail_id) === selectedDetailId);
-            if (!detail) return;
+            if (selectedDetailId === "all") {
+                if (jobOrders.some(jo => jo.jo_id === joNumber.trim())) {
+                    toast.error("Job Order number already exists.");
+                    return;
+                }
 
-            if (jobOrders.some(jo => jo.jo_id === joNumber.trim())) {
-                toast.error("Job Order number already exists.");
-                return;
+                const firstProd = soDetails[0]?.product_id;
+                if (!firstProd) return;
+
+                newJO = {
+                    jo_id: joNumber.trim(),
+                    order_id: selectedSO.order_id,
+                    order_no: selectedSO.order_no,
+                    product_id: firstProd.product_id,
+                    product_name: soDetails.map(d => d.product_id?.product_name || `Product #${d.product_id}`).join(", "),
+                    quantity: joQty,
+                    due_date: dueDate,
+                    status: "Draft",
+                    is_batched: false,
+                    procurementStatus: "Idle",
+                    branch_id: Number(selectedBranchId),
+                    shiftOption: shiftOption,
+                    dailyBreakdown: calculateDailyBreakdown(firstProd.product_id, joQty, shiftOption),
+                    products: soDetails.map(d => ({
+                        product_id: d.product_id.product_id,
+                        product_name: d.product_id.product_name,
+                        quantity: Number(d.ordered_quantity),
+                        bom: null
+                    }))
+                };
+            } else {
+                const detail = soDetails.find(d => String(d.detail_id) === selectedDetailId);
+                if (!detail) return;
+
+                if (jobOrders.some(jo => jo.jo_id === joNumber.trim())) {
+                    toast.error("Job Order number already exists.");
+                    return;
+                }
+
+                newJO = {
+                    jo_id: joNumber.trim(),
+                    order_id: selectedSO.order_id,
+                    order_no: selectedSO.order_no,
+                    product_id: detail.product_id.product_id,
+                    product_name: detail.product_id.product_name,
+                    quantity: joQty,
+                    due_date: dueDate,
+                    status: "Draft",
+                    is_batched: false,
+                    procurementStatus: "Idle",
+                    branch_id: Number(selectedBranchId),
+                    shiftOption: shiftOption,
+                    dailyBreakdown: calculateDailyBreakdown(detail.product_id.product_id, joQty, shiftOption)
+                };
             }
-
-            newJO = {
-                jo_id: joNumber.trim(),
-                order_id: selectedSO.order_id,
-                order_no: selectedSO.order_no,
-                product_id: detail.product_id.product_id,
-                product_name: detail.product_id.product_name,
-                quantity: joQty,
-                due_date: dueDate,
-                status: "Draft",
-                is_batched: false,
-                procurementStatus: "Idle",
-                branch_id: Number(selectedBranchId)
-            };
             salesOrderIds = [selectedSO.order_id];
         } else if (selectedBatchCandidate) {
             // Batched Consolidation Flow
@@ -328,7 +424,9 @@ export function usePlanningEngineering() {
                 status: "Draft",
                 is_batched: true,
                 procurementStatus: "Idle",
-                branch_id: Number(selectedBranchId)
+                branch_id: Number(selectedBranchId),
+                shiftOption: shiftOption,
+                dailyBreakdown: calculateDailyBreakdown(selectedBatchCandidate.productId, joQty, shiftOption)
             };
             salesOrderIds = selectedBatchCandidate.orders.map(o => o.order_id);
         } else if (isStandaloneMode) {
@@ -356,6 +454,8 @@ export function usePlanningEngineering() {
                 is_batched: false,
                 procurementStatus: "Idle",
                 branch_id: Number(selectedBranchId),
+                shiftOption: shiftOption,
+                dailyBreakdown: calculateDailyBreakdown(mainProd.product_id, selectedProductsList.reduce((sum, p) => sum + p.quantity, 0), shiftOption),
                 products: selectedProductsList.map(p => ({
                     product_id: p.product_id,
                     product_name: p.product_name,
@@ -376,6 +476,7 @@ export function usePlanningEngineering() {
             setIsStandaloneMode(false);
             setSelectedStandaloneProduct(null);
             setSelectedProductsList([]);
+            setShiftOption("8");
             setActiveTab("job-orders");
             loadJobOrders();
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -384,15 +485,41 @@ export function usePlanningEngineering() {
         }
     };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const handleAssignPersonnel = async (joId: string, personnel: any[]) => {
+    const handleAssignPersonnel = async (joId: string, personnel: { user_id: number; user_fname?: string; user_lname?: string; user_position?: string }[]) => {
+        const toastId = toast.loading("Saving personnel assignments...");
         try {
             await modifyJobOrder(joId, { assignedPersonnel: personnel });
-            toast.success("Personnel assigned successfully!");
+            toast.success("Personnel assigned successfully!", { id: toastId });
             loadJobOrders();
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
-            toast.error(e.message || "Failed to assign personnel");
+            toast.error(e.message || "Failed to assign personnel", { id: toastId });
+        }
+    };
+
+    const handleUpdateProductCapacity = async (productId: number, capacity: number) => {
+        try {
+            const res = await fetch("/api/manufacturing/finished-goods/products", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ product_id: productId, production_capacity_per_hour: capacity })
+            });
+            if (res.ok) {
+                // Update local products state
+                setProducts(prev => prev.map(p => {
+                    if (Number(p.product_id) === productId) {
+                        return { ...p, production_capacity_per_hour: capacity };
+                    }
+                    return p;
+                }));
+                toast.success("Hourly capacity updated successfully.");
+            } else {
+                const errJson = await res.json();
+                toast.error(errJson.error || "Failed to update product capacity.");
+            }
+        } catch (err) {
+            console.error("Error updating product capacity:", err);
+            toast.error("Failed to update product capacity.");
         }
     };
 
@@ -663,24 +790,35 @@ export function usePlanningEngineering() {
                 if (!linesRes.ok) throw new Error("Failed to load shipment lines");
                 const shipmentLines = await linesRes.json();
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const lineItemUpdates = qaData.lineItems.map((item: any) => {
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    const matchLine = shipmentLines.find((sl: any) => Number(sl.product_id?.product_id || sl.product_id) === Number(item.product_id));
-                    if (!matchLine) {
-                        throw new Error(`Could not find shipment line for product ID: ${item.product_id}`);
-                    }
-                    return {
-                        line_id: matchLine.line_id,
-                        product_id: item.product_id,
-                        quantity_received: item.quantity_received,
-                        quantity_rejected: item.quantity_rejected || 0,
-                        lot_number: item.lot_number,
-                        expiration_date: item.expiration_date,
-                        rejection_reason: item.rejection_reason || null,
-                        qa_status: item.qa_status || "Passed"
-                    };
-                });
+                interface QALineItem {
+                    product_id: number;
+                    quantity_received: number;
+                    quantity_rejected?: number;
+                    lot_number?: string;
+                    expiration_date?: string;
+                    rejection_reason?: string;
+                    qa_status?: string;
+                }
+                interface ShipmentLine {
+                    line_id: number;
+                    product_id: number | { product_id: number };
+                }
+
+                const lineItemUpdates = (qaData.lineItems as QALineItem[])
+                    .filter((item: QALineItem) => shipmentLines.some((sl: ShipmentLine) => Number(typeof sl.product_id === "object" && sl.product_id !== null ? sl.product_id.product_id : sl.product_id) === Number(item.product_id)))
+                    .map((item: QALineItem) => {
+                        const matchLine = shipmentLines.find((sl: ShipmentLine) => Number(typeof sl.product_id === "object" && sl.product_id !== null ? sl.product_id.product_id : sl.product_id) === Number(item.product_id)) as ShipmentLine;
+                        return {
+                            line_id: matchLine.line_id,
+                            product_id: item.product_id,
+                            quantity_received: item.quantity_received,
+                            quantity_rejected: item.quantity_rejected || 0,
+                            lot_number: item.lot_number,
+                            expiration_date: item.expiration_date,
+                            rejection_reason: item.rejection_reason || null,
+                            qa_status: item.qa_status || "Passed"
+                        };
+                    });
 
                 // Call the real QA receiving API
                 const qaRes = await fetch("/api/manufacturing/procurement/qa-receiving", {
@@ -719,10 +857,29 @@ export function usePlanningEngineering() {
         }
     };
 
-    const handleCreatePrerequisiteJobOrder = async (parentJo: JobOrder, compName: string, compProductId: number, suggestedQty: number) => {
+    const handleCreatePrerequisiteJobOrder = async (
+        parentJo: JobOrder,
+        compName: string,
+        compProductId: number,
+        suggestedQty: number,
+        customCapacity?: number,
+        customShift?: string
+    ) => {
         if (!parentJo.due_date) {
             toast.error("Parent Job Order due date is missing.");
             return;
+        }
+
+        // If customCapacity is supplied, update the master SKU's hourly capacity in database first!
+        if (customCapacity !== undefined && customCapacity > 0) {
+            try {
+                const existing = getProductCapacity(compProductId);
+                if (existing !== customCapacity) {
+                    await handleUpdateProductCapacity(compProductId, customCapacity);
+                }
+            } catch (err) {
+                console.error("Failed to auto-update master SKU capacity:", err);
+            }
         }
 
         // Compute a due date that is 1 day before the parent JO's due date (or same if not valid)
@@ -737,6 +894,9 @@ export function usePlanningEngineering() {
 
         const prereqJoId = `JO-PREREQ-${compProductId}-${Math.floor(1000 + Math.random() * 9000)}`;
 
+        const shift = customShift || "8";
+        const dailyBreakdown = calculateDailyBreakdown(compProductId, suggestedQty, shift, customCapacity);
+
         const newJO: JobOrder = {
             jo_id: prereqJoId,
             order_no: `Prereq for ${parentJo.jo_id}`,
@@ -747,7 +907,9 @@ export function usePlanningEngineering() {
             status: "Draft",
             is_batched: false,
             procurementStatus: "Idle",
-            branch_id: parentJo.branch_id
+            branch_id: parentJo.branch_id,
+            shiftOption: shift,
+            dailyBreakdown: dailyBreakdown
         };
 
         try {
@@ -831,14 +993,17 @@ export function usePlanningEngineering() {
         selectedStandaloneProduct,
         setSelectedStandaloneProduct,
         handleAssignPersonnel,
+        handleUpdateProductCapacity,
         selectedProductsList,
         setSelectedProductsList,
         productVersions,
         loadVersionsForProduct,
+        shiftOption,
+        setShiftOption,
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
         modifyJobOrder: async (joId: string, patch: any) => {
             await modifyJobOrder(joId, patch);
-            loadJobOrders();
+            await loadJobOrders();
         }
     };
 }

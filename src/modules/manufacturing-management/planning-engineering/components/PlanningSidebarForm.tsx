@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-import { Play, Merge, Plus, Trash2, Layers } from "lucide-react";
+import { Play, Merge, Plus, Trash2, Layers, Calendar } from "lucide-react";
 import { SalesOrder, SalesOrderDetail } from "../types";
 
 interface PlanningSidebarFormProps {
@@ -39,6 +39,9 @@ interface PlanningSidebarFormProps {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
     productVersions: Record<number, any[]>;
     loadVersionsForProduct: (productId: number) => Promise<void>;
+    shiftOption: string;
+    setShiftOption: (val: string) => void;
+    handleUpdateProductCapacity: (productId: number, capacity: number) => Promise<void>;
 }
 
 export function PlanningSidebarForm({
@@ -67,7 +70,10 @@ export function PlanningSidebarForm({
     selectedProductsList,
     setSelectedProductsList,
     productVersions,
-    loadVersionsForProduct
+    loadVersionsForProduct,
+    shiftOption,
+    setShiftOption,
+    handleUpdateProductCapacity
 }: PlanningSidebarFormProps) {
     const [branchSearch, setBranchSearch] = useState("");
     const [isBranchFocused, setIsBranchFocused] = useState(false);
@@ -77,6 +83,303 @@ export function PlanningSidebarForm({
     // Standalone product search
     const [productSearch, setProductSearch] = useState("");
     const [isProductFocused, setIsProductFocused] = useState(false);
+
+    const [editingCapacity, setEditingCapacity] = useState<string>("");
+    const [isSavingCapacity, setIsSavingCapacity] = useState<boolean>(false);
+    const [isBreakdownModalOpen, setIsBreakdownModalOpen] = useState(false);
+
+    const activeProductId = selectedSO
+        ? (selectedDetailId === "all"
+            ? soDetails[0]?.product_id?.product_id
+            : soDetails.find(d => String(d.detail_id) === selectedDetailId)?.product_id?.product_id)
+        : (selectedBatchCandidate
+            ? selectedBatchCandidate.productId
+            : (isStandaloneMode
+                ? (selectedStandaloneProduct?.product_id || selectedProductsList[0]?.product_id)
+                : undefined));
+
+    const activeQty = isStandaloneMode
+        ? selectedProductsList.reduce((sum, p) => sum + Number(p.quantity || 0), 0)
+        : joQty;
+
+    function getProductCapacity(productId: number) {
+        const p = products.find(prod => Number(prod.product_id) === Number(productId));
+        if (!p) return 0;
+
+        if (p.production_capacity_per_hour && Number(p.production_capacity_per_hour) > 0) {
+            return Number(p.production_capacity_per_hour);
+        }
+
+        const parentId = p.parent_id && typeof p.parent_id === "object"
+            ? Number((p.parent_id as { product_id?: number }).product_id)
+            : (p.parent_id ? Number(p.parent_id) : null);
+
+        if (parentId) {
+            const parent = products.find(prod => Number(prod.product_id) === Number(parentId));
+            if (parent && parent.production_capacity_per_hour && Number(parent.production_capacity_per_hour) > 0) {
+                const uomCount = Number(p.unit_of_measurement_count || 1);
+                return Number(parent.production_capacity_per_hour) * uomCount;
+            }
+        }
+
+        return 0;
+    }
+
+    useEffect(() => {
+        if (activeProductId) {
+            const cap = getProductCapacity(activeProductId);
+            setEditingCapacity(cap > 0 ? String(cap) : "");
+        } else {
+            setEditingCapacity("");
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeProductId, products]);
+
+
+    const calculateDaysCount = (productId: number, qty: number, shift: string) => {
+        const capacity = getProductCapacity(productId);
+        if (!capacity || capacity <= 0) return 0;
+        const dailyCapacity = capacity * Number(shift);
+        return Math.ceil(qty / dailyCapacity);
+    };
+
+    const renderBreakdownModal = () => {
+        if (!isBreakdownModalOpen || !activeProductId) return null;
+        
+        const capacity = getProductCapacity(activeProductId);
+        const hoursPerDay = Number(shiftOption);
+        const dailyCapacity = capacity * hoursPerDay;
+        const totalDays = dailyCapacity > 0 ? Math.ceil(activeQty / dailyCapacity) : 0;
+        
+        const startDate = new Date();
+        startDate.setDate(startDate.getDate() + 1); // Start tomorrow
+        
+        const completionDate = new Date(startDate);
+        if (totalDays > 0) {
+            completionDate.setDate(startDate.getDate() + (totalDays - 1));
+        }
+        const completionDateString = totalDays > 0 
+            ? completionDate.toLocaleDateString(undefined, { 
+                weekday: "short", 
+                month: "short", 
+                day: "numeric", 
+                year: "numeric" 
+              })
+            : "N/A";
+            
+        const selectedProd = products.find(p => Number(p.product_id) === Number(activeProductId));
+
+        return (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs animate-in fade-in duration-200">
+                <div className="bg-card border border-slate-800 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
+                    {/* Header */}
+                    <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 shrink-0 bg-slate-950/40">
+                        <div className="flex items-center gap-2.5">
+                            <Calendar className="h-5 w-5 text-primary animate-pulse" />
+                            <div>
+                                <h3 className="text-base font-bold text-foreground">
+                                    Production Capacity & Schedule Breakdown
+                                </h3>
+                                <p className="text-xs text-muted-foreground">
+                                    Configure hourly producible rate and preview the sequential daily runs for this SKU.
+                                </p>
+                            </div>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setIsBreakdownModalOpen(false)}
+                            className="text-muted-foreground hover:text-foreground text-sm font-semibold transition-colors px-3 py-1.5 hover:bg-slate-900 rounded-lg"
+                        >
+                            Close
+                        </button>
+                    </div>
+
+                    {/* Modal Body */}
+                    <div className="flex-1 overflow-hidden grid grid-cols-1 md:grid-cols-5 divide-y md:divide-y-0 md:divide-x divide-slate-800">
+                        {/* Left Side: Parameters Form */}
+                        <div className="md:col-span-2 p-6 overflow-y-auto space-y-5 bg-slate-950/10">
+                            <h4 className="text-[11px] font-bold text-primary uppercase tracking-wider block mb-1">
+                                Scheduling Parameters
+                            </h4>
+
+                            <div className="space-y-4">
+                                {/* Product Details */}
+                                <div className="p-3.5 bg-slate-900/30 border border-slate-850 rounded-xl space-y-1 text-xs">
+                                    <span className="text-[10px] font-bold text-muted-foreground uppercase block">Selected finished good SKU</span>
+                                    <span className="font-extrabold text-foreground block">
+                                        {selectedProd?.product_name || "Unknown SKU"}
+                                    </span>
+                                    <span className="text-[9px] text-muted-foreground font-mono block">
+                                        Code: {selectedProd?.product_code || "N/A"}
+                                    </span>
+                                </div>
+
+                                {/* Editable capacity */}
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">
+                                        Hourly Production Capacity (SKU Master)
+                                    </label>
+                                    <div className="flex gap-2">
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            step="0.01"
+                                            value={editingCapacity}
+                                            onChange={(e) => setEditingCapacity(e.target.value)}
+                                            placeholder="Units producible per hour..."
+                                            className="w-full rounded-lg border border-slate-800 bg-slate-950/20 px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary text-foreground font-semibold"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={async () => {
+                                                const capVal = parseFloat(editingCapacity);
+                                                if (!isNaN(capVal) && capVal >= 0) {
+                                                    setIsSavingCapacity(true);
+                                                    await handleUpdateProductCapacity(activeProductId, capVal);
+                                                    setIsSavingCapacity(false);
+                                                }
+                                            }}
+                                            disabled={isSavingCapacity || editingCapacity === String(capacity || "")}
+                                            className="bg-primary hover:bg-primary/95 text-primary-foreground font-bold text-xs px-3 rounded-lg disabled:opacity-50 transition-all cursor-pointer whitespace-nowrap"
+                                        >
+                                            {isSavingCapacity ? "Saving..." : "Save"}
+                                        </button>
+                                    </div>
+                                    <span className="text-[9px] text-muted-foreground block">
+                                        Directly updates the finished good&apos;s production capacity in Finished Goods Master.
+                                    </span>
+                                </div>
+
+                                {/* Shift hours selector */}
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">
+                                        Production Shift Schedule
+                                    </label>
+                                    <select
+                                        value={shiftOption}
+                                        onChange={(e) => setShiftOption(e.target.value)}
+                                        className="w-full rounded-lg border border-slate-800 bg-slate-950/20 px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary text-foreground font-semibold"
+                                    >
+                                        <option value="8">Single Shift (8 Hours/Day)</option>
+                                        <option value="16">Double Shift (16 Hours/Day)</option>
+                                        <option value="24">Triple Shift (24 Hours/Day)</option>
+                                    </select>
+                                </div>
+
+                                {/* Build Quantity input (Only editable if not standalone forecast lines summary) */}
+                                {!isStandaloneMode && (
+                                    <div className="space-y-1.5">
+                                        <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">
+                                            Target Job Build Quantity
+                                        </label>
+                                        <input
+                                            type="number"
+                                            value={joQty}
+                                            onChange={(e) => setJoQty(Number(e.target.value))}
+                                            min={1}
+                                            className="w-full rounded-lg border border-slate-800 bg-slate-950/20 px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary text-foreground font-semibold"
+                                        />
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Right Side: Generated Schedule View */}
+                        <div className="md:col-span-3 p-6 overflow-hidden flex flex-col space-y-4">
+                            <div className="flex justify-between items-center shrink-0">
+                                <h4 className="text-[11px] font-bold text-primary uppercase tracking-wider block">
+                                    Generated Run Schedule
+                                </h4>
+                                <span className="text-[10px] font-bold text-muted-foreground uppercase">
+                                    Tomorrow Start
+                                </span>
+                            </div>
+
+                            {(() => {
+                                if (!capacity || capacity <= 0) {
+                                    return (
+                                        <div className="flex-1 flex flex-col items-center justify-center p-6 text-center border border-dashed border-yellow-500/20 bg-yellow-500/5 rounded-xl space-y-2">
+                                            <span className="text-2xl">⚠️</span>
+                                            <h5 className="text-xs font-bold text-yellow-600 dark:text-yellow-400 uppercase">
+                                                Hourly capacity required
+                                            </h5>
+                                            <p className="text-[10px] text-muted-foreground max-w-xs">
+                                                Configure and save the hourly production capacity first to generate the daily schedule breakdown runs.
+                                            </p>
+                                        </div>
+                                    );
+                                }
+
+                                return (
+                                    <div className="flex-1 flex flex-col overflow-hidden space-y-4">
+                                        {/* Summary Widgets */}
+                                        <div className="grid grid-cols-3 gap-3 bg-slate-900/30 border border-slate-800/80 p-3 rounded-xl text-xs shrink-0 font-semibold text-slate-300">
+                                            <div className="space-y-0.5">
+                                                <span className="text-[8px] font-bold text-muted-foreground uppercase block">Run Duration</span>
+                                                <span className="text-[13px] font-extrabold text-primary block">{totalDays} Days</span>
+                                            </div>
+                                            <div className="space-y-0.5">
+                                                <span className="text-[8px] font-bold text-muted-foreground uppercase block">Run Rate / Day</span>
+                                                <span className="text-[13px] font-extrabold text-foreground block">{dailyCapacity.toLocaleString()} PCS</span>
+                                            </div>
+                                            <div className="space-y-0.5">
+                                                <span className="text-[8px] font-bold text-muted-foreground uppercase block">Est. Completion</span>
+                                                <span className="text-[10px] font-extrabold text-emerald-500 block truncate" title={completionDateString}>
+                                                    {completionDateString}
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        {/* Scrollable grid of days */}
+                                        <div className="flex-1 overflow-y-auto pr-1">
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pb-2">
+                                                {Array.from({ length: totalDays }).map((_, i) => {
+                                                    const dayQty = Math.min(activeQty - (i * dailyCapacity), dailyCapacity);
+                                                    const currentDate = new Date(startDate);
+                                                    currentDate.setDate(startDate.getDate() + i);
+                                                    const dateString = currentDate.toLocaleDateString(undefined, { 
+                                                        month: "short", 
+                                                        day: "numeric", 
+                                                        year: "numeric" 
+                                                    });
+
+                                                    return (
+                                                        <div 
+                                                            key={i} 
+                                                            className="flex justify-between items-center bg-slate-950/40 border border-slate-850 hover:border-slate-700/60 rounded-xl px-3 py-2 text-[10px] font-semibold text-foreground transition-all"
+                                                        >
+                                                            <div className="flex flex-col gap-0.5">
+                                                                <span className="text-primary font-extrabold">Day {i + 1}</span>
+                                                                <span className="text-[8px] text-muted-foreground">{dateString}</span>
+                                                            </div>
+                                                            <span className="font-extrabold text-foreground">
+                                                                {dayQty.toLocaleString()} units
+                                                            </span>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })()}
+                        </div>
+                    </div>
+
+                    {/* Footer */}
+                    <div className="px-6 py-4 border-t border-slate-800 bg-slate-950/40 shrink-0 flex justify-end">
+                        <button
+                            type="button"
+                            onClick={() => setIsBreakdownModalOpen(false)}
+                            className="bg-primary hover:bg-primary/90 text-primary-foreground font-extrabold text-xs px-5 py-2 rounded-xl shadow-lg transition-all"
+                        >
+                            Apply Parameters
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    };
 
     const [prevSelectedBranchId, setPrevSelectedBranchId] = useState<number | "">(selectedBranchId);
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -93,8 +396,12 @@ export function PlanningSidebarForm({
     if (selectedDetailId !== prevSelectedDetailId || soDetails !== prevSoDetails) {
         setPrevSelectedDetailId(selectedDetailId);
         setPrevSoDetails(soDetails);
-        const selectedDetailObj = soDetails.find(d => String(d.detail_id) === String(selectedDetailId));
-        setDetailSearch(selectedDetailObj ? `${selectedDetailObj.product_id?.product_name || `ID: ${selectedDetailObj.product_id}`} (Qty: ${selectedDetailObj.ordered_quantity})` : "");
+        if (selectedDetailId === "all") {
+            setDetailSearch("All Items in Sales Order");
+        } else {
+            const selectedDetailObj = soDetails.find(d => String(d.detail_id) === String(selectedDetailId));
+            setDetailSearch(selectedDetailObj ? `${selectedDetailObj.product_id?.product_name || `ID: ${selectedDetailObj.product_id}`} (Qty: ${selectedDetailObj.ordered_quantity})` : "");
+        }
     }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -118,6 +425,7 @@ export function PlanningSidebarForm({
 
     const filteredDetails = soDetails.filter(d => {
         const prodName = d.product_id?.product_name || "";
+        if (detailSearch === "All Items in Sales Order") return true;
         return prodName.toLowerCase().includes(detailSearch.toLowerCase());
     });
 
@@ -237,6 +545,17 @@ export function PlanningSidebarForm({
                         />
                         {isDetailFocused && (
                             <div className="absolute z-50 left-0 right-0 mt-1 max-h-48 overflow-y-auto rounded-lg border border-slate-700 bg-slate-900 shadow-xl divide-y divide-slate-800">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        handleDetailChange("all");
+                                        setDetailSearch("All Items in Sales Order");
+                                        setIsDetailFocused(false);
+                                    }}
+                                    className="w-full text-left px-3 py-2 text-xs hover:bg-primary hover:text-primary-foreground text-slate-100 font-bold transition-colors bg-slate-900/50"
+                                >
+                                    [All Items in Sales Order] (Qty: {soDetails.reduce((sum, d) => sum + Number(d.ordered_quantity || 0), 0)})
+                                </button>
                                 {filteredDetails.map(d => (
                                     <button
                                         type="button"
@@ -251,7 +570,7 @@ export function PlanningSidebarForm({
                                         {d.product_id?.product_name || `ID: ${d.product_id}`} (Qty: {d.ordered_quantity})
                                     </button>
                                 ))}
-                                {filteredDetails.length === 0 && (
+                                {filteredDetails.length === 0 && detailSearch !== "All Items in Sales Order" && (
                                     <div className="p-2 text-xs text-muted-foreground text-center">No items found</div>
                                 )}
                             </div>
@@ -281,6 +600,48 @@ export function PlanningSidebarForm({
                     </div>
 
                     <div className="space-y-1.5">
+                        <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block">Production Shift Schedule</label>
+                        <select
+                            value={shiftOption}
+                            onChange={(e) => setShiftOption(e.target.value)}
+                            className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary text-foreground font-semibold"
+                        >
+                            <option value="8">Single Shift (8 Hours/Day)</option>
+                            <option value="16">Double Shift (16 Hours/Day)</option>
+                            <option value="24">Triple Shift (24 Hours/Day)</option>
+                        </select>
+                    </div>
+
+                    {activeProductId && (
+                        <div className="space-y-1.5 p-3 rounded-lg border border-slate-800 bg-slate-950/20">
+                            <div className="flex justify-between items-center text-[10px]">
+                                <span className="font-bold text-muted-foreground uppercase tracking-wider block">
+                                    Scheduling Runs & Capacity
+                                </span>
+                                {getProductCapacity(activeProductId) > 0 ? (
+                                    <span className="text-[8px] bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 px-1.5 py-0.2 rounded font-extrabold uppercase text-slate-300">
+                                        {calculateDaysCount(activeProductId, joQty, shiftOption)} Days Run
+                                    </span>
+                                ) : (
+                                    <span className="text-[8px] bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 border border-yellow-500/20 px-1.5 py-0.2 rounded font-extrabold uppercase text-yellow-500">
+                                        Needs Config
+                                    </span>
+                                )}
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setIsBreakdownModalOpen(true)}
+                                className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-slate-900 hover:bg-slate-800/80 py-2 text-xs font-bold text-foreground border border-slate-700/60 shadow-sm transition-all cursor-pointer"
+                            >
+                                <Calendar className="h-3.5 w-3.5 text-primary" />
+                                {getProductCapacity(activeProductId) > 0 
+                                    ? `View Daily Breakdown (${calculateDaysCount(activeProductId, joQty, shiftOption)} Days)`
+                                    : "Configure Capacity & Runs"}
+                            </button>
+                        </div>
+                    )}
+
+                    <div className="space-y-1.5">
                         <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block">Target floor due date</label>
                         <input
                             type="date"
@@ -297,6 +658,8 @@ export function PlanningSidebarForm({
                         <Play className="h-4 w-4" />
                         Generate Job Order
                     </button>
+
+                    {renderBreakdownModal()}
                 </div>
             </div>
         );
@@ -390,6 +753,48 @@ export function PlanningSidebarForm({
                     </div>
 
                     <div className="space-y-1.5">
+                        <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block">Production Shift Schedule</label>
+                        <select
+                            value={shiftOption}
+                            onChange={(e) => setShiftOption(e.target.value)}
+                            className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary text-foreground font-semibold"
+                        >
+                            <option value="8">Single Shift (8 Hours/Day)</option>
+                            <option value="16">Double Shift (16 Hours/Day)</option>
+                            <option value="24">Triple Shift (24 Hours/Day)</option>
+                        </select>
+                    </div>
+
+                    {activeProductId && (
+                        <div className="space-y-1.5 p-3 rounded-lg border border-slate-800 bg-slate-950/20">
+                            <div className="flex justify-between items-center text-[10px]">
+                                <span className="font-bold text-muted-foreground uppercase tracking-wider block">
+                                    Scheduling Runs & Capacity
+                                </span>
+                                {getProductCapacity(activeProductId) > 0 ? (
+                                    <span className="text-[8px] bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 px-1.5 py-0.2 rounded font-extrabold uppercase text-slate-300">
+                                        {calculateDaysCount(activeProductId, joQty, shiftOption)} Days Run
+                                    </span>
+                                ) : (
+                                    <span className="text-[8px] bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 border border-yellow-500/20 px-1.5 py-0.2 rounded font-extrabold uppercase text-yellow-500">
+                                        Needs Config
+                                    </span>
+                                )}
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setIsBreakdownModalOpen(true)}
+                                className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-slate-900 hover:bg-slate-800/80 py-2 text-xs font-bold text-foreground border border-slate-700/60 shadow-sm transition-all cursor-pointer"
+                            >
+                                <Calendar className="h-3.5 w-3.5 text-primary" />
+                                {getProductCapacity(activeProductId) > 0 
+                                    ? `View Daily Breakdown (${calculateDaysCount(activeProductId, joQty, shiftOption)} Days)`
+                                    : "Configure Capacity & Runs"}
+                            </button>
+                        </div>
+                    )}
+
+                    <div className="space-y-1.5">
                         <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block">Production Target Due Date</label>
                         <input
                             type="date"
@@ -406,6 +811,8 @@ export function PlanningSidebarForm({
                         <Merge className="h-4 w-4" />
                         Consolidate & Release Batch JO
                     </button>
+
+                    {renderBreakdownModal()}
                 </div>
             </div>
         );
@@ -489,6 +896,48 @@ export function PlanningSidebarForm({
                             className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary text-foreground font-semibold"
                         />
                     </div>
+
+                    <div className="space-y-1.5">
+                        <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block">Production Shift Schedule</label>
+                        <select
+                            value={shiftOption}
+                            onChange={(e) => setShiftOption(e.target.value)}
+                            className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary text-foreground font-semibold"
+                        >
+                            <option value="8">Single Shift (8 Hours/Day)</option>
+                            <option value="16">Double Shift (16 Hours/Day)</option>
+                            <option value="24">Triple Shift (24 Hours/Day)</option>
+                        </select>
+                    </div>
+
+                    {activeProductId && (
+                        <div className="space-y-1.5 p-3 rounded-lg border border-slate-800 bg-slate-950/20">
+                            <div className="flex justify-between items-center text-[10px]">
+                                <span className="font-bold text-muted-foreground uppercase tracking-wider block">
+                                    Scheduling Runs & Capacity
+                                </span>
+                                {getProductCapacity(activeProductId) > 0 ? (
+                                    <span className="text-[8px] bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 px-1.5 py-0.2 rounded font-extrabold uppercase text-slate-300">
+                                        {calculateDaysCount(activeProductId, activeQty, shiftOption)} Days Run
+                                    </span>
+                                ) : (
+                                    <span className="text-[8px] bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 border border-yellow-500/20 px-1.5 py-0.2 rounded font-extrabold uppercase text-yellow-500">
+                                        Needs Config
+                                    </span>
+                                )}
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setIsBreakdownModalOpen(true)}
+                                className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-slate-900 hover:bg-slate-800/80 py-2 text-xs font-bold text-foreground border border-slate-700/60 shadow-sm transition-all cursor-pointer"
+                            >
+                                <Calendar className="h-3.5 w-3.5 text-primary" />
+                                {getProductCapacity(activeProductId) > 0 
+                                    ? `View Daily Breakdown (${calculateDaysCount(activeProductId, activeQty, shiftOption)} Days)`
+                                    : "Configure Capacity & Runs"}
+                            </button>
+                        </div>
+                    )}
 
                     {/* Section: Detail Line Items */}
                     <div className="border-t pt-3 space-y-3">
@@ -599,6 +1048,8 @@ export function PlanningSidebarForm({
                         <Play className="h-4 w-4" />
                         Generate Standalone / Forecast JO
                     </button>
+
+                    {renderBreakdownModal()}
                 </div>
             </div>
         );

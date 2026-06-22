@@ -25,6 +25,8 @@ export function useClients() {
         province: "",
         city: "",
         brgy: "",
+        latitude: "",
+        longitude: "",
         isActive: true
     });
 
@@ -129,6 +131,8 @@ export function useClients() {
             province: "",
             city: "",
             brgy: "",
+            latitude: "",
+            longitude: "",
             isActive: true
         });
         setSelectedProvinceCode("");
@@ -165,6 +169,8 @@ export function useClients() {
             province: c.province || "",
             city: c.city || "",
             brgy: c.brgy || "",
+            latitude: c.latitude !== undefined && c.latitude !== null ? String(c.latitude) : "",
+            longitude: c.longitude !== undefined && c.longitude !== null ? String(c.longitude) : "",
             isActive: c.isActive === 1 || c.isActive === true
         });
         setIsModalOpen(true);
@@ -198,6 +204,12 @@ export function useClients() {
         const cityName = cities.find(c => c.code === selectedCityCode)?.name || formData.city;
         const brgyName = barangays.find(b => b.code === formData.brgy)?.name || formData.brgy;
 
+        // Parse coordinates
+        const latVal = formData.latitude.trim();
+        const lngVal = formData.longitude.trim();
+        const parsedLatitude = latVal ? parseFloat(latVal) : null;
+        const parsedLongitude = lngVal ? parseFloat(lngVal) : null;
+
         const payload = {
             customer_code: formData.customer_code.trim(),
             customer_name: formData.customer_name.trim(),
@@ -209,6 +221,8 @@ export function useClients() {
             province: provName.trim() || undefined,
             city: cityName.trim() || undefined,
             brgy: brgyName.trim() || undefined,
+            latitude: parsedLatitude !== null && !isNaN(parsedLatitude) ? parsedLatitude : null,
+            longitude: parsedLongitude !== null && !isNaN(parsedLongitude) ? parsedLongitude : null,
             isActive: formData.isActive ? 1 : 0
         };
 

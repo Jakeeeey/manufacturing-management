@@ -485,6 +485,7 @@ export default function FinishedGoodsModule() {
                                     shelfLife: selectedProduct.product_shelf_life ? String(selectedProduct.product_shelf_life) : "",
                                     productImage: "",
                                     parentId: selectedProduct.id,
+                                    productionCapacityPerHour: String(selectedProduct.production_capacity_per_hour || ""),
                                     supplierIds: [] as string[]
                                 });
                                 setIsRegisterModalOpen(true);
@@ -1113,6 +1114,16 @@ export default function FinishedGoodsModule() {
                                                 const newId = await handleCreateSection(name);
                                                 if (newId) setRegisterForm(prev => ({ ...prev, sectionId: String(newId) }));
                                             }}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Capacity (Qty/Hr, Opt)</label>
+                                        <input
+                                            type="number"
+                                            placeholder="e.g. 100"
+                                            value={registerForm.productionCapacityPerHour}
+                                            onChange={e => setRegisterForm(prev => ({ ...prev, productionCapacityPerHour: e.target.value }))}
+                                            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
                                         />
                                     </div>
                                     <div className="col-span-2">

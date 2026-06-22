@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { 
     fetchAllOperations,
     createOperation
-} from "../../directus-api";
+} from "./operations-helper";
 
 export async function GET() {
     try {

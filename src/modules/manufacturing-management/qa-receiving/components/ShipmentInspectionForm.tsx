@@ -1,5 +1,5 @@
 import React from "react";
-import { MapPin, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, MapPin, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { Shipment, ShipmentLineItem, Branch, InspectionRow } from "../types";
 
 interface ShipmentInspectionFormProps {
@@ -30,9 +30,19 @@ export default function ShipmentInspectionForm({
     return (
         <form onSubmit={handleSubmitInspection} className="flex flex-col h-full">
             <div className="p-4 border-b bg-muted/20 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 shrink-0">
-                <div>
-                    <h3 className="text-xs font-bold text-foreground">Cargo Manifest Inspection: {selectedShipment.reference_number}</h3>
-                    <p className="text-[10px] text-muted-foreground">Verify physical quantities, tag batch IDs, and set Expiration limits.</p>
+                <div className="flex items-center gap-2.5">
+                    <button
+                        type="button"
+                        onClick={onCancel}
+                        className="md:hidden p-1.5 hover:bg-muted rounded-lg border text-muted-foreground transition-colors shrink-0 flex items-center justify-center animate-in fade-in slide-in-from-left-2 duration-200"
+                        title="Back to Queue"
+                    >
+                        <ArrowLeft className="h-4 w-4" />
+                    </button>
+                    <div>
+                        <h3 className="text-xs font-bold text-foreground">Cargo Manifest Inspection: {selectedShipment.reference_number}</h3>
+                        <p className="text-[10px] text-muted-foreground">Verify physical quantities, tag batch IDs, and set Expiration limits.</p>
+                    </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                     <MapPin className="h-3.5 w-3.5 text-primary" />

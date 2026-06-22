@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { 
     fetchAllOverheadTypes,
     createOverheadType
-} from "../../directus-api";
+} from "./overhead-types-helper";
 
 export async function GET() {
     try {

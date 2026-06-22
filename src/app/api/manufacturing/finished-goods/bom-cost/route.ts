@@ -1,97 +1,8 @@
 import { NextResponse } from "next/server";
+import { DIRECTUS_URL, headers } from "@/app/api/manufacturing/directus-api";
+import { fetchAllProducts, getLatestLandedCost } from "../products/products-helper";
 
-const DIRECTUS_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://vtc:8074";
-const DIRECTUS_TOKEN = process.env.DIRECTUS_STATIC_TOKEN || "test";
 
-const headers: Record<string, string> = {
-    "Content-Type": "application/json"
-};
-if (DIRECTUS_TOKEN) {
-    headers["Authorization"] = `Bearer ${DIRECTUS_TOKEN}`;
-}
-
-interface DirectusProductCurrencyProfile {
-    id: number;
-    product_id: number;
-    is_foreign_sourced: boolean;
-    purchase_currency: "PHP" | "USD";
-    purchase_price: number | null;
-}
-
-interface DirectusProduct {
-    product_id: number;
-    product_name: string;
-    product_code: string;
-    description: string;
-    unit_of_measurement: { unit_id: number; unit_name: string; unit_shortcut: string } | null;
-    cost_per_unit: number;
-    price_per_unit: number;
-    barcode?: string | null;
-    parent_id?: number | null;
-    density_factor?: number | null;
-    has_versions?: boolean;
-    currency_profile?: DirectusProductCurrencyProfile | null;
-}
-
-async function fetchAllProducts(): Promise<DirectusProduct[]> {
-    const url = `${DIRECTUS_URL}/items/products?limit=-1&fields=*,unit_of_measurement.*,product_category.*,parent_id.*`;
-    const [prodRes, versionsRes, profilesRes] = await Promise.all([
-        fetch(url, { headers, cache: "no-store" }),
-        fetch(`${DIRECTUS_URL}/items/manufacturing_product_version?limit=-1&fields=product_id`, { headers, cache: "no-store" }),
-        fetch(`${DIRECTUS_URL}/items/product_currency_profiles?limit=-1`, { headers, cache: "no-store" })
-    ]);
-
-    if (!prodRes.ok) throw new Error("Failed to fetch products");
-    const products = (await prodRes.json()).data || [];
-    const versionProductIds = new Set<number>();
-    if (versionsRes.ok) {
-        const versions = (await versionsRes.json()).data || [];
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-        versions.forEach((v: any) => v.product_id && versionProductIds.add(Number(v.product_id)));
-    }
-    const profiles = profilesRes.ok ? (await profilesRes.json()).data || [] : [];
-    const profilesMap = new Map();
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-    profiles.forEach((p: any) => profilesMap.set(Number(p.product_id), p));
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-    products.forEach((p: any) => {
-        p.has_versions = versionProductIds.has(Number(p.product_id));
-        p.currency_profile = profilesMap.get(Number(p.product_id)) || null;
-    });
-    return products;
-}
-
-async function getLatestLandedCost(productId: number, forexRate: number): Promise<number> {
-    const resProfile = await fetch(`${DIRECTUS_URL}/items/product_currency_profiles?filter[product_id][_eq]=${productId}&limit=1`, { headers, cache: "no-store" });
-    if (resProfile.ok) {
-        const profile = (await resProfile.json()).data?.[0];
-        if (profile && profile.is_foreign_sourced && profile.purchase_currency === "USD" && profile.purchase_price) {
-            return Number(profile.purchase_price) * forexRate;
-        }
-    }
-
-    const query = encodeURIComponent(JSON.stringify({
-        _and: [
-            { product_id: { _eq: productId } },
-            { shipment_id: { status: { _in: ["Received", "Receiving (QA)"] } } }
-        ]
-    }));
-    const res = await fetch(`${DIRECTUS_URL}/items/shipment_line_items?filter=${query}&fields=*,shipment_id.date_received&sort=-shipment_id.date_received&limit=1`, { headers, cache: "no-store" });
-    if (res.ok) {
-        const latest = (await res.json()).data?.[0];
-        if (latest && latest.final_landed_unit_cost) {
-            return Number(latest.final_landed_unit_cost);
-        }
-    }
-
-    const resProd = await fetch(`${DIRECTUS_URL}/items/products/${productId}?fields=price_per_unit,cost_per_unit`, { headers });
-    if (resProd.ok) {
-        const p = (await resProd.json()).data;
-        return Number(p?.cost_per_unit || p?.price_per_unit || 0);
-    }
-    return 0;
-}
 
 export async function GET(request: Request) {
     try {
@@ -221,3 +132,5 @@ export async function GET(request: Request) {
         return NextResponse.json({ error: (e as { message?: string }).message || "Failed to calculate cost" }, { status: 500 });
     }
 }
+
+

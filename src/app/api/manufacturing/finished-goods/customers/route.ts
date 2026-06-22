@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { fetchCustomers, createCustomer, updateCustomer, deleteCustomer } from "../../directus-api";
+import { fetchCustomers, createCustomer, updateCustomer, deleteCustomer } from "./customers-helper";
 
 export async function GET(request: Request) {
     try {

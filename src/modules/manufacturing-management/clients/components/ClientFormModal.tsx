@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { X, Save, User, MapPin, ChevronDown, Loader2 } from "lucide-react";
 import { Customer, StoreType } from "../types";
 import { toast } from "sonner";
+import CustomerMapSelector from "./CustomerMapSelector";
 
 export interface ClientFormData {
     customer_code: string;
@@ -14,6 +15,8 @@ export interface ClientFormData {
     province: string;
     city: string;
     brgy: string;
+    latitude: string;
+    longitude: string;
     isActive: boolean;
 }
 
@@ -89,6 +92,32 @@ export default function ClientFormModal({
             (st.store_type || "").toLowerCase().includes(storeTypeQuery.toLowerCase())
         );
     }, [storeTypes, storeTypeQuery]);
+
+    const handleGetCurrentLocation = () => {
+        if (!navigator.geolocation) {
+            toast.error("Geolocation is not supported by your browser");
+            return;
+        }
+
+        toast.info("Acquiring GPS coordinates...");
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                const lat = position.coords.latitude.toFixed(6);
+                const lng = position.coords.longitude.toFixed(6);
+                setFormData((prev: ClientFormData) => ({
+                    ...prev,
+                    latitude: lat,
+                    longitude: lng
+                }));
+                toast.success(`Location captured! Lat: ${lat}, Lng: ${lng}`);
+            },
+            (error) => {
+                console.error("Geolocation error:", error);
+                toast.error(`Failed to get coordinates: ${error.message}`);
+            },
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+        );
+    };
 
     const handleRegisterStoreType = async () => {
         const query = storeTypeQuery.trim();
@@ -373,6 +402,59 @@ export default function ClientFormModal({
                                     ))}
                                 </select>
                             </div>
+                        </div>
+
+                        {/* Geographic Coordinates */}
+                        <div className="border-t border-dashed pt-4 mt-2">
+                            <label className="text-[9px] font-extrabold text-muted-foreground uppercase tracking-wider block mb-2">
+                                Geographic Coordinates (For Route Optimization)
+                            </label>
+                            <div className="grid grid-cols-3 gap-4">
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-bold text-muted-foreground uppercase">Latitude</label>
+                                    <input
+                                        type="text"
+                                        value={formData.latitude}
+                                        onChange={(e) => setFormData((prev: ClientFormData) => ({ ...prev, latitude: e.target.value }))}
+                                        placeholder="e.g. 14.5995"
+                                        className="w-full bg-background border rounded-lg px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary font-mono font-bold"
+                                    />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-bold text-muted-foreground uppercase">Longitude</label>
+                                    <input
+                                        type="text"
+                                        value={formData.longitude}
+                                        onChange={(e) => setFormData((prev: ClientFormData) => ({ ...prev, longitude: e.target.value }))}
+                                        placeholder="e.g. 120.9842"
+                                        className="w-full bg-background border rounded-lg px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary font-mono font-bold"
+                                    />
+                                </div>
+                                <div className="flex items-end">
+                                    <button
+                                        type="button"
+                                        onClick={handleGetCurrentLocation}
+                                        className="w-full h-9 inline-flex items-center justify-center gap-1.5 bg-primary/10 hover:bg-primary/20 text-primary px-3 py-2 rounded-lg text-xs font-bold transition-all border border-primary/20 cursor-pointer"
+                                        title="Use your browser's location sensor to pin coordinates"
+                                    >
+                                        <MapPin className="h-3.5 w-3.5 text-primary shrink-0 animate-pulse" />
+                                        Pin GPS Location
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Interactive Map Selector */}
+                            <CustomerMapSelector
+                                latitude={formData.latitude}
+                                longitude={formData.longitude}
+                                onChange={(lat, lng) => {
+                                    setFormData((prev: ClientFormData) => ({
+                                        ...prev,
+                                        latitude: lat,
+                                        longitude: lng
+                                    }));
+                                }}
+                            />
                         </div>
                     </div>
 

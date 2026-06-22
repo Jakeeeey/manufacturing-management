@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { DIRECTUS_URL, headers } from "../../directus-api";
+import { DIRECTUS_URL, headers } from "@/app/api/manufacturing/directus-api";
 
 export async function GET() {
     try {
@@ -51,3 +51,5 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: (e as Error).message || "Failed to create section" }, { status: 500 });
     }
 }
+
+

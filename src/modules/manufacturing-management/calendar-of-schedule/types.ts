@@ -1,3 +1,17 @@
+export interface DailyBreakdownItem {
+    day: number;
+    date: string;
+    status: string;
+    quantity: number;
+}
+
+export interface RoutingStep {
+    routing_id: number;
+    sequence_order: number;
+    operation_name: string;
+    duration_hours: number;
+}
+
 export interface JobOrder {
     jo_id: string;
     order_no: string;
@@ -7,10 +21,10 @@ export interface JobOrder {
     due_date: string;
     status: "Draft" | "Shortage" | "Proceed" | "Ongoing" | "Finished" | "On Hold" | "Cancelled";
     is_batched?: boolean;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-    bom?: any;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-    routings?: any[];
+    bom?: unknown;
+    routings?: RoutingStep[];
+    shiftOption?: string;
+    dailyBreakdown?: DailyBreakdownItem[] | null;
 }
 
 export interface IncomingShipment {
@@ -22,4 +36,7 @@ export interface IncomingShipment {
     actual_delivery_date?: string;
     status: string;
     notes?: string;
+    lead_time_receiving?: string;
+    date_received?: string;
+    created_at?: string;
 }

@@ -89,17 +89,21 @@ export default function QAReceivingModule() {
             {activeTab === "inbound" && (
                 <div className="grid gap-6 md:grid-cols-3">
                     {/* Left 1/3: Active Shipments waiting for inspection */}
-                    <InboundShipmentsList
-                        loadingShipments={loadingShipments}
-                        filteredShipments={filteredShipments}
-                        selectedShipment={selectedShipment}
-                        showReceived={showReceived}
-                        setShowReceived={setShowReceived}
-                        onSelectShipment={handleSelectShipment}
-                    />
+                    <div className={selectedShipment ? "hidden md:block" : "block col-span-1"}>
+                        <InboundShipmentsList
+                            loadingShipments={loadingShipments}
+                            filteredShipments={filteredShipments}
+                            selectedShipment={selectedShipment}
+                            showReceived={showReceived}
+                            setShowReceived={setShowReceived}
+                            onSelectShipment={handleSelectShipment}
+                        />
+                    </div>
 
                     {/* Right 2/3: Cargo Inspect details form */}
-                    <div className="md:col-span-2 border rounded-xl bg-card overflow-hidden max-h-[75dvh] flex flex-col">
+                    <div className={`md:col-span-2 border rounded-xl bg-card overflow-hidden max-h-[85dvh] md:max-h-[75dvh] flex flex-col ${
+                        selectedShipment ? "block" : "hidden md:flex"
+                    }`}>
                         {selectedShipment ? (
                             <ShipmentInspectionForm
                                 selectedShipment={selectedShipment}

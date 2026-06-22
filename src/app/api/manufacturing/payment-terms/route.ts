@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { fetchPaymentTerms } from "../directus-api";
+import { fetchPaymentTerms } from "./payment-helper";
 
 export async function GET() {
     try {

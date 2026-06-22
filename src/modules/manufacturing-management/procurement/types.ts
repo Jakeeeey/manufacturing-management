@@ -22,6 +22,7 @@ export interface IncomingShipment {
     reference_number: string;
     supplier_id: number | Supplier;
     date_received: string | null;
+    lead_time_receiving?: string | null;
     total_foreign_currency: number;
     exchange_rate: number;
     total_php_value: number;

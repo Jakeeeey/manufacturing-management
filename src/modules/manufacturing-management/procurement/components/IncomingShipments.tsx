@@ -1,5 +1,11 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { IncomingShipment, ShipmentLineItem, Supplier, RawMaterial } from "../types";
+
+interface UOMOption {
+    product_id: number;
+    unit_shortcut: string;
+    cost_per_unit: number;
+}
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { Search, Plus, Calendar, ShieldCheck, Truck, Layers, Anchor, AlertCircle, Info, Landmark, Edit, RefreshCw, Loader2 } from "lucide-react";
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -29,94 +35,85 @@ interface IncomingShipmentsProps {
     loading?: boolean;
 }
 
-export default function IncomingShipments({
-    shipments,
-    suppliers,
+interface RawProductSelectorProps {
+    id?: string;
+    autoFocus?: boolean;
+    rawMaterials: RawMaterial[];
+    selectedProductId: string;
+    parentProductId?: string;
+    productName?: string;
+    onSelect: (selected: {
+        parent_product_id: string;
+        product_id: string;
+        product_name: string;
+        product_code: string;
+        selected_uom: string;
+        base_unit_cost_php: string;
+        uom_options: Array<{
+            product_id: number;
+            unit_shortcut: string;
+            cost_per_unit: number;
+        }>;
+    }) => void;
+}
+
+function RawProductSelector({
+    id,
+    autoFocus,
     rawMaterials,
-    selectedShipment,
-    setSelectedShipment,
-    lines,
-    isModalOpen,
-    setIsModalOpen,
-    shipmentForm,
-    setShipmentForm,
-    linesForm,
-    setLinesForm,
-    onCreateShipment,
-    onTriggerAllocation,
-    onUpdateShipmentStatus,
-    loading = false
-}: IncomingShipmentsProps) {
-    const [search, setSearch] = useState("");
-    const [lookupIndex, setLookupIndex] = useState<number | null>(null);
-    const [lookupSearch, setLookupSearch] = useState("");
-    const [searchResults, setSearchResults] = useState<RawMaterial[]>([]);
-    const [searching, setSearching] = useState(false);
+    selectedProductId,
+    parentProductId,
+    productName,
+    onSelect
+}: RawProductSelectorProps) {
+    const [isOpen, setIsOpen] = useState(false);
+    const [searchQuery, setSearchQuery] = useState("");
+    const [highlightedIndex, setHighlightedIndex] = useState(0);
 
-    // Debounced server-side product search
-    React.useEffect(() => {
-        if (lookupIndex === null) {
-            setSearchResults([]);
-            return;
+    const dropdownRef = React.useRef<HTMLDivElement>(null);
+    const inputRef = React.useRef<HTMLInputElement>(null);
+
+    useEffect(() => {
+        if (autoFocus && inputRef.current) {
+            inputRef.current.focus();
+            inputRef.current.select();
         }
+    }, [autoFocus]);
 
-        let active = true;
-        setSearching(true);
+    const handleFocus = () => {
+        setIsOpen(true);
+        const currentName = productName || rawMaterials.find(m => String(m.product_id) === String(parentProductId || selectedProductId))?.product_name || "";
+        setSearchQuery(currentName);
+        setHighlightedIndex(0);
+    };
 
-        const delayDebounce = setTimeout(() => {
-            fetch(`/api/manufacturing/finished-goods/products?search=${encodeURIComponent(lookupSearch.trim())}&limit=120`)
-                .then(res => res.json())
-                .then(data => {
-                    if (!active) return;
-                    if (Array.isArray(data)) {
-                        // Filter out finished goods (which have versions) so only raw materials and packaging remain
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-                        const rawItemsOnly = data.filter((p: any) => !p.has_versions);
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-                        const mapped: RawMaterial[] = rawItemsOnly.map((p: any) => ({
-                            product_id: p.product_id,
-                            parent_id: null, // Flat item structure
-                            product_code: p.product_code || `SKU-${p.product_id}`,
-                            product_name: p.product_name,
-                            unit_of_measurement: p.unit_of_measurement ? {
-                                unit_id: p.unit_of_measurement.unit_id,
-                                unit_shortcut: p.unit_of_measurement.unit_shortcut,
-                                unit_name: p.unit_of_measurement.unit_name || p.unit_of_measurement.unit_shortcut
-                            } : undefined,
-                            cost_per_unit: Number(p.cost_per_unit || 0),
-                            estimated_unit_cost: Number(p.estimated_unit_cost || 0),
-                            density_factor: Number(p.density_factor || 1.0)
-                        }));
-                        setSearchResults(mapped);
-                    }
-                    setSearching(false);
-                })
-                .catch(err => {
-                    console.error("Error searching products:", err);
-                    if (active) setSearching(false);
-                });
-        }, 250);
+    const displayValue = isOpen 
+        ? searchQuery 
+        : (productName || rawMaterials.find(m => String(m.product_id) === String(parentProductId || selectedProductId))?.product_name || "");
 
-        return () => {
-            active = false;
-            clearTimeout(delayDebounce);
-        };
-    }, [lookupSearch, lookupIndex]);
+    // Filter results locally
+    const filteredResults = React.useMemo(() => {
+        const query = searchQuery.trim().toLowerCase();
+        if (!query) return rawMaterials;
+        return rawMaterials.filter(m => 
+            m.product_name.toLowerCase().includes(query) ||
+            (m.product_code && m.product_code.toLowerCase().includes(query))
+        );
+    }, [searchQuery, rawMaterials]);
 
     // Group matching products by parent item dynamically
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
     const groupedResults = React.useMemo(() => {
         const parentMap = new Map<number, RawMaterial>();
         const childrenMap = new Map<number, RawMaterial[]>();
 
-        // 1. Separate parents and children from searchResults
-        searchResults.forEach(item => {
+        // 1. Separate parents and children
+        filteredResults.forEach(item => {
             if (!item.parent_id) {
                 parentMap.set(item.product_id, item);
             }
         });
 
-        searchResults.forEach(item => {
+        filteredResults.forEach(item => {
             if (item.parent_id) {
                 const pId = item.parent_id;
                 if (!childrenMap.has(pId)) {
@@ -127,7 +124,7 @@ export default function IncomingShipments({
         });
 
         // 2. Synthesize virtual parents for children whose parent records didn't match the search filter
-        searchResults.forEach(item => {
+        filteredResults.forEach(item => {
             if (item.parent_id && !parentMap.has(item.parent_id)) {
                 parentMap.set(item.parent_id, {
                     product_id: item.parent_id,
@@ -159,7 +156,232 @@ export default function IncomingShipments({
                 options: Array.from(optionsMap.values())
             };
         });
-    }, [searchResults]);
+    }, [filteredResults]);
+
+    // Flatten options for easy single-index keyboard navigation
+    const flatOptions = React.useMemo(() => {
+        const list: Array<{
+            product_id: number;
+            parent: RawMaterial;
+            option: RawMaterial;
+            uom_shortcut: string;
+            cost: number;
+            groupOptions: RawMaterial[];
+        }> = [];
+        groupedResults.forEach(group => {
+            group.options.forEach((opt: RawMaterial) => {
+                list.push({
+                    product_id: opt.product_id,
+                    parent: group.parent,
+                    option: opt,
+                    uom_shortcut: opt.unit_of_measurement?.unit_shortcut || "PCS",
+                    cost: Number(opt.cost_per_unit || opt.estimated_unit_cost || 0),
+                    groupOptions: group.options
+                });
+            });
+        });
+        return list;
+    }, [groupedResults]);
+
+    // React-safe index updates are triggered directly in event handlers to avoid cascading render warnings
+
+    // Scroll highlighted item into view automatically
+    useEffect(() => {
+        if (isOpen && highlightedIndex >= 0 && dropdownRef.current) {
+            const highlightedEl = dropdownRef.current.querySelector(`[data-index="${highlightedIndex}"]`);
+            if (highlightedEl) {
+                highlightedEl.scrollIntoView({ block: "nearest", behavior: "smooth" });
+            }
+        }
+    }, [highlightedIndex, isOpen]);
+
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
+            document.getElementById("register-shipment-btn")?.click();
+            return;
+        }
+
+        if (!isOpen) {
+            if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "Enter") {
+                setIsOpen(true);
+                e.preventDefault();
+            }
+            return;
+        }
+
+        if (e.key === "ArrowDown") {
+            e.preventDefault();
+            setHighlightedIndex(prev => {
+                if (flatOptions.length === 0) return -1;
+                return (prev + 1) % flatOptions.length;
+            });
+        } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            setHighlightedIndex(prev => {
+                if (flatOptions.length === 0) return -1;
+                return (prev - 1 + flatOptions.length) % flatOptions.length;
+            });
+        } else if (e.key === "Enter") {
+            e.preventDefault();
+            if (highlightedIndex >= 0 && highlightedIndex < flatOptions.length) {
+                const sel = flatOptions[highlightedIndex];
+                onSelect({
+                    parent_product_id: String(sel.parent.product_id),
+                    product_id: String(sel.product_id),
+                    product_name: sel.parent.product_name,
+                    product_code: sel.option.product_code || "",
+                    selected_uom: sel.uom_shortcut,
+                    base_unit_cost_php: String(sel.cost),
+                    uom_options: sel.groupOptions.map((x: RawMaterial) => ({
+                        product_id: x.product_id,
+                        unit_shortcut: x.unit_of_measurement?.unit_shortcut || "PCS",
+                        cost_per_unit: x.cost_per_unit || x.estimated_unit_cost || 0
+                    }))
+                });
+                setIsOpen(false);
+            }
+        } else if (e.key === "Escape") {
+            setIsOpen(false);
+            e.preventDefault();
+            e.stopPropagation();
+        }
+    };
+
+    return (
+        <div className="relative w-full">
+            <div className="relative">
+                <input
+                    id={id}
+                    ref={inputRef}
+                    type="text"
+                    placeholder="Type to search product..."
+                    value={displayValue}
+                    onChange={e => { setSearchQuery(e.target.value); setHighlightedIndex(0); }}
+                    onFocus={handleFocus}
+                    onKeyDown={handleKeyDown}
+                    className="w-full rounded-lg border bg-background pl-3 pr-8 py-2 text-xs h-9 font-semibold text-foreground placeholder:text-muted-foreground focus:ring-1 focus:ring-primary outline-none"
+                />
+                <Search className="absolute right-2.5 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
+            </div>
+
+            {isOpen && (
+                <>
+                    <div className="fixed inset-0 z-[40]" onClick={() => setIsOpen(false)} />
+                    <div 
+                        ref={dropdownRef}
+                        data-dropdown-open="true"
+                        className="absolute left-0 right-0 top-full mt-1 bg-card border rounded-xl shadow-2xl z-[50] max-h-60 overflow-y-auto divide-y"
+                    >
+                        {groupedResults.map((group) => {
+                            const hasHighlightedOption = group.options.some((x: RawMaterial) => {
+                                const idx = flatOptions.findIndex(f => f.product_id === x.product_id);
+                                return idx === highlightedIndex;
+                            });
+
+                            return (
+                                <div 
+                                    key={group.parent.product_id} 
+                                    className={`p-3 transition-all flex flex-col gap-1.5 text-xs text-left ${
+                                        hasHighlightedOption ? "bg-primary/[0.02] border-l-2 border-l-primary" : "hover:bg-muted/5"
+                                    }`}
+                                >
+                                    <div>
+                                        <div className="font-extrabold text-foreground">{group.parent.product_name}</div>
+                                        <div className="text-[9px] text-muted-foreground font-mono">Base SKU: {group.parent.product_code || `ID-${group.parent.product_id}`}</div>
+                                    </div>
+                                    <div className="flex flex-wrap gap-1.5 mt-0.5">
+                                        {group.options.map((opt: RawMaterial) => {
+                                            const cost = Number(opt.cost_per_unit || opt.estimated_unit_cost || 0);
+                                            const flatIndex = flatOptions.findIndex(x => x.product_id === opt.product_id);
+                                            const isHighlighted = flatIndex === highlightedIndex;
+
+                                            return (
+                                                <button
+                                                    key={opt.product_id}
+                                                    type="button"
+                                                    data-index={flatIndex}
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        onSelect({
+                                                            parent_product_id: String(group.parent.product_id),
+                                                            product_id: String(opt.product_id),
+                                                            product_name: group.parent.product_name,
+                                                            product_code: opt.product_code || "",
+                                                            selected_uom: opt.unit_of_measurement?.unit_shortcut || "PCS",
+                                                            base_unit_cost_php: String(cost),
+                                                            uom_options: group.options.map((x: RawMaterial) => ({
+                                                                product_id: x.product_id,
+                                                                unit_shortcut: x.unit_of_measurement?.unit_shortcut || "PCS",
+                                                                cost_per_unit: x.cost_per_unit || x.estimated_unit_cost || 0
+                                                            }))
+                                                        });
+                                                        setIsOpen(false);
+                                                    }}
+                                                    className={`border px-2 py-1 rounded-[4px] text-[9px] font-bold transition-all flex items-center gap-1 ${
+                                                        isHighlighted 
+                                                            ? "bg-primary text-primary-foreground border-primary shadow-sm scale-[1.03]" 
+                                                            : "bg-primary/10 hover:bg-primary text-primary hover:text-primary-foreground border-primary/20"
+                                                    }`}
+                                                >
+                                                    <span>{opt.unit_of_measurement?.unit_shortcut || "PCS"}</span>
+                                                    <span className="opacity-50">|</span>
+                                                    <span>₱{cost.toFixed(2)}</span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                        {groupedResults.length === 0 && (
+                            <div className="p-4 text-center text-xs text-muted-foreground italic">
+                                No ingredients found matching &quot;{searchQuery}&quot;
+                            </div>
+                        )}
+                    </div>
+                </>
+            )}
+        </div>
+    );
+}
+
+export default function IncomingShipments({
+    shipments,
+    suppliers,
+    rawMaterials,
+    selectedShipment,
+    setSelectedShipment,
+    lines,
+    isModalOpen,
+    setIsModalOpen,
+    shipmentForm,
+    setShipmentForm,
+    linesForm,
+    setLinesForm,
+    onCreateShipment,
+    onTriggerAllocation,
+    onUpdateShipmentStatus,
+    loading = false
+}: IncomingShipmentsProps) {
+    const [search, setSearch] = useState("");
+
+    useEffect(() => {
+        const handleGlobalKeyDown = (e: KeyboardEvent) => {
+            if (e.altKey && e.key.toLowerCase() === "n") {
+                e.preventDefault();
+                setIsModalOpen(true);
+            }
+            if (e.key === "Escape" && isModalOpen) {
+                const activeDropdown = document.querySelector('[data-dropdown-open="true"]');
+                if (!activeDropdown) {
+                    setIsModalOpen(false);
+                }
+            }
+        };
+        window.addEventListener("keydown", handleGlobalKeyDown);
+        return () => window.removeEventListener("keydown", handleGlobalKeyDown);
+    }, [isModalOpen, setIsModalOpen]);
 
     const filteredShipments = shipments.filter(s =>
         s.reference_number.toLowerCase().includes(search.toLowerCase()) ||
@@ -264,7 +486,11 @@ export default function IncomingShipments({
                                     </div>
                                     <div className="text-[10px] text-muted-foreground flex justify-between">
                                         <span>Status: {s.status}</span>
-                                        <span>Received: {s.date_received && s.date_received !== "1970-01-01" ? new Date(s.date_received).toLocaleDateString() : "Pending"}</span>
+                                        <span>
+                                            {s.status === "Received" 
+                                                ? `Received: ${s.date_received ? new Date(s.date_received).toLocaleDateString() : "N/A"}` 
+                                                : `ETA: ${s.lead_time_receiving ? new Date(s.lead_time_receiving).toLocaleDateString() : "Pending"}`}
+                                        </span>
                                     </div>
                                 </button>
                             );
@@ -345,12 +571,18 @@ export default function IncomingShipments({
                                 <span className="text-xs font-extrabold text-foreground">₱{Number(activeShipment.exchange_rate).toFixed(2)}</span>
                             </div>
                             <div className="border p-4 rounded-xl bg-muted/5 space-y-1">
-                                <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Arrival Date</span>
+                                <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">
+                                    {activeShipment.status === "Received" ? "Arrival Date" : "ETA / Expected"}
+                                </span>
                                 <span className="text-xs font-semibold text-foreground flex items-center gap-1">
                                     <Calendar className="h-3.5 w-3.5 text-primary" />
-                                    {activeShipment.date_received && activeShipment.date_received !== "1970-01-01" 
-                                        ? new Date(activeShipment.date_received).toLocaleDateString() 
-                                        : "Pending QA"}
+                                    {activeShipment.status === "Received"
+                                        ? (activeShipment.date_received && activeShipment.date_received !== "1970-01-01" 
+                                            ? new Date(activeShipment.date_received).toLocaleDateString() 
+                                            : "N/A")
+                                        : (activeShipment.lead_time_receiving 
+                                            ? new Date(activeShipment.lead_time_receiving).toLocaleDateString() 
+                                            : "Pending")}
                                 </span>
                             </div>
                         </div>
@@ -533,52 +765,115 @@ export default function IncomingShipments({
 
                                 <div className="space-y-3">
                                     {linesForm.map((line, idx) => (
-                                        <div key={idx} className="flex gap-3 items-end bg-muted/10 border p-3 rounded-lg relative">
-                                            <div className="flex-[3] space-y-1.5 min-w-0 flex flex-col">
+                                        <div key={idx} className="flex gap-3 items-end bg-muted/10 border p-3 rounded-lg relative flex-wrap sm:flex-nowrap">
+                                            <div className="flex-[3] space-y-1.5 min-w-[200px] flex flex-col relative">
                                                 <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Raw Product Name</label>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                        setLookupIndex(idx);
-                                                        setLookupSearch("");
+                                                <RawProductSelector
+                                                    id={`search-input-${idx}`}
+                                                    autoFocus={idx === linesForm.length - 1 && linesForm.length > 1}
+                                                    rawMaterials={rawMaterials}
+                                                    selectedProductId={line.product_id}
+                                                    parentProductId={line.parent_product_id}
+                                                    productName={line.product_name}
+                                                    onSelect={(selected) => {
+                                                        handleLineFormChange(idx, selected);
+                                                        // Move focus to Qty Ordered input of the same row
+                                                        setTimeout(() => {
+                                                            const nextInput = document.getElementById(`qty-input-${idx}`);
+                                                            if (nextInput) {
+                                                                nextInput.focus();
+                                                                if (nextInput instanceof HTMLInputElement) {
+                                                                    nextInput.select();
+                                                                }
+                                                            }
+                                                        }, 50);
                                                     }}
-                                                    className="w-full text-left rounded-lg border bg-background px-3 py-2 text-xs flex justify-between items-center h-9 font-semibold text-foreground"
-                                                >
-                                                    <span className="truncate">
-                                                        {line.product_name 
-                                                            ? `${line.product_name} (${line.selected_uom || "PCS"})` 
-                                                            : rawMaterials.find(m => String(m.product_id) === String(line.parent_product_id))?.product_name 
-                                                                ? `${rawMaterials.find(m => String(m.product_id) === String(line.parent_product_id))?.product_name} (${rawMaterials.find(m => String(m.product_id) === String(line.product_id))?.unit_of_measurement?.unit_shortcut || "PCS"})`
-                                                                : "Click to select Product..."
-                                                        }
-                                                    </span>
-                                                    <Search className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                                                </button>
+                                                />
                                             </div>
 
-                                            <div className="w-1/4 space-y-1.5 shrink-0">
+                                            {line.uom_options && line.uom_options.length > 0 && (
+                                                <div className="w-28 space-y-1.5 shrink-0">
+                                                    <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Packaging / UOM</label>
+                                                    <select
+                                                        value={line.product_id}
+                                                        onChange={(e) => {
+                                                            const selectedId = e.target.value;
+                                                            const opt = line.uom_options?.find((o: UOMOption) => String(o.product_id) === String(selectedId));
+                                                            if (opt) {
+                                                                handleLineFormChange(idx, {
+                                                                    product_id: String(selectedId),
+                                                                    selected_uom: opt.unit_shortcut,
+                                                                    base_unit_cost_php: String(opt.cost_per_unit)
+                                                                });
+                                                            }
+                                                        }}
+                                                        className="w-full rounded-lg border bg-background px-2.5 py-1.5 text-xs outline-none h-9 text-foreground font-semibold"
+                                                    >
+                                                        {line.uom_options.map((o: UOMOption) => (
+                                                            <option key={o.product_id} value={o.product_id}>
+                                                                {o.unit_shortcut} (₱{Number(o.cost_per_unit || 0).toFixed(2)})
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                            )}
+
+                                            <div className="w-24 space-y-1.5 shrink-0">
                                                 <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">
                                                     Qty Ordered {line.selected_uom ? `(${line.selected_uom})` : ""}
                                                 </label>
                                                 <input
+                                                    id={`qty-input-${idx}`}
                                                     type="number"
                                                     required
                                                     placeholder="1000"
                                                     value={line.quantity_ordered || ""}
                                                     onChange={e => handleLineFormChange(idx, "quantity_ordered", e.target.value)}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === "Enter") {
+                                                            e.preventDefault();
+                                                            const costInput = document.getElementById(`cost-input-${idx}`);
+                                                            if (costInput) {
+                                                                costInput.focus();
+                                                                if (costInput instanceof HTMLInputElement) {
+                                                                    costInput.select();
+                                                                }
+                                                            }
+                                                        } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                                                            e.preventDefault();
+                                                            document.getElementById("register-shipment-btn")?.click();
+                                                        }
+                                                    }}
                                                     className="w-full rounded-lg border bg-background px-2.5 py-1.5 text-xs outline-none h-9 font-semibold"
                                                 />
                                             </div>
 
-                                            <div className="w-1/4 space-y-1.5 shrink-0">
+                                            <div className="w-28 space-y-1.5 shrink-0">
                                                 <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">FOB Unit Cost (PHP)</label>
                                                 <input
+                                                    id={`cost-input-${idx}`}
                                                     type="number"
                                                     required
                                                     step="0.0001"
                                                     placeholder="19.00"
                                                     value={line.base_unit_cost_php}
                                                     onChange={e => handleLineFormChange(idx, "base_unit_cost_php", e.target.value)}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === "Enter") {
+                                                            e.preventDefault();
+                                                            if (idx === linesForm.length - 1) {
+                                                                handleAddLineForm();
+                                                            } else {
+                                                                const nextSearchInput = document.getElementById(`search-input-${idx + 1}`);
+                                                                if (nextSearchInput) {
+                                                                    nextSearchInput.focus();
+                                                                }
+                                                            }
+                                                        } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                                                            e.preventDefault();
+                                                            document.getElementById("register-shipment-btn")?.click();
+                                                        }
+                                                    }}
                                                     className="w-full rounded-lg border bg-background px-2.5 py-1.5 text-xs outline-none font-mono h-9"
                                                 />
                                             </div>
@@ -586,7 +881,7 @@ export default function IncomingShipments({
                                                 <button
                                                     type="button"
                                                     onClick={() => handleRemoveLineForm(idx)}
-                                                    className="text-red-500 hover:text-red-600 text-xs font-bold pb-2 shrink-0"
+                                                    className="text-red-500 hover:text-red-600 text-xs font-bold pb-2.5 shrink-0"
                                                 >
                                                     Remove
                                                 </button>
@@ -597,102 +892,19 @@ export default function IncomingShipments({
                             </div>
 
                             <button
-                                type="submit"
-                                disabled={loading}
-                                className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-primary py-2.5 text-xs font-semibold text-primary-foreground hover:bg-primary/95 transition-all shadow-sm shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                {loading ? (
-                                    <>
-                                        <Loader2 className="h-3 w-3 animate-spin" />
-                                        Registering Shipment...
-                                    </>
-                                ) : "Register Shipment"}
-                            </button>
+                                                                id="register-shipment-btn"
+                                                                type="submit"
+                                                                disabled={loading}
+                                                                className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-primary py-2.5 text-xs font-semibold text-primary-foreground hover:bg-primary/95 transition-all shadow-sm shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                            >
+                                                                {loading ? (
+                                                                    <>
+                                                                        <Loader2 className="h-3 w-3 animate-spin" />
+                                                                        Registering Shipment...
+                                                                    </>
+                                                                ) : "Register Shipment"}
+                                                            </button>
                         </form>
-                    </div>
-                </div>
-            )}
-
-            {/* Searchable Product Selector Modal Overlay */}
-            {lookupIndex !== null && (
-                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-                    <div className="bg-card text-foreground w-full max-w-xl border rounded-xl shadow-2xl p-6 space-y-4 flex flex-col max-h-[80vh] scale-in duration-200">
-                        <div className="flex items-center justify-between border-b pb-3 shrink-0">
-                            <h3 className="font-extrabold text-sm flex items-center gap-2">
-                                <Layers className="h-4.5 w-4.5 text-primary" />
-                                Select Raw Material / Ingredient
-                            </h3>
-                            <button
-                                type="button"
-                                onClick={() => setLookupIndex(null)}
-                                className="text-xs font-bold bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground px-2.5 py-1 rounded"
-                            >
-                                Cancel
-                            </button>
-                        </div>
-
-                        <div className="relative shrink-0">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                            <input
-                                type="text"
-                                autoFocus
-                                placeholder="Type raw ingredient name or code to filter..."
-                                value={lookupSearch}
-                                onChange={e => setLookupSearch(e.target.value)}
-                                className="w-full pl-10 pr-4 py-2 border rounded-lg text-xs bg-background outline-none focus:ring-1 focus:ring-primary font-medium"
-                            />
-                        </div>
-
-                        {/* Scrollable list */}
-                        <div className="flex-1 overflow-y-auto divide-y border rounded-lg max-h-[45vh]">
-                            {searching && (
-                                <div className="flex items-center justify-center p-8 text-muted-foreground gap-2">
-                                    <span className="animate-spin rounded-full h-4 w-4 border-2 border-primary border-t-transparent"></span>
-                                    <span className="text-xs">Searching materials list...</span>
-                                </div>
-                            )}
-                            
-                            {!searching && searchResults.map((opt) => {
-                                return (
-                                    <div key={opt.product_id} className="p-3.5 hover:bg-muted/10 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                                        <div className="min-w-0 flex-1">
-                                            <div className="font-bold text-xs text-foreground truncate">{opt.product_name}</div>
-                                            <div className="text-[10px] text-muted-foreground font-mono mt-0.5">Code: {opt.product_code || `ID-${opt.product_id}`}</div>
-                                        </div>
-                                        <div className="flex shrink-0 items-center">
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    handleLineFormChange(lookupIndex, {
-                                                        parent_product_id: String(opt.product_id),
-                                                        product_id: String(opt.product_id),
-                                                        product_name: opt.product_name,
-                                                        product_code: opt.product_code || "",
-                                                        selected_uom: opt.unit_of_measurement?.unit_shortcut || "PCS",
-                                                        base_unit_cost_php: String(opt.cost_per_unit || opt.estimated_unit_cost || 0),
-                                                        uom_options: [{
-                                                            product_id: opt.product_id,
-                                                            unit_shortcut: opt.unit_of_measurement?.unit_shortcut || "PCS",
-                                                            cost_per_unit: opt.cost_per_unit || opt.estimated_unit_cost || 0
-                                                        }]
-                                                    });
-                                                    setLookupIndex(null);
-                                                }}
-                                                className="bg-primary/10 hover:bg-primary text-primary hover:text-primary-foreground border border-primary/20 px-3 py-1.5 rounded text-[10px] font-bold transition-all shadow-sm"
-                                            >
-                                                Select {opt.unit_of_measurement?.unit_shortcut || "PCS"} (₱{Number(opt.cost_per_unit || opt.estimated_unit_cost || 0).toFixed(2)})
-                                            </button>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                            
-                            {!searching && searchResults.length === 0 && (
-                                <div className="p-8 text-center text-xs text-muted-foreground">
-                                    No raw materials found matching &quot;{lookupSearch}&quot;
-                                </div>
-                            )}
-                        </div>
                     </div>
                 </div>
             )}

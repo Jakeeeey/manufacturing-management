@@ -432,7 +432,7 @@ export const ProductDetailsTab: React.FC<ProductDetailsTabProps> = ({
                                 </div>
                             </div>
 
-                            <div className="space-y-1 col-span-2">
+                            <div className="space-y-1">
                                 <label className="text-[11px] font-bold text-muted-foreground uppercase flex items-center gap-1">
                                     <Calendar className="h-3 w-3 text-muted-foreground" /> Shelf Life (Days)
                                 </label>
@@ -442,6 +442,19 @@ export const ProductDetailsTab: React.FC<ProductDetailsTabProps> = ({
                                     onChange={e => handleDetailChange("product_shelf_life", e.target.value ? Number(e.target.value) : undefined)}
                                     className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
                                     placeholder="e.g. 365"
+                                />
+                            </div>
+
+                            <div className="space-y-1">
+                                <label className="text-[11px] font-bold text-muted-foreground uppercase flex items-center gap-1">
+                                    <Sliders className="h-3 w-3 text-muted-foreground" /> Capacity (Qty/Hr)
+                                </label>
+                                <input 
+                                    type="number" 
+                                    value={editedDetails.production_capacity_per_hour !== undefined ? editedDetails.production_capacity_per_hour : ""} 
+                                    onChange={e => handleDetailChange("production_capacity_per_hour", e.target.value ? parseFloat(e.target.value) : 0)}
+                                    className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
+                                    placeholder="e.g. 100"
                                 />
                             </div>
                         </div>

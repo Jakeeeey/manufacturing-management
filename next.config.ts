@@ -21,7 +21,7 @@ const getRemotePatterns = () => {
 };
 
 const nextConfig: NextConfig = {
-    allowedDevOrigins: ["msi-jake", "msi-lo"],
+    allowedDevOrigins: ["msi-jake", "msi-andrie"],
     images: {
         remotePatterns: getRemotePatterns(),
     },

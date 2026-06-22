@@ -121,59 +121,112 @@ export default function FIFOInventoryList({
 
                                 {/* Expandable FIFO batches table */}
                                 {isExpanded && (
-                                    <div className="p-4 bg-muted/5 border-t overflow-x-auto">
-                                        <table className="w-full text-xs text-left">
-                                            <thead>
-                                                <tr className="text-[10px] text-muted-foreground uppercase font-black border-b pb-2">
-                                                    <th className="pb-2">Batch / Lot Number</th>
-                                                    {item.isPackaging ? (
-                                                        <th className="pb-2">Received Date</th>
-                                                    ) : (
-                                                        <th className="pb-2">Expiration Date</th>
-                                                    )}
-                                                    <th className="pb-2 text-right">Received Qty</th>
-                                                    <th className="pb-2">Shipment Ref</th>
-                                                    <th className="pb-2 text-right">FIFO Status</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {item.batches.map((batch: FIFOBatch, index: number) => {
-                                                    const expStatus = getExpirationStatus(batch.expiration_date);
-                                                    return (
-                                                        <tr key={index} className="border-b last:border-0 hover:bg-muted/10">
-                                                            <td className="py-2.5 font-bold text-foreground flex items-center gap-1.5">
+                                    <div className="p-4 bg-muted/5 border-t">
+                                        {/* Mobile view: Batch Cards */}
+                                        <div className="space-y-3 md:hidden">
+                                            {item.batches.map((batch: FIFOBatch, index: number) => {
+                                                const expStatus = getExpirationStatus(batch.expiration_date);
+                                                return (
+                                                    <div key={index} className="bg-background border rounded-lg p-3.5 space-y-2.5 text-xs shadow-sm">
+                                                        <div className="flex justify-between items-center">
+                                                            <div className="flex items-center gap-1.5 font-bold text-foreground min-w-0">
                                                                 <Bookmark className="h-3.5 w-3.5 text-primary shrink-0" />
-                                                                {batch.lot_number}
-                                                            </td>
-                                                            <td className="py-2.5 font-semibold text-muted-foreground">
-                                                                {item.isPackaging ? batch.reception_date : (batch.expiration_date || "N/A")}
-                                                            </td>
-                                                            <td className="py-2.5 text-right font-mono text-foreground font-bold">
-                                                                {batch.received_qty.toLocaleString()}
-                                                            </td>
-                                                            <td className="py-2.5 text-muted-foreground font-mono">
-                                                                {batch.shipment_ref}
-                                                            </td>
-                                                            <td className="py-2.5 text-right">
+                                                                <span className="truncate">{batch.lot_number}</span>
+                                                            </div>
+                                                            <div className="shrink-0">
                                                                 {item.isPackaging ? (
-                                                                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${
+                                                                    <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase ${
                                                                         index === 0 
                                                                             ? "bg-amber-500/10 text-amber-500 border border-amber-500/20" 
                                                                             : "bg-muted text-muted-foreground"
                                                                     }`}>
-                                                                        {index === 0 ? "Next Out (Oldest)" : "Buffered"}
+                                                                        {index === 0 ? "Next Out" : "Buffered"}
                                                                     </span>
                                                                 ) : (
-                                                                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${expStatus.color}`}>
+                                                                    <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase ${expStatus.color}`}>
                                                                         {expStatus.text}
                                                                     </span>
                                                                 )}
-                                                            </td>
-                                                        </tr>
-                                                    );
-                                                })}
-                                            </tbody>
-                                        </table>
+                                                            </div>
+                                                        </div>
+                                                        <div className="grid grid-cols-2 gap-2 text-[10px] text-muted-foreground border-t pt-2">
+                                                            <div>
+                                                                <span className="block font-bold text-[8px] uppercase tracking-wider text-muted-foreground/75">
+                                                                    {item.isPackaging ? "Received Date" : "Expiration Date"}
+                                                                </span>
+                                                                <span className="font-bold text-foreground">
+                                                                    {item.isPackaging ? batch.reception_date : (batch.expiration_date || "N/A")}
+                                                                </span>
+                                                            </div>
+                                                            <div className="text-right">
+                                                                <span className="block font-bold text-[8px] uppercase tracking-wider text-muted-foreground/75">Qty Received</span>
+                                                                <span className="font-extrabold text-foreground font-mono text-[11px]">{batch.received_qty.toLocaleString()}</span>
+                                                            </div>
+                                                            <div className="col-span-2 border-t border-dashed pt-1.5 flex justify-between items-center">
+                                                                <span className="text-[8px] uppercase tracking-wider font-bold text-muted-foreground/75">Shipment Ref</span>
+                                                                <span className="font-mono text-foreground font-extrabold text-[9px]">{batch.shipment_ref}</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+
+                                        {/* Desktop view: Table */}
+                                        <div className="hidden md:block overflow-x-auto">
+                                            <table className="w-full text-xs text-left">
+                                                <thead>
+                                                    <tr className="text-[10px] text-muted-foreground uppercase font-black border-b pb-2">
+                                                        <th className="pb-2">Batch / Lot Number</th>
+                                                        {item.isPackaging ? (
+                                                            <th className="pb-2">Received Date</th>
+                                                        ) : (
+                                                            <th className="pb-2">Expiration Date</th>
+                                                        )}
+                                                        <th className="pb-2 text-right">Received Qty</th>
+                                                        <th className="pb-2">Shipment Ref</th>
+                                                        <th className="pb-2 text-right">FIFO Status</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {item.batches.map((batch: FIFOBatch, index: number) => {
+                                                        const expStatus = getExpirationStatus(batch.expiration_date);
+                                                        return (
+                                                            <tr key={index} className="border-b last:border-0 hover:bg-muted/10">
+                                                                <td className="py-2.5 font-bold text-foreground flex items-center gap-1.5">
+                                                                    <Bookmark className="h-3.5 w-3.5 text-primary shrink-0" />
+                                                                    {batch.lot_number}
+                                                                </td>
+                                                                <td className="py-2.5 font-semibold text-muted-foreground">
+                                                                    {item.isPackaging ? batch.reception_date : (batch.expiration_date || "N/A")}
+                                                                </td>
+                                                                <td className="py-2.5 text-right font-mono text-foreground font-bold">
+                                                                    {batch.received_qty.toLocaleString()}
+                                                                </td>
+                                                                <td className="py-2.5 text-muted-foreground font-mono">
+                                                                    {batch.shipment_ref}
+                                                                </td>
+                                                                <td className="py-2.5 text-right">
+                                                                    {item.isPackaging ? (
+                                                                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${
+                                                                            index === 0 
+                                                                                ? "bg-amber-500/10 text-amber-500 border border-amber-500/20" 
+                                                                                : "bg-muted text-muted-foreground"
+                                                                        }`}>
+                                                                            {index === 0 ? "Next Out (Oldest)" : "Buffered"}
+                                                                        </span>
+                                                                    ) : (
+                                                                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${expStatus.color}`}>
+                                                                            {expStatus.text}
+                                                                        </span>
+                                                                    )}
+                                                                </td>
+                                                            </tr>
+                                                        );
+                                                    })}
+                                                </tbody>
+                                            </table>
+                                        </div>
                                     </div>
                                 )}
                             </div>

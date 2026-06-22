@@ -68,11 +68,14 @@ export default function PlanningEngineeringModule() {
         selectedStandaloneProduct,
         setSelectedStandaloneProduct,
         handleAssignPersonnel,
+        handleUpdateProductCapacity,
         selectedProductsList,
         setSelectedProductsList,
         productVersions,
         loadVersionsForProduct,
-        modifyJobOrder
+        modifyJobOrder,
+        shiftOption,
+        setShiftOption
     } = usePlanningEngineering();
 
     return (
@@ -365,6 +368,9 @@ export default function PlanningEngineeringModule() {
                         setSelectedProductsList={setSelectedProductsList}
                         productVersions={productVersions}
                         loadVersionsForProduct={loadVersionsForProduct}
+                        shiftOption={shiftOption}
+                        setShiftOption={setShiftOption}
+                        handleUpdateProductCapacity={handleUpdateProductCapacity}
                     />
                 </div>
             </div>
