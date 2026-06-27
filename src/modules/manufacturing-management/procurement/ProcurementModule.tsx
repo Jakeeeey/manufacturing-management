@@ -10,6 +10,7 @@ import IncomingShipments from "./components/IncomingShipments";
 import ShipmentExpenses from "./components/ShipmentExpenses";
 import RawMaterialsMaster from "./components/RawMaterialsMaster";
 import { useProcurement } from "./hooks/useProcurement";
+import { CreatableSelect } from "../finished-goods/components/CreatableSelect";
 
 interface ProcurementModuleProps {
     initialTab?: string;
@@ -23,6 +24,7 @@ export default function ProcurementModule({ initialTab = "suppliers" }: Procurem
         suppliers,
         shipments,
         rawMaterials,
+        supplierLinkedProducts,
         selectedShipment,
         setSelectedShipment,
         selectedShipmentLines,
@@ -87,6 +89,7 @@ export default function ProcurementModule({ initialTab = "suppliers" }: Procurem
                         shipments={shipments}
                         suppliers={suppliers}
                         rawMaterials={rawMaterials}
+                        supplierLinkedProducts={supplierLinkedProducts}
                         selectedShipment={selectedShipment}
                         setSelectedShipment={setSelectedShipment}
                         lines={selectedShipmentLines}
@@ -121,22 +124,21 @@ export default function ProcurementModule({ initialTab = "suppliers" }: Procurem
                                 <div className="p-4 bg-amber-500/5 border border-amber-500/10 rounded-xl text-xs text-amber-600 font-semibold">
                                     Please select a shipment from the dropdown below to calculate and allocate landed costs.
                                 </div>
-                                <div className="space-y-1.5 max-w-xs">
+                                <div className="space-y-1.5 max-w-sm flex flex-col">
                                     <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block">Active Cargo Shipment</label>
-                                    <select
-                                        onChange={(e) => {
-                                            const match = shipments.find(s => String(s.shipment_id) === e.target.value);
+                                    <CreatableSelect
+                                        options={shipments.map(s => ({
+                                            value: String(s.shipment_id),
+                                            label: `BL/PO: ${s.reference_number} (${s.status})`
+                                        }))}
+                                        value=""
+                                        onValueChange={(val) => {
+                                            const match = shipments.find(s => String(s.shipment_id) === val);
                                             if (match) setSelectedShipment(match);
                                         }}
-                                        className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary text-foreground font-semibold"
-                                    >
-                                        <option value="">-- Choose Cargo Shipment --</option>
-                                        {shipments.map(s => (
-                                            <option key={s.shipment_id} value={s.shipment_id}>
-                                                BL/PO: {s.reference_number} ({s.status})
-                                            </option>
-                                        ))}
-                                    </select>
+                                        placeholder="Choose Cargo Shipment..."
+                                        className="h-9 text-xs w-full bg-background font-semibold"
+                                    />
                                 </div>
                             </div>
                         ) : (

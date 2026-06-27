@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
-import { Supplier, IncomingShipment, ShipmentLineItem, ShipmentExpense, RawMaterial } from "../types";
+import { Supplier, IncomingShipment, ShipmentLineItem, ShipmentExpense, RawMaterial, LinkedProduct } from "../types";
 import { 
     fetchSuppliers, 
     createSupplier, 
@@ -12,7 +12,8 @@ import {
     fetchRawMaterials,
     updateShipmentStatus,
     registerRawMaterial,
-    updateSupplier
+    updateSupplier,
+    fetchLinkedProducts
 } from "../services/procurement-api";
 
 export function useProcurement(defaultTab: string = "suppliers") {
@@ -76,7 +77,10 @@ export function useProcurement(defaultTab: string = "suppliers") {
         total_foreign_currency: "0",
         total_php_value: "0",
         status: "Ordered" as const,
-        date_received: new Date().toISOString().split("T")[0]
+        date_received: new Date().toISOString().split("T")[0],
+        branch_id: 183,
+        payment_type: 3,
+        price_type: "Internal"
     });
 
     const [shipmentLinesForm, setShipmentLinesForm] = useState<Array<{
@@ -105,6 +109,74 @@ export function useProcurement(defaultTab: string = "suppliers") {
         loadShipments();
         loadRawMaterials();
     }, []);
+
+    // Auto-generate reference number when modal opens, and clean up form when modal closes
+    useEffect(() => {
+        if (isShipmentModalOpen) {
+            const year = new Date().getFullYear();
+            const randomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+            
+            let activeRate = "58.00";
+            if (typeof window !== "undefined") {
+                const useLive = localStorage.getItem("vos_use_live_forex") === "true";
+                if (useLive) {
+                    try {
+                        const historyJson = localStorage.getItem("vos_forex_rate_history");
+                        if (historyJson) {
+                            const history = JSON.parse(historyJson);
+                            if (Array.isArray(history) && history.length > 0) {
+                                activeRate = String(history[0].rate || "58.00");
+                            }
+                        }
+                    } catch {}
+                } else {
+                    const locked = localStorage.getItem("vos_locked_forex_rate");
+                    if (locked) {
+                        activeRate = locked;
+                    }
+                }
+            }
+
+            setShipmentForm(prev => ({
+                ...prev,
+                exchange_rate: activeRate,
+                reference_number: prev.reference_number || `PO-${year}-${randomCode}`
+            }));
+        } else {
+            setShipmentForm({
+                reference_number: "",
+                supplier_id: "",
+                exchange_rate: "58.00",
+                total_foreign_currency: "0",
+                total_php_value: "0",
+                status: "Ordered" as const,
+                date_received: new Date().toISOString().split("T")[0],
+                branch_id: 183,
+                payment_type: 3,
+                price_type: "Internal"
+            });
+            setShipmentLinesForm([{ parent_product_id: "", product_id: "", quantity_ordered: "", base_unit_cost_php: "" }]);
+        }
+    }, [isShipmentModalOpen]);
+
+    const [supplierLinkedProducts, setSupplierLinkedProducts] = useState<LinkedProduct[]>([]);
+
+    useEffect(() => {
+        const loadLinkedForSelectedSupplier = async () => {
+            if (!shipmentForm.supplier_id) {
+                setSupplierLinkedProducts([]);
+                return;
+            }
+            try {
+                const linked = await fetchLinkedProducts(parseInt(shipmentForm.supplier_id));
+                setSupplierLinkedProducts(linked || []);
+            } catch (e) {
+                console.error("Failed to load linked products for supplier:", e);
+                setSupplierLinkedProducts([]);
+            }
+        };
+        loadLinkedForSelectedSupplier();
+    }, [shipmentForm.supplier_id]);
 
     // Sync loaded expenses with the form state
     useEffect(() => {
@@ -152,9 +224,11 @@ export function useProcurement(defaultTab: string = "suppliers") {
         try {
             const data = await fetchShipments();
             setShipments(data);
+            return data;
         } catch (e) {
             console.error(e);
             toast.error("Failed to load incoming shipments");
+            return [];
         }
     }
 
@@ -317,6 +391,13 @@ export function useProcurement(defaultTab: string = "suppliers") {
             return;
         }
 
+        const productIds = validLines.map(l => l.product_id);
+        const uniqueProductIds = new Set(productIds);
+        if (productIds.length !== uniqueProductIds.size) {
+            toast.error("Duplicate items found in the shipment manifest. Please consolidate identical items.");
+            return;
+        }
+
         try {
             setLoading(true);
             const linesPayload = validLines.map(l => ({
@@ -335,7 +416,10 @@ export function useProcurement(defaultTab: string = "suppliers") {
                 total_foreign_currency: totalPhp / rate,
                 total_php_value: totalPhp,
                 status: shipmentForm.status,
-                date_received: shipmentForm.date_received
+                date_received: shipmentForm.date_received,
+                branch_id: Number(shipmentForm.branch_id),
+                payment_type: Number(shipmentForm.payment_type),
+                price_type: shipmentForm.price_type
             };
 
             await createShipment(shipmentPayload, linesPayload);
@@ -348,7 +432,10 @@ export function useProcurement(defaultTab: string = "suppliers") {
                 total_foreign_currency: "0",
                 total_php_value: "0",
                 status: "Ordered",
-                date_received: new Date().toISOString().split("T")[0]
+                date_received: new Date().toISOString().split("T")[0],
+                branch_id: 183,
+                payment_type: 3,
+                price_type: "Internal"
             });
             setShipmentLinesForm([{ parent_product_id: "", product_id: "", quantity_ordered: "", base_unit_cost_php: "" }]);
             loadShipments();
@@ -395,12 +482,13 @@ export function useProcurement(defaultTab: string = "suppliers") {
             setIsExpenseModalOpen(false);
             
             // Reload active selections
-            loadShipments();
-            loadRawMaterials();
+            const freshShipments = await loadShipments();
+            await loadRawMaterials();
             if (selectedShipment && selectedShipment.shipment_id === shipmentId) {
-                const updatedShip = shipments.find(s => s.shipment_id === shipmentId);
+                const updatedShip = freshShipments.find(s => s.shipment_id === shipmentId);
                 if (updatedShip) {
-                    setSelectedShipment({ ...updatedShip, status: targetStatus });
+                    setSelectedShipment(updatedShip);
+                    await loadShipmentDetails(shipmentId);
                 } else {
                     setSelectedShipment(null);
                 }
@@ -466,6 +554,7 @@ export function useProcurement(defaultTab: string = "suppliers") {
         suppliers,
         shipments,
         rawMaterials,
+        supplierLinkedProducts,
         selectedShipment,
         setSelectedShipment,
         selectedShipmentLines,

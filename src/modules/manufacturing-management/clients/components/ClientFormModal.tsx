@@ -94,6 +94,10 @@ export default function ClientFormModal({
     }, [storeTypes, storeTypeQuery]);
 
     const handleGetCurrentLocation = () => {
+        if (!window.isSecureContext) {
+            toast.error("Geolocation requires a secure connection (HTTPS) or localhost. Please type coordinates manually.");
+            return;
+        }
         if (!navigator.geolocation) {
             toast.error("Geolocation is not supported by your browser");
             return;
@@ -113,7 +117,15 @@ export default function ClientFormModal({
             },
             (error) => {
                 console.error("Geolocation error:", error);
-                toast.error(`Failed to get coordinates: ${error.message}`);
+                let userFriendlyMessage = error.message;
+                if (error.code === 1) { // PERMISSION_DENIED
+                    userFriendlyMessage = "Location permission was denied. Please allow location access in your browser settings.";
+                } else if (error.code === 2) { // POSITION_UNAVAILABLE
+                    userFriendlyMessage = "Location coordinates are unavailable on this network/device.";
+                } else if (error.code === 3) { // TIMEOUT
+                    userFriendlyMessage = "Geolocation request timed out.";
+                }
+                toast.error(`Failed to get coordinates: ${userFriendlyMessage}`);
             },
             { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
         );
@@ -188,7 +200,7 @@ export default function ClientFormModal({
                         
                         <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-1.5">
-                                <label className="text-[10px] font-bold text-muted-foreground uppercase">Client/Corporate Name</label>
+                                <label className="text-[10px] font-bold text-muted-foreground uppercase">Client/Corporate Name <span className="text-red-500 font-bold text-[11px]">*</span></label>
                                 <input
                                     type="text"
                                     required
@@ -200,7 +212,7 @@ export default function ClientFormModal({
                             </div>
 
                             <div className="space-y-1.5">
-                                <label className="text-[10px] font-bold text-muted-foreground uppercase">Customer Account Code</label>
+                                <label className="text-[10px] font-bold text-muted-foreground uppercase">Customer Account Code <span className="text-red-500 font-bold text-[11px]">*</span></label>
                                 <input
                                     type="text"
                                     required
@@ -218,7 +230,11 @@ export default function ClientFormModal({
                                 <input
                                     type="text"
                                     value={formData.customer_tin}
-                                    onChange={(e) => setFormData((prev: ClientFormData) => ({ ...prev, customer_tin: e.target.value }))}
+                                    onChange={(e) => {
+                                        const raw = e.target.value.replace(/\D/g, "");
+                                        const limited = raw.slice(0, 12);
+                                        setFormData((prev: ClientFormData) => ({ ...prev, customer_tin: limited }));
+                                    }}
                                     placeholder="e.g. 000-123-456-000"
                                     className="w-full bg-background border rounded-lg px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary font-mono font-bold"
                                 />
@@ -331,7 +347,11 @@ export default function ClientFormModal({
                                 <input
                                     type="text"
                                     value={formData.contact_number}
-                                    onChange={(e) => setFormData((prev: ClientFormData) => ({ ...prev, contact_number: e.target.value }))}
+                                    onChange={(e) => {
+                                        const raw = e.target.value.replace(/\D/g, "");
+                                        const limited = raw.slice(0, 11);
+                                        setFormData((prev: ClientFormData) => ({ ...prev, contact_number: limited }));
+                                    }}
                                     placeholder="e.g. 0917-123-4567 or 8888-8888"
                                     className="w-full bg-background border rounded-lg px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary font-mono font-bold"
                                 />

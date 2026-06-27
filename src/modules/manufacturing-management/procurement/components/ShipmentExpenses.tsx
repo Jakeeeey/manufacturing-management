@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { IncomingShipment, ShipmentLineItem, ShipmentExpense } from "../types";
+import { CreatableSelect } from "../../finished-goods/components/CreatableSelect";
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { Landmark, Plus, Scale, DollarSign, Layers, Anchor, AlertCircle, Info, Calculator, Check, ArrowRight } from "lucide-react";
 
@@ -264,20 +265,16 @@ export default function ShipmentExpenses({
                                     {allocationForm.expenses.map((exp: any, idx: number) => (
                                         <div key={idx} className="flex gap-3 items-center">
                                             <div className="flex-1">
-                                                <select
-                                                    value={exp.overhead_id || ""}
-                                                    required
-                                                    onChange={e => handleExpenseChange(idx, "overhead_id", e.target.value)}
-                                                    className="w-full rounded-lg border bg-background px-3 py-1.5 text-xs text-foreground font-semibold h-9"
-                                                >
-                                                    <option value="">-- Select Charge Type --</option>
-{/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                                                    {overheadTypes.map((ot: any) => (
-                                                        <option key={ot.id} value={ot.id}>
-                                                            {ot.overhead_name}
-                                                        </option>
-                                                    ))}
-                                                </select>
+                                                <CreatableSelect
+                                                    options={overheadTypes.map((ot) => ({
+                                                        value: String(ot.id),
+                                                        label: ot.overhead_name
+                                                    }))}
+                                                    value={exp.overhead_id ? String(exp.overhead_id) : ""}
+                                                    onValueChange={(val) => handleExpenseChange(idx, "overhead_id", val)}
+                                                    placeholder="Select Charge Type..."
+                                                    className="h-9 text-xs w-full bg-background font-semibold"
+                                                />
                                             </div>
 
                                             <div className="w-1/3">

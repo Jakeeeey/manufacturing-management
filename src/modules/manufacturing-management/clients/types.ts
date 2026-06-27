@@ -12,6 +12,7 @@ export interface Customer {
     customer_email?: string;
     store_name?: string;
     store_type_id?: number | string | { id: number | string; store_type: string };
+    store_type?: number | string | { id: number | string; store_type: string };
     brgy?: string;
     city?: string;
     province?: string;

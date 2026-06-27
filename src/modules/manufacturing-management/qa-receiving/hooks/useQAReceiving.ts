@@ -83,6 +83,22 @@ export function useQAReceiving() {
         setSelectedShipment(shipment);
         setLoadingLines(true);
         try {
+            // Auto transition status to "Receiving (QA)" when opened/inspected
+            if (shipment.status !== "Receiving (QA)" && shipment.status !== "Received") {
+                try {
+                    await fetch("/api/manufacturing/procurement/shipments", {
+                        method: "PATCH",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ shipmentId: shipment.shipment_id, status: "Receiving (QA)" })
+                    });
+                    // Update state locally
+                    setShipments(prev => prev.map(s => s.shipment_id === shipment.shipment_id ? { ...s, status: "Receiving (QA)" } : s));
+                    shipment.status = "Receiving (QA)";
+                } catch (err) {
+                    console.error("Failed to auto-transition shipment status to Receiving (QA):", err);
+                }
+            }
+
             const lines = await fetchShipmentDetails(shipment.shipment_id);
             setLineItems(lines);
 
