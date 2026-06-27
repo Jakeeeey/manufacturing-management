@@ -16,9 +16,11 @@ export interface UOMScale {
 export interface ConversionLog {
     id: string;
     timestamp: string;
+    createdAt?: string;
     oilType: string;
     value: number;
     fromUnit: string;
     result: number;
     toUnit: string;
 }
+

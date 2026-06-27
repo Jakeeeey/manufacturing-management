@@ -69,6 +69,10 @@ export async function GET(request: Request) {
         });
 
         // Resolve calculateRollupCost helper
+        const productsMap = new Map<number, DirectusProduct>();
+        products.forEach((p) => {
+            productsMap.set(Number(p.product_id), p);
+        });
 
         // Use Promise.all to compute dynamic rollup cost for each product concurrently
         const resolvedProducts = await Promise.all(products.map(async (p: DirectusProduct) => {
@@ -81,9 +85,16 @@ export async function GET(request: Request) {
                 return productCopy;
             }
 
+            // Skip calculateRollupCost if the product has no versions (meaning it cannot have an active BOM)
+            if (!productCopy.has_versions) {
+                productCopy.cost_per_unit = 0;
+                productCopy.has_cogs = false;
+                return productCopy;
+            }
+
             try {
                 // Get rolled up cost (COGS) using current active BOM recipe & routings
-                const costRollup = await calculateRollupCost(p.product_id);
+                const costRollup = await calculateRollupCost(p.product_id, new Set(), productsMap, 58.00, profilesMap);
                 if (costRollup && costRollup.bomId !== null) {
                     productCopy.cost_per_unit = costRollup.totalBaseCost;
                     productCopy.has_cogs = true;

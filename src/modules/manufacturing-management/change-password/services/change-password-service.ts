@@ -90,6 +90,20 @@ export class ChangePasswordService {
 
         let response: Response;
 
+        const getErrorMessage = async (res: Response, defaultMsg: string) => {
+            try {
+                const body = await res.json();
+                if (body && typeof body === "object") {
+                    if (body.message) return String(body.message);
+                    const values = Object.values(body);
+                    if (values.length > 0) return values.join(", ");
+                }
+            } catch {
+                // Ignore
+            }
+            return defaultMsg;
+        };
+
         if (!springToken) {
             springToken = await this.login(email, data.oldPassword) ?? undefined;
             if (!springToken) return { success: false, message: "Current password is incorrect. Please try again." };
@@ -100,18 +114,13 @@ export class ChangePasswordService {
 
         response = await performRequest(springToken);
 
-        // 3. Retry if unauthorized (token might be expired)
-        if (response.status !== 200) {
+        // 3. Retry if unauthorized (token might be expired, but only on 401/403)
+        if (response.status === 401 || response.status === 403) {
             console.log("Spring token likely expired or invalid, retrying login...");
             springToken = await this.login(email, data.oldPassword) ?? undefined;
             if (springToken) {
                 cookieStore.set(SPRING_COOKIE_NAME, springToken, { path: "/", httpOnly: true });
                 response = await performRequest(springToken);
-            } else {
-                return {
-                    success: false,
-                    message: "Current password is incorrect. Please try again."
-                };
             }
         }
 
@@ -119,9 +128,10 @@ export class ChangePasswordService {
             return { success: true, message: "Password updated successfully" };
         }
 
+        const errMsg = await getErrorMessage(response, "Current password is incorrect. Please try again.");
         return {
             success: false,
-            message: "Current password is incorrect. Please try again."
+            message: errMsg
         };
     }
 }

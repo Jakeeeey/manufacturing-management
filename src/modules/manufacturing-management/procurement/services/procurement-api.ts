@@ -1,4 +1,4 @@
-import { Supplier, IncomingShipment, ShipmentLineItem, ShipmentExpense, RawMaterial } from "../types";
+import { Supplier, IncomingShipment, ShipmentLineItem, ShipmentExpense, RawMaterial, LinkedProduct, PSGCItem } from "../types";
 
 async function handleResponse(res: Response, fallbackMessage: string) {
     if (!res.ok) {
@@ -17,8 +17,7 @@ export async function fetchSuppliers(): Promise<Supplier[]> {
     return handleResponse(res, "Failed to fetch suppliers");
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function createSupplier(supplierData: Partial<Supplier>): Promise<any> {
+export async function createSupplier(supplierData: Partial<Supplier>): Promise<unknown> {
     const res = await fetch("/api/manufacturing/procurement/suppliers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -37,8 +36,7 @@ export async function fetchShipmentLineItems(shipmentId: number): Promise<Shipme
     return handleResponse(res, "Failed to fetch shipment line items");
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function createShipment(shipmentData: Partial<IncomingShipment>, lineItems: any[]): Promise<any> {
+export async function createShipment(shipmentData: Partial<IncomingShipment>, lineItems: unknown[]): Promise<unknown> {
     const res = await fetch("/api/manufacturing/procurement/shipments", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -57,10 +55,8 @@ export async function saveAndAllocateExpenses(
     status: string,
     expenses: Partial<ShipmentExpense>[],
     allocationMethod: string,
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-    lineItemUpdates?: any[]
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-): Promise<any> {
+    lineItemUpdates?: unknown[]
+): Promise<unknown> {
     const res = await fetch("/api/manufacturing/procurement/expenses", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -75,10 +71,10 @@ export async function fetchRawMaterials(): Promise<RawMaterial[]> {
     const products = await res.json();
     
     // Filter to exclude finished goods (which have versions)
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const rawItems = products.filter((p: any) => !p.has_versions);
     
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return rawItems.map((p: any) => ({
         product_id: p.product_id,
         parent_id: p.parent_id ? (typeof p.parent_id === "object" ? p.parent_id.product_id : p.parent_id) : null,
@@ -120,8 +116,7 @@ export async function registerRawMaterial(
     return handleResponse(res, "Failed to register raw material");
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function updateShipmentStatus(shipmentId: number, status: string): Promise<any> {
+export async function updateShipmentStatus(shipmentId: number, status: string): Promise<unknown> {
     const res = await fetch("/api/manufacturing/procurement/shipments", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -130,3 +125,90 @@ export async function updateShipmentStatus(shipmentId: number, status: string): 
     return handleResponse(res, "Failed to update shipment status");
 }
 
+export async function updateSupplier(supplierId: number, supplierData: Partial<Supplier>): Promise<unknown> {
+    const res = await fetch("/api/manufacturing/procurement/suppliers", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: supplierId, ...supplierData })
+    });
+    return handleResponse(res, "Failed to update supplier");
+}
+
+export async function fetchLinkedProducts(supplierId: number): Promise<LinkedProduct[]> {
+    const res = await fetch(`/api/manufacturing/procurement/suppliers/products?supplierId=${supplierId}`);
+    return handleResponse(res, "Failed to fetch linked products");
+}
+
+export async function linkProductToSupplier(supplierId: number, productId: number): Promise<unknown> {
+    const res = await fetch("/api/manufacturing/procurement/suppliers/products", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ supplierId, productId })
+    });
+    return handleResponse(res, "Failed to link product to supplier");
+}
+
+export async function unlinkProductFromSupplier(linkId: number): Promise<unknown> {
+    const res = await fetch(`/api/manufacturing/procurement/suppliers/products?linkId=${linkId}`, {
+        method: "DELETE"
+    });
+    return handleResponse(res, "Failed to unlink product from supplier");
+}
+
+interface PSGCResponseItem {
+    code: string;
+    name: string;
+}
+
+export async function fetchPHProvinces(): Promise<PSGCItem[]> {
+    try {
+        const res = await fetch("https://psgc.gitlab.io/api/provinces/", { cache: "force-cache" });
+        if (!res.ok) throw new Error("Failed to fetch provinces");
+        const data = await res.json();
+        
+        const list = Array.isArray(data) ? data : [];
+        return list.map((item: PSGCResponseItem) => ({
+            code: item.code,
+            name: item.name
+        })).sort((a, b) => a.name.localeCompare(b.name));
+    } catch (e) {
+        console.error("[PSGC API] Error loading provinces:", e);
+        return [];
+    }
+}
+
+export async function fetchPHCities(provinceCode: string): Promise<PSGCItem[]> {
+    if (!provinceCode) return [];
+    try {
+        const res = await fetch(`https://psgc.gitlab.io/api/provinces/${provinceCode}/cities-municipalities/`, { cache: "force-cache" });
+        if (!res.ok) throw new Error("Failed to fetch cities");
+        const data = await res.json();
+        
+        const list = Array.isArray(data) ? data : [];
+        return list.map((item: PSGCResponseItem) => ({
+            code: item.code,
+            name: item.name
+        })).sort((a, b) => a.name.localeCompare(b.name));
+    } catch (e) {
+        console.error(`[PSGC API] Error loading cities for province ${provinceCode}:`, e);
+        return [];
+    }
+}
+
+export async function fetchPHBarangays(cityCode: string): Promise<PSGCItem[]> {
+    if (!cityCode) return [];
+    try {
+        const res = await fetch(`https://psgc.gitlab.io/api/cities-municipalities/${cityCode}/barangays/`, { cache: "force-cache" });
+        if (!res.ok) throw new Error("Failed to fetch barangays");
+        const data = await res.json();
+        
+        const list = Array.isArray(data) ? data : [];
+        return list.map((item: PSGCResponseItem) => ({
+            code: item.code,
+            name: item.name
+        })).sort((a, b) => a.name.localeCompare(b.name));
+    } catch (e) {
+        console.error(`[PSGC API] Error loading barangays for city ${cityCode}:`, e);
+        return [];
+    }
+}

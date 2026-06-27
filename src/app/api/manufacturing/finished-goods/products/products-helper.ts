@@ -10,15 +10,26 @@ import { getActiveBOMForProduct } from "../versions/versions-helper";
 /**
  * Fetches the latest landed unit cost for a raw ingredient based on recent shipment logs.
  */
-export async function getLatestLandedCost(productId: number, forexRate: number = 58.00): Promise<number> {
+export async function getLatestLandedCost(
+    productId: number, 
+    forexRate: number = 58.00,
+    profilesMap?: Map<number, DirectusProductCurrencyProfile>,
+    productsMap?: Map<number, DirectusProduct>
+): Promise<number> {
     try {
-        const resProfile = await fetch(`${DIRECTUS_URL}/items/product_currency_profiles?filter[product_id][_eq]=${productId}&limit=1`, { headers, cache: "no-store" });
-        if (resProfile.ok) {
-            const profileJson = await resProfile.json();
-            const profile = profileJson.data?.[0];
-            if (profile && profile.is_foreign_sourced && profile.purchase_currency === "USD" && profile.purchase_price) {
-                return Number(profile.purchase_price) * forexRate;
+        let profile: DirectusProductCurrencyProfile | undefined = undefined;
+        if (profilesMap) {
+            profile = profilesMap.get(productId);
+        } else {
+            const resProfile = await fetch(`${DIRECTUS_URL}/items/product_currency_profiles?filter[product_id][_eq]=${productId}&limit=1`, { headers, cache: "no-store" });
+            if (resProfile.ok) {
+                const profileJson = await resProfile.json();
+                profile = profileJson.data?.[0];
             }
+        }
+
+        if (profile && profile.is_foreign_sourced && profile.purchase_currency === "USD" && profile.purchase_price) {
+            return Number(profile.purchase_price) * forexRate;
         }
 
         const query = encodeURIComponent(JSON.stringify({
@@ -39,6 +50,13 @@ export async function getLatestLandedCost(productId: number, forexRate: number =
             }
         }
         
+        if (productsMap) {
+            const cachedProd = productsMap.get(productId);
+            if (cachedProd) {
+                return Number(cachedProd.cost_per_unit || cachedProd.price_per_unit || 0);
+            }
+        }
+
         const resProd = await fetch(`${DIRECTUS_URL}/items/products/${productId}?fields=price_per_unit,cost_per_unit`, { headers });
         if (resProd.ok) {
             const jsonProd = await resProd.json();
@@ -50,6 +68,7 @@ export async function getLatestLandedCost(productId: number, forexRate: number =
         return 0;
     }
 }
+
 
 /**
  * Fetches all products.
@@ -114,7 +133,8 @@ export async function calculateRollupCost(
     productId: number,
     visited: Set<number> = new Set(),
     productsMap?: Map<number, DirectusProduct>,
-    forexRate: number = 58.00
+    forexRate: number = 58.00,
+    profilesMap?: Map<number, DirectusProductCurrencyProfile>
 ): Promise<CostRollupResult> {
     const defaultResult = (pName = "Unknown Product", sku = ""): CostRollupResult => ({
         productId,
@@ -155,7 +175,7 @@ export async function calculateRollupCost(
     const currentProduct = productsMap.get(productId)!;
     const { bom, components, routings } = await getActiveBOMForProduct(productId);
     if (!bom) {
-        const landedCost = await getLatestLandedCost(productId, forexRate);
+        const landedCost = await getLatestLandedCost(productId, forexRate, profilesMap, productsMap);
         return {
             ...defaultResult(currentProduct.product_name, currentProduct.product_code),
             totalBaseCost: landedCost,
@@ -183,11 +203,11 @@ export async function calculateRollupCost(
         if (comp.landed_cost && Number(comp.landed_cost) > 0) {
             compUnitCost = Number(comp.landed_cost);
         } else if (comp.component_type === "sub_assembly") {
-            const subResult = await calculateRollupCost(comp.component_product_id, new Set(visited), productsMap, forexRate);
+            const subResult = await calculateRollupCost(comp.component_product_id, new Set(visited), productsMap, forexRate, profilesMap);
             compUnitCost = subResult.totalBaseCost;
             childrenNodes = subResult.costTree;
         } else {
-            compUnitCost = await getLatestLandedCost(comp.component_product_id, forexRate);
+            compUnitCost = await getLatestLandedCost(comp.component_product_id, forexRate, profilesMap, productsMap);
         }
 
         const wastageFactor = 1 - (comp.wastage_factor_percentage / 100);

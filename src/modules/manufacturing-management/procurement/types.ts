@@ -7,6 +7,7 @@ export interface Supplier {
     email_address?: string;
     address?: string;
     city?: string;
+    brgy?: string;
     state_province?: string;
     country?: string;
     postal_code?: string;
@@ -76,4 +77,24 @@ export interface RawMaterial {
     density_factor: number;
     date_added?: string;
     last_updated?: string;
+}
+
+export interface LinkedProduct {
+    id: number;
+    supplier_id: number;
+    product_id?: {
+        id: number;
+        product_code?: string;
+        product_name?: string;
+        description?: string;
+        unit_of_measurement?: {
+            id: number;
+            uom_name?: string;
+        };
+    };
+}
+
+export interface PSGCItem {
+    code: string;
+    name: string;
 }

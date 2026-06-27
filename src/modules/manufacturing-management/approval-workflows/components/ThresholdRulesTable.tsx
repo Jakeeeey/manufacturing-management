@@ -62,6 +62,24 @@ export function ThresholdRulesTable({
             return;
         }
 
+        // Prevent identical overlapping active rules from being saved
+        if (isActive) {
+            const isDuplicate = rules.some((r) => {
+                if (editingRule?.id && r.id === editingRule.id) return false;
+                return (
+                    r.is_active &&
+                    r.min_margin === marginNum &&
+                    r.action === action &&
+                    r.role_required === roleRequired
+                );
+            });
+
+            if (isDuplicate) {
+                alert("An active rule with this threshold trigger already exists.");
+                return;
+            }
+        }
+
         const payload: Partial<ThresholdRule> = {
             min_margin: marginNum,
             action,
@@ -82,6 +100,24 @@ export function ThresholdRulesTable({
     };
 
     const handleToggleActive = async (rule: ThresholdRule) => {
+        // If enabling rule (currently inactive -> active), check for duplicates
+        if (!rule.is_active) {
+            const isDuplicate = rules.some((r) => {
+                if (r.id === rule.id) return false;
+                return (
+                    r.is_active &&
+                    r.min_margin === rule.min_margin &&
+                    r.action === rule.action &&
+                    r.role_required === rule.role_required
+                );
+            });
+
+            if (isDuplicate) {
+                alert("An active rule with this threshold trigger already exists.");
+                return;
+            }
+        }
+
         await onSaveRule({
             ...rule,
             is_active: !rule.is_active
@@ -202,11 +238,6 @@ export function ThresholdRulesTable({
                                 <p className="mt-1 text-xs opacity-90 leading-relaxed">
                                     {simulationResult.message}
                                 </p>
-                                {simulationResult.rule && (
-                                    <div className="mt-2 text-[11px] font-mono opacity-80">
-                                        Triggered Rule ID: {simulationResult.rule.id} | Limit: &lt; {simulationResult.rule.min_margin}%
-                                    </div>
-                                )}
                             </div>
                         </div>
                     </div>
@@ -245,7 +276,6 @@ export function ThresholdRulesTable({
                         <table className="w-full border-collapse text-left text-sm">
                             <thead>
                                 <tr className="border-b bg-muted/30 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                                    <th className="px-5 py-3">ID</th>
                                     <th className="px-5 py-3">Gross Margin Trigger</th>
                                     <th className="px-5 py-3">Action Type</th>
                                     <th className="px-5 py-3">Required Sign-Off</th>
@@ -259,7 +289,6 @@ export function ThresholdRulesTable({
                                     .sort((a, b) => b.min_margin - a.min_margin) // sort highest margins first
                                     .map((rule) => (
                                         <tr key={rule.id} className="hover:bg-muted/10 transition-colors">
-                                            <td className="px-5 py-4 font-mono text-xs">{rule.id}</td>
                                             <td className="px-5 py-4">
                                                 <span className="font-semibold text-rose-600 dark:text-rose-400">
                                                     &lt; {rule.min_margin}%

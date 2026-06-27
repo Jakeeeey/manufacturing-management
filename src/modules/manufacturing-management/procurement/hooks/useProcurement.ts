@@ -11,7 +11,8 @@ import {
     saveAndAllocateExpenses, 
     fetchRawMaterials,
     updateShipmentStatus,
-    registerRawMaterial
+    registerRawMaterial,
+    updateSupplier
 } from "../services/procurement-api";
 
 export function useProcurement(defaultTab: string = "suppliers") {
@@ -34,6 +35,7 @@ export function useProcurement(defaultTab: string = "suppliers") {
     const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
 
     // Forms
+    const [supplierError, setSupplierError] = useState<string | null>(null);
     const [supplierForm, setSupplierForm] = useState({
         supplier_name: "",
         supplier_shortcut: "",
@@ -42,14 +44,30 @@ export function useProcurement(defaultTab: string = "suppliers") {
         email_address: "",
         address: "",
         city: "",
+        brgy: "",
         state_province: "",
         country: "Philippines",
         postal_code: "",
         contact_person: "",
         payment_terms: "Cash On Delivery",
         delivery_terms: "Delivery",
+        currency: "PHP",
         notes_or_comments: ""
     });
+
+    const [isEditingSupplier, setIsEditingSupplier] = useState(false);
+    const [editingSupplierId, setEditingSupplierId] = useState<number | null>(null);
+
+    // Reset error & editing status when supplier modal opens/closes
+    useEffect(() => {
+        if (isSupplierModalOpen) {
+            setSupplierError(null);
+        } else {
+            setSupplierError(null);
+            setIsEditingSupplier(false);
+            setEditingSupplierId(null);
+        }
+    }, [isSupplierModalOpen]);
 
     const [shipmentForm, setShipmentForm] = useState({
         reference_number: "",
@@ -167,16 +185,62 @@ export function useProcurement(defaultTab: string = "suppliers") {
         }
     }
 
+    function parseCreationError(errorMsg: string): string {
+        const msg = errorMsg.toLowerCase();
+        if (msg.includes("supplier_name") || msg.includes("name already exists") || msg.includes("unique") && msg.includes("name")) {
+            return "This Supplier Name already exists. Please choose a unique name.";
+        }
+        if (msg.includes("tin_number") || msg.includes("tin already registered") || msg.includes("unique") && msg.includes("tin")) {
+            return "This TIN Number is already registered. Please enter a unique TIN.";
+        }
+        if (msg.includes("supplier_shortcut") || msg.includes("shortcut") || msg.includes("code") && msg.includes("unique")) {
+            return "This Supplier Code already exists. Please choose a unique code.";
+        }
+        return errorMsg;
+    }
+
     const handleCreateSupplier = async (e: React.FormEvent) => {
         e.preventDefault();
+        setSupplierError(null);
         if (!supplierForm.supplier_name.trim()) {
-            toast.error("Supplier Name is required");
+            setSupplierError("Supplier Corporate Name is required");
+            toast.error("Supplier Corporate Name is required");
             return;
         }
+        if (!supplierForm.supplier_shortcut.trim()) {
+            setSupplierError("Supplier Code/Shortcut is required");
+            toast.error("Supplier Code/Shortcut is required");
+            return;
+        }
+        if (!supplierForm.address.trim()) {
+            setSupplierError("Business Street Address is required");
+            toast.error("Business Street Address is required");
+            return;
+        }
+
         try {
-            await createSupplier(supplierForm);
-            toast.success("Supplier created successfully");
+            // Destructure currency so we do not send it directly to database (avoiding column error)
+            const { currency, ...restOfSupplier } = supplierForm;
+            const notes = restOfSupplier.notes_or_comments || "";
+            const currencyTag = `[Currency: ${currency || "PHP"}]`;
+            const finalNotes = notes.trim() ? `${notes.trim()}\n\n${currencyTag}` : currencyTag;
+            
+            const payload = {
+                ...restOfSupplier,
+                notes_or_comments: finalNotes
+            };
+
+            if (isEditingSupplier && editingSupplierId) {
+                await updateSupplier(editingSupplierId, payload);
+                toast.success("Supplier updated successfully");
+            } else {
+                await createSupplier(payload);
+                toast.success("Supplier created successfully");
+            }
+
             setIsSupplierModalOpen(false);
+            setIsEditingSupplier(false);
+            setEditingSupplierId(null);
             setSupplierForm({
                 supplier_name: "",
                 supplier_shortcut: "",
@@ -185,19 +249,55 @@ export function useProcurement(defaultTab: string = "suppliers") {
                 email_address: "",
                 address: "",
                 city: "",
+                brgy: "",
                 state_province: "",
                 country: "Philippines",
                 postal_code: "",
                 contact_person: "",
                 payment_terms: "Cash On Delivery",
                 delivery_terms: "Delivery",
+                currency: "PHP",
                 notes_or_comments: ""
             });
+            setSupplierError(null);
             loadSuppliers();
         } catch (e) {
             console.error(e);
-            toast.error("Failed to create supplier");
+            const rawMsg = (e as Error).message || "Failed to submit supplier";
+            const userFriendlyMsg = parseCreationError(rawMsg);
+            setSupplierError(userFriendlyMsg);
+            toast.error(userFriendlyMsg);
         }
+    };
+
+    const handleStartEditSupplier = (supplier: Supplier) => {
+        const notes = supplier.notes_or_comments || "";
+        const match = notes.match(/\[Currency:\s*(\w+)\]/);
+        const currency = match ? match[1] : "PHP";
+        const cleanNotes = notes.replace(/\[Currency:\s*\w+\]/, "").trim();
+
+        setSupplierForm({
+            supplier_name: supplier.supplier_name || "",
+            supplier_shortcut: supplier.supplier_shortcut || "",
+            tin_number: supplier.tin_number || "",
+            phone_number: supplier.phone_number || "",
+            email_address: supplier.email_address || "",
+            address: supplier.address || "",
+            city: supplier.city || "",
+            brgy: supplier.brgy || "",
+            state_province: supplier.state_province || "",
+            country: supplier.country || "Philippines",
+            postal_code: supplier.postal_code || "",
+            contact_person: supplier.contact_person || "",
+            payment_terms: supplier.payment_terms || "Cash On Delivery",
+            delivery_terms: supplier.delivery_terms || "Delivery",
+            currency: currency,
+            notes_or_comments: cleanNotes
+        });
+
+        setIsEditingSupplier(true);
+        setEditingSupplierId(supplier.id);
+        setIsSupplierModalOpen(true);
     };
 
     const handleCreateShipment = async (e: React.FormEvent) => {
@@ -378,12 +478,17 @@ export function useProcurement(defaultTab: string = "suppliers") {
         setIsExpenseModalOpen,
         supplierForm,
         setSupplierForm,
+        supplierError,
+        setSupplierError,
         shipmentForm,
         setShipmentForm,
         shipmentLinesForm,
         setShipmentLinesForm,
         expenseAllocationForm,
         setExpenseAllocationForm,
+        isEditingSupplier,
+        editingSupplierId,
+        handleStartEditSupplier,
         handleCreateSupplier,
         handleCreateShipment,
         handleAllocateExpenses,
