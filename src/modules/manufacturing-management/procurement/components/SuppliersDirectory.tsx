@@ -21,6 +21,21 @@ interface SuppliersDirectoryProps {
     rawMaterials?: RawMaterial[];
 }
 
+export interface LinkedProduct {
+    id: number;
+    supplier_id: number;
+    product_id?: {
+        id: number;
+        product_code?: string;
+        product_name?: string;
+        description?: string;
+        unit_of_measurement?: {
+            id: number;
+            uom_name?: string;
+        };
+    };
+}
+
 const getCurrencyFromNotes = (notes: string | null | undefined): string => {
     if (!notes) return "PHP";
     const match = notes.match(/\[Currency:\s*(\w+)\]/);
@@ -104,6 +119,7 @@ export default function SuppliersDirectory({
         setCities([]);
         setBarangays([]);
         
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         setSupplierForm((prev: any) => ({
             ...prev,
             state_province: name,
@@ -128,6 +144,7 @@ export default function SuppliersDirectory({
         setSelectedBarangayCode("");
         setBarangays([]);
         
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         setSupplierForm((prev: any) => ({
             ...prev,
             city: name,
@@ -149,13 +166,14 @@ export default function SuppliersDirectory({
         
         setSelectedBarangayCode(code);
         
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         setSupplierForm((prev: any) => ({
             ...prev,
             brgy: name
         }));
     };
 
-    const [linkedProducts, setLinkedProducts] = useState<any[]>([]);
+    const [linkedProducts, setLinkedProducts] = useState<LinkedProduct[]>([]);
     const [loadingLinkedProducts, setLoadingLinkedProducts] = useState(false);
 
     const [isLinkingOpen, setIsLinkingOpen] = useState(false);
@@ -464,7 +482,7 @@ export default function SuppliersDirectory({
                                 </div>
                             ) : (
                                 <div className="grid gap-2 sm:grid-cols-2">
-                                    {linkedProducts.map((lp: any) => (
+                                    {linkedProducts.map((lp: LinkedProduct) => (
                                         <div key={lp.id} className="border rounded-xl p-3 flex items-center justify-between bg-muted/10">
                                             <div className="space-y-1 min-w-0 pr-2">
                                                 <div className="flex items-center gap-1.5">

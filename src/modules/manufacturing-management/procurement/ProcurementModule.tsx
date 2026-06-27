@@ -2,8 +2,7 @@
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 import React, { useState } from "react";
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-import { useSearchParams, useRouter } from "next/navigation";
+
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { Building2, Anchor, Landmark, Layers, Briefcase, Plus, Loader2 } from "lucide-react";
 import SuppliersDirectory from "./components/SuppliersDirectory";
@@ -17,10 +16,9 @@ interface ProcurementModuleProps {
 }
 
 export default function ProcurementModule({ initialTab = "suppliers" }: ProcurementModuleProps) {
-    const router = useRouter();
+
     const {
         activeTab,
-        setActiveTab,
         loading,
         suppliers,
         shipments,
@@ -52,12 +50,6 @@ export default function ProcurementModule({ initialTab = "suppliers" }: Procurem
         handleUpdateShipmentStatus,
         handleRegisterRawMaterial
     } = useProcurement(initialTab);
-
-    const handleTabChange = (tabId: string) => {
-        setActiveTab(tabId);
-        // Seamlessly update route URL
-        router.push(`/mm/${tabId}`);
-    };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const handleTriggerExpenseAllocation = (shipment: any) => {

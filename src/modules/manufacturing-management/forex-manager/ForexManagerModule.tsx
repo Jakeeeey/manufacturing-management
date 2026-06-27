@@ -5,6 +5,12 @@ import React, { useState, useEffect } from "react";
 import { RefreshCw, Save, DollarSign, Calendar, TrendingUp, ShieldAlert, BadgeHelp } from "lucide-react";
 import { toast } from "sonner";
 
+interface ForexHistoryLog {
+    date: string;
+    rate: number;
+    status: string;
+}
+
 export default function ForexManagerModule() {
     const [liveRate, setLiveRate] = useState<number | null>(null);
     const [lockedRate, setLockedRate] = useState<string>(() => {
@@ -37,7 +43,7 @@ export default function ForexManagerModule() {
     const [loading, setLoading] = useState(false);
     
     // Rate history list with localStorage persistence
-    const [rateHistory, setRateHistory] = useState(() => {
+    const [rateHistory, setRateHistory] = useState<ForexHistoryLog[]>(() => {
         if (typeof window !== "undefined") {
             const saved = localStorage.getItem("vos_forex_rate_history");
             if (saved) {
@@ -248,7 +254,7 @@ export default function ForexManagerModule() {
                             Lock / Update Log
                         </h3>
                         <div className="space-y-3">
-                            {rateHistory.map((item: any, idx: number) => (
+                            {rateHistory.map((item: ForexHistoryLog, idx: number) => (
                                 <div key={idx} className="flex items-center justify-between text-xs p-3 border rounded-lg bg-muted/10 font-semibold">
                                     <div className="space-y-0.5">
                                         <span className="text-[10px] text-muted-foreground block">{item.date}</span>

@@ -26,7 +26,6 @@ export default function UOMConversionsModule() {
         handleAddDensity,
         handleDeleteDensity,
         handleRunCalculation,
-        clearLogs,
         activeOil,
         previewResult
     } = useUOMConversions();

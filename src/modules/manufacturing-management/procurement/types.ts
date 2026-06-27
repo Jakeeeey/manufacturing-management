@@ -78,3 +78,18 @@ export interface RawMaterial {
     date_added?: string;
     last_updated?: string;
 }
+
+export interface LinkedProduct {
+    id: number;
+    supplier_id: number;
+    product_id?: {
+        id: number;
+        product_code?: string;
+        product_name?: string;
+        description?: string;
+        unit_of_measurement?: {
+            id: number;
+            uom_name?: string;
+        };
+    };
+}

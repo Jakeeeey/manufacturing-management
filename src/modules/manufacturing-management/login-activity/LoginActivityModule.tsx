@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { ShieldCheck, AlertTriangle, Monitor, Globe, Clock, User, Filter, ArrowDownWideNarrow } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import React, { useState } from "react";
+import { ShieldCheck, AlertTriangle, Monitor, Globe, Clock, User, ArrowDownWideNarrow } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 interface LoginActivityRecord {
     id: string;
@@ -15,16 +15,12 @@ interface LoginActivityRecord {
 }
 
 export default function LoginActivityModule() {
-    const [activities, setActivities] = useState<LoginActivityRecord[]>([]);
-
-    useEffect(() => {
-        // Load existing logs or generate realistic history
+    const [activities] = useState<LoginActivityRecord[]>(() => {
         if (typeof window !== "undefined") {
             const saved = localStorage.getItem("vos_login_activity_logs");
             if (saved) {
                 try {
-                    setActivities(JSON.parse(saved));
-                    return;
+                    return JSON.parse(saved);
                 } catch (e) {
                     console.error("Failed to parse activity logs", e);
                 }
@@ -104,10 +100,11 @@ export default function LoginActivityModule() {
                 }
             ];
 
-            setActivities(seedData);
             localStorage.setItem("vos_login_activity_logs", JSON.stringify(seedData));
+            return seedData;
         }
-    }, []);
+        return [];
+    });
 
     // Summary calculations
     const successCount = activities.filter(a => a.status === "Success").length;

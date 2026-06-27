@@ -6,6 +6,11 @@ export interface PSGCItem {
     name: string;
 }
 
+interface PSGCResponseItem {
+    code: string;
+    name: string;
+}
+
 export async function fetchPHProvinces(): Promise<PSGCItem[]> {
     try {
         const res = await fetch("https://psgc.gitlab.io/api/provinces/", { cache: "force-cache" });
@@ -14,7 +19,7 @@ export async function fetchPHProvinces(): Promise<PSGCItem[]> {
         
         // Ensure data is array and map properly
         const list = Array.isArray(data) ? data : [];
-        return list.map((item: any) => ({
+        return list.map((item: PSGCResponseItem) => ({
             code: item.code,
             name: item.name
         })).sort((a, b) => a.name.localeCompare(b.name));
@@ -32,7 +37,7 @@ export async function fetchPHCities(provinceCode: string): Promise<PSGCItem[]> {
         const data = await res.json();
         
         const list = Array.isArray(data) ? data : [];
-        return list.map((item: any) => ({
+        return list.map((item: PSGCResponseItem) => ({
             code: item.code,
             name: item.name
         })).sort((a, b) => a.name.localeCompare(b.name));
@@ -50,7 +55,7 @@ export async function fetchPHBarangays(cityCode: string): Promise<PSGCItem[]> {
         const data = await res.json();
         
         const list = Array.isArray(data) ? data : [];
-        return list.map((item: any) => ({
+        return list.map((item: PSGCResponseItem) => ({
             code: item.code,
             name: item.name
         })).sort((a, b) => a.name.localeCompare(b.name));
