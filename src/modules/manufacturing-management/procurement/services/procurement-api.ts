@@ -1,4 +1,4 @@
-import { Supplier, IncomingShipment, ShipmentExpense, RawMaterial, LinkedProduct } from "../types";
+import { Supplier, IncomingShipment, ShipmentLineItem, ShipmentExpense, RawMaterial, LinkedProduct } from "../types";
 
 async function handleResponse(res: Response, fallbackMessage: string) {
     if (!res.ok) {
@@ -29,6 +29,11 @@ export async function createSupplier(supplierData: Partial<Supplier>): Promise<u
 export async function fetchShipments(): Promise<IncomingShipment[]> {
     const res = await fetch("/api/manufacturing/procurement/shipments");
     return handleResponse(res, "Failed to fetch shipments");
+}
+
+export async function fetchShipmentLineItems(shipmentId: number): Promise<ShipmentLineItem[]> {
+    const res = await fetch(`/api/manufacturing/procurement/shipments?shipmentId=${shipmentId}`);
+    return handleResponse(res, "Failed to fetch shipment line items");
 }
 
 export async function createShipment(shipmentData: Partial<IncomingShipment>, lineItems: unknown[]): Promise<unknown> {

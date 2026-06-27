@@ -446,9 +446,9 @@ export default function SuppliersDirectory({
                                     >
                                         <option key="default" value="">-- Select Product to Link --</option>
                                         {rawMaterials.filter(rm => 
-                                            !linkedProducts.some(lp => lp.product_id?.id === rm.id)
+                                            !linkedProducts.some(lp => lp.product_id?.id === rm.product_id)
                                         ).map(rm => (
-                                            <option key={rm.id} value={rm.id}>
+                                            <option key={rm.product_id} value={rm.product_id}>
                                                 {rm.product_code ? `[${rm.product_code}] ` : ""}{rm.product_name}
                                             </option>
                                         ))}
