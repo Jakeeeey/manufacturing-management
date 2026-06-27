@@ -7,6 +7,7 @@ export interface Supplier {
     email_address?: string;
     address?: string;
     city?: string;
+    brgy?: string;
     state_province?: string;
     country?: string;
     postal_code?: string;

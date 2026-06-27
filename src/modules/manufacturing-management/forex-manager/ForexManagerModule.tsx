@@ -19,14 +19,48 @@ export default function ForexManagerModule() {
         }
         return false;
     });
+    
+    // Tracking saved values to disable Apply button when unchanged
+    const [savedLockedRate, setSavedLockedRate] = useState<string>(() => {
+        if (typeof window !== "undefined") {
+            return localStorage.getItem("vos_locked_forex_rate") || "58.00";
+        }
+        return "58.00";
+    });
+    const [savedUseLiveRate, setSavedUseLiveRate] = useState<boolean>(() => {
+        if (typeof window !== "undefined") {
+            return localStorage.getItem("vos_use_live_forex") === "true";
+        }
+        return false;
+    });
+
     const [loading, setLoading] = useState(false);
-    const [rateHistory, setRateHistory] = useState([
-        { date: "2026-06-13", rate: 58.12, status: "Live Feed" },
-        { date: "2026-06-12", rate: 58.05, status: "Live Feed" },
-        { date: "2026-06-11", rate: 57.98, status: "Live Feed" },
-        { date: "2026-06-10", rate: 58.00, status: "Manual Lock" },
-        { date: "2026-06-09", rate: 58.00, status: "Manual Lock" }
-    ]);
+    
+    // Rate history list with localStorage persistence
+    const [rateHistory, setRateHistory] = useState(() => {
+        if (typeof window !== "undefined") {
+            const saved = localStorage.getItem("vos_forex_rate_history");
+            if (saved) {
+                try {
+                    return JSON.parse(saved);
+                } catch {
+                    // fallback
+                }
+            }
+        }
+        return [
+            { date: "2026-06-13 10:15:30", rate: 58.12, status: "Live Feed" },
+            { date: "2026-06-12 14:22:15", rate: 58.05, status: "Live Feed" },
+            { date: "2026-06-11 09:05:45", rate: 57.98, status: "Live Feed" },
+            { date: "2026-06-10 16:30:00", rate: 58.00, status: "Manual Lock" },
+            { date: "2026-06-09 11:12:00", rate: 58.00, status: "Manual Lock" }
+        ];
+    });
+
+    // Synchronize rate history to localStorage
+    useEffect(() => {
+        localStorage.setItem("vos_forex_rate_history", JSON.stringify(rateHistory));
+    }, [rateHistory]);
 
     const fetchLiveRate = async () => {
         setLoading(true);
@@ -61,16 +95,26 @@ export default function ForexManagerModule() {
             toast.error("Please enter a valid locked rate positive number");
             return;
         }
-        localStorage.setItem("vos_locked_forex_rate", parsed.toFixed(4));
+
+        const rateStr = parsed.toFixed(4);
+        localStorage.setItem("vos_locked_forex_rate", rateStr);
         localStorage.setItem("vos_use_live_forex", String(useLiveRate));
         
+        setSavedLockedRate(rateStr);
+        setSavedUseLiveRate(useLiveRate);
+        
+        // Generate precise date-time string YYYY-MM-DD HH:MM:SS
+        const now = new Date();
+        const pad = (n: number) => String(n).padStart(2, "0");
+        const dateStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+
         // Add new log entry
         const newLog = {
-            date: new Date().toISOString().split("T")[0],
+            date: dateStr,
             rate: useLiveRate && liveRate ? liveRate : parsed,
             status: useLiveRate ? "Live Feed" : "Manual Lock"
         };
-        setRateHistory([newLog, ...rateHistory.slice(0, 4)]);
+        setRateHistory([newLog, ...rateHistory.slice(0, 9)]);
         
         toast.success("Foreign Exchange settings applied successfully");
     };
@@ -108,7 +152,7 @@ export default function ForexManagerModule() {
 
                             <div className="space-y-1">
                                 <span className="text-4xl font-black text-foreground tracking-tight">
-                                    ₱{activeEffectiveRate.toFixed(4)} <span className="text-xs font-normal text-muted-foreground">PHP per 1 USD</span>
+                                    ₱{activeEffectiveRate.toFixed(4)} <span className="text-xs font-normal text-muted-foreground">per 1 USD</span>
                                 </span>
                                 <p className="text-xs text-muted-foreground">
                                     Used across all raw ingredient landed cost profiles and cost estimates.
@@ -186,7 +230,8 @@ export default function ForexManagerModule() {
                             <button
                                 type="button"
                                 onClick={handleSaveSettings}
-                                className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-primary py-2.5 text-xs font-semibold text-primary-foreground hover:bg-primary/95 transition-all shadow-sm"
+                                disabled={useLiveRate === savedUseLiveRate && (useLiveRate || parseFloat(lockedRate).toFixed(4) === parseFloat(savedLockedRate).toFixed(4))}
+                                className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-primary py-2.5 text-xs font-semibold text-primary-foreground hover:bg-primary/95 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 <Save className="h-3.5 w-3.5" />
                                 Apply & Save FX Settings
@@ -203,7 +248,7 @@ export default function ForexManagerModule() {
                             Lock / Update Log
                         </h3>
                         <div className="space-y-3">
-                            {rateHistory.map((item, idx) => (
+                            {rateHistory.map((item: any, idx: number) => (
                                 <div key={idx} className="flex items-center justify-between text-xs p-3 border rounded-lg bg-muted/10 font-semibold">
                                     <div className="space-y-0.5">
                                         <span className="text-[10px] text-muted-foreground block">{item.date}</span>

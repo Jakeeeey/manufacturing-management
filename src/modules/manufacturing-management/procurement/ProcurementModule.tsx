@@ -37,6 +37,9 @@ export default function ProcurementModule({ initialTab = "suppliers" }: Procurem
         setIsExpenseModalOpen,
         supplierForm,
         setSupplierForm,
+        supplierError,
+        isEditingSupplier,
+        handleStartEditSupplier,
         shipmentForm,
         setShipmentForm,
         shipmentLinesForm,
@@ -64,33 +67,6 @@ export default function ProcurementModule({ initialTab = "suppliers" }: Procurem
 
     return (
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden space-y-4">
-            {/* Tab Navigation header */}
-            <div className="flex border-b bg-muted/10 shrink-0 rounded-xl overflow-hidden border">
-                {[
-                    { id: "suppliers", label: "Suppliers & Vendors", icon: Building2 },
-                    { id: "incoming-shipments", label: "Incoming Shipments", icon: Anchor },
-                    { id: "shipment-expenses", label: "Shipment Expenses (Landed Cost)", icon: Landmark },
-                    { id: "raw-materials", label: "Raw Materials Master", icon: Layers }
-                ].map((t) => {
-                    const Icon = t.icon;
-                    const isActive = activeTab === t.id;
-                    return (
-                        <button
-                            key={t.id}
-                            onClick={() => handleTabChange(t.id)}
-                            className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-3.5 text-xs font-bold border-b-2 transition-all -mb-[1px] ${
-                                isActive 
-                                    ? "border-primary text-primary bg-background" 
-                                    : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/30"
-                            }`}
-                        >
-                            <Icon className="h-4 w-4" />
-                            {t.label}
-                        </button>
-                    );
-                })}
-            </div>
-
             {/* Tab Content window */}
             <div className="flex-1 overflow-y-auto min-h-0 relative">
                 {loading && (
@@ -106,7 +82,11 @@ export default function ProcurementModule({ initialTab = "suppliers" }: Procurem
                         setIsModalOpen={setIsSupplierModalOpen}
                         supplierForm={supplierForm}
                         setSupplierForm={setSupplierForm}
+                        supplierError={supplierError}
+                        isEditingSupplier={isEditingSupplier}
+                        onStartEditSupplier={handleStartEditSupplier}
                         onCreateSupplier={handleCreateSupplier}
+                        rawMaterials={rawMaterials}
                     />
                 )}
 

@@ -930,7 +930,7 @@ export interface DirectusSupplier {
  */
 export async function fetchSuppliers(): Promise<DirectusSupplier[]> {
     try {
-        const res = await fetch(`${DIRECTUS_URL}/items/suppliers?filter[isActive][_eq]=true&sort=supplier_name&limit=-1`, { headers, next: { revalidate: 60 } });
+        const res = await fetch(`${DIRECTUS_URL}/items/suppliers?filter[isActive][_eq]=true&sort=supplier_name&limit=-1`, { headers, cache: "no-store" });
         if (!res.ok) throw new Error("Failed to fetch suppliers");
         const json = await res.json();
         return json.data || [];

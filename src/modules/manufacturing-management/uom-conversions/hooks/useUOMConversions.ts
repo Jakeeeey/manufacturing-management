@@ -243,10 +243,28 @@ export function useUOMConversions() {
         const result = convert(val, calcFrom, calcTo, oilObj.density);
         const resultFormatted = Number(result.toFixed(6));
 
+        // Prevent duplicate entries if Amount to Convert, UOM parameters, and Computed Value are identical
+        const isDuplicate = logs.some(
+            (log) =>
+                log.value === val &&
+                log.fromUnit === calcFrom &&
+                log.toUnit === calcTo &&
+                log.oilType === oilObj.name &&
+                log.result === resultFormatted
+        );
+
+        if (isDuplicate) {
+            toast.warning("Duplicate calculation", {
+                description: "This exact calculation has already been recorded in the audit logs."
+            });
+            return;
+        }
+
         // Add log entry
         const newLog: ConversionLog = {
             id: Math.random().toString(36).substring(2, 9),
             timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+            createdAt: new Date().toISOString(),
             oilType: oilObj.name,
             value: val,
             fromUnit: calcFrom,
@@ -254,7 +272,17 @@ export function useUOMConversions() {
             toUnit: calcTo
         };
 
-        setLogs(prev => [newLog, ...prev.slice(0, 19)]);
+        setLogs(prev => {
+            const updated = [newLog, ...prev];
+            // Sort by ISO timestamp descending (Newest on Top)
+            return updated
+                .sort((a, b) => {
+                    const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+                    const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+                    return dateB - dateA;
+                })
+                .slice(0, 20);
+        });
         toast.success("Conversion completed and logged");
     };
 

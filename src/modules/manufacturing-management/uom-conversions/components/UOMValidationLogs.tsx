@@ -5,10 +5,9 @@ import { ConversionLog } from "../types";
 
 interface UOMValidationLogsProps {
     logs: ConversionLog[];
-    onClear: () => void;
 }
 
-export default function UOMValidationLogs({ logs, onClear }: UOMValidationLogsProps) {
+export default function UOMValidationLogs({ logs }: UOMValidationLogsProps) {
     return (
         <div className="space-y-6 h-full flex flex-col">
             {/* Calculation Audit Log */}
@@ -18,15 +17,6 @@ export default function UOMValidationLogs({ logs, onClear }: UOMValidationLogsPr
                         <History className="h-4 w-4 text-primary" />
                         Audit Calculation Logs
                     </h3>
-                    {logs.length > 0 && (
-                        <button
-                            onClick={onClear}
-                            className="text-[10px] font-bold text-destructive hover:bg-destructive/5 px-2 py-1 rounded-md transition-colors flex items-center gap-1"
-                        >
-                            <Trash2 className="h-3 w-3" />
-                            Clear Logs
-                        </button>
-                    )}
                 </div>
 
                 <div className="flex-1 overflow-y-auto space-y-2.5 min-h-0 pr-1 select-none">

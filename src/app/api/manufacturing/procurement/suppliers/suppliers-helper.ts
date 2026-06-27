@@ -6,7 +6,7 @@ import {
 
 export async function fetchSuppliers(): Promise<DirectusSupplier[]> {
     try {
-        const res = await fetch(`${DIRECTUS_URL}/items/suppliers?filter[isActive][_eq]=true&sort=supplier_name&limit=-1`, { headers, next: { revalidate: 60 } });
+        const res = await fetch(`${DIRECTUS_URL}/items/suppliers?filter[isActive][_eq]=true&sort=supplier_name&limit=-1`, { headers, cache: "no-store" });
         if (!res.ok) throw new Error("Failed to fetch suppliers");
         const json = await res.json();
         return json.data || [];
@@ -49,6 +49,31 @@ export async function createSupplier(supplierData: Record<string, unknown>): Pro
         throw e;
     }
 }
+export async function updateSupplier(supplierId: number, supplierData: Record<string, unknown>): Promise<unknown> {
+    try {
+        const url = `${DIRECTUS_URL}/items/suppliers/${supplierId}`;
+        const res = await fetch(url, {
+            method: "PATCH",
+            headers,
+            body: JSON.stringify(supplierData)
+        });
+        if (!res.ok) {
+            let errorMsg = `Failed to update supplier: ${res.status}`;
+            try {
+                const errorJson = await res.json();
+                if (errorJson.errors && errorJson.errors[0]?.message) {
+                    errorMsg = errorJson.errors[0].message;
+                }
+            } catch {}
+            throw new Error(errorMsg);
+        }
+        return (await res.json()).data;
+    } catch (e) {
+        console.error("[Manufacturing Directus API] Failed to update supplier:", e);
+        throw e;
+    }
+}
+
 
 export async function fetchProductsBySupplier(supplierId: number): Promise<DirectusProductPerSupplier[]> {
     try {

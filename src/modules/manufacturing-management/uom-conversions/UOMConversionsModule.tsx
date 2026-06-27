@@ -47,9 +47,9 @@ export default function UOMConversionsModule() {
             </div>
 
             {/* Layout Grid */}
-            <div className="grid gap-6 lg:grid-cols-3">
+            <div className="grid gap-6 lg:grid-cols-3 min-w-0">
                 {/* Left Column: Density Matrix (Takes 2/3 of space on larger screens) */}
-                <div className="lg:col-span-2 flex flex-col h-full">
+                <div className="lg:col-span-2 flex flex-col h-full min-w-0">
                     <DensityMatrixTable
                         densities={densities}
                         onDelete={handleDeleteDensity}
@@ -76,7 +76,6 @@ export default function UOMConversionsModule() {
 
                     <UOMValidationLogs
                         logs={logs}
-                        onClear={clearLogs}
                     />
                 </div>
             </div>

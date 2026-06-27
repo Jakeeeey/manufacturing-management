@@ -306,6 +306,24 @@ function LoginForm() {
 
     return (
         <div className="relative w-full min-h-svh flex flex-col overflow-hidden font-sans selection:bg-cyan-500/30 bg-slate-50 dark:bg-slate-950">
+            <style dangerouslySetInnerHTML={{ __html: `
+                input:-webkit-autofill,
+                input:-webkit-autofill:hover, 
+                input:-webkit-autofill:focus, 
+                input:-webkit-autofill:active {
+                    -webkit-background-clip: text !important;
+                    background-clip: text !important;
+                    -webkit-text-fill-color: inherit !important;
+                    transition: background-color 5000000s ease-in-out 0s;
+                    box-shadow: inset 0 0 20px 20px transparent !important;
+                }
+                .dark input:-webkit-autofill,
+                .dark input:-webkit-autofill:hover,
+                .dark input:-webkit-autofill:focus,
+                .dark input:-webkit-autofill:active {
+                    -webkit-text-fill-color: #ffffff !important;
+                }
+            `}} />
             {/* --- IMMERSIVE BACKGROUND SYSTEM --- */}
 
             {/* Layer 1: Subtle radial gradient for light mode depth */}

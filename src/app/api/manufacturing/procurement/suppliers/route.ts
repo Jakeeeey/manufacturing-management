@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { fetchSuppliers, createSupplier } from "./suppliers-helper";
+import { fetchSuppliers, createSupplier, updateSupplier } from "./suppliers-helper";
 
 export async function GET() {
     try {
@@ -22,5 +22,20 @@ export async function POST(request: Request) {
     } catch (e) {
         console.error("API Error creating supplier:", e);
         return NextResponse.json({ error: (e as Error).message || "Failed to create supplier" }, { status: 500 });
+    }
+}
+
+export async function PATCH(request: Request) {
+    try {
+        const body = await request.json();
+        const { id, ...data } = body;
+        if (!id) {
+            return NextResponse.json({ error: "Supplier ID is required" }, { status: 400 });
+        }
+        const supplier = await updateSupplier(id, data);
+        return NextResponse.json({ success: true, supplier });
+    } catch (e) {
+        console.error("API Error updating supplier:", e);
+        return NextResponse.json({ error: (e as Error).message || "Failed to update supplier" }, { status: 500 });
     }
 }

@@ -120,7 +120,6 @@ export async function registerRawMaterial(
     return handleResponse(res, "Failed to register raw material");
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function updateShipmentStatus(shipmentId: number, status: string): Promise<any> {
     const res = await fetch("/api/manufacturing/procurement/shipments", {
         method: "PATCH",
@@ -129,4 +128,35 @@ export async function updateShipmentStatus(shipmentId: number, status: string): 
     });
     return handleResponse(res, "Failed to update shipment status");
 }
+
+export async function updateSupplier(supplierId: number, supplierData: Partial<Supplier>): Promise<any> {
+    const res = await fetch("/api/manufacturing/procurement/suppliers", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: supplierId, ...supplierData })
+    });
+    return handleResponse(res, "Failed to update supplier");
+}
+
+export async function fetchLinkedProducts(supplierId: number): Promise<any[]> {
+    const res = await fetch(`/api/manufacturing/procurement/suppliers/products?supplierId=${supplierId}`);
+    return handleResponse(res, "Failed to fetch linked products");
+}
+
+export async function linkProductToSupplier(supplierId: number, productId: number): Promise<any> {
+    const res = await fetch("/api/manufacturing/procurement/suppliers/products", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ supplierId, productId })
+    });
+    return handleResponse(res, "Failed to link product to supplier");
+}
+
+export async function unlinkProductFromSupplier(linkId: number): Promise<any> {
+    const res = await fetch(`/api/manufacturing/procurement/suppliers/products?linkId=${linkId}`, {
+        method: "DELETE"
+    });
+    return handleResponse(res, "Failed to unlink product from supplier");
+}
+
 
