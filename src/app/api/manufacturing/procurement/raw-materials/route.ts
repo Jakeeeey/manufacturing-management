@@ -31,6 +31,15 @@ export async function POST(request: Request) {
             console.error("Error parsing user token in POST raw-materials route:", err);
         }
 
+        // Check if a product with the same name already exists in Directus
+        const checkRes = await fetch(`${DIRECTUS_URL}/items/products?filter[product_name][_eq]=${encodeURIComponent(productDetails.product_name)}&limit=1`, { headers });
+        if (checkRes.ok) {
+            const checkData = await checkRes.json();
+            if (checkData.data && checkData.data.length > 0) {
+                return NextResponse.json({ error: "A material with this name already exists. Please choose a unique name." }, { status: 400 });
+            }
+        }
+
         // Create Raw Material / Packaging Product with explicit null overrides for foreign keys to bypass invalid database defaults
         const productPayload = {
             ...productDetails,

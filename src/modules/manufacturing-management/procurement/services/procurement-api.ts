@@ -90,6 +90,7 @@ export async function fetchRawMaterials(): Promise<RawMaterial[]> {
         cost_per_unit: Number(p.cost_per_unit || 0),
         estimated_unit_cost: Number(p.estimated_unit_cost || 0),
         density_factor: Number(p.density_factor || 1.0),
+        product_category: p.product_category ? (typeof p.product_category === "object" ? Number(p.product_category.category_id || p.product_category.id) : Number(p.product_category)) : null,
         date_added: p.date_added,
         last_updated: p.last_updated
     }));

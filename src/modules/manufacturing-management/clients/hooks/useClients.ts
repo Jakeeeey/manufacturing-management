@@ -154,8 +154,9 @@ export function useClients() {
 
         // Map store_type_id if it's an object
         let storeTypeId = "";
-        if (c.store_type_id) {
-            storeTypeId = typeof c.store_type_id === "object" ? String(c.store_type_id.id) : String(c.store_type_id);
+        const rawStoreType = c.store_type || c.store_type_id;
+        if (rawStoreType) {
+            storeTypeId = typeof rawStoreType === "object" ? String(rawStoreType.id) : String(rawStoreType);
         }
 
         setFormData({
@@ -217,7 +218,7 @@ export function useClients() {
             contact_number: formData.contact_number.trim() || undefined,
             customer_email: formData.customer_email.trim() || undefined,
             store_name: formData.store_name.trim() || undefined,
-            store_type_id: formData.store_type_id ? Number(formData.store_type_id) : null,
+            store_type: formData.store_type_id ? Number(formData.store_type_id) : null,
             province: provName.trim() || undefined,
             city: cityName.trim() || undefined,
             brgy: brgyName.trim() || undefined,

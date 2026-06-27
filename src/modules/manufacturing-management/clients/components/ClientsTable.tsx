@@ -1,5 +1,5 @@
 import React from "react";
-import { Edit2, Trash2, ShieldCheck, ShieldAlert, Mail, Phone, MapPin, EyeOff } from "lucide-react";
+import { Edit2, Archive, ArchiveRestore, ShieldCheck, ShieldAlert, Mail, Phone, MapPin, EyeOff } from "lucide-react";
 import { Customer } from "../types";
 
 interface ClientsTableProps {
@@ -59,10 +59,11 @@ export default function ClientsTable({
                             
                             // Parse Store Type string or object
                             let storeType = "N/A";
-                            if (c.store_type_id) {
-                                storeType = typeof c.store_type_id === "object" 
-                                    ? c.store_type_id.store_type 
-                                    : `ID: ${c.store_type_id}`;
+                            const rawStoreType = c.store_type || c.store_type_id;
+                            if (rawStoreType) {
+                                storeType = typeof rawStoreType === "object" 
+                                    ? rawStoreType.store_type 
+                                    : `ID: ${rawStoreType}`;
                             }
 
                             // Full address builder
@@ -163,18 +164,33 @@ export default function ClientsTable({
                                         <div className="flex justify-center gap-1">
                                             <button
                                                 onClick={() => onEdit(c)}
-                                                className="text-primary hover:bg-primary/10 p-1.5 rounded-lg transition-colors cursor-pointer"
-                                                title="Edit billing profile"
+                                                disabled={!activeBool}
+                                                className={`p-1.5 rounded-lg transition-colors ${
+                                                    activeBool 
+                                                        ? "text-primary hover:bg-primary/10 cursor-pointer" 
+                                                        : "text-muted-foreground/45 cursor-not-allowed"
+                                                }`}
+                                                title={activeBool ? "Edit billing profile" : "Cannot edit inactive profile"}
                                             >
                                                 <Edit2 className="h-3.5 w-3.5" />
                                             </button>
-                                            <button
-                                                onClick={() => onDelete(c.id)}
-                                                className="text-destructive hover:bg-destructive/10 p-1.5 rounded-lg transition-colors cursor-pointer"
-                                                title="Delete customer record"
-                                            >
-                                                <Trash2 className="h-3.5 w-3.5" />
-                                            </button>
+                                            {activeBool ? (
+                                                <button
+                                                    onClick={() => onToggleActive(c)}
+                                                    className="text-amber-600 hover:bg-amber-500/10 p-1.5 rounded-lg transition-colors cursor-pointer"
+                                                    title="Archive client profile (deactivate)"
+                                                >
+                                                    <Archive className="h-3.5 w-3.5" />
+                                                </button>
+                                            ) : (
+                                                <button
+                                                    onClick={() => onToggleActive(c)}
+                                                    className="text-emerald-600 hover:bg-emerald-500/10 p-1.5 rounded-lg transition-colors cursor-pointer"
+                                                    title="Restore client profile (activate)"
+                                                >
+                                                    <ArchiveRestore className="h-3.5 w-3.5" />
+                                                </button>
+                                            )}
                                         </div>
                                     </td>
                                 </tr>

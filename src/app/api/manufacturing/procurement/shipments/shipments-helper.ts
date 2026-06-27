@@ -173,7 +173,8 @@ export async function fetchShipmentLineItems(shipmentId: number): Promise<Extend
 
 export async function createIncomingShipment(
     shipmentData: Partial<DirectusShipment>,
-    lineItems: ExtendedShipmentLineItem[]
+    lineItems: ExtendedShipmentLineItem[],
+    userId?: number | null
 ): Promise<unknown> {
     let poId: number | null = null;
     const createdProductIds: number[] = [];
@@ -198,8 +199,9 @@ export async function createIncomingShipment(
             inventory_status: mapShipmentStatusToPo(extendedData.status || "Ordered"),
             payment_status: 1, // Pending Payment
             branch_id: extendedData.branch_id || 182,
-            is_posted: 1,
-            lead_time_receiving: extendedData.date_received || null
+            is_posted: 0,
+            lead_time_receiving: extendedData.date_received || null,
+            encoder_id: userId || null
         };
 
         const res = await fetch(`${DIRECTUS_URL}/items/purchase_order`, {
@@ -220,6 +222,23 @@ export async function createIncomingShipment(
         }
         const poJson = await res.json();
         poId = poJson.data.purchase_order_id;
+
+        // Sync to incoming_shipments table to satisfy foreign keys in shipment_expenses
+        const incomingPayload = {
+            shipment_id: poId,
+            reference_number: extendedData.reference_number,
+            supplier_id: typeof extendedData.supplier_id === "object" && extendedData.supplier_id ? (extendedData.supplier_id as Record<string, unknown>).id : extendedData.supplier_id,
+            date_received: extendedData.date_received || null,
+            total_foreign_currency: Number(extendedData.total_foreign_currency) || (totalPhp / 58.00),
+            exchange_rate: Number(extendedData.exchange_rate) || 58.00,
+            total_php_value: totalPhp,
+            status: extendedData.status || "Ordered"
+        };
+        await fetch(`${DIRECTUS_URL}/items/incoming_shipments`, {
+            method: "POST",
+            headers,
+            body: JSON.stringify(incomingPayload)
+        }).catch(err => console.error("Failed to sync to incoming_shipments:", err));
 
         for (const item of lineItems) {
             const qty = Number(item.quantity_ordered || 0);
@@ -269,7 +288,9 @@ export async function createIncomingShipment(
 
 export async function updateIncomingShipmentStatus(
     shipmentId: number, 
-    status: "Ordered" | "Approved" | "En Route" | "Receiving (QA)" | "Received"
+    status: "Ordered" | "Approved" | "En Route" | "Receiving (QA)" | "Received",
+    userId?: number | null,
+    leadTimeReceiving?: string | null
 ) {
     try {
         if (status === "Receiving (QA)" || status === "Received") {
@@ -296,6 +317,14 @@ export async function updateIncomingShipmentStatus(
         };
         if (status === "Received" || status === "Receiving (QA)") {
             updatePayload.date_received = new Date().toISOString().split('T')[0];
+            updatePayload.receiver_id = userId || null;
+        }
+        if (status === "Approved") {
+            updatePayload.approver_id = userId || null;
+            updatePayload.date_approved = new Date().toISOString();
+        }
+        if (leadTimeReceiving !== undefined) {
+            updatePayload.lead_time_receiving = leadTimeReceiving;
         }
         const res = await fetch(`${DIRECTUS_URL}/items/purchase_order/${shipmentId}`, {
             method: "PATCH",
@@ -304,9 +333,97 @@ export async function updateIncomingShipmentStatus(
         });
 
         if (!res.ok) throw new Error(`Failed to update purchase order status: ${res.status}`);
+
+        // Sync status to incoming_shipments
+        const incomingUpdatePayload: Record<string, unknown> = {
+            status: status
+        };
+        if (status === "Received" || status === "Receiving (QA)") {
+            incomingUpdatePayload.date_received = new Date().toISOString().split('T')[0];
+        }
+        await fetch(`${DIRECTUS_URL}/items/incoming_shipments/${shipmentId}`, {
+            method: "PATCH",
+            headers,
+            body: JSON.stringify(incomingUpdatePayload)
+        }).catch(err => console.error("Failed to sync status to incoming_shipments:", err));
+
         return { success: true };
     } catch (e) {
         console.error("[Manufacturing Directus API] Failed to update purchase order status:", e);
+        throw e;
+    }
+}
+
+export async function receiveIncomingShipment(
+    shipmentId: number,
+    branchId: number,
+    lineItemUpdates: Array<{
+        product_id: number;
+        batch_no?: string | null;
+        lot_no?: string | null;
+        expiry_date?: string | null;
+        received_quantity: number;
+        unit_price: number;
+        total_amount: number;
+        qa_status?: string | null;
+        quantity_rejected?: number | null;
+        rejection_reason?: string | null;
+    }>,
+    userId?: number | null
+) {
+    try {
+        // Insert into purchase_order_receiving table for each item
+        for (const item of lineItemUpdates) {
+            const porPayload = {
+                purchase_order_id: shipmentId,
+                product_id: item.product_id,
+                batch_no: item.batch_no || null,
+                lot_no: item.lot_no || null,
+                expiry_date: item.expiry_date || null,
+                received_quantity: item.received_quantity,
+                unit_price: item.unit_price,
+                discounted_amount: 0,
+                total_amount: item.total_amount,
+                branch_id: branchId,
+                receipt_no: `REC-${shipmentId}-${Date.now()}`,
+                received_date: new Date().toISOString(),
+                isPosted: 1,
+                qa_status: item.qa_status || "Passed",
+                quantity_rejected: item.quantity_rejected || 0,
+                rejection_reason: item.rejection_reason || null,
+                allocated_expense_php: 0,
+                final_landed_unit_cost: item.unit_price
+            };
+
+            const porRes = await fetch(`${DIRECTUS_URL}/items/purchase_order_receiving`, {
+                method: "POST",
+                headers,
+                body: JSON.stringify(porPayload)
+            });
+            if (!porRes.ok) {
+                const errText = await porRes.text();
+                throw new Error(`Failed to insert receiving log for product ${item.product_id}: ${errText}`);
+            }
+        }
+
+        // Update purchase_order status to Received (6)
+        const poPayload = {
+            inventory_status: 6,
+            date_received: new Date().toISOString(),
+            receiver_id: userId || null
+        };
+        const poRes = await fetch(`${DIRECTUS_URL}/items/purchase_order/${shipmentId}`, {
+            method: "PATCH",
+            headers,
+            body: JSON.stringify(poPayload)
+        });
+        if (!poRes.ok) {
+            throw new Error(`Failed to update PO header: ${poRes.statusText}`);
+        }
+
+        return { success: true };
+    } catch (e) {
+        console.error("Error in receiveIncomingShipment helper:", e);
         throw e;
     }
 }

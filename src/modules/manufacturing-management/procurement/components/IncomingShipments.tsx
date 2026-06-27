@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { IncomingShipment, ShipmentLineItem, Supplier, RawMaterial } from "../types";
+import { useSearchParams } from "next/navigation";
+import { IncomingShipment, ShipmentLineItem, Supplier, RawMaterial, LinkedProduct } from "../types";
 
 interface UOMOption {
     product_id: number;
@@ -7,7 +8,8 @@ interface UOMOption {
     cost_per_unit: number;
 }
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-import { Search, Plus, Calendar, ShieldCheck, Truck, Layers, Anchor, AlertCircle, Info, Landmark, Edit, RefreshCw, Loader2 } from "lucide-react";
+import { Search, Plus, Calendar, ShieldCheck, Truck, Layers, Anchor, AlertCircle, Info, Landmark, Edit, RefreshCw, Loader2, Trash2, CheckCircle2, CheckSquare } from "lucide-react";
+import { toast } from "sonner";
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { BOMMaterialSelect } from "@/modules/manufacturing-management/finished-goods/components/BOMMaterialSelect";
 import { CreatableSelect } from "@/modules/manufacturing-management/finished-goods/components/CreatableSelect";
@@ -16,6 +18,7 @@ interface IncomingShipmentsProps {
     shipments: IncomingShipment[];
     suppliers: Supplier[];
     rawMaterials: RawMaterial[];
+    supplierLinkedProducts: LinkedProduct[];
     selectedShipment: IncomingShipment | null;
     setSelectedShipment: (s: IncomingShipment | null) => void;
     lines: ShipmentLineItem[];
@@ -350,6 +353,7 @@ export default function IncomingShipments({
     shipments,
     suppliers,
     rawMaterials,
+    supplierLinkedProducts,
     selectedShipment,
     setSelectedShipment,
     lines,
@@ -365,16 +369,57 @@ export default function IncomingShipments({
     loading = false
 }: IncomingShipmentsProps) {
     const [search, setSearch] = useState("");
+    const [isOverridden, setIsOverridden] = useState(false);
+
+
+
+    const isFinanceManager = React.useMemo(() => {
+        if (typeof window === "undefined" || !isModalOpen) return false;
+        const cookieStr = document.cookie;
+        const match = cookieStr.match(/vos_access_token=([^;]+)/);
+        if (match) {
+            try {
+                const token = match[1];
+                const parts = token.split(".");
+                if (parts.length >= 2) {
+                    const payload = JSON.parse(window.atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
+                    const pos = String(
+                        payload.position || 
+                        payload.Position || 
+                        payload.role || 
+                        payload.Role || 
+                        payload.user_position || 
+                        payload.user_role || 
+                        ""
+                    ).toLowerCase();
+                    
+                    return (
+                        pos.includes("finance") || 
+                        pos.includes("accounting") || 
+                        pos.includes("accountant") ||
+                        pos.includes("admin") ||
+                        pos.includes("manager") ||
+                        pos.includes("director")
+                    );
+                }
+            } catch (e) {
+                console.error("Failed to parse access token for role identification:", e);
+            }
+        }
+        return false;
+    }, [isModalOpen]);
 
     useEffect(() => {
         const handleGlobalKeyDown = (e: KeyboardEvent) => {
             if (e.altKey && e.key.toLowerCase() === "n") {
                 e.preventDefault();
+                setIsOverridden(false);
                 setIsModalOpen(true);
             }
             if (e.key === "Escape" && isModalOpen) {
                 const activeDropdown = document.querySelector('[data-dropdown-open="true"]');
                 if (!activeDropdown) {
+                    setIsOverridden(false);
                     setIsModalOpen(false);
                 }
             }
@@ -383,12 +428,54 @@ export default function IncomingShipments({
         return () => window.removeEventListener("keydown", handleGlobalKeyDown);
     }, [isModalOpen, setIsModalOpen]);
 
-    const filteredShipments = shipments.filter(s =>
-        s.reference_number.toLowerCase().includes(search.toLowerCase()) ||
-        (s.supplier_id && typeof s.supplier_id === "object" && s.supplier_id.supplier_name.toLowerCase().includes(search.toLowerCase()))
-    );
+    const filteredShipments = shipments.filter(s => {
+        const matchesSearch = s.reference_number.toLowerCase().includes(search.toLowerCase()) ||
+            (s.supplier_id && typeof s.supplier_id === "object" && s.supplier_id.supplier_name.toLowerCase().includes(search.toLowerCase()));
+        
+        return matchesSearch;
+    });
 
     const activeShipment = selectedShipment || filteredShipments[0] || null;
+
+    const supplierRawMaterials = React.useMemo(() => {
+        if (!shipmentForm.supplier_id) return [];
+        
+        // Extract all valid linked product IDs
+        const linkedIds = supplierLinkedProducts
+            .map(lp => {
+                if (typeof lp.product_id === "object" && lp.product_id !== null) {
+                    return Number(lp.product_id.id || (lp.product_id as any).product_id);
+                } else if (lp.product_id) {
+                    return Number(lp.product_id);
+                }
+                return null;
+            })
+            .filter((id): id is number => id !== null && !isNaN(id));
+
+        // If no linked products are registered or resolved, show all raw materials as fallback
+        if (linkedIds.length === 0) {
+            return rawMaterials;
+        }
+
+        return rawMaterials.filter(rm => {
+            const rmId = Number(rm.product_id);
+            const rmParentId = rm.parent_id ? Number(rm.parent_id) : null;
+            return linkedIds.includes(rmId) || (rmParentId !== null && linkedIds.includes(rmParentId));
+        });
+    }, [rawMaterials, shipmentForm.supplier_id, supplierLinkedProducts]);
+
+    const totalPhpValue = React.useMemo(() => {
+        return linesForm.reduce((acc, curr) => {
+            const qty = parseFloat(curr.quantity_ordered) || 0;
+            const cost = parseFloat(curr.base_unit_cost_php) || 0;
+            return acc + (qty * cost);
+        }, 0);
+    }, [linesForm]);
+
+    const totalUsdValue = React.useMemo(() => {
+        const rate = parseFloat(shipmentForm.exchange_rate) || 58.00;
+        return totalPhpValue / rate;
+    }, [totalPhpValue, shipmentForm.exchange_rate]);
 
     const handleAddLineForm = () => {
         setLinesForm([...linesForm, { product_id: "", quantity_ordered: "", base_unit_cost_php: "" }]);
@@ -434,13 +521,14 @@ export default function IncomingShipments({
             <div className="w-full lg:w-2/5 flex flex-col border rounded-xl bg-card overflow-hidden shadow-sm">
                 <div className="p-4 border-b space-y-3 shrink-0 bg-muted/20">
                     <div className="flex items-center justify-between">
-                        <h3 className="font-bold text-sm text-foreground flex items-center gap-1.5">
-                            <Anchor className="h-4 w-4 text-primary" />
-                            Incoming Shipments ({filteredShipments.length})
+                        <h3 className="font-bold text-sm text-foreground flex items-center gap-1.5 min-w-0">
+                            <Anchor className="h-4 w-4 text-primary shrink-0" />
+                            <span className="truncate">Procurement Registry</span>
+                            <span className="text-[10px] text-muted-foreground shrink-0">({filteredShipments.length})</span>
                         </h3>
                         <button
-                            onClick={() => setIsModalOpen(true)}
-                            className="inline-flex items-center gap-1 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold px-2.5 py-1.5 rounded-lg text-xs transition-all shadow-sm"
+                            onClick={() => { setIsOverridden(false); setIsModalOpen(true); }}
+                            className="inline-flex items-center gap-1 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold px-2.5 py-1.5 rounded-lg text-xs transition-all shadow-sm shrink-0 cursor-pointer"
                         >
                             <Plus className="h-3.5 w-3.5" /> Log Cargo
                         </button>
@@ -521,34 +609,65 @@ export default function IncomingShipments({
                                         })()}
                                     </strong>
                                 </p>
-                                <div className="flex items-center gap-1.5 mt-2 bg-muted/40 p-1 rounded-lg border text-[10px] font-bold w-fit">
-                                    {(["Ordered", "Approved", "En Route", "Receiving (QA)"] as const).map((st) => {
-                                        const isCurrent = activeShipment.status === st;
-                                        return (
-                                            <button
-                                                key={st}
-                                                type="button"
-                                                onClick={() => onUpdateShipmentStatus(activeShipment.shipment_id, st)}
-                                                className={`px-2.5 py-1 rounded transition-all ${
-                                                    isCurrent 
-                                                        ? "bg-primary text-primary-foreground shadow-sm" 
-                                                        : "text-muted-foreground hover:text-foreground hover:bg-background/50"
-                                                }`}
-                                            >
-                                                {st}
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                            </div>
+                                {/* Status Progress Stepper (Read-Only) */}
+                                <div className="mt-4 border bg-muted/20 rounded-xl p-4 space-y-3">
+                                    <div className="text-[10px] font-extrabold text-muted-foreground uppercase tracking-wider block">Shipment Life Cycle Progress</div>
+                                    <div className="flex items-center w-full relative">
+                                        {(["Ordered", "Approved", "En Route", "Receiving (QA)", "Received"] as const).map((st, idx, arr) => {
+                                            const statuses = ["Ordered", "Approved", "En Route", "Receiving (QA)", "Received"];
+                                            const currentIdx = statuses.indexOf(activeShipment.status);
+                                            const stepIdx = statuses.indexOf(st);
+                                            
+                                            const isCompleted = stepIdx < currentIdx;
+                                            const isActive = stepIdx === currentIdx;
+                                            
+                                            return (
+                                                <React.Fragment key={st}>
+                                                    <div className="flex flex-col items-center flex-1 relative z-10">
+                                                        <div className={`h-6 w-6 rounded-full flex items-center justify-center border-2 text-[10px] font-bold transition-all ${
+                                                            isCompleted 
+                                                                ? "bg-emerald-500 border-emerald-500 text-emerald-foreground" 
+                                                                : isActive 
+                                                                    ? "bg-primary border-primary text-primary-foreground shadow-md scale-110" 
+                                                                    : "bg-background border-muted text-muted-foreground"
+                                                        }`}>
+                                                            {isCompleted ? "✓" : idx + 1}
+                                                        </div>
+                                                        <span className={`text-[9px] font-bold mt-1.5 truncate max-w-[70px] ${
+                                                            isActive ? "text-primary animate-pulse" : "text-muted-foreground"
+                                                        }`}>{st}</span>
+                                                    </div>
+                                                    {idx < arr.length - 1 && (
+                                                        <div className={`flex-1 h-[2px] -mt-4 transition-all ${
+                                                            stepIdx < currentIdx ? "bg-emerald-500" : "bg-muted"
+                                                        }`} />
+                                                    )}
+                                                </React.Fragment>
+                                            );
+                                        })}
+                                    </div>
 
-                            <div className="flex flex-wrap items-center gap-2 sm:self-center">
-                                <button
-                                    onClick={() => onTriggerAllocation(activeShipment)}
-                                    className="inline-flex items-center gap-1.5 bg-primary hover:bg-primary/95 text-primary-foreground font-bold px-3.5 py-2 rounded-lg text-xs shadow-sm transition-all"
-                                >
-                                    <Landmark className="h-4 w-4" /> Allocate Expenses & Duties
-                                </button>
+                                    {/* Explicit Action Buttons for status turnover */}
+                                    {activeShipment.status === "Approved" && (
+                                        <button
+                                            type="button"
+                                            onClick={() => onUpdateShipmentStatus(activeShipment.shipment_id, "En Route")}
+                                            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded-lg text-xs transition-all shadow-sm cursor-pointer mt-3"
+                                        >
+                                            Mark Cargo as En Route (Departed)
+                                        </button>
+                                    )}
+
+                                    {activeShipment.status === "En Route" && (
+                                        <button
+                                            type="button"
+                                            onClick={() => onUpdateShipmentStatus(activeShipment.shipment_id, "Receiving (QA)")}
+                                            className="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-2 px-3 rounded-lg text-xs transition-all shadow-sm cursor-pointer mt-3"
+                                        >
+                                            Mark Cargo as Arrived (Proceed to QA Checklist)
+                                        </button>
+                                    )}
+                                </div>
                             </div>
                         </div>
 
@@ -597,11 +716,11 @@ export default function IncomingShipments({
                                 <table className="w-full text-left border-collapse text-xs">
                                     <thead>
                                         <tr className="bg-muted/50 border-b">
-                                            <th className="p-3 font-semibold text-muted-foreground">Product Ingredient</th>
-                                            <th className="p-3 font-semibold text-muted-foreground text-right">Qty (QA / Ordered)</th>
-                                            <th className="p-3 font-semibold text-muted-foreground text-right">FOB Unit Cost</th>
-                                            <th className="p-3 font-semibold text-muted-foreground text-right">Landed Cost Allocated</th>
-                                            <th className="p-3 font-semibold text-muted-foreground text-right bg-emerald-500/5 text-emerald-800 dark:text-emerald-300">Final Landed Unit Cost</th>
+                                            <th className="p-3 font-semibold text-muted-foreground">Product Name</th>
+                                            <th className="p-3 font-semibold text-muted-foreground">UOM</th>
+                                            <th className="p-3 font-semibold text-muted-foreground text-right">Qty</th>
+                                            <th className="p-3 font-semibold text-muted-foreground text-right">Unit Price</th>
+                                            <th className="p-3 font-semibold text-muted-foreground text-right">ImpFreight Cost</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y">
@@ -622,6 +741,9 @@ export default function IncomingShipments({
                                                             <div className="font-semibold text-foreground">{prod.product_name}</div>
                                                             <div className="text-[10px] text-muted-foreground font-mono">Code: {prod.product_code}</div>
                                                         </td>
+                                                        <td className="p-3 text-muted-foreground font-semibold">
+                                                            {prod.unit_of_measurement?.unit_shortcut || "PCS"}
+                                                        </td>
                                                         <td className="p-3 text-right">
                                                             <div className="font-semibold text-foreground">
                                                                 {line.quantity_received !== null && line.quantity_received !== undefined ? (
@@ -630,16 +752,12 @@ export default function IncomingShipments({
                                                                     `${Number(line.quantity_ordered || 0).toLocaleString()} (Ordered)`
                                                                 )}
                                                             </div>
-                                                            <div className="text-[10px] text-muted-foreground">{prod.unit_of_measurement?.unit_shortcut || "PCS"}</div>
                                                         </td>
                                                         <td className="p-3 text-right font-mono text-[11px]">
                                                             ₱{Number(line.base_unit_cost_php).toFixed(2)}
                                                         </td>
                                                         <td className="p-3 text-right font-mono text-[11px] text-muted-foreground">
                                                             +₱{Number(line.allocated_expense_php || 0).toFixed(2)}
-                                                        </td>
-                                                        <td className="p-3 text-right font-mono text-[11px] font-bold bg-emerald-500/5 text-emerald-600 dark:text-emerald-400">
-                                                            ₱{Number(line.final_landed_unit_cost || line.base_unit_cost_php).toFixed(2)}
                                                         </td>
                                                     </tr>
                                                 );
@@ -681,14 +799,15 @@ export default function IncomingShipments({
                                 Log Incoming Cargo & PO Line Items
                             </h3>
                             <button
-                                onClick={() => setIsModalOpen(false)}
+                                onClick={() => { setIsOverridden(false); setIsModalOpen(false); }}
                                 className="text-muted-foreground hover:text-foreground text-xs font-bold"
                             >
                                 Close
                             </button>
                         </div>
 
-                        <form onSubmit={onCreateShipment} className="space-y-4 overflow-y-auto pr-1 flex-1">
+                        <form onSubmit={onCreateShipment} className="flex flex-col flex-1 min-h-0">
+                            <div className="space-y-4 overflow-y-auto pr-1 flex-1 pb-6">
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-1.5">
                                     <label className="text-[11px] font-semibold text-muted-foreground">PO / Bill of Lading Number *</label>
@@ -714,39 +833,96 @@ export default function IncomingShipments({
                                 </div>
 
                                 <div className="space-y-1.5">
-                                    <label className="text-[11px] font-semibold text-muted-foreground">Customs FX Rate Used (USD to PHP)</label>
+                                    <div className="flex items-center justify-between">
+                                        <label className="text-[11px] font-semibold text-muted-foreground">Customs FX Rate Used (USD to PHP)</label>
+                                        {isFinanceManager ? (
+                                            <label className="flex items-center gap-1 text-[10px] text-primary cursor-pointer select-none font-semibold">
+                                                <input 
+                                                    type="checkbox" 
+                                                    checked={isOverridden}
+                                                    onChange={e => setIsOverridden(e.target.checked)}
+                                                    className="rounded border"
+                                                />
+                                                Override Rate
+                                            </label>
+                                        ) : (
+                                            <span className="text-[9px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded font-mono">
+                                                Locked (Standard)
+                                            </span>
+                                        )}
+                                    </div>
                                     <input
                                         type="number"
                                         step="0.0001"
+                                        readOnly={!isOverridden || !isFinanceManager}
                                         value={shipmentForm.exchange_rate}
                                         onChange={e => setShipmentForm({...shipmentForm, exchange_rate: e.target.value})}
-                                        className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary font-mono"
+                                        className={`w-full rounded-lg border px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary font-mono font-semibold ${
+                                            (!isOverridden || !isFinanceManager) ? "bg-muted text-muted-foreground cursor-not-allowed" : "bg-background text-foreground"
+                                        }`}
                                     />
+                                    {isOverridden && isFinanceManager && (
+                                        <p className="text-[10px] text-amber-600 font-semibold mt-1 flex items-start gap-1">
+                                            <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                                            Warning: You are overriding the standard Customs FX Rate. This may affect standard landed cost calculations.
+                                        </p>
+                                    )}
                                 </div>
 
-                                <div className="space-y-1.5">
-                                    <label className="text-[11px] font-semibold text-muted-foreground">Expected Arrival / ETA Date *</label>
+                                <div className="space-y-1.5 flex flex-col">
+                                    <label className="text-[11px] font-semibold text-muted-foreground">Destination Branch *</label>
+                                    <select
+                                        value={shipmentForm.branch_id}
+                                        onChange={e => setShipmentForm({...shipmentForm, branch_id: parseInt(e.target.value)})}
+                                        className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary font-semibold text-foreground h-9"
+                                    >
+                                        <option value={183}>Main Branch (ID: 183)</option>
+                                        <option value={163}>Urdaneta Branch (ID: 163)</option>
+                                        <option value={181}>Bihon Branch (ID: 181)</option>
+                                        <option value={182}>Bihon Bad Branch (ID: 182)</option>
+                                    </select>
+                                </div>
+
+                                <div className="space-y-1.5 flex flex-col">
+                                    <label className="text-[11px] font-semibold text-muted-foreground">Payment Type *</label>
+                                    <select
+                                        value={shipmentForm.payment_type}
+                                        onChange={e => setShipmentForm({...shipmentForm, payment_type: parseInt(e.target.value)})}
+                                        className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary font-semibold text-foreground h-9"
+                                    >
+                                        <option value={3}>Full Payment (ID: 3)</option>
+                                        <option value={1}>Advance Payment (ID: 1)</option>
+                                        <option value={2}>Partial Payment (ID: 2)</option>
+                                        <option value={4}>Refund (ID: 4)</option>
+                                        <option value={5}>Installment (ID: 5)</option>
+                                    </select>
+                                </div>
+
+                                <div className="space-y-1.5 flex flex-col">
+                                    <label className="text-[11px] font-semibold text-muted-foreground">Price Type *</label>
+                                    <select
+                                        value={shipmentForm.price_type}
+                                        onChange={e => setShipmentForm({...shipmentForm, price_type: e.target.value})}
+                                        className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary font-semibold text-foreground h-9"
+                                    >
+                                        <option value="Internal">Internal</option>
+                                        <option value="SRP">SRP</option>
+                                        <option value="Government">Government</option>
+                                        <option value="Dealer">Dealer</option>
+                                        <option value="Sub-Dealer">Sub-Dealer</option>
+                                        <option value="Project">Project</option>
+                                    </select>
+                                </div>
+
+                                <div className="space-y-1.5 col-span-2">
+                                    <label className="text-[11px] font-semibold text-muted-foreground">Receive Date / ETA *</label>
                                     <input
                                         type="date"
                                         required
                                         value={shipmentForm.date_received || ""}
                                         onChange={e => setShipmentForm({...shipmentForm, date_received: e.target.value})}
-                                        className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary font-semibold text-foreground"
+                                        className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary font-semibold text-foreground text-left"
                                     />
-                                </div>
-
-                                <div className="space-y-1.5">
-                                    <label className="text-[11px] font-semibold text-muted-foreground">Initial Status</label>
-                                    <select
-                                        value={shipmentForm.status}
-                                        onChange={e => setShipmentForm({...shipmentForm, status: e.target.value})}
-                                        className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary text-foreground font-semibold"
-                                    >
-                                        <option value="Ordered">Ordered</option>
-                                        <option value="Approved">Approved</option>
-                                        <option value="En Route">En Route</option>
-                                        <option value="Receiving (QA)">Receiving (QA)</option>
-                                    </select>
                                 </div>
                             </div>
 
@@ -754,156 +930,207 @@ export default function IncomingShipments({
                             <div className="space-y-3 pt-3 border-t">
                                 <div className="flex items-center justify-between">
                                     <h4 className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Cargo Manifest Contents</h4>
-                                    <button
-                                        type="button"
-                                        onClick={handleAddLineForm}
-                                        className="inline-flex items-center gap-1 text-primary hover:text-primary/80 text-xs font-semibold"
-                                    >
-                                        <Plus className="h-3.5 w-3.5" /> Add Row
-                                    </button>
+                                    {shipmentForm.supplier_id && (
+                                        <button
+                                            type="button"
+                                            onClick={handleAddLineForm}
+                                            className="inline-flex items-center gap-1 text-primary hover:text-primary/80 text-xs font-semibold"
+                                        >
+                                            <Plus className="h-3.5 w-3.5" /> Add Row
+                                        </button>
+                                    )}
                                 </div>
 
-                                <div className="space-y-3">
-                                    {linesForm.map((line, idx) => (
-                                        <div key={idx} className="flex gap-3 items-end bg-muted/10 border p-3 rounded-lg relative flex-wrap sm:flex-nowrap">
-                                            <div className="flex-[3] space-y-1.5 min-w-[200px] flex flex-col relative">
-                                                <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Raw Product Name</label>
-                                                <RawProductSelector
-                                                    id={`search-input-${idx}`}
-                                                    autoFocus={idx === linesForm.length - 1 && linesForm.length > 1}
-                                                    rawMaterials={rawMaterials}
-                                                    selectedProductId={line.product_id}
-                                                    parentProductId={line.parent_product_id}
-                                                    productName={line.product_name}
-                                                    onSelect={(selected) => {
-                                                        handleLineFormChange(idx, selected);
-                                                        // Move focus to Qty Ordered input of the same row
-                                                        setTimeout(() => {
-                                                            const nextInput = document.getElementById(`qty-input-${idx}`);
-                                                            if (nextInput) {
-                                                                nextInput.focus();
-                                                                if (nextInput instanceof HTMLInputElement) {
-                                                                    nextInput.select();
-                                                                }
+                                {!shipmentForm.supplier_id ? (
+                                    <div className="p-4 rounded-xl border bg-amber-500/5 border-amber-500/10 text-center space-y-1.5 animate-in fade-in slide-in-from-top-2 duration-200">
+                                        <AlertCircle className="h-5 w-5 text-amber-500 mx-auto animate-pulse" />
+                                        <p className="text-xs text-amber-700 font-extrabold uppercase tracking-wider">Vendor Selection Required</p>
+                                        <p className="text-[10px] text-amber-600/90 font-semibold leading-relaxed">Please select a supplier first to view and search their registered raw materials.</p>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-3 animate-in fade-in duration-200">
+                                        {linesForm.map((line, idx) => (
+                                            <div key={idx} className="flex gap-3 items-end bg-muted/10 border p-3 pr-10 rounded-lg relative flex-wrap sm:flex-nowrap">
+                                                <div className="flex-[3] space-y-1.5 min-w-[200px] flex flex-col relative">
+                                                    <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Raw Product Name</label>
+                                                    <RawProductSelector
+                                                        id={`search-input-${idx}`}
+                                                        autoFocus={idx === linesForm.length - 1 && linesForm.length > 1}
+                                                        rawMaterials={supplierRawMaterials}
+                                                        selectedProductId={line.product_id}
+                                                        parentProductId={line.parent_product_id}
+                                                        productName={line.product_name}
+                                                        onSelect={(selected) => {
+                                                            const isDuplicate = linesForm.some((l, i) => i !== idx && String(l.product_id) === String(selected.product_id));
+                                                            if (isDuplicate) {
+                                                                toast.error(`"${selected.product_name}" is already added to this manifest. Please adjust the quantity instead.`);
+                                                                return;
                                                             }
-                                                        }, 50);
-                                                    }}
-                                                />
-                                            </div>
+                                                            handleLineFormChange(idx, selected);
+                                                            // Move focus to Qty Ordered input of the same row
+                                                            setTimeout(() => {
+                                                                const nextInput = document.getElementById(`qty-input-${idx}`);
+                                                                if (nextInput) {
+                                                                    nextInput.focus();
+                                                                    if (nextInput instanceof HTMLInputElement) {
+                                                                        nextInput.select();
+                                                                    }
+                                                                }
+                                                            }, 50);
+                                                        }}
+                                                    />
+                                                </div>
 
-                                            {line.uom_options && line.uom_options.length > 0 && (
-                                                <div className="w-28 space-y-1.5 shrink-0">
-                                                    <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Packaging / UOM</label>
-                                                    <select
-                                                        value={line.product_id}
-                                                        onChange={(e) => {
-                                                            const selectedId = e.target.value;
-                                                            const opt = line.uom_options?.find((o: UOMOption) => String(o.product_id) === String(selectedId));
-                                                            if (opt) {
-                                                                handleLineFormChange(idx, {
-                                                                    product_id: String(selectedId),
-                                                                    selected_uom: opt.unit_shortcut,
-                                                                    base_unit_cost_php: String(opt.cost_per_unit)
-                                                                });
+                                                {line.uom_options && line.uom_options.length > 0 && (
+                                                    <div className="w-28 space-y-1.5 shrink-0">
+                                                        <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Packaging / UOM</label>
+                                                        <select
+                                                            value={line.product_id}
+                                                            onChange={(e) => {
+                                                                const selectedId = e.target.value;
+                                                                const isDuplicate = linesForm.some((l, i) => i !== idx && String(l.product_id) === String(selectedId));
+                                                                if (isDuplicate) {
+                                                                    toast.error("This product variation is already added to this manifest. Please adjust the quantity instead.");
+                                                                    return;
+                                                                }
+                                                                const opt = line.uom_options?.find((o: UOMOption) => String(o.product_id) === String(selectedId));
+                                                                if (opt) {
+                                                                    handleLineFormChange(idx, {
+                                                                        product_id: String(selectedId),
+                                                                        selected_uom: opt.unit_shortcut,
+                                                                        base_unit_cost_php: String(opt.cost_per_unit)
+                                                                    });
+                                                                }
+                                                            }}
+                                                            className="w-full rounded-lg border bg-background px-2.5 py-1.5 text-xs outline-none h-9 text-foreground font-semibold"
+                                                        >
+                                                            {line.uom_options.map((o: UOMOption) => (
+                                                                <option key={o.product_id} value={o.product_id}>
+                                                                    {o.unit_shortcut} (₱{Number(o.cost_per_unit || 0).toFixed(2)})
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                )}
+
+                                                <div className="w-24 space-y-1.5 shrink-0">
+                                                    <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">
+                                                        Qty Ordered {line.selected_uom ? `(${line.selected_uom})` : ""}
+                                                    </label>
+                                                    <input
+                                                        id={`qty-input-${idx}`}
+                                                        type="number"
+                                                        required
+                                                        placeholder="1000"
+                                                        value={line.quantity_ordered || ""}
+                                                        onChange={e => handleLineFormChange(idx, "quantity_ordered", e.target.value)}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === "Enter") {
+                                                                e.preventDefault();
+                                                                const costInput = document.getElementById(`cost-input-${idx}`);
+                                                                if (costInput) {
+                                                                    costInput.focus();
+                                                                    if (costInput instanceof HTMLInputElement) {
+                                                                        costInput.select();
+                                                                    }
+                                                                }
+                                                            } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                                                                e.preventDefault();
+                                                                document.getElementById("register-shipment-btn")?.click();
                                                             }
                                                         }}
-                                                        className="w-full rounded-lg border bg-background px-2.5 py-1.5 text-xs outline-none h-9 text-foreground font-semibold"
-                                                    >
-                                                        {line.uom_options.map((o: UOMOption) => (
-                                                            <option key={o.product_id} value={o.product_id}>
-                                                                {o.unit_shortcut} (₱{Number(o.cost_per_unit || 0).toFixed(2)})
-                                                            </option>
-                                                        ))}
-                                                    </select>
+                                                        className="w-full rounded-lg border bg-background px-2.5 py-1.5 text-xs outline-none h-9 font-semibold"
+                                                    />
                                                 </div>
-                                            )}
 
-                                            <div className="w-24 space-y-1.5 shrink-0">
-                                                <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">
-                                                    Qty Ordered {line.selected_uom ? `(${line.selected_uom})` : ""}
-                                                </label>
-                                                <input
-                                                    id={`qty-input-${idx}`}
-                                                    type="number"
-                                                    required
-                                                    placeholder="1000"
-                                                    value={line.quantity_ordered || ""}
-                                                    onChange={e => handleLineFormChange(idx, "quantity_ordered", e.target.value)}
-                                                    onKeyDown={(e) => {
-                                                        if (e.key === "Enter") {
-                                                            e.preventDefault();
-                                                            const costInput = document.getElementById(`cost-input-${idx}`);
-                                                            if (costInput) {
-                                                                costInput.focus();
-                                                                if (costInput instanceof HTMLInputElement) {
-                                                                    costInput.select();
+                                                <div className="w-28 space-y-1.5 shrink-0">
+                                                    <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">FOB Unit Cost (PHP)</label>
+                                                    <input
+                                                        id={`cost-input-${idx}`}
+                                                        type="number"
+                                                        required
+                                                        step="0.0001"
+                                                        placeholder="19.00"
+                                                        value={line.base_unit_cost_php}
+                                                        onChange={e => handleLineFormChange(idx, "base_unit_cost_php", e.target.value)}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === "Enter") {
+                                                                e.preventDefault();
+                                                                if (idx === linesForm.length - 1) {
+                                                                    handleAddLineForm();
+                                                                } else {
+                                                                    const nextSearchInput = document.getElementById(`search-input-${idx + 1}`);
+                                                                    if (nextSearchInput) {
+                                                                        nextSearchInput.focus();
+                                                                    }
                                                                 }
+                                                            } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                                                                e.preventDefault();
+                                                                document.getElementById("register-shipment-btn")?.click();
                                                             }
-                                                        } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-                                                            e.preventDefault();
-                                                            document.getElementById("register-shipment-btn")?.click();
-                                                        }
-                                                    }}
-                                                    className="w-full rounded-lg border bg-background px-2.5 py-1.5 text-xs outline-none h-9 font-semibold"
-                                                />
+                                                        }}
+                                                        className="w-full rounded-lg border bg-background px-2.5 py-1.5 text-xs outline-none font-mono h-9"
+                                                    />
+                                                </div>
+                                                {linesForm.length > 1 && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleRemoveLineForm(idx)}
+                                                        className="absolute top-2 right-2 text-red-500 hover:text-red-600 hover:bg-red-500/10 p-1.5 rounded-lg transition-all shrink-0 animate-in fade-in zoom-in-95 duration-150"
+                                                        title="Remove Row"
+                                                    >
+                                                        <Trash2 className="h-4 w-4" />
+                                                    </button>
+                                                )}
                                             </div>
-
-                                            <div className="w-28 space-y-1.5 shrink-0">
-                                                <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">FOB Unit Cost (PHP)</label>
-                                                <input
-                                                    id={`cost-input-${idx}`}
-                                                    type="number"
-                                                    required
-                                                    step="0.0001"
-                                                    placeholder="19.00"
-                                                    value={line.base_unit_cost_php}
-                                                    onChange={e => handleLineFormChange(idx, "base_unit_cost_php", e.target.value)}
-                                                    onKeyDown={(e) => {
-                                                        if (e.key === "Enter") {
-                                                            e.preventDefault();
-                                                            if (idx === linesForm.length - 1) {
-                                                                handleAddLineForm();
-                                                            } else {
-                                                                const nextSearchInput = document.getElementById(`search-input-${idx + 1}`);
-                                                                if (nextSearchInput) {
-                                                                    nextSearchInput.focus();
-                                                                }
-                                                            }
-                                                        } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-                                                            e.preventDefault();
-                                                            document.getElementById("register-shipment-btn")?.click();
-                                                        }
-                                                    }}
-                                                    className="w-full rounded-lg border bg-background px-2.5 py-1.5 text-xs outline-none font-mono h-9"
-                                                />
-                                            </div>
-                                            {linesForm.length > 1 && (
-                                                <button
-                                                    type="button"
-                                                    onClick={() => handleRemoveLineForm(idx)}
-                                                    className="text-red-500 hover:text-red-600 text-xs font-bold pb-2.5 shrink-0"
-                                                >
-                                                    Remove
-                                                </button>
-                                            )}
-                                        </div>
-                                    ))}
-                                </div>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
 
-                            <button
-                                                                id="register-shipment-btn"
-                                                                type="submit"
-                                                                disabled={loading}
-                                                                className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-primary py-2.5 text-xs font-semibold text-primary-foreground hover:bg-primary/95 transition-all shadow-sm shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
-                                                            >
-                                                                {loading ? (
-                                                                    <>
-                                                                        <Loader2 className="h-3 w-3 animate-spin" />
-                                                                        Registering Shipment...
-                                                                    </>
-                                                                ) : "Register Shipment"}
-                                                            </button>
+                            {/* Live calculations display */}
+                            {totalPhpValue > 0 && (
+                                <div className="p-3.5 bg-muted/40 border rounded-xl space-y-2 animate-in fade-in duration-200 shadow-inner">
+                                    <div className="flex justify-between text-xs font-bold text-muted-foreground">
+                                        <span>Total Cargo Value (PHP)</span>
+                                        <span className="font-mono text-foreground text-sm font-extrabold">
+                                            ₱{totalPhpValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        </span>
+                                    </div>
+                                    <div className="flex justify-between text-xs font-bold text-muted-foreground border-t pt-1.5">
+                                        <span>Total Cargo Value (USD @ {parseFloat(shipmentForm.exchange_rate) || 58.00})</span>
+                                        <span className="font-mono text-foreground text-sm font-extrabold">
+                                            ${totalUsdValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        </span>
+                                    </div>
+                                </div>
+                            )}
+
+                            </div>
+
+                            {/* Sticky Footer */}
+                            <div className="border-t pt-3 flex justify-end gap-2 shrink-0 bg-card mt-auto">
+                                <button
+                                    onClick={() => { setIsOverridden(false); setIsModalOpen(false); }}
+                                    type="button"
+                                    className="px-4 py-2 border rounded-lg text-xs font-semibold hover:bg-muted text-foreground"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    id="register-shipment-btn"
+                                    type="submit"
+                                    disabled={loading}
+                                    className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground hover:bg-primary/95 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    {loading ? (
+                                        <>
+                                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                            Registering Shipment...
+                                        </>
+                                    ) : "Register Shipment"}
+                                </button>
+                            </div>
                         </form>
                     </div>
                 </div>

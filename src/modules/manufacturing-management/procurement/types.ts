@@ -75,6 +75,7 @@ export interface RawMaterial {
     cost_per_unit: number;
     estimated_unit_cost: number;
     density_factor: number;
+    product_category?: number | null;
     date_added?: string;
     last_updated?: string;
 }

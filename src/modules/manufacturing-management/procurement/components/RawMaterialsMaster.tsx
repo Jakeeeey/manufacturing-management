@@ -79,8 +79,27 @@ export default function RawMaterialsMaster({ rawMaterials, suppliers, onRegister
         });
     }, [isModalOpen]);
 
-    const isItemPkg = (name: string) => {
-        const lower = name.toLowerCase();
+    // Reset form completely when modal is closed
+    useEffect(() => {
+        if (!isModalOpen) {
+            setFormName("");
+            setFormCode("");
+            setFormDesc("");
+            setFormCost("0.00");
+            setFormDensity("1.000");
+            setFormBrand("");
+            setFormCategory("");
+            setSelectedSupplierIds([]);
+            setSupplierSearch("");
+        }
+    }, [isModalOpen]);
+
+    const isItemPkg = (item: RawMaterial) => {
+        const pkgCategoryIds = [329, 330, 338]; // Bottle, Box, Plastic
+        if (item.product_category && pkgCategoryIds.includes(Number(item.product_category))) {
+            return true;
+        }
+        const lower = item.product_name.toLowerCase();
         return lower.includes("box") || lower.includes("bottle") || lower.includes("cap") || lower.includes("sticker") || lower.includes("packaging");
     };
 
@@ -134,7 +153,7 @@ export default function RawMaterialsMaster({ rawMaterials, suppliers, onRegister
         
         if (!matchesSearch) return false;
         
-        const isPkg = isItemPkg(m.product_name);
+        const isPkg = isItemPkg(m);
         if (typeFilter === "raw") return !isPkg;
         if (typeFilter === "pkg") return isPkg;
         return true;
@@ -177,6 +196,12 @@ export default function RawMaterialsMaster({ rawMaterials, suppliers, onRegister
         e.preventDefault();
         if (!formName.trim()) {
             toast.error("Material Name is required");
+            return;
+        }
+        const normalizedNewName = formName.trim().toLowerCase();
+        const exists = rawMaterials.some(rm => rm.product_name.trim().toLowerCase() === normalizedNewName);
+        if (exists) {
+            toast.error("A material with this name already exists. Please choose a unique name.");
             return;
         }
         if (!formCode.trim()) {
@@ -361,7 +386,7 @@ export default function RawMaterialsMaster({ rawMaterials, suppliers, onRegister
                         ) : (
                             filtered.map(m => {
                                 const isExpanded = expandedProductId === m.product_id;
-                                const isPkg = isItemPkg(m.product_name);
+                                const isPkg = isItemPkg(m);
 
                                 return (
                                     <React.Fragment key={m.product_id}>
