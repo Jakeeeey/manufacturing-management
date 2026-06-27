@@ -33,7 +33,6 @@ export default function ClientsModule() {
         handleCustomerNameChange,
         handleSaveCustomer,
         handleToggleActive,
-        handleDeleteCustomer
     } = useClients();
 
     return (
@@ -116,7 +115,6 @@ export default function ClientsModule() {
                 customers={customers}
                 loading={loading}
                 onEdit={openEditModal}
-                onDelete={handleDeleteCustomer}
                 onToggleActive={handleToggleActive}
             />
 

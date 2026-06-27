@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Anchor, Calendar, Layers, Search, ShieldAlert, CheckCircle, Info, Loader2 } from "lucide-react";
+import { Anchor, Calendar, Layers, Search, ShieldAlert, CheckCircle, Loader2 } from "lucide-react";
 import { useProcurement } from "../procurement/hooks/useProcurement";
 import { toast } from "sonner";
 
@@ -72,7 +72,7 @@ export default function ApprovalModule() {
             if (!res.ok) throw new Error("Approval submission failed");
             toast.success("Purchase Order approved and ETA scheduled successfully.");
             window.location.reload();
-        } catch (e) {
+        } catch {
             toast.error("Failed to approve Purchase Order.");
         } finally {
             setIsApproving(false);
@@ -148,7 +148,7 @@ export default function ApprovalModule() {
                                         <div className="text-xs text-muted-foreground font-semibold truncate mb-2">{supName}</div>
                                         <div className="flex items-center justify-between text-[10px] text-muted-foreground font-semibold font-mono">
                                             <span>₱{Number(s.total_php_value).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
-                                            <span>{new Date(s.created_at || (s as any).date_encoded || new Date()).toLocaleDateString()}</span>
+                                            <span>{new Date(s.created_at || new Date()).toLocaleDateString()}</span>
                                         </div>
                                     </div>
                                 );

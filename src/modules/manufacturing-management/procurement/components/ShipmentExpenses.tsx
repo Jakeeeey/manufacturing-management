@@ -266,7 +266,7 @@ export default function ShipmentExpenses({
                                         <div key={idx} className="flex gap-3 items-center">
                                             <div className="flex-1">
                                                 <CreatableSelect
-                                                    options={overheadTypes.map((ot: any) => ({
+                                                    options={overheadTypes.map((ot) => ({
                                                         value: String(ot.id),
                                                         label: ot.overhead_name
                                                     }))}

@@ -6,7 +6,6 @@ interface ClientsTableProps {
     customers: Customer[];
     loading: boolean;
     onEdit: (c: Customer) => void;
-    onDelete: (id: number | string) => void;
     onToggleActive: (c: Customer) => void;
 }
 
@@ -14,7 +13,6 @@ export default function ClientsTable({
     customers,
     loading,
     onEdit,
-    onDelete,
     onToggleActive
 }: ClientsTableProps) {
     if (loading) {

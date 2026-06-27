@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useSearchParams } from "next/navigation";
+
 import { IncomingShipment, ShipmentLineItem, Supplier, RawMaterial, LinkedProduct } from "../types";
 
 interface UOMOption {
@@ -364,7 +364,6 @@ export default function IncomingShipments({
     linesForm,
     setLinesForm,
     onCreateShipment,
-    onTriggerAllocation,
     onUpdateShipmentStatus,
     loading = false
 }: IncomingShipmentsProps) {
@@ -444,7 +443,7 @@ export default function IncomingShipments({
         const linkedIds = supplierLinkedProducts
             .map(lp => {
                 if (typeof lp.product_id === "object" && lp.product_id !== null) {
-                    return Number(lp.product_id.id || (lp.product_id as any).product_id);
+                    return Number(lp.product_id.id || (lp.product_id as { id: number; product_id?: number }).product_id);
                 } else if (lp.product_id) {
                     return Number(lp.product_id);
                 }
