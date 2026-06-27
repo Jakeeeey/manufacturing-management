@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from "react";
-import { Supplier, RawMaterial } from "../types";
+import { Supplier, RawMaterial, PSGCItem } from "../types";
 import { Search, Plus, MapPin, Phone, Mail, Award, FileText, CheckCircle2, AlertCircle, Globe, Building2, UserSquare2, Trash2, Link } from "lucide-react";
-import { fetchPHProvinces, fetchPHCities, fetchPHBarangays, PSGCItem } from "@/lib/services/address-service";
-import { fetchLinkedProducts, linkProductToSupplier, unlinkProductFromSupplier } from "../services/procurement-api";
+import { fetchLinkedProducts, linkProductToSupplier, unlinkProductFromSupplier, fetchPHProvinces, fetchPHCities, fetchPHBarangays } from "../services/procurement-api";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
 

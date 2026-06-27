@@ -93,3 +93,8 @@ export interface LinkedProduct {
         };
     };
 }
+
+export interface PSGCItem {
+    code: string;
+    name: string;
+}
