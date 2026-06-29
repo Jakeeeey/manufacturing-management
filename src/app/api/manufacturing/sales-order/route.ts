@@ -72,17 +72,91 @@ export async function GET(request: Request) {
         const selectedIdsParam = searchParams.get("selectedIds") || "";
         const excludeHasJo = searchParams.get("excludeHasJo") === "true";
 
-        let linkedSoIds: number[] = [];
+        const fullyScheduledSoIds: number[] = [];
         if (excludeHasJo) {
             try {
+                // 1. Fetch all links from job_order_sales_orders
                 const josoRes = await fetch(`${DIRECTUS_URL}/items/job_order_sales_orders?limit=-1`, { headers, cache: "no-store" });
-                if (josoRes.ok) {
-                    const links = (await josoRes.json()).data || [];
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    linkedSoIds = links.map((l: any) => Number(l.so_id || l.sales_order_id)).filter(Boolean);
+                const links = josoRes.ok ? ((await josoRes.json()).data || []) : [];
+
+                if (links.length > 0) {
+                    // 2. Fetch all Job Orders to inspect status and product mappings
+                    const joRes = await fetch(`${DIRECTUS_URL}/items/job_order?limit=-1`, { headers, cache: "no-store" });
+                    const jobOrders = joRes.ok ? ((await joRes.json()).data || []) : [];
+                    
+                    // Create a map of jo_id -> JobOrder
+                    const joMap = new Map<string, Record<string, unknown> & { status?: string; product_id?: { product_id?: number } | number | null; products?: unknown }>(
+                        jobOrders.map((jo: Record<string, unknown> & { jo_id: string; status?: string; product_id?: { product_id?: number } | number | null; products?: unknown }) => [jo.jo_id, jo])
+                    );
+
+                    // 3. Fetch all Sales Order Details to know what products are required per order
+                    const detailRes = await fetch(`${DIRECTUS_URL}/items/sales_order_details?limit=-1`, { headers, cache: "no-store" });
+                    const details = detailRes.ok ? ((await detailRes.json()).data || []) : [];
+
+                    // Group details by order_id
+                    const requiredProductsMap = new Map<number, Set<number>>();
+                    details.forEach((d: Record<string, unknown> & { order_id: number; product_id?: unknown }) => {
+                        const orderId = Number(d.order_id);
+                        const productId = Number((d.product_id as Record<string, unknown>)?.product_id || d.product_id);
+                        if (orderId && productId) {
+                            if (!requiredProductsMap.has(orderId)) {
+                                requiredProductsMap.set(orderId, new Set<number>());
+                            }
+                            requiredProductsMap.get(orderId)!.add(productId);
+                        }
+                    });
+
+                    // Group scheduled product IDs by order_id from non-cancelled linked Job Orders
+                    const scheduledProductsMap = new Map<number, Set<number>>();
+                    links.forEach((link: Record<string, unknown> & { order_id?: number; jo_id?: string }) => {
+                        const orderId = Number(link.order_id);
+                        const joId = link.jo_id;
+                        if (!orderId || !joId) return;
+
+                        const matchedJo = joMap.get(joId);
+                        if (!matchedJo || matchedJo.status === "Cancelled") return;
+
+                        if (!scheduledProductsMap.has(orderId)) {
+                            scheduledProductsMap.set(orderId, new Set<number>());
+                        }
+                        const set = scheduledProductsMap.get(orderId)!;
+
+                        // Add main product
+                        const topProdId = Number((matchedJo.product_id as Record<string, unknown>)?.product_id || matchedJo.product_id);
+                        if (topProdId) set.add(topProdId);
+
+                        // Add multi-products if present
+                        if (matchedJo.products) {
+                            let multiProds: (Record<string, unknown> & { product_id?: unknown })[] = [];
+                            try {
+                                multiProds = typeof matchedJo.products === "string" 
+                                    ? JSON.parse(matchedJo.products) 
+                                    : (matchedJo.products as (Record<string, unknown> & { product_id?: unknown })[]);
+                            } catch (e) {
+                                console.error("Error parsing products list of JO:", matchedJo.jo_id, e);
+                            }
+                            if (Array.isArray(multiProds)) {
+                                multiProds.forEach((p: Record<string, unknown> & { product_id?: unknown }) => {
+                                    const pId = Number((p.product_id as Record<string, unknown>)?.product_id || p.product_id);
+                                    if (pId) set.add(pId);
+                                });
+                            }
+                        }
+                    });
+
+                    // 4. Determine which Sales Orders have ALL of their required products scheduled
+                    for (const [orderId, reqSet] of requiredProductsMap.entries()) {
+                        const schedSet = scheduledProductsMap.get(orderId);
+                        if (schedSet) {
+                            const allScheduled = Array.from(reqSet).every(pId => schedSet.has(pId));
+                            if (allScheduled) {
+                                fullyScheduledSoIds.push(orderId);
+                            }
+                        }
+                    }
                 }
             } catch (err) {
-                console.error("Error fetching job_order_sales_orders links:", err);
+                console.error("Error calculating excludeHasJo lists:", err);
             }
         }
 
@@ -96,8 +170,8 @@ export async function GET(request: Request) {
             filterParts.push(`filter[_or][0][order_no][_icontains]=${encodeURIComponent(search)}`);
             filterParts.push(`filter[_or][1][customer_code][_icontains]=${encodeURIComponent(search)}`);
         }
-        if (excludeHasJo && linkedSoIds.length > 0) {
-            filterParts.push(`filter[order_id][_nin]=${linkedSoIds.join(",")}`);
+        if (excludeHasJo && fullyScheduledSoIds.length > 0) {
+            filterParts.push(`filter[order_id][_nin]=${fullyScheduledSoIds.join(",")}`);
         }
         if (filterParts.length > 0) {
             queryParams += "&" + filterParts.join("&");

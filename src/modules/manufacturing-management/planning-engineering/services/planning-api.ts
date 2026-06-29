@@ -32,8 +32,11 @@ export async function fetchSalesOrderDetails(orderId: number): Promise<SalesOrde
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function explodeBOM(productId: number): Promise<{ bom: any; components: any[]; routings: any[] }> {
-    const res = await fetch(`/api/manufacturing/planning-engineering?productId=${productId}`);
+export async function explodeBOM(productId: number, bomId?: number): Promise<{ bom: any; components: any[]; routings: any[] }> {
+    const url = bomId
+        ? `/api/manufacturing/planning-engineering?productId=${productId}&bomId=${bomId}`
+        : `/api/manufacturing/planning-engineering?productId=${productId}`;
+    const res = await fetch(url);
     return handleResponse(res, "Failed to explode product recipe");
 }
 

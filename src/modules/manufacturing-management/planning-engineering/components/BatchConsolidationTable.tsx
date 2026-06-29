@@ -15,6 +15,8 @@ interface BatchConsolidationTableProps {
     onBatchCreated: () => void;
     selectedIds: number[];
     setSelectedIds: React.Dispatch<React.SetStateAction<number[]>>;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+    products: any[];
 }
 
 export function BatchConsolidationTable({
@@ -25,13 +27,15 @@ export function BatchConsolidationTable({
     setSelectedBranchId,
     onBatchCreated,
     selectedIds,
-    setSelectedIds
+    setSelectedIds,
+    products
 }: BatchConsolidationTableProps) {
     const [joNumber, setJoNumber] = useState(`JO-BATCH-${Math.floor(1000 + Math.random() * 9000)}`);
     const [dueDate, setDueDate] = useState("");
     const [submitting, setSubmitting] = useState(false);
     const [branchSearch, setBranchSearch] = useState("");
     const [isBranchFocused, setIsBranchFocused] = useState(false);
+    const [shiftOption, setShiftOption] = useState<string>("8");
 
     useEffect(() => {
         const selectedBranchObj = branches.find(b => Number(b.id) === Number(selectedBranchId));
@@ -103,6 +107,76 @@ export function BatchConsolidationTable({
         return Object.values(prodMap);
     }, [selectedIds, soDetailsMap]);
 
+    const getProductCapacity = (productId: number): number => {
+        const prod = products.find(p => Number(p.product_id) === Number(productId));
+        return prod ? Number(prod.production_capacity || 0) : 0;
+    };
+
+    interface DailyBreakdownDay {
+        day: number;
+        date: string;
+        quantity: number;
+        status: string;
+    }
+
+    const calculateDailyBreakdown = (productId: number, qty: number, shift: string): DailyBreakdownDay[] | null => {
+        const capacityPerHour = getProductCapacity(productId);
+        if (!capacityPerHour || capacityPerHour <= 0) return null;
+        
+        const hoursPerDay = Number(shift);
+        const dailyCapacity = capacityPerHour * hoursPerDay;
+        const totalDays = Math.ceil(qty / dailyCapacity);
+        
+        const breakdown: DailyBreakdownDay[] = [];
+        let remainingQty = qty;
+        const startDate = new Date();
+        startDate.setDate(startDate.getDate() + 1);
+        
+        for (let i = 1; i <= totalDays; i++) {
+            const dayQty = Math.min(remainingQty, dailyCapacity);
+            const currentDate = new Date(startDate);
+            currentDate.setDate(startDate.getDate() + (i - 1));
+            const dateString = currentDate.toISOString().split("T")[0];
+            
+            breakdown.push({
+                day: i,
+                date: dateString,
+                quantity: dayQty,
+                status: "Pending"
+            });
+            remainingQty -= dayQty;
+        }
+        return breakdown;
+    };
+
+    const mergeBreakdowns = (breakdowns: DailyBreakdownDay[][]) => {
+        const merged: Record<string, { day: number; date: string; quantity: number; status: string }> = {};
+        
+        breakdowns.forEach(arr => {
+            arr.forEach(item => {
+                const date = item.date;
+                if (!merged[date]) {
+                    merged[date] = {
+                        day: 0,
+                        date,
+                        quantity: 0,
+                        status: "Pending"
+                    };
+                }
+                merged[date].quantity += item.quantity;
+            });
+        });
+        
+        return Object.keys(merged)
+            .sort()
+            .map((date, idx) => ({
+                day: idx + 1,
+                date,
+                quantity: merged[date].quantity,
+                status: "Pending"
+            }));
+    };
+
     const handleCreateBatch = async () => {
         if (selectedIds.length === 0) {
             toast.error("Please select at least one Sales Order to consolidate.");
@@ -123,6 +197,12 @@ export function BatchConsolidationTable({
                 .filter(so => selectedIds.includes(so.order_id))
                 .map(so => so.order_no);
 
+            // Compute independent daily breakdowns for each product and merge them
+            const breakdowns = consolidatedProducts.map(p => 
+                calculateDailyBreakdown(p.product_id, p.quantity, shiftOption)
+            ).filter((b): b is DailyBreakdownDay[] => b !== null);
+            const mergedBreakdown = mergeBreakdowns(breakdowns);
+
             // Construct payload following normalized schema
             const batchJO = {
                 jo_id: joNumber.trim(),
@@ -132,8 +212,15 @@ export function BatchConsolidationTable({
                 is_batched: true,
                 procurementStatus: "Idle",
                 branch_id: Number(selectedBranchId),
-                // Pass consolidated products
-                products: consolidatedProducts,
+                shiftOption: shiftOption,
+                dailyBreakdown: mergedBreakdown,
+                // Pass consolidated products mapped correctly
+                products: consolidatedProducts.map(p => ({
+                    product_id: p.product_id,
+                    product_name: p.product_name,
+                    quantity: p.quantity,
+                    bom: null
+                })),
                 // Top-level product defaults for compatibility with single-product hook/list views
                 product_id: consolidatedProducts[0]?.product_id,
                 product_name: consolidatedProducts[0]?.product_name,
@@ -298,6 +385,19 @@ export function BatchConsolidationTable({
                                     placeholder="JO-BATCH-XXXX"
                                 />
                             </div>
+
+                             <div className="space-y-1.5">
+                                 <label className="text-[10px] font-extrabold text-muted-foreground uppercase tracking-wider block">Production Shift Schedule</label>
+                                 <select
+                                     value={shiftOption}
+                                     onChange={(e) => setShiftOption(e.target.value)}
+                                     className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary text-foreground font-semibold cursor-pointer"
+                                 >
+                                     <option value="8">Single Shift (8 Hours/Day)</option>
+                                     <option value="16">Double Shift (16 Hours/Day)</option>
+                                     <option value="24">Triple Shift (24 Hours/Day)</option>
+                                 </select>
+                             </div>
 
                             <div className="space-y-1.5">
                                 <label className="text-[10px] font-extrabold text-muted-foreground uppercase tracking-wider block">Target Delivery/Due Date</label>

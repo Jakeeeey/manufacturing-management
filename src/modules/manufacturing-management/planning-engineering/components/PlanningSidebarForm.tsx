@@ -42,6 +42,8 @@ interface PlanningSidebarFormProps {
     shiftOption: string;
     setShiftOption: (val: string) => void;
     handleUpdateProductCapacity: (productId: number, capacity: number) => Promise<void>;
+    selectedBomVersionId: string;
+    setSelectedBomVersionId: (val: string) => void;
 }
 
 export function PlanningSidebarForm({
@@ -73,7 +75,9 @@ export function PlanningSidebarForm({
     loadVersionsForProduct,
     shiftOption,
     setShiftOption,
-    handleUpdateProductCapacity
+    handleUpdateProductCapacity,
+    selectedBomVersionId,
+    setSelectedBomVersionId
 }: PlanningSidebarFormProps) {
     const [branchSearch, setBranchSearch] = useState("");
     const [isBranchFocused, setIsBranchFocused] = useState(false);
@@ -418,6 +422,12 @@ export function PlanningSidebarForm({
         });
     }, [selectedProductsList, loadVersionsForProduct]);
 
+    useEffect(() => {
+        if (activeProductId) {
+            loadVersionsForProduct(activeProductId);
+        }
+    }, [activeProductId, loadVersionsForProduct]);
+
     const filteredBranches = branches.filter(b => 
         b.branch_name.toLowerCase().includes(branchSearch.toLowerCase()) ||
         b.branch_code.toLowerCase().includes(branchSearch.toLowerCase())
@@ -577,6 +587,24 @@ export function PlanningSidebarForm({
                         )}
                     </div>
 
+                    {/* Read-Only Preview of Sales Order Items */}
+                    <div className="space-y-1.5 border-t pt-3.5">
+                        <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Sales Order Line Items (Read-Only)</span>
+                        <div className="border rounded-lg divide-y bg-muted/10 overflow-hidden max-h-36 overflow-y-auto">
+                            {soDetails.map(d => (
+                                <div key={d.detail_id} className="p-2.5 flex justify-between items-center text-xs">
+                                    <div className="space-y-0.5">
+                                        <span className="font-bold text-foreground block">{d.product_id?.product_name || `Product #${d.product_id}`}</span>
+                                        <span className="text-[9px] text-muted-foreground font-mono">SKU: {d.product_id?.product_code || "N/A"}</span>
+                                    </div>
+                                    <span className="font-bold text-muted-foreground bg-muted border px-2 py-0.5 rounded text-[10px]">
+                                        Order Qty: {d.ordered_quantity} {d.product_id?.uom || "PCS"}
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
                     <div className="space-y-1.5">
                         <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block">Job Order Identifier</label>
                         <input
@@ -589,15 +617,42 @@ export function PlanningSidebarForm({
                     </div>
 
                     <div className="space-y-1.5">
-                        <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block">Committed target quantity</label>
-                        <input
-                            type="number"
-                            value={joQty}
-                            onChange={(e) => setJoQty(Number(e.target.value))}
-                            className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary text-foreground font-semibold"
-                            min={1}
-                        />
+                        <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block">
+                            Committed target quantity {selectedDetailId !== "all" && `(${soDetails.find(d => String(d.detail_id) === selectedDetailId)?.product_id?.uom || "PCS"})`}
+                        </label>
+                        <div className="relative flex items-center">
+                            <input
+                                type="number"
+                                value={joQty}
+                                onChange={(e) => setJoQty(Number(e.target.value))}
+                                className="w-full rounded-lg border bg-background px-3 py-2 pr-12 text-xs outline-none focus:ring-1 focus:ring-primary text-foreground font-semibold"
+                                min={1}
+                            />
+                            {selectedDetailId !== "all" && (
+                                <span className="absolute right-3 text-[10px] font-extrabold text-muted-foreground uppercase">
+                                    {soDetails.find(d => String(d.detail_id) === selectedDetailId)?.product_id?.uom || "PCS"}
+                                </span>
+                            )}
+                        </div>
                     </div>
+
+                    {selectedDetailId !== "all" && (
+                        <div className="space-y-1.5">
+                            <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block">Recipe Version Selection</label>
+                            <select
+                                value={selectedBomVersionId}
+                                onChange={(e) => setSelectedBomVersionId(e.target.value)}
+                                className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary text-foreground font-semibold cursor-pointer"
+                            >
+                                <option value="">Latest (Active)</option>
+                                {(productVersions[activeProductId] || []).map(v => (
+                                    <option key={v.bom_id} value={v.bom_id}>
+                                        {v.version_name} {v.is_active ? "(Active)" : ""}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
 
                     <div className="space-y-1.5">
                         <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block">Production Shift Schedule</label>
@@ -1002,13 +1057,18 @@ export function PlanningSidebarForm({
                                             {/* Quantity */}
                                             <div className="space-y-1">
                                                 <span className="text-[9px] font-bold text-muted-foreground uppercase block">Quantity</span>
-                                                <input
-                                                    type="number"
-                                                    value={item.quantity}
-                                                    onChange={(e) => handleUpdateLineQty(item.product_id, Number(e.target.value))}
-                                                    className="w-full rounded border bg-background px-2 py-1 text-[10px] font-semibold text-foreground"
-                                                    min={1}
-                                                />
+                                                <div className="relative flex items-center">
+                                                    <input
+                                                        type="number"
+                                                        value={item.quantity}
+                                                        onChange={(e) => handleUpdateLineQty(item.product_id, Number(e.target.value))}
+                                                        className="w-full rounded border bg-background px-2 py-1 pr-10 text-[10px] font-semibold text-foreground outline-none"
+                                                        min={1}
+                                                    />
+                                                    <span className="absolute right-2 text-[9px] font-extrabold text-muted-foreground uppercase">
+                                                        {item.uom || "PCS"}
+                                                    </span>
+                                                </div>
                                             </div>
 
                                             {/* Version Dropdown */}

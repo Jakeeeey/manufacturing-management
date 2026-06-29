@@ -69,6 +69,7 @@ export function JobOrdersList({
     handleRunFIFOInventoryCheck,
     handleTriggerProcurement,
     handleProgressProcurement,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     handleDeleteJO,
     branches,
     handleCreatePrerequisiteJobOrder,
@@ -489,12 +490,6 @@ export function JobOrdersList({
                                         : "Draft (Pending Stock Check)"
                                     }
                                 </span>
-                                <button
-                                    onClick={() => handleDeleteJO(jo.jo_id)}
-                                    className="text-muted-foreground hover:text-destructive text-xs font-semibold"
-                                >
-                                    Delete
-                                </button>
                             </div>
                         </div>
 
@@ -601,6 +596,25 @@ export function JobOrdersList({
                                             </div>
                                         </div>
                                     ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* BOM/Routing Missing Warning Banners */}
+                        {jo.status === "Draft" && !jo.bom && (
+                            <div className="p-3 bg-rose-500/5 border border-rose-500/10 rounded-lg text-[11px] flex items-start gap-2 text-rose-600">
+                                <AlertTriangle className="h-4 w-4 shrink-0 text-rose-500 mt-0.5" />
+                                <div>
+                                    <span className="font-bold">BOM Missing:</span> This SKU has no active BOM version. Schedulers must configure an active BOM to run stock allocations or release this Job Order.
+                                </div>
+                            </div>
+                        )}
+
+                        {jo.status === "Draft" && jo.bom && (!jo.routings || jo.routings.length === 0) && (
+                            <div className="p-3 bg-rose-500/5 border border-rose-500/10 rounded-lg text-[11px] flex items-start gap-2 text-rose-600">
+                                <AlertTriangle className="h-4 w-4 shrink-0 text-rose-500 mt-0.5" />
+                                <div>
+                                    <span className="font-bold">Routing Missing:</span> This SKU has a BOM but has no routing steps defined. Daily production runs cannot start until routing steps are configured.
                                 </div>
                             </div>
                         )}
@@ -752,6 +766,14 @@ export function JobOrdersList({
                                             <button
                                                 disabled={checkingInventoryId === jo.jo_id}
                                                 onClick={async () => {
+                                                    if (!jo.bom) {
+                                                        toast.error("Cannot release Job Order: SKU has no active BOM version.");
+                                                        return;
+                                                    }
+                                                    if (!jo.routings || jo.routings.length === 0) {
+                                                        toast.error("Cannot proceed with Job Order: BOM exists but has no routing/production steps defined.");
+                                                        return;
+                                                    }
                                                     if (confirm("Are you sure you want to bypass the shortage block and release this Job Order to the shop floor? This allows daily production runs to start using existing inventory.")) {
                                                         try {
                                                             await modifyJobOrder(jo.jo_id, { status: "Proceed" });
@@ -969,8 +991,8 @@ export function JobOrdersList({
                                                                 onChange={(e) => updateQaInput(jo.jo_id, { inspectorId: e.target.value })}
                                                             >
                                                                 <option value="">-- Choose Inspector --</option>
-                                                                {users.map(u => (
-                                                                    <option key={u.user_id} value={u.user_id}>{u.user_fname} {u.user_lname}</option>
+                                                                {users.map((u, uIdx) => (
+                                                                    <option key={u.user_id || u.id || uIdx} value={u.user_id || u.id}>{u.user_fname} {u.user_lname}</option>
                                                                 ))}
                                                             </select>
                                                         </div>
@@ -1369,7 +1391,7 @@ export function JobOrdersList({
                                                                                                 const statusStr = u.isOver ? "⚠️ OVERLOADED" : `${u.workload.toFixed(1)} hrs`;
                                                                                                 const prefix = u.isRoleMatch ? "⭐ [Match] " : "";
                                                                                                 return (
-                                                                                                    <option key={u.user_id} value={u.user_id}>
+                                                                                                    <option key={u.user_id || u.id} value={u.user_id || u.id}>
                                                                                                         {prefix}{u.user_fname} {u.user_lname} ({u.user_position || "Operator"}) — {statusStr}
                                                                                                     </option>
                                                                                                 );

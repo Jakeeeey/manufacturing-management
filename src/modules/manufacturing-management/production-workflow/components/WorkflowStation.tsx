@@ -3,7 +3,6 @@
 import React from "react";
 import { 
     Cpu, 
-    Users, 
     CheckCircle, 
     Calendar, 
     Loader2, 
@@ -13,14 +12,11 @@ import {
     Save, 
     CheckSquare, 
     Check, 
-    RotateCcw, 
-    Info, 
-    UserPlus, 
-    Camera,
-    Copy
+    Info 
 } from "lucide-react";
 import { JobOrder, ActiveAssigningTask } from "../types";
 import { toast } from "sonner";
+import { StepDetailsModal } from "./StepDetailsModal";
 
 interface UserMin {
     user_id: number;
@@ -114,6 +110,7 @@ export function WorkflowStation({
 }: WorkflowStationProps) {
     const [filterStatus, setFilterStatus] = React.useState<"All" | "Pending" | "Ongoing" | "Completed">("All");
     const [duplicatingStepId, setDuplicatingStepId] = React.useState<number | null>(null);
+    const [selectedDetailsStep, setSelectedDetailsStep] = React.useState<{ productId: number; routing: WorkflowRouting } | null>(null);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const handleDuplicateTask = async (productId: number, step: any) => {
@@ -535,14 +532,8 @@ export function WorkflowStation({
                                 {/* Vertical Timeline Track */}
                                 <div className="relative pl-7 sm:pl-10 border-l-2 border-slate-800 ml-4 sm:ml-5 space-y-8 py-2">
                                     {routings.map((rout, rIdx) => {
-                                        const labor = Number(rout.estimated_labor_cost) || 0;
-                                        const overhead = Number(rout.estimated_overhead_cost) || 0;
-                                        const stepHours = (Number(rout.duration_hours) || 0) * Number(currentQty);
-                                        const stepManpower = Math.max(1, Math.ceil(stepHours / 8));
-                                        
                                         const relTask = selectedJO.routing_tasks?.find(t => Number(t.routing_id) === Number(rout.routing_id));
                                         const taskQAStatus = relTask ? (relTask.status === "Completed" ? "Passed" : "Pending") : (rout.qa_status || "Pending");
-                                        const isStepLoading = !!assigningStepKeys[`${selectedJO.jo_id}-${p.product_id}-${rout.routing_id}`];
 
                                         const dayObj = selectedDayNum
                                             ? selectedJO.dailyBreakdown?.find((d) => d.day === selectedDayNum)
@@ -551,15 +542,6 @@ export function WorkflowStation({
                                         const isCompleted = selectedDayNum
                                             ? (dayObj?.completed_steps?.includes(Number(rout.routing_id)) || false)
                                             : (taskQAStatus === "Passed");
-
-                                        // QA Logs details
-                                        const latestQaLog = relTask?.qa_logs?.[relTask.qa_logs.length - 1];
-                                        const dayQaLog = dayObj?.qa_logs?.[String(rout.routing_id)];
-                                        const qaPhotos = selectedDayNum
-                                            ? (Array.isArray(dayQaLog?.photos) ? dayQaLog.photos : [])
-                                            : (Array.isArray(latestQaLog?.photos) ? latestQaLog.photos : []);
-                                        const qaComments = selectedDayNum ? dayQaLog?.comments : latestQaLog?.comments;
-                                        const actualYield = selectedDayNum ? dayQaLog?.actual_quantity : latestQaLog?.actual_quantity;
 
                                         // Timeline Badge Status Styles
                                         let nodeStyle = "border-slate-700 text-slate-500 bg-slate-900";
@@ -580,6 +562,8 @@ export function WorkflowStation({
                                                 nodeIcon = <Play className="h-3 w-3 sm:h-3.5 sm:w-3.5 fill-primary" />;
                                             }
                                         }
+                                        
+                                        const stepRequiresQA = !!relTask?.requires_qa || !!rout.requires_qa || !!rout.requiresQA;
 
                                         return (
                                             <div key={rout.routing_id} className="relative group">
@@ -589,251 +573,68 @@ export function WorkflowStation({
                                                     {nodeIcon}
                                                 </div>
 
-                                                {/* Step Details Card */}
-                                                <div className={`w-full border rounded-2xl p-4.5 sm:p-5 shadow-sm transition-all duration-300 space-y-4 ${
-                                                    isCompleted 
-                                                        ? "bg-emerald-955/5 border-emerald-500/20 hover:border-emerald-500/30" 
-                                                        : "bg-slate-900/20 border-slate-800 hover:border-slate-705"
-                                                }`}>
-                                                    {/* Header Info */}
-                                                    <div className="flex justify-between items-start gap-4">
-                                                        <div className="space-y-1">
-                                                            <div className="flex items-center gap-2">
-                                                                <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded border ${
-                                                                    isCompleted
-                                                                        ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
-                                                                        : "bg-slate-950 border-slate-800 text-muted-foreground"
-                                                                    }`}>
-                                                                    Step {rout.sequence_order} • OP {rout.routing_id}
+                                                {/* Simplified Step Card */}
+                                                <div 
+                                                    onClick={() => setSelectedDetailsStep({ productId: p.product_id, routing: rout })}
+                                                    className={`w-full border rounded-2xl p-4 sm:p-4.5 shadow-sm transition-all duration-300 cursor-pointer flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 ${
+                                                        isCompleted 
+                                                            ? "bg-emerald-955/5 border-emerald-500/20 hover:bg-emerald-500/10 hover:border-emerald-500/40" 
+                                                            : "bg-slate-900/20 border-slate-800 hover:bg-slate-800/40 hover:border-slate-700"
+                                                    }`}
+                                                >
+                                                    <div className="space-y-1">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded border ${
+                                                                isCompleted
+                                                                    ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+                                                                    : "bg-slate-955 border-slate-800 text-muted-foreground"
+                                                                }`}>
+                                                                Step {rout.sequence_order} • OP {rout.routing_id}
+                                                            </span>
+                                                            {stepRequiresQA && (
+                                                                <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/20 text-amber-500">
+                                                                    QA
                                                                 </span>
-                                                                {["Proceed", "Ongoing", "On Hold"].includes(selectedJO.status) && !isDayCompleted && (
-                                                                    <button
-                                                                        title="Duplicate Task"
-                                                                        disabled={duplicatingStepId === rout.routing_id}
-                                                                        onClick={() => handleDuplicateTask(p.product_id, rout)}
-                                                                        className="p-1 rounded bg-slate-955 hover:bg-slate-800 text-muted-foreground hover:text-foreground transition-colors inline-flex items-center justify-center border border-slate-800 disabled:opacity-55"
-                                                                    >
-                                                                        {duplicatingStepId === rout.routing_id ? (
-                                                                            <Loader2 className="h-3 w-3 animate-spin text-primary" />
-                                                                        ) : (
-                                                                            <Copy className="h-3 w-3" />
-                                                                        )}
-                                                                    </button>
-                                                                )}
-                                                            </div>
-                                                            <h3 className="font-extrabold text-foreground text-sm tracking-tight pt-1">
-                                                                {rout.operation_name}
-                                                            </h3>
+                                                            )}
                                                         </div>
-
-                                                        <span className="text-[10px] text-muted-foreground font-bold shrink-0 bg-slate-950/40 px-2 py-1 rounded border border-slate-800">
-                                                            {stepHours.toFixed(1)} hrs total
-                                                        </span>
+                                                        <h3 className="font-extrabold text-foreground text-sm tracking-tight pt-1">
+                                                            {rout.operation_name}
+                                                        </h3>
                                                     </div>
 
-                                                    {/* Labor/OH/Capacity Stats */}
-                                                    <div className="grid grid-cols-3 gap-2.5 p-3 bg-slate-955/40 border border-slate-800 rounded-xl text-[10px] text-muted-foreground font-semibold">
-                                                        <div>
-                                                            <span className="block text-[8px] font-bold text-muted-foreground/60 uppercase">Labor Cost</span>
-                                                            <span className="text-foreground font-bold">₱{labor.toFixed(2)}</span>
-                                                        </div>
-                                                        <div>
-                                                            <span className="block text-[8px] font-bold text-muted-foreground/60 uppercase">Overhead Cost</span>
-                                                            <span className="text-foreground font-bold">₱{overhead.toFixed(2)}</span>
-                                                        </div>
-                                                        <div>
-                                                            <span className="block text-[8px] font-bold text-muted-foreground/60 uppercase">Workers Needed</span>
-                                                            <span className="text-primary font-bold">{stepManpower} Operator{stepManpower !== 1 ? "s" : ""}</span>
-                                                        </div>
-                                                    </div>
-
-                                                    {/* Personnel Assign Section */}
-                                                    {["Proceed", "Ongoing", "On Hold"].includes(selectedJO.status) && !isDayCompleted ? (
-                                                        <div className="space-y-2 pt-1">
-                                                            <div className="flex items-center justify-between gap-4">
-                                                                <span className="text-[9px] font-black text-muted-foreground uppercase flex items-center gap-1.5">
-                                                                    <Users className="h-3.5 w-3.5 text-primary" />
-                                                                    Assigned Personnel:
-                                                                    {isStepLoading && <Loader2 className="h-3 w-3 animate-spin text-emerald-500" />}
-                                                                </span>
-                                                                
-                                                                <button
-                                                                    type="button"
-                                                                    disabled={isStepLoading}
-                                                                    onClick={() => {
-                                                                        setOperatorSearchText("");
-                                                                        setActiveAssigningTask({
-                                                                            jo: selectedJO,
-                                                                            productId: p.product_id,
-                                                                            routingId: rout.routing_id,
-                                                                            operationName: rout.operation_name
-                                                                        });
-                                                                    }}
-                                                                    className="bg-slate-950 hover:bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-[10px] text-foreground font-bold disabled:opacity-50 cursor-pointer transition-all active:scale-[0.98] inline-flex items-center gap-1 hover:border-primary/50"
-                                                                >
-                                                                    <UserPlus className="h-3.5 w-3.5 text-primary" />
-                                                                    <span>Assign Operator</span>
-                                                                </button>
-                                                            </div>
-
-                                                            <div className="flex flex-wrap gap-1.5">
-                                                                {relTask?.assignments && relTask.assignments.length > 0 ? (
-                                                                    relTask.assignments.map((ass) => {
-                                                                        const u = users.find((x) => Number(x.user_id) === Number(ass.user_id));
-                                                                        if (!u) return null;
-                                                                        return (
-                                                                            <span key={ass.user_id} className="inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-400 font-extrabold border border-emerald-500/25 text-[10px] px-2.5 py-1 rounded-xl">
-                                                                                {u.user_fname} {u.user_lname}
-                                                                                <button
-                                                                                    type="button"
-                                                                                    disabled={isStepLoading}
-                                                                                    onClick={() => handleToggleOperatorForTask(selectedJO, p.product_id, rout.routing_id, u.user_id, false)}
-                                                                                    className="text-emerald-400 hover:text-destructive hover:scale-110 ml-1 font-bold focus:outline-none cursor-pointer border-none bg-transparent disabled:opacity-50 transition-all text-[11px]"
-                                                                                >
-                                                                                    ×
-                                                                                </button>
-                                                                            </span>
-                                                                        );
-                                                                    })
-                                                                ) : rout.assigned_personnel ? (
-                                                                    <span className="bg-emerald-500/10 text-emerald-400 font-extrabold border border-emerald-500/25 text-[10px] px-2.5 py-1 rounded-xl">
-                                                                        {rout.assigned_personnel.name} ({rout.assigned_personnel.position})
-                                                                    </span>
-                                                                ) : (
-                                                                    <span className="text-[10px] italic text-muted-foreground/35">No personnel assigned to this step yet.</span>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    ) : (
-                                                        <div className="text-[10px] pt-1 text-muted-foreground font-semibold">
-                                                            <span>Assigned Personnel:</span>
-                                                            <div className="flex flex-wrap gap-1.5 mt-1">
-                                                                {relTask?.assignments && relTask.assignments.length > 0 ? (
-                                                                    relTask.assignments.map((ass) => {
-                                                                        const u = users.find((x) => Number(x.user_id) === Number(ass.user_id));
-                                                                        if (!u) return null;
-                                                                        return (
-                                                                            <span key={ass.user_id} className="bg-slate-800 text-foreground border border-slate-705 text-[10px] px-2.5 py-0.5 rounded-xl font-bold">
-                                                                                {u.user_fname} {u.user_lname} ({u.user_position || "Operator"})
-                                                                            </span>
-                                                                        );
-                                                                    })
-                                                                ) : rout.assigned_personnel ? (
-                                                                    <span className="bg-slate-800 text-foreground border border-slate-705 text-[10px] px-2.5 py-0.5 rounded-xl font-bold">
-                                                                        {rout.assigned_personnel.name} ({rout.assigned_personnel.position})
-                                                                    </span>
-                                                                ) : (
-                                                                    <span className="italic text-muted-foreground/50">None</span>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    )}
-
-                                                    {/* Completed Logs Panel inside card */}
-                                                    {isCompleted && (dayQaLog || latestQaLog) && (
-                                                        <div className="p-3 bg-slate-950/50 border border-slate-800 rounded-xl space-y-2.5 text-[10px] text-muted-foreground font-semibold">
-                                                            <div className="flex justify-between items-center font-bold text-slate-300">
-                                                                <span className="flex items-center gap-1">
-                                                                    Actual Yield: <strong className="text-emerald-500 font-extrabold text-xs">{actualYield ?? currentQty}</strong> / {currentQty} PCS
-                                                                </span>
+                                                    <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                                                        {/* Simple summary list of assigned operators */}
+                                                        <div className="text-[10px] text-muted-foreground font-semibold">
+                                                            <span className="opacity-75">Staff: </span>
+                                                            <strong className="text-foreground">
                                                                 {(() => {
-                                                                    const recordedDateStr = dayQaLog?.completed_at || latestQaLog?.recorded_at;
-                                                                    return recordedDateStr ? (
-                                                                        <span className="text-muted-foreground text-[9px] font-medium">
-                                                                            Recorded: {new Date(recordedDateStr).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
-                                                                        </span>
-                                                                    ) : null;
+                                                                    const assignedNames = relTask?.assignments?.map(ass => {
+                                                                        const u = users.find(x => Number(x.user_id) === Number(ass.user_id));
+                                                                        if (!u) return null;
+                                                                        const lInitial = u.user_lname ? ` ${u.user_lname[0]}.` : "";
+                                                                        return `${u.user_fname}${lInitial}`;
+                                                                    }).filter(Boolean);
+
+                                                                    if (assignedNames && assignedNames.length > 0) {
+                                                                        return assignedNames.join(", ");
+                                                                    }
+                                                                    if (rout.assigned_personnel) {
+                                                                        return rout.assigned_personnel.name;
+                                                                    }
+                                                                    return "None";
                                                                 })()}
-                                                            </div>
-                                                            
-                                                            {qaComments && (
-                                                                <div className="text-slate-400 italic border-l-2 border-emerald-500/50 pl-2 py-0.5 leading-normal">
-                                                                    &quot;{qaComments}&quot;
-                                                                </div>
-                                                            )}
-                                                            
-                                                            {qaPhotos.length > 0 && (
-                                                                <div className="space-y-1">
-                                                                    <span className="text-[8px] font-bold uppercase text-muted-foreground/60 block">Logged Images ({qaPhotos.length})</span>
-                                                                    <div className="flex gap-2 overflow-x-auto pt-1 pb-1 scrollbar-thin">
-                                                                        {qaPhotos.map((photoId: string) => (
-                                                                            <div key={photoId} className="h-12 w-12 shrink-0 rounded-lg overflow-hidden border border-slate-800 bg-slate-950 relative group/thumb">
-                                                                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                                                                <img
-                                                                                    src={`${process.env.NEXT_PUBLIC_DIRECTUS_URL || "http://vtc:8074"}/assets/${photoId}`}
-                                                                                    alt="QA visual audit attachment"
-                                                                                    className="w-full h-full object-cover cursor-zoom-in hover:scale-105 transition-transform"
-                                                                                    onClick={() => window.open(`${process.env.NEXT_PUBLIC_DIRECTUS_URL || "http://vtc:8074"}/assets/${photoId}`, '_blank')}
-                                                                                />
-                                                                            </div>
-                                                                        ))}
-                                                                    </div>
-                                                                </div>
-                                                            )}
+                                                            </strong>
                                                         </div>
-                                                    )}
 
-                                                    {/* Action triggers */}
-                                                    {selectedJO.status === "Ongoing" && !isDayCompleted && (
-                                                        <div className="pt-3 border-t border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                                                            <div className="flex items-center gap-1.5 text-[10px]">
-                                                                <span className="font-bold text-muted-foreground uppercase">Status:</span>
-                                                                {isCompleted ? (
-                                                                    <span className="inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-500 text-[10px] font-black px-2.5 py-0.5 rounded-lg border border-emerald-500/25 uppercase">
-                                                                        <CheckCircle className="h-3 w-3" /> QA Approved
-                                                                    </span>
-                                                                ) : (
-                                                                    <span className="bg-amber-500/10 text-amber-500 text-[10px] font-black px-2.5 py-0.5 rounded-lg border border-amber-500/25 uppercase tracking-wide animate-pulse">
-                                                                        Pending Operator
-                                                                    </span>
-                                                                )}
-                                                            </div>
-
-                                                            <div className="flex items-center gap-2">
-                                                                {!isCompleted ? (
-                                                                    (() => {
-                                                                        const stepRequiresQA = 
-                                                                            !!relTask?.requires_qa || 
-                                                                            !!rout.requires_qa || 
-                                                                            !!rout.requiresQA;
-                                                                        if (stepRequiresQA) {
-                                                                            return (
-                                                                                <button
-                                                                                    onClick={() => handleOpenQADialog(selectedJO, p.product_id, rout.routing_id, Number(currentQty), rout.operation_name)}
-                                                                                    className="w-full sm:w-auto bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-black px-4 py-2.5 rounded-xl shadow-md border-none cursor-pointer flex items-center justify-center gap-1.5 transition-all hover:scale-[1.01] active:scale-[0.99]"
-                                                                                >
-                                                                                    <Camera className="h-4 w-4" /> Verify QA & Complete
-                                                                                </button>
-                                                                            );
-                                                                        } else {
-                                                                            return (
-                                                                                <button
-                                                                                    onClick={() => handleVerifyQAForTask(selectedJO, p.product_id, rout.routing_id, "Passed", undefined, undefined, undefined, true)}
-                                                                                    className="w-full sm:w-auto bg-primary hover:bg-primary/95 text-primary-foreground text-xs font-black px-4 py-2.5 rounded-xl shadow-md border-none cursor-pointer flex items-center justify-center gap-1.5 transition-all hover:scale-[1.01] active:scale-[0.99]"
-                                                                                >
-                                                                                    <CheckCircle className="h-4 w-4" /> Tap to Complete Step
-                                                                                </button>
-                                                                            );
-                                                                        }
-                                                                    })()
-                                                                ) : (
-                                                                    <button
-                                                                        onClick={() => handleVerifyQAForTask(selectedJO, p.product_id, rout.routing_id, "Pending")}
-                                                                        className="w-full sm:w-auto bg-slate-955 hover:bg-slate-900 text-muted-foreground hover:text-foreground text-[10px] font-bold px-3 py-1.5 rounded-xl border border-slate-800 cursor-pointer flex items-center justify-center gap-1 transition-all"
-                                                                    >
-                                                                        <RotateCcw className="h-3.5 w-3.5" /> Undo Step
-                                                                    </button>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    )}
-
-                                                    {(selectedJO.status !== "Ongoing" || isDayCompleted) && (
-                                                        <div className="pt-3 border-t border-slate-800 flex items-center justify-between text-[10px]">
-                                                            <span className="font-bold text-muted-foreground uppercase">Status:</span>
+                                                        {/* Status Badge */}
+                                                        <div className="text-[10px] self-start sm:self-auto">
                                                             {isCompleted ? (
                                                                 <span className="inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-500 font-extrabold px-2.5 py-0.5 rounded-lg border border-emerald-500/25 uppercase">
-                                                                    <CheckCircle className="h-3 w-3" /> Done
+                                                                    Done
+                                                                </span>
+                                                            ) : selectedJO.status === "Ongoing" && !isDayCompleted ? (
+                                                                <span className="bg-amber-500/10 text-amber-500 font-extrabold px-2.5 py-0.5 rounded-lg border border-amber-500/25 uppercase tracking-wide animate-pulse">
+                                                                    Pending
                                                                 </span>
                                                             ) : (
                                                                 <span className="bg-slate-805 text-muted-foreground font-extrabold px-2.5 py-0.5 rounded-lg border border-slate-700 uppercase">
@@ -841,7 +642,7 @@ export function WorkflowStation({
                                                                 </span>
                                                             )}
                                                         </div>
-                                                    )}
+                                                    </div>
                                                 </div>
                                             </div>
                                         );
@@ -1006,6 +807,30 @@ export function WorkflowStation({
                     </form>
                 )}
             </div>
+
+            {selectedDetailsStep && (
+                <StepDetailsModal
+                    isOpen={!!selectedDetailsStep}
+                    onClose={() => setSelectedDetailsStep(null)}
+                    selectedJO={selectedJO}
+                    selectedDayNum={selectedDayNum}
+                    productId={selectedDetailsStep.productId}
+                    routing={selectedDetailsStep.routing}
+                    users={users}
+                    assigningStepKeys={assigningStepKeys}
+                    setActiveAssigningTask={setActiveAssigningTask}
+                    setOperatorSearchText={setOperatorSearchText}
+                    handleToggleOperatorForTask={handleToggleOperatorForTask}
+                    handleOpenQADialog={handleOpenQADialog}
+                    handleVerifyQAForTask={handleVerifyQAForTask}
+                    duplicatingStepId={duplicatingStepId}
+                    handleDuplicateTask={handleDuplicateTask}
+                    currentQty={selectedDayNum
+                        ? (selectedJO.dailyBreakdown?.find((d) => d.day === selectedDayNum)?.quantity || productsList.find(p => p.product_id === selectedDetailsStep.productId)?.quantity || selectedJO.quantity)
+                        : (productsList.find(p => p.product_id === selectedDetailsStep.productId)?.quantity || selectedJO.quantity)}
+                    isDayCompleted={isDayCompleted}
+                />
+            )}
         </div>
     );
 }
