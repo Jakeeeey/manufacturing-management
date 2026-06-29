@@ -109,7 +109,7 @@ export function useLogisticsProfiles() {
 
         const multiplier = isRoundTrip ? 2 : 1;
         const distanceKm = route.distance_km * multiplier;
-        const fuelConsumedLiters = distanceKm / vehicle.fuel_consumption_kml;
+        const fuelConsumedLiters = vehicle.fuel_consumption_kml > 0 ? distanceKm / vehicle.fuel_consumption_kml : 0;
         const fuelCostPhp = fuelConsumedLiters * route.fuel_price_php;
         
         // Total costs
@@ -119,8 +119,8 @@ export function useLogisticsProfiles() {
         const totalTripCostPhp = driverFee + helperFee + tollFees + fuelCostPhp;
 
         // Efficiencies
-        const cargoLoadPercentageWeight = Math.min((cargoWeight / vehicle.capacity_kg) * 100, 100);
-        const cargoLoadPercentageVolume = Math.min((cargoVolume / vehicle.capacity_cbm) * 100, 100);
+        const cargoLoadPercentageWeight = vehicle.capacity_kg > 0 ? Math.min((cargoWeight / vehicle.capacity_kg) * 100, 100) : 0;
+        const cargoLoadPercentageVolume = vehicle.capacity_cbm > 0 ? Math.min((cargoVolume / vehicle.capacity_cbm) * 100, 100) : 0;
 
         // Unit splits
         const costPerKgPhp = cargoWeight > 0 ? totalTripCostPhp / cargoWeight : 0;

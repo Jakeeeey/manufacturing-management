@@ -32,6 +32,7 @@ export default function RouteConfigurations({ routes, onSave, onDelete }: RouteC
     const [fuelPricePhp, setFuelPricePhp] = useState(58.0);
     const [description, setDescription] = useState("");
     const [pinnedCoords, setPinnedCoords] = useState<[number, number] | null>(null);
+    const [mapSearchQuery, setMapSearchQuery] = useState("");
 
     const openCreate = () => {
         setEditRoute(null);
@@ -41,6 +42,7 @@ export default function RouteConfigurations({ routes, onSave, onDelete }: RouteC
         setFuelPricePhp(58.0);
         setDescription("");
         setPinnedCoords(null);
+        setMapSearchQuery("");
         setIsOpen(true);
     };
 
@@ -51,12 +53,35 @@ export default function RouteConfigurations({ routes, onSave, onDelete }: RouteC
         setTollsPhp(route.tolls_php);
         setFuelPricePhp(route.fuel_price_php);
         setDescription(route.description || "");
+        setMapSearchQuery("");
         if (route.lat && route.lng) {
             setPinnedCoords([route.lat, route.lng]);
         } else {
             setPinnedCoords(null);
         }
         setIsOpen(true);
+    };
+
+    const handleMapSearch = async () => {
+        if (!mapSearchQuery.trim()) return;
+        try {
+            const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(mapSearchQuery)}&limit=1`, {
+                headers: {
+                    "User-Agent": "VOS-Manufacturing-Management/1.0"
+                }
+            });
+            const data = await res.json();
+            if (data && data.length > 0) {
+                const lat = parseFloat(data[0].lat);
+                const lon = parseFloat(data[0].lon);
+                handleMapClick(lat, lon);
+            } else {
+                alert("Location not found. Please try a different search term.");
+            }
+        } catch (err) {
+            console.error("Geocoding error:", err);
+            alert("Error searching location. Please try again.");
+        }
     };
 
     const handleMapClick = (lat: number, lng: number) => {
@@ -215,7 +240,9 @@ export default function RouteConfigurations({ routes, onSave, onDelete }: RouteC
 
                         <form onSubmit={handleSubmit} className="p-4 space-y-4 overflow-y-auto">
                             <div className="space-y-1.5">
-                                <label className="text-[10px] font-bold text-muted-foreground uppercase">Route Name / Destination</label>
+                                <label className="text-[10px] font-bold text-muted-foreground uppercase">
+                                    Route Name / Destination <span className="text-rose-500">*</span>
+                                </label>
                                 <input
                                     type="text"
                                     value={name}
@@ -238,6 +265,29 @@ export default function RouteConfigurations({ routes, onSave, onDelete }: RouteC
 
                             <div className="space-y-1.5">
                                 <label className="text-[10px] font-bold text-muted-foreground uppercase block">Interactive Route Pinning Map</label>
+                                <div className="flex gap-2">
+                                    <input
+                                        type="text"
+                                        value={mapSearchQuery}
+                                        onChange={(e) => setMapSearchQuery(e.target.value)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === "Enter") {
+                                                e.preventDefault();
+                                                handleMapSearch();
+                                            }
+                                        }}
+                                        autoFocus
+                                        placeholder="Search location to pin (e.g. Lipa, Batangas)..."
+                                        className="flex-1 h-8 px-2.5 rounded-lg border bg-background text-[11px] outline-none focus:ring-1 focus:ring-primary font-semibold"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={handleMapSearch}
+                                        className="h-8 px-3 bg-primary text-primary-foreground text-[10px] font-bold rounded-lg hover:bg-primary/95 transition-all shadow-sm"
+                                    >
+                                        Search
+                                    </button>
+                                </div>
                                 <PinningMap pinnedCoords={pinnedCoords} onMapClick={handleMapClick} />
                             </div>
 

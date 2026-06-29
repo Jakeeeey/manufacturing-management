@@ -24,7 +24,6 @@ export default function LogisticsProfilesModule() {
         isRoundTrip,
         setIsRoundTrip,
         handleSaveVehicle,
-        handleDeleteVehicle,
         handleSaveRoute,
         handleDeleteRoute,
         getSimulationResult
@@ -134,7 +133,6 @@ export default function LogisticsProfilesModule() {
                         <VehicleRegistry
                             vehicles={vehicles}
                             onSave={handleSaveVehicle}
-                            onDelete={handleDeleteVehicle}
                         />
                     )}
                     {activeTab === "routes" && (

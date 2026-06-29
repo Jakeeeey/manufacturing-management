@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import dynamic from "next/dynamic";
 import { Vehicle, Route, SimulationResult } from "../types";
 import { Play, ShieldAlert, Sparkles, Scale, Percent } from "lucide-react";
@@ -45,6 +45,24 @@ export default function TripCostSimulator({
     setIsRoundTrip,
     getSimulationResult
 }: TripCostSimulatorProps) {
+    const [vehicleSearch, setVehicleSearch] = useState("");
+    const [routeSearch, setRouteSearch] = useState("");
+
+    const filteredVehicles = React.useMemo(() => {
+        return vehicles.filter(v => {
+            const isActive = !v.status || v.status.toLowerCase() === "active";
+            const matchesSearch = (v.name || "").toLowerCase().includes(vehicleSearch.toLowerCase()) || 
+                                  (v.plate || "").toLowerCase().includes(vehicleSearch.toLowerCase());
+            return isActive && matchesSearch;
+        });
+    }, [vehicles, vehicleSearch]);
+
+    const filteredRoutes = React.useMemo(() => {
+        return routes.filter(r => {
+            return (r.name || "").toLowerCase().includes(routeSearch.toLowerCase());
+        });
+    }, [routes, routeSearch]);
+
     const result = getSimulationResult();
     const vehicle = vehicles.find(v => String(v.id) === simVehicleId);
 
@@ -69,13 +87,20 @@ export default function TripCostSimulator({
                     <div className="space-y-3">
                         <div className="space-y-1">
                             <label className="text-[9px] font-bold text-muted-foreground uppercase">Target Fleet Vehicle</label>
+                            <input
+                                type="text"
+                                value={vehicleSearch}
+                                onChange={(e) => setVehicleSearch(e.target.value)}
+                                placeholder="Search vehicle by name or plate..."
+                                className="w-full h-8 px-2.5 rounded-lg border bg-background text-xs outline-none focus:ring-1 focus:ring-primary mb-1.5"
+                            />
                             <select
                                 value={simVehicleId}
                                 onChange={(e) => setSimVehicleId(e.target.value)}
                                 className="w-full h-9 rounded-lg border bg-background text-xs font-semibold px-3 outline-none focus:ring-1 focus:ring-primary cursor-pointer"
                             >
                                 <option value="" disabled>-- Select Vehicle --</option>
-                                {vehicles.map(v => (
+                                {filteredVehicles.map(v => (
                                     <option key={v.id} value={v.id}>{v.name} ({v.plate})</option>
                                 ))}
                             </select>
@@ -83,13 +108,20 @@ export default function TripCostSimulator({
 
                         <div className="space-y-1">
                             <label className="text-[9px] font-bold text-muted-foreground uppercase">Target Route</label>
+                            <input
+                                type="text"
+                                value={routeSearch}
+                                onChange={(e) => setRouteSearch(e.target.value)}
+                                placeholder="Search route by destination..."
+                                className="w-full h-8 px-2.5 rounded-lg border bg-background text-xs outline-none focus:ring-1 focus:ring-primary mb-1.5"
+                            />
                             <select
                                 value={simRouteId}
                                 onChange={(e) => setSimRouteId(e.target.value)}
                                 className="w-full h-9 rounded-lg border bg-background text-xs font-semibold px-3 outline-none focus:ring-1 focus:ring-primary cursor-pointer"
                             >
                                 <option value="" disabled>-- Select Route --</option>
-                                {routes.map(r => (
+                                {filteredRoutes.map(r => (
                                     <option key={r.id} value={r.id}>{r.name} ({r.distance_km} km)</option>
                                 ))}
                             </select>
@@ -189,7 +221,7 @@ export default function TripCostSimulator({
                                         <div className="flex justify-between text-[10px] font-semibold">
                                             <span className="text-muted-foreground">Weight Load Efficiency ({cargoWeight}kg / {vehicle?.capacity_kg}kg)</span>
                                             <span className={weightOverloaded ? "text-rose-500 font-bold" : "text-foreground font-bold"}>
-                                                {result.cargoLoadPercentageWeight.toFixed(1)}%
+                                                {vehicle && vehicle.capacity_kg > 0 ? `${result.cargoLoadPercentageWeight.toFixed(1)}%` : "No Data"}
                                             </span>
                                         </div>
                                         <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
@@ -197,7 +229,7 @@ export default function TripCostSimulator({
                                                 className={`h-full rounded-full transition-all duration-300 ${
                                                     weightOverloaded ? "bg-rose-500" : "bg-primary"
                                                 }`}
-                                                style={{ width: `${result.cargoLoadPercentageWeight}%` }}
+                                                style={{ width: `${vehicle && vehicle.capacity_kg > 0 ? result.cargoLoadPercentageWeight : 0}%` }}
                                             />
                                         </div>
                                     </div>
@@ -206,7 +238,7 @@ export default function TripCostSimulator({
                                         <div className="flex justify-between text-[10px] font-semibold">
                                             <span className="text-muted-foreground">Volume Load Efficiency ({cargoVolume} CBM / {vehicle?.capacity_cbm} CBM)</span>
                                             <span className={volumeOverloaded ? "text-rose-500 font-bold" : "text-foreground font-bold"}>
-                                                {result.cargoLoadPercentageVolume.toFixed(1)}%
+                                                {vehicle && vehicle.capacity_cbm > 0 ? `${result.cargoLoadPercentageVolume.toFixed(1)}%` : "No Data"}
                                             </span>
                                         </div>
                                         <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
@@ -214,7 +246,7 @@ export default function TripCostSimulator({
                                                 className={`h-full rounded-full transition-all duration-300 ${
                                                     volumeOverloaded ? "bg-rose-500" : "bg-primary"
                                                 }`}
-                                                style={{ width: `${result.cargoLoadPercentageVolume}%` }}
+                                                style={{ width: `${vehicle && vehicle.capacity_cbm > 0 ? result.cargoLoadPercentageVolume : 0}%` }}
                                             />
                                         </div>
                                     </div>
