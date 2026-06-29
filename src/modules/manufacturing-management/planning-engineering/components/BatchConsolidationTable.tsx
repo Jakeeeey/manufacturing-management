@@ -112,7 +112,14 @@ export function BatchConsolidationTable({
         return prod ? Number(prod.production_capacity || 0) : 0;
     };
 
-    const calculateDailyBreakdown = (productId: number, qty: number, shift: string) => {
+    interface DailyBreakdownDay {
+        day: number;
+        date: string;
+        quantity: number;
+        status: string;
+    }
+
+    const calculateDailyBreakdown = (productId: number, qty: number, shift: string): DailyBreakdownDay[] | null => {
         const capacityPerHour = getProductCapacity(productId);
         if (!capacityPerHour || capacityPerHour <= 0) return null;
         
@@ -120,7 +127,7 @@ export function BatchConsolidationTable({
         const dailyCapacity = capacityPerHour * hoursPerDay;
         const totalDays = Math.ceil(qty / dailyCapacity);
         
-        const breakdown = [];
+        const breakdown: DailyBreakdownDay[] = [];
         let remainingQty = qty;
         const startDate = new Date();
         startDate.setDate(startDate.getDate() + 1);
@@ -142,7 +149,7 @@ export function BatchConsolidationTable({
         return breakdown;
     };
 
-    const mergeBreakdowns = (breakdowns: any[][]) => {
+    const mergeBreakdowns = (breakdowns: DailyBreakdownDay[][]) => {
         const merged: Record<string, { day: number; date: string; quantity: number; status: string }> = {};
         
         breakdowns.forEach(arr => {
@@ -193,7 +200,7 @@ export function BatchConsolidationTable({
             // Compute independent daily breakdowns for each product and merge them
             const breakdowns = consolidatedProducts.map(p => 
                 calculateDailyBreakdown(p.product_id, p.quantity, shiftOption)
-            ).filter((b): b is any[] => b !== null);
+            ).filter((b): b is DailyBreakdownDay[] => b !== null);
             const mergedBreakdown = mergeBreakdowns(breakdowns);
 
             // Construct payload following normalized schema

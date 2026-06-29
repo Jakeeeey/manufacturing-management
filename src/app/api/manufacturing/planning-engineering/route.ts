@@ -22,7 +22,11 @@ export async function GET(request: Request) {
             const res = await fetch(url, { headers, cache: "no-store" });
             if (!res.ok) throw new Error("Failed to fetch users");
             const data = await res.json();
-            return NextResponse.json(data.data || []);
+            const mappedUsers = (data.data || []).map((u: Record<string, unknown> & { user_id?: number; id?: number }) => ({
+                ...u,
+                user_id: u.user_id || u.id
+            }));
+            return NextResponse.json(mappedUsers);
         }
 
         if (action === "qa-logs") {
@@ -165,6 +169,103 @@ export async function PATCH(request: Request) {
             });
             if (!res.ok) throw new Error(`Failed to patch routing task: ${res.status}`);
             const result = await res.json();
+            
+            // Sync with parent Job Order's daily breakdown
+            try {
+                const rTask = result.data;
+                const joId = rTask?.jo_id;
+                const routingId = rTask ? Number(rTask.routing_id) : null;
+                const taskStatus = taskPatch.status;
+
+                if (joId && routingId && (taskStatus === "Completed" || taskStatus === "Pending")) {
+                    const joRes = await fetch(`${DIRECTUS_URL}/items/job_order/${encodeURIComponent(joId)}`, { headers });
+                    if (joRes.ok) {
+                        const jo = (await joRes.json()).data;
+                        if (jo && jo.daily_breakdown && Array.isArray(jo.daily_breakdown) && jo.daily_breakdown.length > 0) {
+                            interface DailyBreakdownItem {
+                                day?: number;
+                                date?: string;
+                                quantity?: number;
+                                completed_steps?: number[];
+                                status?: string;
+                                actual_yield?: number;
+                            }
+                            let dailyBreakdown = [...jo.daily_breakdown] as DailyBreakdownItem[];
+                            let modified = false;
+
+                            const tasksRes = await fetch(`${DIRECTUS_URL}/items/job_order_routing_tasks?filter[jo_id][_eq]=${encodeURIComponent(joId)}&limit=-1`, { headers });
+                            const totalSteps = tasksRes.ok ? ((await tasksRes.json()).data || []).length : 1;
+
+                            if (taskStatus === "Completed") {
+                                let targetDay = dailyBreakdown.find((d: DailyBreakdownItem) => d.status === "Ongoing");
+                                if (!targetDay) {
+                                    targetDay = dailyBreakdown.find((d: DailyBreakdownItem) => d.status === "Pending" || !d.status);
+                                }
+                                if (!targetDay && dailyBreakdown.length > 0) {
+                                    targetDay = dailyBreakdown[0];
+                                }
+
+                                if (targetDay) {
+                                    const completedSteps = targetDay.completed_steps ? [...targetDay.completed_steps] : [];
+                                    if (!completedSteps.includes(routingId)) {
+                                        completedSteps.push(routingId);
+                                        targetDay.completed_steps = completedSteps;
+                                        if (completedSteps.length >= totalSteps) {
+                                            targetDay.status = "Completed";
+                                        } else {
+                                            targetDay.status = "Ongoing";
+                                        }
+                                        modified = true;
+                                    }
+                                }
+                            } else if (taskStatus === "Pending") {
+                                dailyBreakdown = dailyBreakdown.map((day: DailyBreakdownItem) => {
+                                    const completedSteps = day.completed_steps ? [...day.completed_steps] : [];
+                                    const index = completedSteps.indexOf(routingId);
+                                    if (index > -1) {
+                                        completedSteps.splice(index, 1);
+                                        modified = true;
+                                        let newStatus = "Pending";
+                                        if (completedSteps.length >= totalSteps) {
+                                            newStatus = "Completed";
+                                        } else if (completedSteps.length > 0) {
+                                            newStatus = "Ongoing";
+                                        }
+                                        return {
+                                            ...day,
+                                            completed_steps: completedSteps,
+                                            status: newStatus
+                                        };
+                                    }
+                                    return day;
+                                });
+                            }
+
+                            if (modified) {
+                                const allDaysCompleted = dailyBreakdown.every((d: DailyBreakdownItem) => d.status === "Completed");
+                                const joStatusPatch: Record<string, unknown> = { daily_breakdown: dailyBreakdown };
+                                if (allDaysCompleted) {
+                                    joStatusPatch.status = "Finished";
+                                } else {
+                                    const anyDayStarted = dailyBreakdown.some((d: DailyBreakdownItem) => d.status === "Ongoing" || d.status === "Completed");
+                                    if (anyDayStarted && jo.status !== "Ongoing" && jo.status !== "Finished" && jo.status !== "Cancelled") {
+                                        joStatusPatch.status = "Ongoing";
+                                    }
+                                }
+
+                                await fetch(`${DIRECTUS_URL}/items/job_order/${encodeURIComponent(joId)}`, {
+                                    method: "PATCH",
+                                    headers,
+                                    body: JSON.stringify(joStatusPatch)
+                                });
+                            }
+                        }
+                    }
+                }
+            } catch (syncErr) {
+                console.error("Error synchronizing QA status to parent JO daily breakdown:", syncErr);
+            }
+
             return NextResponse.json({ success: true, data: result.data });
         }
 

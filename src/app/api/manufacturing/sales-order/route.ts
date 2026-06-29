@@ -72,7 +72,7 @@ export async function GET(request: Request) {
         const selectedIdsParam = searchParams.get("selectedIds") || "";
         const excludeHasJo = searchParams.get("excludeHasJo") === "true";
 
-        let fullyScheduledSoIds: number[] = [];
+        const fullyScheduledSoIds: number[] = [];
         if (excludeHasJo) {
             try {
                 // 1. Fetch all links from job_order_sales_orders
@@ -85,7 +85,9 @@ export async function GET(request: Request) {
                     const jobOrders = joRes.ok ? ((await joRes.json()).data || []) : [];
                     
                     // Create a map of jo_id -> JobOrder
-                    const joMap = new Map<string, any>(jobOrders.map((jo: any) => [jo.jo_id, jo]));
+                    const joMap = new Map<string, Record<string, unknown> & { status?: string; product_id?: { product_id?: number } | number | null; products?: unknown }>(
+                        jobOrders.map((jo: Record<string, unknown> & { jo_id: string; status?: string; product_id?: { product_id?: number } | number | null; products?: unknown }) => [jo.jo_id, jo])
+                    );
 
                     // 3. Fetch all Sales Order Details to know what products are required per order
                     const detailRes = await fetch(`${DIRECTUS_URL}/items/sales_order_details?limit=-1`, { headers, cache: "no-store" });
@@ -93,9 +95,9 @@ export async function GET(request: Request) {
 
                     // Group details by order_id
                     const requiredProductsMap = new Map<number, Set<number>>();
-                    details.forEach((d: any) => {
+                    details.forEach((d: Record<string, unknown> & { order_id: number; product_id?: unknown }) => {
                         const orderId = Number(d.order_id);
-                        const productId = Number(d.product_id?.product_id || d.product_id);
+                        const productId = Number((d.product_id as Record<string, unknown>)?.product_id || d.product_id);
                         if (orderId && productId) {
                             if (!requiredProductsMap.has(orderId)) {
                                 requiredProductsMap.set(orderId, new Set<number>());
@@ -106,7 +108,7 @@ export async function GET(request: Request) {
 
                     // Group scheduled product IDs by order_id from non-cancelled linked Job Orders
                     const scheduledProductsMap = new Map<number, Set<number>>();
-                    links.forEach((link: any) => {
+                    links.forEach((link: Record<string, unknown> & { order_id?: number; jo_id?: string }) => {
                         const orderId = Number(link.order_id);
                         const joId = link.jo_id;
                         if (!orderId || !joId) return;
@@ -120,22 +122,22 @@ export async function GET(request: Request) {
                         const set = scheduledProductsMap.get(orderId)!;
 
                         // Add main product
-                        const topProdId = Number(matchedJo.product_id?.product_id || matchedJo.product_id);
+                        const topProdId = Number((matchedJo.product_id as Record<string, unknown>)?.product_id || matchedJo.product_id);
                         if (topProdId) set.add(topProdId);
 
                         // Add multi-products if present
                         if (matchedJo.products) {
-                            let multiProds: any[] = [];
+                            let multiProds: (Record<string, unknown> & { product_id?: unknown })[] = [];
                             try {
                                 multiProds = typeof matchedJo.products === "string" 
                                     ? JSON.parse(matchedJo.products) 
-                                    : matchedJo.products;
+                                    : (matchedJo.products as (Record<string, unknown> & { product_id?: unknown })[]);
                             } catch (e) {
                                 console.error("Error parsing products list of JO:", matchedJo.jo_id, e);
                             }
                             if (Array.isArray(multiProds)) {
-                                multiProds.forEach((p: any) => {
-                                    const pId = Number(p.product_id?.product_id || p.product_id);
+                                multiProds.forEach((p: Record<string, unknown> & { product_id?: unknown }) => {
+                                    const pId = Number((p.product_id as Record<string, unknown>)?.product_id || p.product_id);
                                     if (pId) set.add(pId);
                                 });
                             }

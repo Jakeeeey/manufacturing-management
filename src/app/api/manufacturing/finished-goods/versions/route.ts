@@ -27,7 +27,7 @@ export async function GET(request: Request) {
         if (!res.ok) throw new Error(`Directus failed to fetch versions: ${res.status}`);
         const json = await res.json();
         
-        const versionsList = (json.data || []).map((b: any) => ({
+        const versionsList = (json.data || []).map((b: Record<string, unknown> & { bom_id: number; bom_name?: string; is_active?: unknown; version?: { version_name?: string } | null }) => ({
             bom_id: b.bom_id,
             version_name: b.version?.version_name || b.bom_name || `BOM #${b.bom_id}`,
             is_active: !!b.is_active

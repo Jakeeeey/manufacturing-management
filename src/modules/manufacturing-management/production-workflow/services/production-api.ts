@@ -14,22 +14,22 @@ async function handleResponse(res: Response, fallbackMessage: string) {
 }
 
 export async function fetchJobOrders() {
-    const res = await fetch("/api/manufacturing/planning-engineering");
+    const res = await fetch("/api/manufacturing/planning-engineering", { cache: "no-store" });
     return handleResponse(res, "Failed to fetch job orders");
 }
 
 export async function fetchUsers() {
-    const res = await fetch("/api/manufacturing/planning-engineering?action=users");
+    const res = await fetch("/api/manufacturing/planning-engineering?action=users", { cache: "no-store" });
     return handleResponse(res, "Failed to fetch users");
 }
 
 export async function fetchBranches() {
-    const res = await fetch("/api/manufacturing/procurement/qa-receiving?action=branches");
+    const res = await fetch("/api/manufacturing/procurement/qa-receiving?action=branches", { cache: "no-store" });
     return handleResponse(res, "Failed to fetch branches");
 }
 
 export async function fetchProducts() {
-    const res = await fetch("/api/manufacturing/finished-goods/products?limit=200");
+    const res = await fetch("/api/manufacturing/finished-goods/products?limit=200", { cache: "no-store" });
     return handleResponse(res, "Failed to fetch products");
 }
 

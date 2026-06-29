@@ -69,6 +69,7 @@ export function JobOrdersList({
     handleRunFIFOInventoryCheck,
     handleTriggerProcurement,
     handleProgressProcurement,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     handleDeleteJO,
     branches,
     handleCreatePrerequisiteJobOrder,
@@ -489,12 +490,6 @@ export function JobOrdersList({
                                         : "Draft (Pending Stock Check)"
                                     }
                                 </span>
-                                <button
-                                    onClick={() => handleDeleteJO(jo.jo_id)}
-                                    className="text-muted-foreground hover:text-destructive text-xs font-semibold"
-                                >
-                                    Delete
-                                </button>
                             </div>
                         </div>
 
@@ -996,8 +991,8 @@ export function JobOrdersList({
                                                                 onChange={(e) => updateQaInput(jo.jo_id, { inspectorId: e.target.value })}
                                                             >
                                                                 <option value="">-- Choose Inspector --</option>
-                                                                {users.map(u => (
-                                                                    <option key={u.user_id} value={u.user_id}>{u.user_fname} {u.user_lname}</option>
+                                                                {users.map((u, uIdx) => (
+                                                                    <option key={u.user_id || u.id || uIdx} value={u.user_id || u.id}>{u.user_fname} {u.user_lname}</option>
                                                                 ))}
                                                             </select>
                                                         </div>
@@ -1396,7 +1391,7 @@ export function JobOrdersList({
                                                                                                 const statusStr = u.isOver ? "⚠️ OVERLOADED" : `${u.workload.toFixed(1)} hrs`;
                                                                                                 const prefix = u.isRoleMatch ? "⭐ [Match] " : "";
                                                                                                 return (
-                                                                                                    <option key={u.user_id} value={u.user_id}>
+                                                                                                    <option key={u.user_id || u.id} value={u.user_id || u.id}>
                                                                                                         {prefix}{u.user_fname} {u.user_lname} ({u.user_position || "Operator"}) — {statusStr}
                                                                                                     </option>
                                                                                                 );
