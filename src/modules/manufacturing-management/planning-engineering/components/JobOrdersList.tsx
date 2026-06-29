@@ -605,6 +605,25 @@ export function JobOrdersList({
                             </div>
                         )}
 
+                        {/* BOM/Routing Missing Warning Banners */}
+                        {jo.status === "Draft" && !jo.bom && (
+                            <div className="p-3 bg-rose-500/5 border border-rose-500/10 rounded-lg text-[11px] flex items-start gap-2 text-rose-600">
+                                <AlertTriangle className="h-4 w-4 shrink-0 text-rose-500 mt-0.5" />
+                                <div>
+                                    <span className="font-bold">BOM Missing:</span> This SKU has no active BOM version. Schedulers must configure an active BOM to run stock allocations or release this Job Order.
+                                </div>
+                            </div>
+                        )}
+
+                        {jo.status === "Draft" && jo.bom && (!jo.routings || jo.routings.length === 0) && (
+                            <div className="p-3 bg-rose-500/5 border border-rose-500/10 rounded-lg text-[11px] flex items-start gap-2 text-rose-600">
+                                <AlertTriangle className="h-4 w-4 shrink-0 text-rose-500 mt-0.5" />
+                                <div>
+                                    <span className="font-bold">Routing Missing:</span> This SKU has a BOM but has no routing steps defined. Daily production runs cannot start until routing steps are configured.
+                                </div>
+                            </div>
+                        )}
+
                         {/* Allocation Check Action */}
                         {jo.status === "Draft" && (
                             <button
@@ -752,6 +771,14 @@ export function JobOrdersList({
                                             <button
                                                 disabled={checkingInventoryId === jo.jo_id}
                                                 onClick={async () => {
+                                                    if (!jo.bom) {
+                                                        toast.error("Cannot release Job Order: SKU has no active BOM version.");
+                                                        return;
+                                                    }
+                                                    if (!jo.routings || jo.routings.length === 0) {
+                                                        toast.error("Cannot proceed with Job Order: BOM exists but has no routing/production steps defined.");
+                                                        return;
+                                                    }
                                                     if (confirm("Are you sure you want to bypass the shortage block and release this Job Order to the shop floor? This allows daily production runs to start using existing inventory.")) {
                                                         try {
                                                             await modifyJobOrder(jo.jo_id, { status: "Proceed" });

@@ -50,6 +50,7 @@ export function usePlanningEngineering() {
     const [dueDate, setDueDate] = useState("");
     const [joQty, setJoQty] = useState(1);
     const [shiftOption, setShiftOption] = useState<string>("8");
+    const [selectedBomVersionId, setSelectedBomVersionId] = useState<string>("");
     
     // Branches data
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -344,6 +345,45 @@ export function usePlanningEngineering() {
             return;
         }
 
+        // Validate that all products have active BOMs and routing steps
+        const validationProducts: { id: number; name: string }[] = [];
+        if (selectedSO) {
+            if (selectedDetailId === "all") {
+                soDetails.forEach(d => {
+                    validationProducts.push({ id: d.product_id.product_id, name: d.product_id.product_name });
+                });
+            } else {
+                const detail = soDetails.find(d => String(d.detail_id) === selectedDetailId);
+                if (detail) {
+                    validationProducts.push({ id: detail.product_id.product_id, name: detail.product_id.product_name });
+                }
+            }
+        } else if (selectedBatchCandidate) {
+            validationProducts.push({ id: selectedBatchCandidate.productId, name: selectedBatchCandidate.productName });
+        } else if (isStandaloneMode) {
+            selectedProductsList.forEach(p => {
+                validationProducts.push({ id: p.product_id, name: p.product_name });
+            });
+        }
+
+        for (const prod of validationProducts) {
+            try {
+                const bomData = await explodeBOM(prod.id);
+                if (!bomData.bom) {
+                    toast.error(`Cannot generate Job Order: Product "${prod.name}" has no active BOM version.`);
+                    return;
+                }
+                if (!bomData.routings || bomData.routings.length === 0) {
+                    toast.error(`Cannot generate Job Order: Product "${prod.name}" has a BOM but has no routing/production steps defined.`);
+                    return;
+                }
+            } catch (err) {
+                console.error("BOM validation error:", err);
+                toast.error(`Failed to validate BOM recipe for product "${prod.name}".`);
+                return;
+            }
+        }
+
         let newJO: JobOrder;
         let salesOrderIds: number[] = [];
 
@@ -382,12 +422,12 @@ export function usePlanningEngineering() {
             } else {
                 const detail = soDetails.find(d => String(d.detail_id) === selectedDetailId);
                 if (!detail) return;
-
+ 
                 if (jobOrders.some(jo => jo.jo_id === joNumber.trim())) {
                     toast.error("Job Order number already exists.");
                     return;
                 }
-
+ 
                 newJO = {
                     jo_id: joNumber.trim(),
                     order_id: selectedSO.order_id,
@@ -401,7 +441,8 @@ export function usePlanningEngineering() {
                     procurementStatus: "Idle",
                     branch_id: Number(selectedBranchId),
                     shiftOption: shiftOption,
-                    dailyBreakdown: calculateDailyBreakdown(detail.product_id.product_id, joQty, shiftOption)
+                    dailyBreakdown: calculateDailyBreakdown(detail.product_id.product_id, joQty, shiftOption),
+                    bom: selectedBomVersionId ? { bom_id: Number(selectedBomVersionId) } : null
                 };
             }
             salesOrderIds = [selectedSO.order_id];
@@ -477,6 +518,7 @@ export function usePlanningEngineering() {
             setSelectedStandaloneProduct(null);
             setSelectedProductsList([]);
             setShiftOption("8");
+            setSelectedBomVersionId("");
             setActiveTab("job-orders");
             loadJobOrders();
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -543,9 +585,15 @@ export function usePlanningEngineering() {
 
             // 1. Explode BOM for each product and aggregate component requirements
             for (const p of productsList) {
-                const bomData = await explodeBOM(p.product_id);
+                const customBomId = p.bom?.bom_id || jo.bom?.bom_id || undefined;
+                const bomData = await explodeBOM(p.product_id, customBomId);
                 if (!bomData.bom) {
                     toast.error(`No active BOM version found for ${p.product_name || `Product ID ${p.product_id}`}.`);
+                    setCheckingInventoryId(null);
+                    return;
+                }
+                if (!bomData.routings || bomData.routings.length === 0) {
+                    toast.error(`Cannot proceed with Job Order: SKU "${p.product_name || `Product ID ${p.product_id}`}" has a BOM but has no routing/production steps defined.`);
                     setCheckingInventoryId(null);
                     return;
                 }
@@ -963,6 +1011,8 @@ export function usePlanningEngineering() {
         setDueDate,
         joQty,
         setJoQty,
+        selectedBomVersionId,
+        setSelectedBomVersionId,
         consolidationCandidates,
         branches,
         selectedBranchId,

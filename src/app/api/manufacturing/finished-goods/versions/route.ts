@@ -22,12 +22,18 @@ export async function GET(request: Request) {
             return NextResponse.json({ error: "Invalid productId" }, { status: 400 });
         }
 
-        const filter = encodeURIComponent(JSON.stringify({ product_id: { _eq: productId } }));
-        const url = `${DIRECTUS_URL}/items/manufacturing_product_version?filter=${filter}&limit=-1`;
+        const url = `${DIRECTUS_URL}/items/manufacturing_boms?filter[product_id][_eq]=${productId}&fields=*,version.*&limit=-1`;
         const res = await fetch(url, { headers, cache: "no-store" });
         if (!res.ok) throw new Error(`Directus failed to fetch versions: ${res.status}`);
         const json = await res.json();
-        return NextResponse.json(json.data || []);
+        
+        const versionsList = (json.data || []).map((b: any) => ({
+            bom_id: b.bom_id,
+            version_name: b.version?.version_name || b.bom_name || `BOM #${b.bom_id}`,
+            is_active: !!b.is_active
+        }));
+
+        return NextResponse.json(versionsList);
     } catch (e) {
         console.error("API Error fetching versions:", e);
         return NextResponse.json({ error: (e as { message?: string }).message || "Failed to fetch versions" }, { status: 500 });

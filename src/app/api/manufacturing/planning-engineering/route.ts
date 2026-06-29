@@ -14,6 +14,7 @@ export async function GET(request: Request) {
     try {
         const { searchParams } = new URL(request.url);
         const productId = searchParams.get("productId");
+        const bomId = searchParams.get("bomId");
         const action = searchParams.get("action");
 
         if (action === "users") {
@@ -33,13 +34,16 @@ export async function GET(request: Request) {
         }
 
         if (productId) {
-            // 1. Fetch active BOM for the product
-            const bomUrl = `${DIRECTUS_URL}/items/manufacturing_boms?filter[product_id][_eq]=${productId}&filter[is_active][_eq]=1&limit=1&fields=*,product_id.*`;
+            // 1. Fetch active/specific BOM for the product
+            const bomUrl = bomId
+                ? `${DIRECTUS_URL}/items/manufacturing_boms/${bomId}?fields=*,product_id.*`
+                : `${DIRECTUS_URL}/items/manufacturing_boms?filter[product_id][_eq]=${productId}&filter[is_active][_eq]=1&limit=1&fields=*,product_id.*`;
+            
             const bomRes = await fetch(bomUrl, { headers, cache: "no-store" });
-            if (!bomRes.ok) throw new Error("Failed to fetch active BOM");
+            if (!bomRes.ok) throw new Error("Failed to fetch BOM");
             
             const bomData = await bomRes.json();
-            const bom = bomData.data?.[0] || null;
+            const bom = bomId ? bomData.data : (bomData.data?.[0] || null);
 
             if (!bom) {
                 return NextResponse.json({ bom: null, components: [], routings: [] });

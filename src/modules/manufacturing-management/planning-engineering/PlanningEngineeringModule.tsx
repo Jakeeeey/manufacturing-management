@@ -36,6 +36,8 @@ export default function PlanningEngineeringModule() {
         setDueDate,
         joQty,
         setJoQty,
+        selectedBomVersionId,
+        setSelectedBomVersionId,
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
         consolidationCandidates,
         branches,
@@ -232,6 +234,7 @@ export default function PlanningEngineeringModule() {
                                 setSelectedBranchId={setSelectedBranchId}
                                 selectedIds={selectedIds}
                                 setSelectedIds={setSelectedIds}
+                                products={products}
                                 onBatchCreated={() => {
                                     setActiveTab("job-orders");
                                 }}
@@ -371,6 +374,8 @@ export default function PlanningEngineeringModule() {
                         shiftOption={shiftOption}
                         setShiftOption={setShiftOption}
                         handleUpdateProductCapacity={handleUpdateProductCapacity}
+                        selectedBomVersionId={selectedBomVersionId}
+                        setSelectedBomVersionId={setSelectedBomVersionId}
                     />
                 </div>
             </div>
