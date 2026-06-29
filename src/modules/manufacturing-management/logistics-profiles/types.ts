@@ -8,6 +8,8 @@ export interface Vehicle {
     driver_fee: number;
     helper_fee: number;
     fuel_consumption_kml: number;
+    status?: string;
+    fuel_type?: string;
 }
 
 export interface Route {

@@ -12,6 +12,8 @@ interface DirectusVehicle {
     driver_fee?: number;
     helper_fee?: number;
     fuel_consumption_kml?: number;
+    status?: string;
+    fuel_type?: string;
 }
 
 const DEFAULT_VEHICLES = [
@@ -139,7 +141,9 @@ export async function GET() {
             capacity_cbm: Number(v.capacity_cbm) || 0,
             driver_fee: Number(v.driver_fee) || 0,
             helper_fee: Number(v.helper_fee) || 0,
-            fuel_consumption_kml: Number(v.fuel_consumption_kml) || 0
+            fuel_consumption_kml: Number(v.fuel_consumption_kml) || 0,
+            status: v.status || "active",
+            fuel_type: v.fuel_type || "Diesel"
         }));
 
         let routesList = routesData.data || [];
@@ -159,7 +163,8 @@ export async function GET() {
                         driver_fee: v.driver_fee,
                         helper_fee: v.helper_fee,
                         fuel_consumption_kml: v.fuel_consumption_kml,
-                        status: "active"
+                        status: "active",
+                        fuel_type: "Diesel"
                     };
                     await fetch(`${directusUrl}/items/vehicles`, {
                         method: "POST",
@@ -198,7 +203,9 @@ export async function GET() {
                     capacity_cbm: Number(v.capacity_cbm) || 0,
                     driver_fee: Number(v.driver_fee) || 0,
                     helper_fee: Number(v.helper_fee) || 0,
-                    fuel_consumption_kml: Number(v.fuel_consumption_kml) || 0
+                    fuel_consumption_kml: Number(v.fuel_consumption_kml) || 0,
+                    status: v.status || "active",
+                    fuel_type: v.fuel_type || "Diesel"
                 }));
                 routesList = rD.data || [];
             } catch (seedErr) {
@@ -244,7 +251,8 @@ export async function POST(req: NextRequest) {
                 driver_fee: data.driver_fee,
                 helper_fee: data.helper_fee,
                 fuel_consumption_kml: data.fuel_consumption_kml,
-                status: "active"
+                status: data.status || "active",
+                fuel_type: data.fuel_type || "Diesel"
             };
 
             if (data.id) {
@@ -306,7 +314,9 @@ export async function POST(req: NextRequest) {
                 capacity_cbm: Number(v.capacity_cbm) || 0,
                 driver_fee: Number(v.driver_fee) || 0,
                 helper_fee: Number(v.helper_fee) || 0,
-                fuel_consumption_kml: Number(v.fuel_consumption_kml) || 0
+                fuel_consumption_kml: Number(v.fuel_consumption_kml) || 0,
+                status: v.status || "active",
+                fuel_type: v.fuel_type || "Diesel"
             })),
             routes: routesData.data || []
         };
@@ -365,7 +375,9 @@ export async function DELETE(req: NextRequest) {
                 capacity_cbm: Number(v.capacity_cbm) || 0,
                 driver_fee: Number(v.driver_fee) || 0,
                 helper_fee: Number(v.helper_fee) || 0,
-                fuel_consumption_kml: Number(v.fuel_consumption_kml) || 0
+                fuel_consumption_kml: Number(v.fuel_consumption_kml) || 0,
+                status: v.status || "active",
+                fuel_type: v.fuel_type || "Diesel"
             })),
             routes: routesData.data || []
         };
