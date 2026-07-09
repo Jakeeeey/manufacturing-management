@@ -66,7 +66,7 @@ export default function ShipmentInspectionForm({
                 ) : (
                     lineItems.map(line => {
                         const row = inspectionRows[line.line_id] || {
-                            acceptedQty: line.quantity_ordered,
+                            acceptedQty: "",
                             lotNumber: "",
                             expirationDate: "",
                             rejectionReason: "",
@@ -174,10 +174,10 @@ export default function ShipmentInspectionForm({
                                 </div>
 
                                 {/* Rejected qty calculations notice */}
-                                {Number(line.quantity_ordered) - row.acceptedQty > 0 && (
+                                {Number(line.quantity_ordered) - Number(row.acceptedQty || 0) > 0 && (
                                     <div className="bg-red-500/5 border border-red-500/10 rounded-lg p-2 flex items-center gap-1.5 text-[10px] text-red-500">
                                         <AlertTriangle className="h-3.5 w-3.5" />
-                                        <span>Warning: {Number(line.quantity_ordered) - row.acceptedQty} units rejected, logging as Bad Stock.</span>
+                                        <span>Warning: {Number(line.quantity_ordered) - Number(row.acceptedQty || 0)} units rejected, logging as Bad Stock.</span>
                                     </div>
                                 )}
                             </div>

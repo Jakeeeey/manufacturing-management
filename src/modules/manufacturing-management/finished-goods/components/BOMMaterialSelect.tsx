@@ -25,6 +25,7 @@ interface BOMMaterialSelectProps {
     onSelectProduct: (product: BFFCatalogProduct) => void;
     placeholder?: string;
     disabled?: boolean;
+    type?: string;
 }
 
 export function BOMMaterialSelect({
@@ -32,6 +33,7 @@ export function BOMMaterialSelect({
     onSelectProduct,
     placeholder = "Choose Material...",
     disabled = false,
+    type,
 }: BOMMaterialSelectProps) {
     const [open, setOpen] = React.useState(false);
     const [options, setOptions] = React.useState<BFFCatalogProduct[]>([]);
@@ -121,6 +123,23 @@ export function BOMMaterialSelect({
         searchMaterials();
     }, [debouncedSearch, open, selectedProduct]);
 
+    const filteredOptions = React.useMemo(() => {
+        return options.filter(opt => {
+            const pType = opt.product_type ? Number(opt.product_type) : null;
+            
+            if (type === "raw_material") {
+                return pType === 389;
+            }
+            if (type === "packaging") {
+                return pType === 390;
+            }
+            if (type === "sub_assembly" || type === "finished_good") {
+                return pType === 388;
+            }
+            return true;
+        });
+    }, [options, type]);
+
     const displayLabel = React.useMemo(() => {
         if (!selectedProduct) return placeholder;
         const uom = selectedProduct.unit_of_measurement?.unit_shortcut || "N/A";
@@ -155,11 +174,11 @@ export function BOMMaterialSelect({
                                 <span className="text-xs">Loading materials...</span>
                             </div>
                         )}
-                        {!loading && options.length === 0 && (
+                        {!loading && filteredOptions.length === 0 && (
                             <CommandEmpty>No materials found.</CommandEmpty>
                         )}
                         <CommandGroup>
-                            {options.map((opt) => (
+                            {filteredOptions.map((opt) => (
                                 <CommandItem
                                     key={opt.product_id}
                                     value={String(opt.product_id)}

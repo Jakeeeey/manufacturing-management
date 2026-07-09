@@ -1,27 +1,23 @@
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
-import { SalesOrder, SalesOrderDetail, QuotationHeader } from "../types";
+import { SalesOrder, SalesOrderDetail } from "../types";
 import { 
     fetchSalesOrders, 
     fetchSalesOrderDetails, 
     approveSalesOrder, 
-    convertQuotationToSalesOrder, 
-    fetchQuotationPipeline,
     updateSalesOrderDetails,
-    updateSalesOrderStatus
+    updateSalesOrderStatus,
+    createSalesOrderDirect
 } from "../services/sales-order-api";
 
 export function useSalesOrder() {
-    const [activeTab, setActiveTab] = useState<"sales-orders" | "quote-pipeline">("sales-orders");
     const [salesOrders, setSalesOrders] = useState<SalesOrder[]>([]);
-    const [quotes, setQuotes] = useState<QuotationHeader[]>([]);
     
     const [loading, setLoading] = useState(true);
     const [selectedOrder, setSelectedOrder] = useState<SalesOrder | null>(null);
     const [orderDetails, setOrderDetails] = useState<SalesOrderDetail[]>([]);
     const [loadingDetails, setLoadingDetails] = useState(false);
     
-    const [convertingId, setConvertingId] = useState<number | null>(null);
     const [updatingStatusId, setUpdatingStatusId] = useState<number | null>(null);
     const [savingQuantities, setSavingQuantities] = useState(false);
 
@@ -30,18 +26,31 @@ export function useSalesOrder() {
     const [limit, setLimit] = useState(10);
     const [searchQuery, setSearchQuery] = useState("");
     const [statusFilter, setStatusFilter] = useState("");
+    const [customerCodeFilter, setCustomerCodeFilter] = useState("");
+    const [dateFromFilter, setDateFromFilter] = useState("");
+    const [dateToFilter, setDateToFilter] = useState("");
     const [totalCount, setTotalCount] = useState(0);
     const [totalPages, setTotalPages] = useState(0);
 
     // Load Sales Orders
-    const loadSalesOrders = async (page = currentPage, search = searchQuery, status = statusFilter) => {
+    const loadSalesOrders = async (
+        page = currentPage, 
+        search = searchQuery, 
+        status = statusFilter,
+        customer = customerCodeFilter,
+        dateFrom = dateFromFilter,
+        dateTo = dateToFilter
+    ) => {
         setLoading(true);
         try {
             const res = await fetchSalesOrders({
                 page,
                 limit,
                 search,
-                status: status === "All" ? "" : status
+                status: status === "All" ? "" : status,
+                customerCode: customer,
+                dateFrom,
+                dateTo
             });
             setSalesOrders(res.data);
             setTotalCount(res.meta.totalCount);
@@ -55,27 +64,10 @@ export function useSalesOrder() {
         }
     };
 
-    // Load Quotations for pipeline
-    const loadQuotes = async () => {
-        try {
-            const data = await fetchQuotationPipeline();
-            // Filter only Draft or pending quotes (not converted yet)
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-            setQuotes(data.filter((q: any) => q.status !== "Converted to SO"));
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-        } catch (e: any) {
-            console.error(e);
-        }
-    };
-
     useEffect(() => {
-        if (activeTab === "sales-orders") {
-            loadSalesOrders(currentPage, searchQuery, statusFilter);
-        } else {
-            loadQuotes();
-        }
+        loadSalesOrders(currentPage, searchQuery, statusFilter, customerCodeFilter, dateFromFilter, dateToFilter);
 // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [activeTab, currentPage, searchQuery, statusFilter]);
+    }, [currentPage, searchQuery, statusFilter, customerCodeFilter, dateFromFilter, dateToFilter]);
 
     const handleSearchChange = (query: string) => {
         setSearchQuery(query);
@@ -84,6 +76,21 @@ export function useSalesOrder() {
 
     const handleStatusChange = (status: string) => {
         setStatusFilter(status);
+        setCurrentPage(1);
+    };
+
+    const handleCustomerChange = (customer: string) => {
+        setCustomerCodeFilter(customer);
+        setCurrentPage(1);
+    };
+
+    const handleDateFromChange = (date: string) => {
+        setDateFromFilter(date);
+        setCurrentPage(1);
+    };
+
+    const handleDateToChange = (date: string) => {
+        setDateToFilter(date);
         setCurrentPage(1);
     };
 
@@ -156,44 +163,38 @@ export function useSalesOrder() {
         }
     };
 
-    const handleConvertQuote = async (quoteId: number) => {
-        setConvertingId(quoteId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const handleCreateSalesOrderDirect = async (payload: any) => {
         try {
-            const data = await convertQuotationToSalesOrder(quoteId);
-            toast.success(`Converted successfully to Sales Order: ${data.order_no}`);
-            loadQuotes();
+            const res = await createSalesOrderDirect(payload);
+            toast.success("Sales Order created directly!");
             loadSalesOrders(currentPage, searchQuery, statusFilter);
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+            return res;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
-            toast.error(e.message || "Failed to convert quote");
-        } finally {
-            setConvertingId(null);
+            toast.error(e.message || "Failed to create sales order directly");
+            throw e;
         }
     };
 
     const refreshData = () => {
-        loadSalesOrders(currentPage, searchQuery, statusFilter);
-        loadQuotes();
+        loadSalesOrders(currentPage, searchQuery, statusFilter, customerCodeFilter, dateFromFilter, dateToFilter);
     };
 
     return {
-        activeTab,
-        setActiveTab,
         salesOrders,
-        quotes,
         loading,
         selectedOrder,
         setSelectedOrder,
         orderDetails,
         loadingDetails,
-        convertingId,
         updatingStatusId,
         savingQuantities,
         viewOrderDetails,
         handleApproveOrder,
-        handleConvertQuote,
         handleUpdateQuantities,
         handleSubmitForApproval,
+        handleCreateSalesOrderDirect,
         refreshData,
         currentPage,
         setCurrentPage,
@@ -203,6 +204,12 @@ export function useSalesOrder() {
         setSearchQuery: handleSearchChange,
         statusFilter,
         setStatusFilter: handleStatusChange,
+        customerCodeFilter,
+        setCustomerCodeFilter: handleCustomerChange,
+        dateFromFilter,
+        setDateFromFilter: handleDateFromChange,
+        dateToFilter,
+        setDateToFilter: handleDateToChange,
         totalCount,
         totalPages
     };

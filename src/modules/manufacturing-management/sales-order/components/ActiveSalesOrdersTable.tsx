@@ -19,6 +19,12 @@ interface ActiveSalesOrdersTableProps {
     totalCount: number;
     totalPages: number;
     limit: number;
+    customerCodeFilter?: string;
+    setCustomerCodeFilter?: (code: string) => void;
+    dateFromFilter?: string;
+    setDateFromFilter?: (date: string) => void;
+    dateToFilter?: string;
+    setDateToFilter?: (date: string) => void;
 }
 
 export function ActiveSalesOrdersTable({
@@ -37,9 +43,30 @@ export function ActiveSalesOrdersTable({
     totalCount,
     totalPages,
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    limit
+    limit,
+    customerCodeFilter,
+    setCustomerCodeFilter,
+    dateFromFilter,
+    setDateFromFilter,
+    dateToFilter,
+    setDateToFilter
 }: ActiveSalesOrdersTableProps) {
     const [localSearch, setLocalSearch] = useState(searchQuery);
+    const [localCustomerSearch, setLocalCustomerSearch] = useState(customerCodeFilter || "");
+    const [isCustomerFocused, setIsCustomerFocused] = useState(false);
+    const [customersList, setCustomersList] = useState<{ id: number; customer_name: string; customer_code: string }[]>([]);
+
+    useEffect(() => {
+        fetch("/api/manufacturing/customer?limit=-1&fields=id,customer_name,customer_code")
+            .then(res => res.ok ? res.json() : [])
+            .then(data => setCustomersList(data.data || data))
+            .catch(err => console.error(err));
+    }, []);
+
+    const filteredCustomers = customersList.filter(c => 
+        c.customer_name.toLowerCase().includes(localCustomerSearch.toLowerCase()) ||
+        c.customer_code.toLowerCase().includes(localCustomerSearch.toLowerCase())
+    );
 
     useEffect(() => {
         setLocalSearch(searchQuery);
@@ -82,46 +109,104 @@ export function ActiveSalesOrdersTable({
     return (
         <div className="space-y-4">
             {/* Filters Header */}
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-card p-4 rounded-xl border shadow-sm">
-                <form onSubmit={handleSearchSubmit} className="relative w-full sm:max-w-xs flex gap-2">
-                    <div className="relative flex-1">
-                        <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                        <input
-                            type="text"
-                            placeholder="Search Order No or Customer..."
-                            value={localSearch}
-                            onChange={(e) => {
-                                setLocalSearch(e.target.value);
-                                if (e.target.value === "") {
-                                    setSearchQuery("");
-                                }
-                            }}
-                            className="w-full bg-background pl-9 pr-3 py-2 text-xs rounded-lg border border-input focus:ring-1 focus:ring-primary focus:border-primary outline-none text-foreground font-medium"
-                        />
-                    </div>
-                    <button
-                        type="submit"
-                        className="bg-primary hover:bg-primary/95 text-primary-foreground font-bold px-3 py-2 rounded-lg text-xs transition-all shadow-xs"
-                    >
-                        Search
-                    </button>
-                </form>
+            <div className="flex flex-col gap-3 bg-card p-4 rounded-xl border shadow-sm">
+                <div className="flex flex-col md:flex-row items-center justify-between gap-3 w-full">
+                    <form onSubmit={handleSearchSubmit} className="relative w-full md:max-w-xs flex gap-2">
+                        <div className="relative flex-1">
+                            <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                            <input
+                                type="text"
+                                placeholder="Search Order No..."
+                                value={localSearch}
+                                onChange={(e) => {
+                                    setLocalSearch(e.target.value);
+                                    if (e.target.value === "") {
+                                        setSearchQuery("");
+                                    }
+                                }}
+                                className="w-full bg-background pl-9 pr-3 py-2 text-xs rounded-lg border border-input focus:ring-1 focus:ring-primary focus:border-primary outline-none text-foreground font-medium"
+                            />
+                        </div>
+                        <button
+                            type="submit"
+                            className="bg-primary hover:bg-primary/95 text-primary-foreground font-bold px-3 py-2 rounded-lg text-xs transition-all shadow-xs"
+                        >
+                            Search
+                        </button>
+                    </form>
 
-                <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-                    <span className="text-xs text-muted-foreground font-semibold flex items-center gap-1.5 whitespace-nowrap">
-                        <SlidersHorizontal className="h-3.5 w-3.5" /> Status:
-                    </span>
-                    <select
-                        value={statusFilter || "All"}
-                        onChange={(e) => setStatusFilter(e.target.value)}
-                        className="bg-background border border-input rounded-lg px-3 py-2 text-xs font-bold text-foreground focus:ring-1 focus:ring-primary outline-none cursor-pointer"
-                    >
-                        <option value="All">All Statuses</option>
-                        <option value="Draft">Draft</option>
-                        <option value="Pending">Pending</option>
-                        <option value="For Approval">For Approval</option>
-                        <option value="For Consolidation">For Consolidation</option>
-                    </select>
+                    <div className="flex flex-wrap items-center gap-2 w-full md:w-auto justify-end">
+                        {/* Customer Search Dropdown */}
+                        <div className="relative w-full sm:w-48">
+                            <input
+                                type="text"
+                                placeholder="Filter Customer..."
+                                value={localCustomerSearch}
+                                onFocus={() => setIsCustomerFocused(true)}
+                                onBlur={() => setTimeout(() => setIsCustomerFocused(false), 200)}
+                                onChange={(e) => {
+                                    setLocalCustomerSearch(e.target.value);
+                                    if (e.target.value === "" && setCustomerCodeFilter) {
+                                        setCustomerCodeFilter("");
+                                    }
+                                }}
+                                className="w-full bg-background px-3 py-2 text-xs rounded-lg border border-input focus:ring-1 focus:ring-primary focus:border-primary outline-none text-foreground font-medium"
+                            />
+                            {isCustomerFocused && (
+                                <div className="absolute z-50 left-0 right-0 mt-1 max-h-40 overflow-y-auto rounded-lg border bg-card shadow-xl divide-y">
+                                    {filteredCustomers.map(c => (
+                                        <button
+                                            type="button"
+                                            key={c.id}
+                                            onClick={() => {
+                                                setLocalCustomerSearch(c.customer_name);
+                                                setIsCustomerFocused(false);
+                                                if (setCustomerCodeFilter) setCustomerCodeFilter(c.customer_code);
+                                            }}
+                                            className="w-full text-left px-3 py-2 text-xs hover:bg-primary hover:text-primary-foreground text-foreground transition-colors"
+                                        >
+                                            {c.customer_name} ({c.customer_code})
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Date Range Filters */}
+                        <input
+                            type="date"
+                            value={dateFromFilter || ""}
+                            onChange={(e) => setDateFromFilter && setDateFromFilter(e.target.value)}
+                            title="Start Date"
+                            className="bg-background border border-input rounded-lg px-2 py-2 text-xs font-medium text-foreground focus:ring-1 focus:ring-primary outline-none"
+                        />
+                        <span className="text-muted-foreground text-xs font-bold">-</span>
+                        <input
+                            type="date"
+                            value={dateToFilter || ""}
+                            onChange={(e) => setDateToFilter && setDateToFilter(e.target.value)}
+                            title="End Date"
+                            className="bg-background border border-input rounded-lg px-2 py-2 text-xs font-medium text-foreground focus:ring-1 focus:ring-primary outline-none"
+                        />
+
+                        {/* Status Filter */}
+                        <div className="flex items-center gap-1.5 ml-2">
+                            <span className="text-xs text-muted-foreground font-semibold flex items-center gap-1 whitespace-nowrap">
+                                <SlidersHorizontal className="h-3.5 w-3.5" />
+                            </span>
+                            <select
+                                value={statusFilter || "All"}
+                                onChange={(e) => setStatusFilter(e.target.value)}
+                                className="bg-background border border-input rounded-lg px-3 py-2 text-xs font-bold text-foreground focus:ring-1 focus:ring-primary outline-none cursor-pointer"
+                            >
+                                <option value="All">All Statuses</option>
+                                <option value="Draft">Draft</option>
+                                <option value="Pending">Pending</option>
+                                <option value="For Approval">For Approval</option>
+                                <option value="For Consolidation">For Consolidation</option>
+                            </select>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -130,16 +215,20 @@ export function ActiveSalesOrdersTable({
                     <DollarSign className="h-10 w-10 text-muted-foreground/30 mx-auto mb-2" />
                     <h4 className="text-xs font-bold text-foreground">No Sales Orders Found</h4>
                     <p className="text-[11px] text-muted-foreground mt-1">
-                        {(searchQuery || statusFilter) 
+                        {(searchQuery || statusFilter || customerCodeFilter || dateFromFilter || dateToFilter) 
                             ? "No records matched your search query or status filter." 
                             : "Convert winning quotes from the pipeline to launch Sales Orders."}
                     </p>
-                    {(searchQuery || statusFilter) && (
+                    {(searchQuery || statusFilter || customerCodeFilter || dateFromFilter || dateToFilter) && (
                         <button
                             onClick={() => {
                                 setLocalSearch("");
                                 setSearchQuery("");
                                 setStatusFilter("");
+                                setLocalCustomerSearch("");
+                                if (setCustomerCodeFilter) setCustomerCodeFilter("");
+                                if (setDateFromFilter) setDateFromFilter("");
+                                if (setDateToFilter) setDateToFilter("");
                             }}
                             className="mt-3 bg-muted border hover:bg-muted/80 text-foreground font-bold px-3 py-1.5 rounded-lg text-xs transition-all"
                         >

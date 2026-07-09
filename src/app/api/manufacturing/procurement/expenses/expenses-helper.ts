@@ -1,5 +1,5 @@
 import { DIRECTUS_URL, headers } from "@/app/api/manufacturing/directus-api";
-import { DirectusShipmentExpense } from "@/types/manufacturing";
+import { DirectusShipmentExpense } from "@/modules/manufacturing-management/procurement/types";
 import { fetchShipmentLineItems } from "../shipments/shipments-helper";
 
 interface ExtendedProduct {

@@ -19,6 +19,14 @@ export default function SalesOrderApprovalModule() {
         setCurrentPage,
         searchQuery,
         setSearchQuery,
+        statusFilter,
+        setStatusFilter,
+        customerCodeFilter,
+        setCustomerCodeFilter,
+        dateFromFilter,
+        setDateFromFilter,
+        dateToFilter,
+        setDateToFilter,
         totalCount,
         totalPages,
         limit,
@@ -67,6 +75,14 @@ export default function SalesOrderApprovalModule() {
                             setCurrentPage={setCurrentPage}
                             searchQuery={searchQuery}
                             setSearchQuery={setSearchQuery}
+                            statusFilter={statusFilter}
+                            setStatusFilter={setStatusFilter}
+                            customerCodeFilter={customerCodeFilter}
+                            setCustomerCodeFilter={setCustomerCodeFilter}
+                            dateFromFilter={dateFromFilter}
+                            setDateFromFilter={setDateFromFilter}
+                            dateToFilter={dateToFilter}
+                            setDateToFilter={setDateToFilter}
                             totalCount={totalCount}
                             totalPages={totalPages}
                             limit={limit}

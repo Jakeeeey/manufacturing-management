@@ -46,7 +46,7 @@ export function OperatorQueue({
                         value={searchQuery}
                         onChange={e => setSearchQuery(e.target.value)}
                         placeholder="Search Job Order or Product..."
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-8 py-2 text-xs text-foreground placeholder-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary font-semibold"
+                        className="w-full bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl pl-9 pr-8 py-2 text-xs text-foreground placeholder-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary font-semibold"
                     />
                     {searchQuery && (
                         <button
@@ -78,7 +78,7 @@ export function OperatorQueue({
                                 className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all border cursor-pointer ${
                                     isSelected
                                         ? "bg-primary border-primary text-primary-foreground font-extrabold shadow-sm"
-                                        : "bg-slate-955 border-slate-850 text-muted-foreground hover:text-foreground hover:bg-slate-900/60"
+                                        : "bg-slate-955 border-slate-200 dark:border-slate-850 text-muted-foreground hover:text-foreground hover:bg-slate-100 dark:bg-slate-900/60"
                                 }`}
                             >
                                 {label} ({count})
@@ -107,10 +107,10 @@ export function OperatorQueue({
                     });
                     const progressPercent = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0;
 
-                    let statusBorderColor = "border-slate-800";
-                    if (jo.status === "Ongoing") statusBorderColor = "border-l-4 border-l-sky-500 border-slate-800";
-                    else if (jo.status === "Proceed") statusBorderColor = "border-l-4 border-l-emerald-500 border-slate-800";
-                    else if (jo.status === "On Hold") statusBorderColor = "border-l-4 border-l-amber-500 border-slate-800";
+                    let statusBorderColor = "border-slate-200 dark:border-slate-800";
+                    if (jo.status === "Ongoing") statusBorderColor = "border-l-4 border-l-sky-500 border-slate-200 dark:border-slate-800";
+                    else if (jo.status === "Proceed") statusBorderColor = "border-l-4 border-l-emerald-500 border-slate-200 dark:border-slate-800";
+                    else if (jo.status === "On Hold") statusBorderColor = "border-l-4 border-l-amber-500 border-slate-200 dark:border-slate-800";
 
                     return (
                         <button
@@ -119,12 +119,12 @@ export function OperatorQueue({
                             className={`w-full text-left p-4 rounded-xl border transition-all flex flex-col gap-3 cursor-pointer shadow-xs ${
                                 isSelected 
                                     ? "border-primary bg-primary/5 ring-1 ring-primary"
-                                    : `${statusBorderColor} bg-card hover:bg-slate-900/30`
+                                    : `${statusBorderColor} bg-card hover:bg-slate-100/40 dark:bg-slate-900/30`
                             }`}
                         >
                             <div className="flex justify-between items-start w-full">
                                 <div>
-                                    <span className="font-extrabold text-foreground text-xs">{jo.jo_id}</span>
+                                    <span className="font-extrabold text-foreground text-xs">Job Order: {jo.jo_id}</span>
                                     <h4 className="text-[11px] font-bold text-foreground truncate max-w-[190px] mt-0.5">
                                         {jo.product_name}
                                     </h4>
@@ -146,7 +146,7 @@ export function OperatorQueue({
                                     <span>Checklist Steps</span>
                                     <span>{completedSteps} / {totalSteps} Passed ({progressPercent}%)</span>
                                 </div>
-                                <div className="w-full bg-slate-850 rounded-full h-1.5 overflow-hidden">
+                                <div className="w-full bg-slate-100 dark:bg-slate-850 rounded-full h-1.5 overflow-hidden">
                                     <div 
                                         className="bg-emerald-500 h-full rounded-full transition-all duration-300"
                                         style={{ width: `${progressPercent}%` }}
@@ -155,7 +155,7 @@ export function OperatorQueue({
                             </div>
 
                             {/* Footer details */}
-                            <div className="flex justify-between items-center text-[10px] text-muted-foreground pt-1 border-t border-slate-850">
+                            <div className="flex justify-between items-center text-[10px] text-muted-foreground pt-1 border-t border-slate-200 dark:border-slate-850">
                                 <span className="font-bold text-foreground">{jo.quantity.toLocaleString()} PCS</span>
                                 <span className="flex items-center gap-1">
                                     <Calendar className="h-3.5 w-3.5" /> Due: {jo.due_date}

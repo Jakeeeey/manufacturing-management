@@ -5,8 +5,9 @@ export async function fetchQuotations(): Promise<unknown[]> {
         const url = `${DIRECTUS_URL}/items/quotation_header?limit=-1&sort=-quote_date`;
         const res = await fetch(url, { headers, cache: "no-store" });
         if (!res.ok) return [];
-        const quotes = ((await res.json()).data || []) as { id: number; customer_id: string | number | Record<string, unknown>; [key: string]: unknown }[];
+        const quotes = ((await res.json()).data || []) as { id: number; customer_id: string | number | Record<string, unknown>; project_id: string | number | Record<string, unknown>; [key: string]: unknown }[];
 
+        // Fetch active customers
         const custIds = Array.from(new Set(quotes.map(q => q.customer_id).filter(Boolean)));
         let customers: { id: string | number; customer_name: string; customer_code: string }[] = [];
         if (custIds.length > 0) {
@@ -17,13 +18,26 @@ export async function fetchQuotations(): Promise<unknown[]> {
             }
         }
 
+        // Fetch projects
+        let projects: { id: string | number; project_name: string; customer_code: string }[] = [];
+        const projRes = await fetch(`${DIRECTUS_URL}/items/projects?limit=-1`, { headers, cache: "no-store" });
+        if (projRes.ok) {
+            projects = ((await projRes.json()).data || []) as { id: string | number; project_name: string; customer_code: string }[];
+        }
+
         return quotes.map(q => {
+            const mapped = { ...q };
             const rawCustId = q.customer_id;
             if (rawCustId && (typeof rawCustId === "number" || typeof rawCustId === "string")) {
                 const match = customers.find(c => String(c.id) === String(rawCustId));
-                if (match) return { ...q, customer_id: match };
+                if (match) mapped.customer_id = match;
             }
-            return q;
+            const rawProjId = q.project_id;
+            if (rawProjId && (typeof rawProjId === "number" || typeof rawProjId === "string")) {
+                const match = projects.find(p => String(p.id) === String(rawProjId));
+                if (match) mapped.project_id = match;
+            }
+            return mapped;
         });
     } catch (e) {
         console.error("[Manufacturing Directus API] Failed fetching quotations:", e);
@@ -35,6 +49,7 @@ export async function saveQuotation(
     quoteData: {
         quote_number: string;
         customer_id: number;
+        project_id?: number;
         total_selling_price: number;
         total_simulated_cost: number;
         forex_rate_used: number;

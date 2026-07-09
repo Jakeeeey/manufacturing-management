@@ -4,7 +4,7 @@ import {
     DirectusProductCurrencyProfile,
     CostRollupResult,
     CostNode
-} from "@/types/manufacturing";
+} from "@/modules/manufacturing-management/finished-goods/types";
 import { getActiveBOMForProduct } from "../versions/versions-helper";
 
 /**
@@ -75,7 +75,7 @@ export async function getLatestLandedCost(
  */
 export async function fetchAllProducts(search?: string, limit: number = -1): Promise<DirectusProduct[]> {
     try {
-        const explicitFields = "product_id,product_name,product_code,description,isActive,cost_per_unit,price_per_unit,product_brand,parent_id.product_id,parent_id.product_name,product_category.category_name,unit_of_measurement.unit_shortcut,unit_of_measurement.unit_name,unit_of_measurement_count,product_image,density_factor,production_capacity_per_hour";
+        const explicitFields = "product_id,product_name,product_code,description,isActive,cost_per_unit,price_per_unit,product_brand,parent_id.product_id,parent_id.product_name,product_category.category_name,unit_of_measurement.unit_shortcut,unit_of_measurement.unit_name,unit_of_measurement_count,product_image,density_factor,production_capacity_per_hour,product_type";
         let url = `${DIRECTUS_URL}/items/products?limit=${limit}&fields=${explicitFields}`;
         if (search && search.trim()) {
             url += `&search=${encodeURIComponent(search.trim())}`;
@@ -348,20 +348,26 @@ export async function getProductOverheads(productId: number, versionId: number):
 export async function syncProductOverheads(
     productId: number,
     versionId: number,
-    overheads: { id?: string | number; overheadId: number; amount: number }[]
+    overheads: { id?: string | number; overheadId: number; amount: number; overheadName?: string }[]
 ): Promise<boolean> {
     try {
+        const validOverheads = overheads.filter(o => {
+            const hasOverhead = Number(o.overheadId || 0) !== 0 || String(o.overheadName || "").trim() !== "";
+            const hasAmount = Number(o.amount || 0) !== 0;
+            return hasOverhead || hasAmount;
+        });
+
         const url = `${DIRECTUS_URL}/items/product_overheads?filter[product_id][_eq]=${productId}&filter[version_id][_eq]=${versionId}&limit=-1`;
         const resGet = await fetch(url, { headers, cache: "no-store" });
         const existing: { id: number }[] = resGet.ok ? (await resGet.json()).data || [] : [];
-        const uiIds = new Set(overheads.map(o => String(o.id)));
+        const uiIds = new Set(validOverheads.map(o => String(o.id)));
         
         const toDelete = existing.filter(e => !uiIds.has(String(e.id)));
         for (const item of toDelete) {
             await fetch(`${DIRECTUS_URL}/items/product_overheads/${item.id}`, { method: "DELETE", headers });
         }
         
-        for (const item of overheads) {
+        for (const item of validOverheads) {
             const payload = {
                 product_id: productId,
                 version_id: versionId,

@@ -5,6 +5,14 @@ export interface Customer {
     isActive?: boolean;
 }
 
+export interface Project {
+    id: number;
+    project_name: string;
+    customer_code: string;
+    created_by?: number;
+    created_at?: string;
+}
+
 export interface QuotationHeader {
     id: number;
     quote_number: string;
@@ -15,7 +23,7 @@ export interface QuotationHeader {
     remarks?: string;
     quote_date?: string;
     status?: string;
-    project_name?: string;
+    project_id?: number | Project | null;
 }
 
 export interface QuotationSnapshotNode {

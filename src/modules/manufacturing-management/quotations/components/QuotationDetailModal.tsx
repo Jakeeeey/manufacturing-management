@@ -124,6 +124,22 @@ export function QuotationDetailModal({
             toast.error("Purchase Order Number (PO No.) is required");
             return;
         }
+        if (!deliveryDate) {
+            toast.error("Delivery Date is required");
+            return;
+        }
+        if (!paymentTerms) {
+            toast.error("Payment Terms is required");
+            return;
+        }
+        if (!supplierId) {
+            toast.error("Supplier is required");
+            return;
+        }
+        if (!branchId) {
+            toast.error("Production Branch is required");
+            return;
+        }
 
         setConverting(true);
         try {
@@ -352,7 +368,7 @@ export function QuotationDetailModal({
                                 {/* Delivery Date */}
                                 <div>
                                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide block mb-1">
-                                        Delivery Date
+                                        Delivery Date <span className="text-primary">*</span>
                                     </label>
                                     <input
                                         type="date"
@@ -378,7 +394,7 @@ export function QuotationDetailModal({
                                 {/* Payment Terms Selector */}
                                 <div>
                                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide block mb-1">
-                                        Payment Terms
+                                        Payment Terms <span className="text-primary">*</span>
                                     </label>
                                     <select
                                         value={paymentTerms}
@@ -462,7 +478,7 @@ export function QuotationDetailModal({
                                 {/* Searchable Supplier */}
                                 <div className="space-y-1.5 relative">
                                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide block">
-                                        Supplier
+                                        Supplier <span className="text-primary">*</span>
                                     </label>
                                     <input
                                         type="text"
@@ -499,7 +515,7 @@ export function QuotationDetailModal({
                                 {/* Searchable Target Branch */}
                                 <div className="space-y-1.5 relative">
                                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide block">
-                                        Production Branch
+                                        Production Branch <span className="text-primary">*</span>
                                     </label>
                                     <input
                                         type="text"

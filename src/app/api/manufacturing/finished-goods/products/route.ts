@@ -35,7 +35,7 @@ export async function GET(request: Request) {
         const limit = parseInt(searchParams.get("limit") || "-1");
         const excludeRollup = searchParams.get("excludeRollup") === "true";
 
-        const explicitFields = "product_id,product_name,product_code,description,isActive,cost_per_unit,price_per_unit,product_brand,parent_id,product_category,product_class,product_segment,product_section,product_shelf_life,product_image,unit_of_measurement.unit_shortcut,unit_of_measurement.unit_name,unit_of_measurement_count,density_factor,production_capacity_per_hour";
+        const explicitFields = "product_id,product_name,product_code,description,isActive,cost_per_unit,price_per_unit,product_brand,parent_id,product_category,product_class,product_segment,product_section,product_shelf_life,product_image,unit_of_measurement.unit_shortcut,unit_of_measurement.unit_name,unit_of_measurement_count,density_factor,production_capacity_per_hour,product_type";
         let url = `${DIRECTUS_URL}/items/products?limit=${limit}&fields=${explicitFields}`;
         if (search && search.trim()) {
             url += `&search=${encodeURIComponent(search.trim())}`;
@@ -126,10 +126,27 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
     try {
         const body = await request.json();
-        const { productDetails, versionName, supplierIds } = body;
+        const { productDetails, versionName, supplierIds, expectedYield } = body;
 
         if (!productDetails || !productDetails.product_name || !productDetails.product_code || !versionName) {
             return NextResponse.json({ error: "Missing required fields (product_name, product_code, versionName)" }, { status: 400 });
+        }
+
+        // Check if a product with the same name or code already exists in Directus
+        const checkNameRes = await fetch(`${DIRECTUS_URL}/items/products?filter[product_name][_eq]=${encodeURIComponent(productDetails.product_name)}&limit=1`, { headers });
+        if (checkNameRes.ok) {
+            const checkData = await checkNameRes.json();
+            if (checkData.data && checkData.data.length > 0) {
+                return NextResponse.json({ error: "A product with this name already exists. Please choose a unique name." }, { status: 400 });
+            }
+        }
+
+        const checkCodeRes = await fetch(`${DIRECTUS_URL}/items/products?filter[product_code][_eq]=${encodeURIComponent(productDetails.product_code)}&limit=1`, { headers });
+        if (checkCodeRes.ok) {
+            const checkData = await checkCodeRes.json();
+            if (checkData.data && checkData.data.length > 0) {
+                return NextResponse.json({ error: "A product with this SKU already exists. Please choose a unique SKU." }, { status: 400 });
+            }
         }
 
         // Get logged in user ID from secure access token cookie
@@ -155,9 +172,15 @@ export async function POST(request: Request) {
         // 1. Create Product
         const productPayload = {
             ...productDetails,
+            product_brand: productDetails.product_brand !== undefined ? productDetails.product_brand : null,
+            product_category: productDetails.product_category !== undefined ? productDetails.product_category : null,
+            product_class: productDetails.product_class !== undefined ? productDetails.product_class : null,
+            product_segment: productDetails.product_segment !== undefined ? productDetails.product_segment : null,
+            product_section: productDetails.product_section !== undefined ? productDetails.product_section : null,
             isActive: 1,
             status: "Approved",
             item_type: "regular",
+            product_type: 388,
             date_added: productDetails.date_added || new Date().toISOString().split("T")[0],
             created_by: userId ? Number(userId) : null
         };
@@ -201,7 +224,7 @@ export async function POST(request: Request) {
                 product_id: productId,
                 bom_name: bomName,
                 base_quantity: 1,
-                expected_yield_percentage: 100,
+                expected_yield_percentage: expectedYield !== undefined ? Number(expectedYield) : 100,
                 is_active: true,
                 version: versionId
             })

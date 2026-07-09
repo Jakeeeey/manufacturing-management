@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { toast } from "sonner";
 import { SalesOrder, SalesOrderDetail, JobOrder } from "../types";
 import { 
@@ -14,7 +14,6 @@ import {
 
 export function usePlanningEngineering() {
     const [activeTab, setActiveTab] = useState<"sales-orders" | "job-orders">("sales-orders");
-    const [salesOrderViewMode, setSalesOrderViewMode] = useState<"single" | "consolidated">("single");
     
     const [salesOrders, setSalesOrders] = useState<SalesOrder[]>([]);
     const [soDetailsMap, setSoDetailsMap] = useState<Record<number, SalesOrderDetail[]>>({});
@@ -26,6 +25,10 @@ export function usePlanningEngineering() {
     const [totalPages, setTotalPages] = useState(1);
     const [searchQuery, setSearchQuery] = useState("");
     const [selectedIds, setSelectedIds] = useState<number[]>([]);
+    const selectedIdsRef = useRef(selectedIds);
+    useEffect(() => {
+        selectedIdsRef.current = selectedIds;
+    }, [selectedIds]);
 
     const [selectedSO, setSelectedSO] = useState<SalesOrder | null>(null);
     const [soDetails, setSoDetails] = useState<SalesOrderDetail[]>([]);
@@ -147,7 +150,7 @@ export function usePlanningEngineering() {
                 limit: 10,
                 search: searchQuery,
                 status: "For Consolidation",
-                selectedIds: selectedIds,
+                selectedIds: selectedIdsRef.current,
                 excludeHasJo: true
             });
             setSalesOrders(resData.data);
@@ -159,7 +162,7 @@ export function usePlanningEngineering() {
         } finally {
             setLoadingSO(false);
         }
-    }, [page, searchQuery, selectedIds]);
+    }, [page, searchQuery]);
 
     const loadJobOrders = useCallback(async () => {
         setLoadingJOs(true);
@@ -527,17 +530,6 @@ export function usePlanningEngineering() {
         }
     };
 
-    const handleAssignPersonnel = async (joId: string, personnel: { user_id: number; user_fname?: string; user_lname?: string; user_position?: string }[]) => {
-        const toastId = toast.loading("Saving personnel assignments...");
-        try {
-            await modifyJobOrder(joId, { assignedPersonnel: personnel });
-            toast.success("Personnel assigned successfully!", { id: toastId });
-            loadJobOrders();
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-        } catch (e: any) {
-            toast.error(e.message || "Failed to assign personnel", { id: toastId });
-        }
-    };
 
     const handleUpdateProductCapacity = async (productId: number, capacity: number) => {
         try {
@@ -988,8 +980,6 @@ export function usePlanningEngineering() {
     return {
         activeTab,
         setActiveTab,
-        salesOrderViewMode,
-        setSalesOrderViewMode,
         salesOrders,
         soDetailsMap,
         loadingSO,
@@ -1042,7 +1032,6 @@ export function usePlanningEngineering() {
         setIsStandaloneMode,
         selectedStandaloneProduct,
         setSelectedStandaloneProduct,
-        handleAssignPersonnel,
         handleUpdateProductCapacity,
         selectedProductsList,
         setSelectedProductsList,

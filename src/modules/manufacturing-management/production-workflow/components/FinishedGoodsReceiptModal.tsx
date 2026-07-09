@@ -11,6 +11,7 @@ interface CompletedReceiptItem {
     expirationDate: string;
     quantityProduced: number;
     unitCost: number;
+    uom?: string;
 }
 
 interface FinishedGoodsReceiptModalProps {
@@ -28,9 +29,9 @@ export function FinishedGoodsReceiptModal({
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-955/80 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-card border border-slate-800 rounded-2xl w-full max-w-xl overflow-hidden shadow-2xl animate-in zoom-in duration-200">
+            <div className="bg-card border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-xl overflow-hidden shadow-2xl animate-in zoom-in duration-200">
                 {/* Header */}
-                <div className="border-b border-slate-800 px-6 py-4 flex items-center justify-between">
+                <div className="border-b border-slate-200 dark:border-slate-800 px-6 py-4 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                         <ShieldCheck className="h-5 w-5 text-emerald-500" />
                         <h3 className="text-sm font-black text-foreground uppercase tracking-wider">Production Completed</h3>
@@ -51,7 +52,7 @@ export function FinishedGoodsReceiptModal({
                         <span className="text-[10px] text-muted-foreground block font-mono">Job Order Ref: {completedReceipt[0]?.joId} • Destination Branch: {completedReceipt[0]?.branchId}</span>
                     </div>
 
-                    <div className="space-y-2 max-h-[220px] overflow-y-auto border border-slate-800 rounded-xl p-3 bg-slate-955/30 divide-y divide-slate-800/50">
+                    <div className="space-y-2 max-h-[220px] overflow-y-auto border border-slate-200 dark:border-slate-800 rounded-xl p-3 bg-slate-955/30 divide-y divide-slate-200 dark:divide-slate-800/50">
                         {completedReceipt.map((receipt, idx) => (
                             <div key={idx} className="flex justify-between items-center py-2.5 first:pt-0 last:pb-0">
                                 <div className="space-y-0.5">
@@ -59,8 +60,8 @@ export function FinishedGoodsReceiptModal({
                                     <span className="text-[9px] text-muted-foreground font-semibold">Lot: {receipt.lotNumber} • Exp: {receipt.expirationDate}</span>
                                 </div>
                                 <div className="text-right">
-                                    <span className="text-emerald-500 font-extrabold block text-xs">{receipt.quantityProduced.toLocaleString()} PCS</span>
-                                    <span className="text-[9px] text-muted-foreground/60 font-semibold">₱{receipt.unitCost.toFixed(2)}/u</span>
+                                    <span className="text-emerald-500 font-extrabold block text-xs">{receipt.quantityProduced.toLocaleString()} {receipt.uom || "PCS"}</span>
+                                    <span className="text-[9px] text-muted-foreground/60 font-semibold">₱{receipt.unitCost.toFixed(2)}/{receipt.uom || "PCS"}</span>
                                 </div>
                             </div>
                         ))}
@@ -68,10 +69,10 @@ export function FinishedGoodsReceiptModal({
                 </div>
 
                 {/* Footer Options */}
-                <div className="border-t border-slate-800 px-6 py-4 flex gap-3 bg-slate-950/20">
+                <div className="border-t border-slate-200 dark:border-slate-800 px-6 py-4 flex gap-3 bg-slate-50 dark:bg-slate-950/20">
                     <button
                         onClick={onClose}
-                        className="flex-1 py-2.5 text-xs font-bold text-muted-foreground hover:text-foreground rounded-xl hover:bg-slate-800 border border-slate-800 bg-transparent transition-all cursor-pointer"
+                        className="flex-1 py-2.5 text-xs font-bold text-muted-foreground hover:text-foreground rounded-xl hover:bg-slate-200 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 bg-transparent transition-all cursor-pointer"
                     >
                         Close Window
                     </button>

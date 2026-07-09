@@ -261,7 +261,7 @@ export default function DashboardModule() {
     return (
         <div className="space-y-6">
             {/* Header section */}
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between border-b border-slate-800 pb-5">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between border-b border-slate-200 dark:border-slate-800 pb-5">
                 <div>
                     <h1 className="text-xl font-black tracking-tight text-foreground flex items-center gap-2">
                         <Boxes className="h-6 w-6 text-primary" />
@@ -271,11 +271,13 @@ export default function DashboardModule() {
                         Consolidated analysis of production values, scrap wastage rates, inventory valuations, and sellout volume records.
                     </p>
                 </div>
+            </div>
 
-                {/* Filter and Presets Controls */}
-                <div className="flex flex-wrap items-center gap-2">
+            {/* Filter and Presets Controls Card */}
+            <div className="w-full bg-slate-100/30 dark:bg-slate-950/20 border border-slate-200 dark:border-slate-800/80 p-4 rounded-2xl flex flex-wrap items-center justify-between gap-4 shadow-xs">
+                <div className="flex flex-wrap items-center gap-3">
                     {/* Presets segment */}
-                    <div className="flex bg-slate-950/40 border border-slate-800 p-0.5 rounded-lg">
+                    <div className="flex bg-slate-100 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-850 p-1 rounded-xl">
                         {[
                             { id: "7d", label: "7 Days" },
                             { id: "30d", label: "30 Days" },
@@ -286,7 +288,7 @@ export default function DashboardModule() {
                             <button
                                 key={p.id}
                                 onClick={() => handlePresetChange(p.id as "7d" | "30d" | "month" | "last_month" | "all")}
-                                className={`px-2.5 py-1 rounded-md text-[10px] font-bold border-none transition-all cursor-pointer ${
+                                className={`px-3 py-1.5 rounded-lg text-xs font-bold border-none transition-all cursor-pointer ${
                                     activePreset === p.id 
                                         ? "bg-primary text-primary-foreground shadow-xs" 
                                         : "text-muted-foreground hover:text-foreground bg-transparent"
@@ -298,32 +300,48 @@ export default function DashboardModule() {
                     </div>
 
                     {/* Date Inputs form */}
-                    <form onSubmit={handleCustomFilterSubmit} className="flex items-center gap-1.5 border border-slate-800 bg-slate-900/10 p-0.5 rounded-lg">
+                    <form onSubmit={handleCustomFilterSubmit} className="flex items-center gap-2 border border-slate-200 dark:border-slate-850 bg-slate-100/50 dark:bg-slate-900/60 p-1 rounded-xl">
+                        <span className="text-[10px] text-muted-foreground font-black uppercase tracking-wider pl-1.5">From</span>
                         <input 
                             type="date" 
                             value={startDate} 
                             onChange={(e) => setStartDate(e.target.value)}
-                            className="bg-transparent border-none text-[10px] text-foreground font-bold p-1 outline-none cursor-pointer"
+                            className="bg-transparent border-none text-xs text-foreground font-semibold px-2 py-1 outline-none cursor-pointer"
                         />
-                        <span className="text-[10px] text-muted-foreground font-bold">to</span>
+                        <span className="text-[10px] text-muted-foreground font-black uppercase tracking-wider">To</span>
                         <input 
                             type="date" 
                             value={endDate} 
                             onChange={(e) => setEndDate(e.target.value)}
-                            className="bg-transparent border-none text-[10px] text-foreground font-bold p-1 outline-none cursor-pointer"
+                            className="bg-transparent border-none text-xs text-foreground font-semibold px-2 py-1 outline-none cursor-pointer"
                         />
                         <button 
                             type="submit"
-                            className="bg-slate-850 border border-slate-700 hover:bg-slate-800 text-[10px] text-foreground font-bold px-2 py-1 rounded cursor-pointer transition-colors"
+                            className="bg-primary/10 hover:bg-primary/20 text-primary hover:text-primary/90 text-xs font-extrabold px-3 py-1.5 rounded-lg cursor-pointer transition-all border-none"
                         >
-                            Apply
+                            Apply Filter
                         </button>
                     </form>
+                </div>
+
+                <div className="flex items-center gap-3 w-full md:w-auto">
+                    {/* Global Product Search */}
+                    <div className="relative w-full md:w-72">
+                        <Search className="absolute left-3.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <input
+                            type="text"
+                            placeholder="Search products across dashboard..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="w-full bg-slate-100 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-850 rounded-xl pl-10 pr-4 py-2 text-xs text-foreground outline-none focus:ring-1 focus:ring-primary focus:border-primary font-medium"
+                        />
+                    </div>
 
                     <button 
                         onClick={() => loadDashboardData(startDate, endDate)}
                         disabled={loading}
-                        className="bg-slate-900 border border-slate-800 hover:bg-slate-800 text-foreground p-1.5 rounded-lg flex items-center justify-center cursor-pointer transition-all disabled:opacity-50"
+                        title="Refresh Data"
+                        className="bg-slate-100 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-850 hover:bg-slate-200 dark:hover:bg-slate-800 text-foreground p-2 rounded-xl flex items-center justify-center cursor-pointer transition-all disabled:opacity-50 shrink-0"
                     >
                         <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin text-primary" : ""}`} />
                     </button>
@@ -333,7 +351,7 @@ export default function DashboardModule() {
             {/* Top KPI Cards Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 {/* 1. Production Value */}
-                <div className="bg-card border border-slate-800 rounded-xl p-5 flex items-center justify-between shadow-xs hover:scale-[1.01] transition-transform duration-250">
+                <div className="bg-card border border-slate-200 dark:border-slate-800 rounded-xl p-5 flex items-center justify-between shadow-xs hover:scale-[1.01] transition-transform duration-250">
                     <div>
                         <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider block">Production Value</span>
                         <h4 className="text-xl font-black text-foreground mt-1.5">
@@ -349,7 +367,7 @@ export default function DashboardModule() {
                 </div>
 
                 {/* 2. Total Produced Volume */}
-                <div className="bg-card border border-slate-800 rounded-xl p-5 flex items-center justify-between shadow-xs hover:scale-[1.01] transition-transform duration-250">
+                <div className="bg-card border border-slate-200 dark:border-slate-800 rounded-xl p-5 flex items-center justify-between shadow-xs hover:scale-[1.01] transition-transform duration-250">
                     <div>
                         <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider block">Total Produced</span>
                         <h4 className="text-xl font-black text-foreground mt-1.5">
@@ -365,7 +383,7 @@ export default function DashboardModule() {
                 </div>
 
                 {/* 3. Wastage & Scrap Value */}
-                <div className="bg-card border border-slate-800 rounded-xl p-5 flex items-center justify-between shadow-xs hover:scale-[1.01] transition-transform duration-250">
+                <div className="bg-card border border-slate-200 dark:border-slate-800 rounded-xl p-5 flex items-center justify-between shadow-xs hover:scale-[1.01] transition-transform duration-250">
                     <div>
                         <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider block">Wastage / Scrap</span>
                         <h4 className={`text-xl font-black mt-1.5 ${data && data.wastage.totalValue > 0 ? "text-rose-500" : "text-foreground"}`}>
@@ -381,7 +399,7 @@ export default function DashboardModule() {
                 </div>
 
                 {/* 4. Sellout Revenue */}
-                <div className="bg-card border border-slate-800 rounded-xl p-5 flex items-center justify-between shadow-xs hover:scale-[1.01] transition-transform duration-250">
+                <div className="bg-card border border-slate-200 dark:border-slate-800 rounded-xl p-5 flex items-center justify-between shadow-xs hover:scale-[1.01] transition-transform duration-250">
                     <div>
                         <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider block">Sellout (Sales Value)</span>
                         <h4 className="text-xl font-black text-amber-500 mt-1.5">
@@ -399,8 +417,8 @@ export default function DashboardModule() {
 
             {/* Ongoing Production Run Progress Breakdown */}
             {data?.ongoingProduction?.runs && data.ongoingProduction.runs.length > 0 && (
-                <div className="bg-card border border-slate-800 rounded-xl p-5 space-y-4 shadow-xs">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
+                <div className="bg-card border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-4 shadow-xs">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-800 pb-3">
                         <div>
                             <h3 className="text-xs font-black text-foreground flex items-center gap-1.5 uppercase tracking-wider">
                                 <Activity className="h-4 w-4 text-primary animate-pulse" />
@@ -420,7 +438,7 @@ export default function DashboardModule() {
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {data.ongoingProduction.runs.map((run: ProductionRun) => (
-                            <div key={run.jo_id} className="bg-slate-950/20 border border-slate-850 rounded-xl p-4 space-y-3 hover:border-slate-800 transition-colors">
+                            <div key={run.jo_id} className="bg-slate-50 dark:bg-slate-950/20 border border-slate-200 dark:border-slate-850 rounded-xl p-4 space-y-3 hover:border-slate-200 dark:border-slate-800 transition-colors">
                                 <div className="flex justify-between items-start gap-3">
                                     <div className="space-y-0.5">
                                         <span className="text-[10px] font-black text-primary uppercase tracking-wide">
@@ -436,7 +454,7 @@ export default function DashboardModule() {
                                                 ? "bg-primary/10 border-primary/25 text-primary" 
                                                 : run.status === "On Hold" 
                                                     ? "bg-amber-500/10 border-amber-500/25 text-amber-500" 
-                                                    : "bg-slate-950 border-slate-800 text-muted-foreground"
+                                                    : "bg-slate-100 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-muted-foreground"
                                         }`}>
                                             {run.status}
                                         </span>
@@ -453,7 +471,7 @@ export default function DashboardModule() {
                                         <span className="text-muted-foreground font-semibold">{run.progress_text}</span>
                                         <span className="font-extrabold text-foreground">{run.percentage}%</span>
                                     </div>
-                                    <div className="w-full bg-slate-950 rounded-full h-2 overflow-hidden border border-slate-850">
+                                    <div className="w-full bg-slate-100 dark:bg-slate-950 rounded-full h-2 overflow-hidden border border-slate-200 dark:border-slate-850">
                                         <div 
                                             className="bg-primary h-full rounded-full transition-all duration-500" 
                                             style={{ width: `${run.percentage}%` }}
@@ -467,9 +485,9 @@ export default function DashboardModule() {
             )}
 
             {/* View navigation Tab Bar */}
-            <div className="border border-slate-800 rounded-xl bg-card p-4 space-y-4">
-                <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3 border-b border-slate-800 pb-3">
-                    <div className="flex flex-wrap bg-slate-950/40 border border-slate-800 p-1 rounded-lg gap-1 w-full lg:w-auto justify-start">
+            <div className="border border-slate-200 dark:border-slate-800 rounded-xl bg-card p-4 space-y-4">
+                <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3 border-b border-slate-200 dark:border-slate-800 pb-3">
+                    <div className="flex flex-wrap bg-slate-100 dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800 p-1 rounded-lg gap-1 w-full lg:w-auto justify-start">
                         <button
                             onClick={() => { setActiveTab("production"); setSearchQuery(""); }}
                             className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all border-none cursor-pointer flex items-center gap-1.5 ${
@@ -522,7 +540,7 @@ export default function DashboardModule() {
                             placeholder="Filter inventory table by product name, code, or category..."
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            className="w-full bg-background border border-slate-850 rounded-xl pl-9 pr-4 py-2 text-xs text-foreground focus:ring-1 focus:ring-primary outline-none"
+                            className="w-full bg-background border border-slate-200 dark:border-slate-850 rounded-xl pl-9 pr-4 py-2 text-xs text-foreground focus:ring-1 focus:ring-primary outline-none"
                         />
                     </div>
                 )}
@@ -535,7 +553,7 @@ export default function DashboardModule() {
                         <div className="space-y-6">
                             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                                 {/* chart */}
-                                <div className="lg:col-span-2 border border-slate-800 bg-slate-900/5 p-4 rounded-xl">
+                                <div className="lg:col-span-2 border border-slate-200 dark:border-slate-800 bg-slate-50/30 dark:bg-slate-900/5 p-4 rounded-xl">
                                     <h3 className="text-xs font-bold text-foreground mb-3 uppercase tracking-wider">Production vs. Wastage Cost Valuation</h3>
                                     <div className="h-[260px] w-full">
                                         <ResponsiveContainer width="100%" height="100%">
@@ -561,7 +579,7 @@ export default function DashboardModule() {
                                 </div>
 
                                 {/* Wastage Summary List */}
-                                <div className="border border-slate-800 bg-slate-900/5 p-4 rounded-xl flex flex-col justify-between">
+                                <div className="border border-slate-200 dark:border-slate-800 bg-slate-50/30 dark:bg-slate-900/5 p-4 rounded-xl flex flex-col justify-between">
                                     <div>
                                         <h3 className="text-xs font-bold text-rose-500 mb-3 uppercase tracking-wider flex items-center gap-1.5">
                                             <Trash2 className="h-4 w-4" /> Period Wastage Breakdown
@@ -569,7 +587,7 @@ export default function DashboardModule() {
                                         <div className="space-y-3 max-h-[220px] overflow-y-auto pr-1">
                                             {data?.wastage.items && data.wastage.items.length > 0 ? (
                                                 data.wastage.items.map((item, i) => (
-                                                    <div key={i} className="flex justify-between items-center border-b border-slate-850/60 pb-2 last:border-0 last:pb-0">
+                                                    <div key={i} className="flex justify-between items-center border-b border-slate-200 dark:border-slate-850/60 pb-2 last:border-0 last:pb-0">
                                                         <div>
                                                             <span className="text-xs font-bold text-foreground block truncate max-w-[150px]">{item.name}</span>
                                                             <span className="text-[9px] text-muted-foreground">{item.code} • {item.reason}</span>
@@ -589,13 +607,13 @@ export default function DashboardModule() {
                             </div>
 
                             {/* Produced Items Table */}
-                            <div className="border border-slate-850 rounded-xl overflow-hidden bg-slate-900/10">
-                                <div className="px-4 py-3 bg-slate-950/40 border-b border-slate-850">
+                            <div className="border border-slate-200 dark:border-slate-850 rounded-xl overflow-hidden bg-slate-50/50 dark:bg-slate-900/10">
+                                <div className="px-4 py-3 bg-slate-100 dark:bg-slate-950/40 border-b border-slate-200 dark:border-slate-850">
                                     <h4 className="text-xs font-bold text-foreground uppercase tracking-wider">Manufactured Output Items Log</h4>
                                 </div>
                                 <table className="w-full border-collapse text-left text-xs">
                                     <thead>
-                                        <tr className="border-b border-slate-850 text-muted-foreground bg-slate-950/20 font-bold">
+                                        <tr className="border-b border-slate-200 dark:border-slate-850 text-muted-foreground bg-slate-50 dark:bg-slate-950/20 font-bold">
                                             <th className="py-2.5 px-4">Product Details</th>
                                             <th className="py-2.5 px-4 text-right">Quantity Manufactured</th>
                                             <th className="py-2.5 px-4 text-right">Production Cost Valuation</th>
@@ -604,7 +622,7 @@ export default function DashboardModule() {
                                     <tbody>
                                         {data?.production.items && data.production.items.length > 0 ? (
                                             data.production.items.map((item, i) => (
-                                                <tr key={i} className="border-b border-slate-850/30 last:border-0 hover:bg-slate-950/10">
+                                                <tr key={i} className="border-b border-slate-200/30 dark:border-slate-850/30 last:border-0 hover:bg-slate-50/50 dark:bg-slate-950/10">
                                                     <td className="py-3 px-4">
                                                         <div>
                                                             <span className="font-bold text-foreground block">{item.name}</span>
@@ -633,7 +651,7 @@ export default function DashboardModule() {
                     {/* Tab 2: Raw Materials Inventory */}
                     {activeTab === "raw" && (
                         <div className="space-y-4">
-                            <div className="flex items-center justify-between bg-slate-950/20 p-3 rounded-lg border border-slate-800">
+                            <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-950/20 p-3 rounded-lg border border-slate-200 dark:border-slate-800">
                                 <span className="text-xs text-muted-foreground font-bold">Valuation of Raw Stocks:</span>
                                 <span className="text-xs font-black text-foreground">
                                     ₱{data?.inventory.rawMaterials.totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({data?.inventory.rawMaterials.totalSKUs} active SKUs)
@@ -642,7 +660,7 @@ export default function DashboardModule() {
 
                             <table className="w-full border-collapse text-left text-xs">
                                 <thead>
-                                    <tr className="border-b border-slate-850 text-muted-foreground font-bold bg-slate-950/20">
+                                    <tr className="border-b border-slate-200 dark:border-slate-850 text-muted-foreground font-bold bg-slate-50 dark:bg-slate-950/20">
                                         <th className="py-2.5 px-4">SKU Name / Category</th>
                                         <th className="py-2.5 px-4 text-right">Current Stock Level</th>
                                         <th className="py-2.5 px-4 text-right hidden sm:table-cell">Standard Unit Cost</th>
@@ -657,7 +675,7 @@ export default function DashboardModule() {
                                         return (
                                             <React.Fragment key={item.product_id || idx}>
                                                 <tr 
-                                                    className="border-b border-slate-850/30 last:border-b-0 hover:bg-slate-950/10 cursor-pointer select-none"
+                                                    className="border-b border-slate-200/30 dark:border-slate-850/30 last:border-b-0 hover:bg-slate-50/50 dark:bg-slate-950/10 cursor-pointer select-none"
                                                     onClick={() => toggleRow(`raw-${item.product_id}`)}
                                                 >
                                                     <td className="py-3 px-4">
@@ -691,20 +709,20 @@ export default function DashboardModule() {
                                                     </td>
                                                 </tr>
                                                 {isRowExpanded && (
-                                                    <tr className="bg-slate-950/15 border-b border-slate-850/30">
+                                                    <tr className="bg-slate-50/50 dark:bg-slate-950/15 border-b border-slate-200/30 dark:border-slate-850/30">
                                                         <td colSpan={5} className="p-4">
                                                             <div className="border-l-2 border-primary/45 pl-4 py-1.5 space-y-2">
                                                                 <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Raw Material Valuation Audit</div>
                                                                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                                                                    <div className="p-2 rounded-lg bg-slate-900/40 border border-slate-850">
+                                                                    <div className="p-2 rounded-lg bg-slate-100/50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-850">
                                                                         <div className="text-[9px] text-muted-foreground uppercase font-bold">Standard Cost</div>
                                                                         <div className="text-xs font-semibold text-foreground mt-0.5">₱{item.cost.toFixed(2)} / {item.unit}</div>
                                                                     </div>
-                                                                    <div className="p-2 rounded-lg bg-slate-900/40 border border-slate-850">
+                                                                    <div className="p-2 rounded-lg bg-slate-100/50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-850">
                                                                         <div className="text-[9px] text-muted-foreground uppercase font-bold">Suggested Base Selling Price</div>
                                                                         <div className="text-xs font-semibold text-foreground mt-0.5">₱{item.price.toFixed(2)}</div>
                                                                     </div>
-                                                                    <div className="p-2 rounded-lg bg-slate-900/40 border border-slate-850">
+                                                                    <div className="p-2 rounded-lg bg-slate-100/50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-850">
                                                                         <div className="text-[9px] text-muted-foreground uppercase font-bold">Consolidated Valuation</div>
                                                                         <div className="text-xs font-semibold text-foreground mt-0.5">₱{item.value.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
                                                                     </div>
@@ -730,7 +748,7 @@ export default function DashboardModule() {
                     {/* Tab 3: Finished Goods Inventory */}
                     {activeTab === "finished" && (
                         <div className="space-y-4">
-                            <div className="flex items-center justify-between bg-slate-950/20 p-3 rounded-lg border border-slate-800">
+                            <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-950/20 p-3 rounded-lg border border-slate-200 dark:border-slate-800">
                                 <span className="text-xs text-muted-foreground font-bold">Valuation of Finished Lots:</span>
                                 <span className="text-xs font-black text-primary">
                                     ₱{data?.inventory.finishedGoods.totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({data?.inventory.finishedGoods.totalSKUs} manufactured products)
@@ -739,7 +757,7 @@ export default function DashboardModule() {
 
                             <table className="w-full border-collapse text-left text-xs">
                                 <thead>
-                                    <tr className="border-b border-slate-850 text-muted-foreground font-bold bg-slate-950/20">
+                                    <tr className="border-b border-slate-200 dark:border-slate-850 text-muted-foreground font-bold bg-slate-50 dark:bg-slate-950/20">
                                         <th className="py-2.5 px-4">SKU Name / Category</th>
                                         <th className="py-2.5 px-4 text-right">Manufactured Stock Balance</th>
                                         <th className="py-2.5 px-4 text-right hidden sm:table-cell">Production Landed Cost</th>
@@ -754,7 +772,7 @@ export default function DashboardModule() {
                                         return (
                                             <React.Fragment key={item.product_id || idx}>
                                                 <tr 
-                                                    className="border-b border-slate-850/30 last:border-b-0 hover:bg-slate-950/10 cursor-pointer select-none"
+                                                    className="border-b border-slate-200/30 dark:border-slate-850/30 last:border-b-0 hover:bg-slate-50/50 dark:bg-slate-950/10 cursor-pointer select-none"
                                                     onClick={() => toggleRow(`fg-${item.product_id}`)}
                                                 >
                                                     <td className="py-3 px-4">
@@ -788,20 +806,20 @@ export default function DashboardModule() {
                                                     </td>
                                                 </tr>
                                                 {isRowExpanded && (
-                                                    <tr className="bg-slate-950/15 border-b border-slate-850/30">
+                                                    <tr className="bg-slate-50/50 dark:bg-slate-950/15 border-b border-slate-200/30 dark:border-slate-850/30">
                                                         <td colSpan={5} className="p-4">
                                                             <div className="border-l-2 border-primary/45 pl-4 py-1.5 space-y-2">
                                                                 <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Manufactured Item Inventory Valuation</div>
                                                                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                                                                    <div className="p-2 rounded-lg bg-slate-900/40 border border-slate-850">
+                                                                    <div className="p-2 rounded-lg bg-slate-100/50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-850">
                                                                         <div className="text-[9px] text-muted-foreground uppercase font-bold">Standard Cost</div>
                                                                         <div className="text-xs font-semibold text-foreground mt-0.5">₱{item.cost.toFixed(2)} / {item.unit}</div>
                                                                     </div>
-                                                                    <div className="p-2 rounded-lg bg-slate-900/40 border border-slate-850">
+                                                                    <div className="p-2 rounded-lg bg-slate-100/50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-850">
                                                                         <div className="text-[9px] text-muted-foreground uppercase font-bold">Suggested Base Selling Price</div>
                                                                         <div className="text-xs font-semibold text-foreground mt-0.5">₱{item.price.toFixed(2)}</div>
                                                                     </div>
-                                                                    <div className="p-2 rounded-lg bg-slate-900/40 border border-slate-850">
+                                                                    <div className="p-2 rounded-lg bg-slate-100/50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-850">
                                                                         <div className="text-[9px] text-muted-foreground uppercase font-bold">Consolidated Valuation</div>
                                                                         <div className="text-xs font-semibold text-foreground mt-0.5">₱{item.value.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
                                                                     </div>
@@ -829,7 +847,7 @@ export default function DashboardModule() {
                         <div className="space-y-6">
                             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                                 {/* Sellout Pie Chart */}
-                                <div className="lg:col-span-2 border border-slate-800 bg-slate-900/5 p-4 rounded-xl">
+                                <div className="lg:col-span-2 border border-slate-200 dark:border-slate-800 bg-slate-50/30 dark:bg-slate-900/5 p-4 rounded-xl">
                                     <h3 className="text-xs font-bold text-foreground mb-3 uppercase tracking-wider">Top-Selling Finished Goods Distribution</h3>
                                     <div className="h-[260px] w-full flex items-center justify-center">
                                         {selloutChartData.length > 0 ? (
@@ -868,13 +886,13 @@ export default function DashboardModule() {
                                 </div>
 
                                 {/* Top products summary list */}
-                                <div className="border border-slate-800 bg-slate-900/5 p-4 rounded-xl flex flex-col justify-between">
+                                <div className="border border-slate-200 dark:border-slate-800 bg-slate-50/30 dark:bg-slate-900/5 p-4 rounded-xl flex flex-col justify-between">
                                     <div>
                                         <h3 className="text-xs font-bold text-amber-500 mb-3 uppercase tracking-wider">Top Products by Revenue</h3>
                                         <div className="space-y-3">
                                             {data?.sellout.items && data.sellout.items.length > 0 ? (
                                                 data.sellout.items.slice(0, 6).map((item, i) => (
-                                                    <div key={i} className="flex justify-between items-center border-b border-slate-850/60 pb-2 last:border-0 last:pb-0">
+                                                    <div key={i} className="flex justify-between items-center border-b border-slate-200 dark:border-slate-850/60 pb-2 last:border-0 last:pb-0">
                                                         <div>
                                                             <span className="text-xs font-bold text-foreground block truncate max-w-[160px]">{item.name}</span>
                                                             <span className="text-[9px] text-muted-foreground">{item.code}</span>
@@ -894,13 +912,13 @@ export default function DashboardModule() {
                             </div>
 
                             {/* Sales Detail Grid */}
-                            <div className="border border-slate-850 rounded-xl overflow-hidden bg-slate-900/10">
-                                <div className="px-4 py-3 bg-slate-950/40 border-b border-slate-850">
+                            <div className="border border-slate-200 dark:border-slate-850 rounded-xl overflow-hidden bg-slate-50/50 dark:bg-slate-900/10">
+                                <div className="px-4 py-3 bg-slate-100 dark:bg-slate-950/40 border-b border-slate-200 dark:border-slate-850">
                                     <h4 className="text-xs font-bold text-foreground uppercase tracking-wider">Detailed Sellout Ledger Log</h4>
                                 </div>
                                 <table className="w-full border-collapse text-left text-xs">
                                     <thead>
-                                        <tr className="border-b border-slate-850 text-muted-foreground bg-slate-950/20 font-bold">
+                                        <tr className="border-b border-slate-200 dark:border-slate-850 text-muted-foreground bg-slate-50 dark:bg-slate-950/20 font-bold">
                                             <th className="py-2.5 px-4">SKU Product</th>
                                             <th className="py-2.5 px-4 text-right">Units Sold</th>
                                             <th className="py-2.5 px-4 text-right">Total Net Revenue</th>
@@ -909,7 +927,7 @@ export default function DashboardModule() {
                                     <tbody>
                                         {data?.sellout.items && data.sellout.items.length > 0 ? (
                                             data.sellout.items.map((item, i) => (
-                                                <tr key={i} className="border-b border-slate-850/30 last:border-0 hover:bg-slate-950/10">
+                                                <tr key={i} className="border-b border-slate-200/30 dark:border-slate-850/30 last:border-0 hover:bg-slate-50/50 dark:bg-slate-950/10">
                                                     <td className="py-3 px-4">
                                                         <div>
                                                             <span className="font-bold text-foreground block">{item.name}</span>
@@ -938,8 +956,8 @@ export default function DashboardModule() {
                     {/* Tab 5: Producible Right Now */}
                     {activeTab === "producible" && (
                         <div className="space-y-6">
-                            <div className="border border-slate-850 rounded-xl overflow-hidden bg-slate-900/10">
-                                <div className="px-4 py-4 bg-slate-950/40 border-b border-slate-850 flex flex-col sm:flex-row justify-between sm:items-center gap-3">
+                            <div className="border border-slate-200 dark:border-slate-850 rounded-xl overflow-hidden bg-slate-50/50 dark:bg-slate-900/10">
+                                <div className="px-4 py-4 bg-slate-100 dark:bg-slate-950/40 border-b border-slate-200 dark:border-slate-850 flex flex-col sm:flex-row justify-between sm:items-center gap-3">
                                     <div>
                                         <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
                                             <TrendingUp className="h-4.5 w-4.5 text-primary" />
@@ -956,7 +974,7 @@ export default function DashboardModule() {
                                             placeholder="Search finished goods..."
                                             value={searchQuery}
                                             onChange={e => setSearchQuery(e.target.value)}
-                                            className="w-full bg-background border border-slate-800 rounded-lg pl-8 pr-3 py-1.5 text-xs outline-none focus:ring-1 focus:ring-primary text-foreground"
+                                            className="w-full bg-background border border-slate-200 dark:border-slate-800 rounded-lg pl-8 pr-3 py-1.5 text-xs outline-none focus:ring-1 focus:ring-primary text-foreground"
                                         />
                                     </div>
                                 </div>
@@ -974,11 +992,11 @@ export default function DashboardModule() {
                                             .map((good: ProducibleGood, idx: number) => {
                                                 const isExpanded = expandedRows[good.product_id] || false;
                                                 return (
-                                                    <div key={`${good.product_id}-${idx}`} className="border border-slate-800/80 rounded-xl overflow-hidden bg-slate-950/20">
+                                                    <div key={`${good.product_id}-${idx}`} className="border border-slate-200/80 dark:border-slate-800/80 rounded-xl overflow-hidden bg-slate-50 dark:bg-slate-950/20">
                                                         {/* Header summary line */}
                                                         <div 
                                                             onClick={() => toggleRow(String(good.product_id))}
-                                                            className="p-4 bg-card hover:bg-slate-900/20 cursor-pointer flex flex-col sm:flex-row justify-between sm:items-center gap-4 transition-all"
+                                                            className="p-4 bg-card hover:bg-slate-100 dark:bg-slate-900/20 cursor-pointer flex flex-col sm:flex-row justify-between sm:items-center gap-4 transition-all"
                                                         >
                                                             <div className="space-y-1 min-w-0">
                                                                 <span className="font-extrabold text-xs text-foreground block truncate">{good.product_name}</span>
@@ -1008,7 +1026,7 @@ export default function DashboardModule() {
 
                                                         {/* Recipe components breakdown list */}
                                                         {isExpanded && (
-                                                            <div className="p-4 bg-slate-900/10 border-t border-slate-850/80">
+                                                            <div className="p-4 bg-slate-50/50 dark:bg-slate-900/10 border-t border-slate-200/80 dark:border-slate-850/80">
                                                                 <h5 className="text-[10px] font-extrabold text-muted-foreground uppercase tracking-widest mb-3">Formula Ingredients & Availability</h5>
                                                                 
                                                                 {/* Component Cards for Mobile, Table for Desktop */}
@@ -1016,8 +1034,8 @@ export default function DashboardModule() {
                                                                     {good.components.map((c, ci: number) => {
                                                                         const isBottleneck = c.max_producible_with_this === good.max_producible;
                                                                         return (
-                                                                            <div key={ci} className={`bg-slate-950/40 p-3 rounded-lg border text-xs space-y-2 ${
-                                                                                isBottleneck ? "border-rose-500/20 bg-rose-500/[0.02]" : "border-slate-800"
+                                                                            <div key={ci} className={`bg-slate-100 dark:bg-slate-950/40 p-3 rounded-lg border text-xs space-y-2 ${
+                                                                                isBottleneck ? "border-rose-500/20 bg-rose-500/[0.02]" : "border-slate-200 dark:border-slate-800"
                                                                             }`}>
                                                                                 <div className="flex justify-between items-start">
                                                                                     <div className="font-bold text-foreground block truncate max-w-[200px]">{c.component_name}</div>
@@ -1034,7 +1052,7 @@ export default function DashboardModule() {
                                                                                         <span className="block font-bold text-[8px] uppercase tracking-wider text-muted-foreground/60">Available Inventory</span>
                                                                                         <span className={`font-semibold ${c.available > 0 ? "text-foreground" : "text-rose-400 font-extrabold"}`}>{c.available.toLocaleString()} {c.unit}</span>
                                                                                     </div>
-                                                                                    <div className="col-span-2 border-t border-slate-850 pt-2 flex justify-between">
+                                                                                    <div className="col-span-2 border-t border-slate-200 dark:border-slate-850 pt-2 flex justify-between">
                                                                                         <span className="text-[8px] uppercase tracking-wider font-bold text-muted-foreground/60">Max Potential Producible</span>
                                                                                         <span className={`font-black ${isBottleneck && good.max_producible === 0 ? "text-rose-500 font-black" : "text-foreground"}`}>{c.max_producible_with_this.toLocaleString()} Units</span>
                                                                                     </div>
@@ -1047,7 +1065,7 @@ export default function DashboardModule() {
                                                                 <div className="hidden sm:block overflow-x-auto">
                                                                     <table className="w-full text-xs text-left">
                                                                         <thead>
-                                                                            <tr className="border-b border-slate-800 text-[10px] text-muted-foreground uppercase font-black">
+                                                                            <tr className="border-b border-slate-200 dark:border-slate-800 text-[10px] text-muted-foreground uppercase font-black">
                                                                                 <th className="pb-2">Ingredient / Material</th>
                                                                                 <th className="pb-2 text-right">Req. per FG Unit</th>
                                                                                 <th className="pb-2 text-right">In Stock (Total)</th>
@@ -1059,7 +1077,7 @@ export default function DashboardModule() {
                                                                             {good.components.map((c, ci: number) => {
                                                                                 const isBottleneck = c.max_producible_with_this === good.max_producible;
                                                                                 return (
-                                                                                    <tr key={ci} className={`border-b border-slate-850/40 last:border-0 hover:bg-slate-900/10 ${
+                                                                                    <tr key={ci} className={`border-b border-slate-200/40 dark:border-slate-850/40 last:border-0 hover:bg-slate-50/50 dark:bg-slate-900/10 ${
                                                                                         isBottleneck ? "bg-rose-500/[0.01]" : ""
                                                                                     }`}>
                                                                                         <td className="py-2.5 font-bold text-foreground">

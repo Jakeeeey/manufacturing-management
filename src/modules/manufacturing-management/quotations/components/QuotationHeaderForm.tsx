@@ -25,6 +25,8 @@ interface QuotationHeaderFormProps {
     setRemarks: (val: string) => void;
     projectName: string;
     setProjectName: (val: string) => void;
+    showValidationErrors?: boolean;
+    selectedProjectId?: number | null;
 }
 
 export function QuotationHeaderForm({
@@ -42,10 +44,19 @@ export function QuotationHeaderForm({
     remarks,
     setRemarks,
     projectName,
-    setProjectName
+    setProjectName,
+    showValidationErrors = false,
+    selectedProjectId
 }: QuotationHeaderFormProps) {
     const [isFocused, setIsFocused] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
+
+    const inputBorderClass = (val: string) => {
+        if (showValidationErrors && !val.trim()) {
+            return "border-rose-500 ring-1 ring-rose-500 focus:border-rose-500 focus:ring-rose-500";
+        }
+        return "border-slate-200 dark:border-slate-800 focus:border-primary focus:ring-primary";
+    };
 
     // Modal state for customer creation
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -273,7 +284,7 @@ export function QuotationHeaderForm({
                         type="text"
                         value={quoteNumber}
                         onChange={e => setQuoteNumber(e.target.value)}
-                        className="w-full rounded border px-3 py-2 text-xs bg-background text-foreground outline-none focus:ring-1 focus:ring-primary"
+                        className={`w-full rounded border px-3 py-2 text-xs bg-background text-foreground outline-none focus:ring-1 ${inputBorderClass(quoteNumber)}`}
                     />
                 </div>
 
@@ -285,7 +296,8 @@ export function QuotationHeaderForm({
                         value={projectName}
                         onChange={e => setProjectName(e.target.value)}
                         placeholder="e.g. Project Vertex Alpha, Hotel Phase 1"
-                        className="w-full rounded border px-3 py-2 text-xs bg-background text-foreground outline-none focus:ring-1 focus:ring-primary"
+                        disabled={!!selectedProjectId}
+                        className={`w-full rounded border px-3 py-2 text-xs bg-background text-foreground outline-none focus:ring-1 ${inputBorderClass(projectName)} disabled:opacity-80 disabled:bg-muted/40`}
                     />
                 </div>
 
@@ -293,13 +305,15 @@ export function QuotationHeaderForm({
                 <div className="relative" ref={containerRef}>
                     <div className="flex justify-between items-center mb-1">
                         <label className="text-[10px] font-bold text-muted-foreground uppercase block">Customer Client</label>
-                        <button
-                            type="button"
-                            onClick={() => setIsModalOpen(true)}
-                            className="text-[10px] text-primary hover:text-primary/80 flex items-center gap-0.5 font-bold uppercase transition-colors"
-                        >
-                            <Plus className="h-3 w-3" /> New Customer
-                        </button>
+                        {!selectedProjectId && (
+                            <button
+                                type="button"
+                                onClick={() => setIsModalOpen(true)}
+                                className="text-[10px] text-primary hover:text-primary/80 flex items-center gap-0.5 font-bold uppercase transition-colors"
+                            >
+                                <Plus className="h-3 w-3" /> New Customer
+                            </button>
+                        )}
                     </div>
                     
                     <div className="relative">
@@ -307,6 +321,7 @@ export function QuotationHeaderForm({
                             type="text"
                             placeholder="Type to search active customers..."
                             value={customerSearchText}
+                            disabled={!!selectedProjectId}
                             onFocus={() => {
                                 // Ensure that if there's no selected value, we open it
                                 setIsFocused(true);
@@ -318,9 +333,9 @@ export function QuotationHeaderForm({
                                 setIsFocused(true);
                                 handleSearchCustomers(e.target.value);
                             }}
-                            className="w-full rounded border pl-3 pr-8 py-2 text-xs bg-background text-foreground outline-none focus:ring-1 focus:ring-primary"
+                            className={`w-full rounded border pl-3 pr-8 py-2 text-xs bg-background text-foreground outline-none focus:ring-1 ${inputBorderClass(selectedCustomerId)} disabled:opacity-80 disabled:bg-muted/40`}
                         />
-                        {selectedCustomerId && (
+                        {selectedCustomerId && !selectedProjectId && (
                             <button
                                 type="button"
                                 onClick={() => {
@@ -365,7 +380,7 @@ export function QuotationHeaderForm({
                     <select
                         value={selectedPriceTypeId}
                         onChange={e => setSelectedPriceTypeId(e.target.value)}
-                        className="w-full rounded border px-3 py-2 text-xs bg-background text-foreground outline-none focus:ring-1 focus:ring-primary"
+                        className={`w-full rounded border px-3 py-2 text-xs bg-background text-foreground outline-none focus:ring-1 ${inputBorderClass(selectedPriceTypeId)}`}
                     >
                         <option value="">-- No Price Type Template --</option>
                         {priceTypes.map(pt => (

@@ -70,9 +70,9 @@ export async function fetchRawMaterials(): Promise<RawMaterial[]> {
     if (!res.ok) throw new Error("Failed to fetch raw materials");
     const products = await res.json();
     
-    // Filter to exclude finished goods (which have versions)
+    // Filter to exclude finished goods (include only raw materials and packaging items)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const rawItems = products.filter((p: any) => !p.has_versions);
+    const rawItems = products.filter((p: any) => Number(p.product_type) === 389 || Number(p.product_type) === 390);
     
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return rawItems.map((p: any) => ({

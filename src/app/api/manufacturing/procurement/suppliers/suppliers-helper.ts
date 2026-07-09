@@ -1,15 +1,43 @@
 import { DIRECTUS_URL, headers } from "@/app/api/manufacturing/directus-api";
 import { 
-    DirectusSupplier, 
     DirectusProductPerSupplier 
-} from "@/types/manufacturing";
+} from "@/modules/manufacturing-management/procurement/types";
 
-export async function fetchSuppliers(): Promise<DirectusSupplier[]> {
+interface DirectusRepresentative {
+    id: number;
+    supplier_id: number;
+}
+interface DirectusSup {
+    id: number;
+}
+interface InputRepresentative {
+    id?: number | string | null;
+    first_name?: string;
+    last_name?: string;
+    middle_name?: string | null;
+    suffix?: string | null;
+    email?: string | null;
+    contact_number?: string | null;
+}
+
+export async function fetchSuppliers(): Promise<unknown[]> {
     try {
-        const res = await fetch(`${DIRECTUS_URL}/items/suppliers?filter[isActive][_eq]=true&sort=supplier_name&limit=-1`, { headers, cache: "no-store" });
-        if (!res.ok) throw new Error("Failed to fetch suppliers");
-        const json = await res.json();
-        return json.data || [];
+        const [supRes, repRes] = await Promise.all([
+            fetch(`${DIRECTUS_URL}/items/suppliers?filter[isActive][_eq]=true&sort=supplier_name&limit=-1`, { headers, cache: "no-store" }),
+            fetch(`${DIRECTUS_URL}/items/suppliers_representative?limit=-1`, { headers, cache: "no-store" })
+        ]);
+        if (!supRes.ok) throw new Error("Failed to fetch suppliers");
+        
+        const supJson = await supRes.json();
+        const repJson = repRes.ok ? await repRes.json() : { data: [] };
+        
+        const suppliers = (supJson.data || []) as DirectusSup[];
+        const reps = (repJson.data || []) as DirectusRepresentative[];
+        
+        return suppliers.map((s) => ({
+            ...s,
+            representatives: reps.filter((r) => Number(r.supplier_id) === Number(s.id))
+        }));
     } catch (e) {
         console.error("[Manufacturing Directus API] Error fetching suppliers:", e);
         return [];
@@ -19,12 +47,13 @@ export async function fetchSuppliers(): Promise<DirectusSupplier[]> {
 export async function createSupplier(supplierData: Record<string, unknown>): Promise<unknown> {
     try {
         const url = `${DIRECTUS_URL}/items/suppliers`;
+        const { representatives, ...details } = supplierData;
         
         // Populate database-required fields that aren't exposed in the UI form
         const payload = {
+            ...details,
             supplier_type: "TRADE",
             date_added: new Date().toISOString().split('T')[0],
-            ...supplierData,
             isActive: 1
         };
 
@@ -43,7 +72,30 @@ export async function createSupplier(supplierData: Record<string, unknown>): Pro
             } catch {}
             throw new Error(errorMsg);
         }
-        return (await res.json()).data;
+        const createdSupplier = (await res.json()).data as { id: number };
+        const supplierId = createdSupplier.id;
+
+        // Create representatives
+        if (representatives && Array.isArray(representatives)) {
+            const repsList = representatives as InputRepresentative[];
+            for (const rep of repsList) {
+                await fetch(`${DIRECTUS_URL}/items/suppliers_representative`, {
+                    method: "POST",
+                    headers,
+                    body: JSON.stringify({
+                        supplier_id: supplierId,
+                        first_name: rep.first_name || "",
+                        last_name: rep.last_name || "",
+                        middle_name: rep.middle_name || null,
+                        suffix: rep.suffix || null,
+                        email: rep.email || null,
+                        contact_number: rep.contact_number || null
+                    })
+                });
+            }
+        }
+
+        return createdSupplier;
     } catch (e) {
         console.error("[Manufacturing Directus API] Failed to create supplier:", e);
         throw e;
@@ -52,10 +104,12 @@ export async function createSupplier(supplierData: Record<string, unknown>): Pro
 export async function updateSupplier(supplierId: number, supplierData: Record<string, unknown>): Promise<unknown> {
     try {
         const url = `${DIRECTUS_URL}/items/suppliers/${supplierId}`;
+        const { representatives, ...details } = supplierData;
+
         const res = await fetch(url, {
             method: "PATCH",
             headers,
-            body: JSON.stringify(supplierData)
+            body: JSON.stringify(details)
         });
         if (!res.ok) {
             let errorMsg = `Failed to update supplier: ${res.status}`;
@@ -67,7 +121,58 @@ export async function updateSupplier(supplierId: number, supplierData: Record<st
             } catch {}
             throw new Error(errorMsg);
         }
-        return (await res.json()).data;
+        const updatedSupplier = (await res.json()).data;
+
+        // Sync representatives
+        if (representatives && Array.isArray(representatives)) {
+            const repsList = representatives as InputRepresentative[];
+            // Fetch existing representatives
+            const getRes = await fetch(`${DIRECTUS_URL}/items/suppliers_representative?filter[supplier_id][_eq]=${supplierId}&limit=-1`, { headers });
+            const existingReps = getRes.ok ? ((await getRes.json()).data || []) as { id: number }[] : [];
+            const existingIds = existingReps.map((r) => Number(r.id));
+            
+            const incomingIds = repsList.filter((r) => r.id).map((r) => Number(r.id));
+            
+            // Delete removed ones
+            const toDelete = existingIds.filter((id: number) => !incomingIds.includes(id));
+            for (const id of toDelete) {
+                await fetch(`${DIRECTUS_URL}/items/suppliers_representative/${id}`, {
+                    method: "DELETE",
+                    headers
+                });
+            }
+            
+            // Create or update incoming ones
+            for (const rep of repsList) {
+                const repPayload = {
+                    supplier_id: supplierId,
+                    first_name: rep.first_name || "",
+                    last_name: rep.last_name || "",
+                    middle_name: rep.middle_name || null,
+                    suffix: rep.suffix || null,
+                    email: rep.email || null,
+                    contact_number: rep.contact_number || null
+                };
+                
+                if (rep.id) {
+                    // Update
+                    await fetch(`${DIRECTUS_URL}/items/suppliers_representative/${rep.id}`, {
+                        method: "PATCH",
+                        headers,
+                        body: JSON.stringify(repPayload)
+                    });
+                } else {
+                    // Create
+                    await fetch(`${DIRECTUS_URL}/items/suppliers_representative`, {
+                        method: "POST",
+                        headers,
+                        body: JSON.stringify(repPayload)
+                    });
+                }
+            }
+        }
+
+        return updatedSupplier;
     } catch (e) {
         console.error("[Manufacturing Directus API] Failed to update supplier:", e);
         throw e;

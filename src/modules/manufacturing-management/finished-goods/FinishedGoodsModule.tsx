@@ -14,6 +14,7 @@ import {
     Loader2,
     Briefcase,
     ChevronLeft,
+    ChevronDown,
     Image as ImageIcon,
     Package
 } from "lucide-react";
@@ -31,6 +32,7 @@ export default function FinishedGoodsModule() {
     const searchParams = useSearchParams();
     const router = useRouter();
     const [uploadingRegImage, setUploadingRegImage] = useState(false);
+    const [isMenuOpen, setIsMenuOpen] = useState(false);
 
     const {
         handleCreateBrand,
@@ -53,7 +55,6 @@ export default function FinishedGoodsModule() {
         loadingBOM,
         savingBOM,
         products,
-        allCatalogProducts,
         selectedProductId,
         setSelectedProductId,
         selectedProduct,
@@ -75,6 +76,8 @@ export default function FinishedGoodsModule() {
         setEditedRoutings,
         editedOverheads,
         setEditedOverheads,
+        hasUnsavedChanges,
+        setHasUnsavedChanges,
         overheadTypes,
         operationTypes,
         setOperationTypes,
@@ -82,7 +85,8 @@ export default function FinishedGoodsModule() {
         setSimulatedForexRate,
         handleRegisterProduct,
         handleRegisterNewVersion,
-        handleSave
+        handleSave,
+        handleActivateVersion
     } = useFinishedGoods(searchParams.get("tab") || "details");
 
     // Local Simulation States
@@ -139,18 +143,20 @@ export default function FinishedGoodsModule() {
         setSimulationPriceOverrides(initialPrices);
     }, [editedBOM]);
 
-    // Local form change forwarders to hook setters
     const handleDetailChange = (field: keyof Product, value: unknown) => {
+        setHasUnsavedChanges(true);
         setEditedDetails(prev => ({ ...prev, [field]: value }));
     };
 
     const handleBOMChange = <K extends keyof BOMItem>(itemId: string, field: K, value: BOMItem[K]) => {
+        setHasUnsavedChanges(true);
         setEditedBOM(prev => prev.map(item => 
             item.id === itemId ? { ...item, [field]: value } : item
         ));
     };
 
     const handleRoutingChange = <K extends keyof RoutingStep>(stepId: string, field: K, value: RoutingStep[K]) => {
+        setHasUnsavedChanges(true);
         setEditedRoutings(prev => prev.map(step => 
             step.id === stepId ? { ...step, [field]: value } : step
         ));
@@ -306,46 +312,46 @@ export default function FinishedGoodsModule() {
     }, [simulationTargetPrice, simulatedNetProfit]);
 
     const addBOMItem = () => {
-        const defaultProd = allCatalogProducts[0];
         const newItem: BOMItem = {
             id: `bom-new-${Date.now()}`,
-            productId: defaultProd ? defaultProd.product_id : undefined,
-            name: defaultProd ? defaultProd.product_name : "New Ingredient/Packaging",
+            productId: undefined,
+            name: "Select Material",
             type: "raw_material",
-            quantity: 0.1,
-            uom: defaultProd ? (defaultProd.unit_of_measurement?.unit_shortcut || "L") : "L",
-            uomId: defaultProd?.unit_of_measurement?.unit_id || undefined,
+            quantity: 0,
+            uom: "",
+            uomId: undefined,
             wastagePercent: 0,
-            landedCost: defaultProd ? Number(defaultProd.cost_per_unit || defaultProd.price_per_unit || 0) : 10.0,
+            landedCost: 0,
             densityFactor: 1.0
         };
+        setHasUnsavedChanges(true);
         setEditedBOM(prev => [...prev, newItem]);
         setSimulationPriceOverrides(prev => ({ ...prev, [newItem.id]: newItem.landedCost }));
-        toast.success("New raw material added to recipe");
+        toast.success("New raw material slot added to recipe");
     };
 
     const deleteBOMItem = (id: string) => {
+        setHasUnsavedChanges(true);
         setEditedBOM(prev => prev.filter(item => item.id !== id));
         toast.info("Material slot removed");
     };
 
     const addRoutingStep = () => {
-        const nextSeq = editedRoutings.length > 0 
-            ? Math.max(...editedRoutings.map(r => r.sequence)) + 10 
-            : 10;
         const newStep: RoutingStep = {
             id: `rt-new-${Date.now()}`,
-            sequence: nextSeq,
-            name: "New Production Step",
+            sequence: "" as unknown as number,
+            name: "",
             laborFlatRate: 0.0,
             machineHourlyRate: 0.0,
-            durationHours: 0.01
+            durationHours: 0.0
         };
+        setHasUnsavedChanges(true);
         setEditedRoutings(prev => [...prev, newStep]);
         toast.success("New manufacturing routing step added");
     };
 
     const deleteRoutingStep = (id: string) => {
+        setHasUnsavedChanges(true);
         setEditedRoutings(prev => prev.filter(step => step.id !== id));
         toast.info("Routing step removed");
     };
@@ -446,6 +452,13 @@ export default function FinishedGoodsModule() {
         }));
     }, [sections]);
 
+    const uomOptions = useMemo(() => {
+        return units.map(u => ({
+            value: u.unit_shortcut,
+            label: `${u.unit_name} (${u.unit_shortcut})`
+        }));
+    }, [units]);
+
     return (
         <div className="flex h-full min-h-[calc(100vh-120px)] flex-1 flex-col overflow-hidden bg-background">
             {/* Topbar */}
@@ -462,50 +475,139 @@ export default function FinishedGoodsModule() {
                     <h1 className="text-base font-bold tracking-tight">Finished Goods Master</h1>
                     {(loadingBOM || savingBOM) && <Loader2 className="h-4 w-4 text-muted-foreground animate-spin" />}
                 </div>
-                <div className="flex items-center gap-2">
-                    {selectedProduct && !selectedProduct.parent_id && (
-                        <button 
+                <div className="flex items-center gap-2 relative">
+                    <div className="relative inline-flex rounded-lg shadow-sm">
+                        <button
+                            type="button"
                             onClick={() => {
                                 setRegisterForm({
-                                    title: selectedProduct.title,
-                                    sku: selectedProduct.sku,
-                                    baseUom: "PCS",
+                                    title: "",
+                                    sku: "",
+                                    baseUom: "L",
                                     targetSellingPrice: "",
                                     barcode: "",
-                                    densityFactor: String(selectedProduct.densityFactor || "1.0"),
+                                    densityFactor: "1.0",
+                                    expectedYield: "100",
                                     versionName: "v1.0",
-                                    brandId: selectedProduct.product_brand ? String(selectedProduct.product_brand) : "",
-                                    categoryId: selectedProduct.product_category ? String(selectedProduct.product_category) : "",
-                                    description: selectedProduct.description || "",
+                                    brandId: "",
+                                    categoryId: "",
+                                    description: "",
                                     costPerUnit: "",
                                     uomCount: "0",
-                                    classId: selectedProduct.product_class ? String(selectedProduct.product_class) : "",
-                                    segmentId: selectedProduct.product_segment ? String(selectedProduct.product_segment) : "",
-                                    sectionId: selectedProduct.product_section ? String(selectedProduct.product_section) : "",
-                                    shelfLife: selectedProduct.product_shelf_life ? String(selectedProduct.product_shelf_life) : "",
+                                    classId: "",
+                                    segmentId: "",
+                                    sectionId: "",
+                                    shelfLife: "",
                                     productImage: "",
-                                    parentId: selectedProduct.id,
-                                    productionCapacityPerHour: String(selectedProduct.production_capacity_per_hour || ""),
+                                    parentId: "",
+                                    productionCapacityPerHour: "",
                                     supplierIds: [] as string[]
                                 });
                                 setIsRegisterModalOpen(true);
                             }}
-                            className="inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-primary/10 text-primary hover:bg-primary/20 px-3 py-1.5 text-xs font-semibold transition-all"
+                            className="inline-flex items-center gap-1.5 rounded-l-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/95 transition-all cursor-pointer border-r border-primary-foreground/10"
                         >
                             <Plus className="h-3.5 w-3.5" />
-                            Add Child Variant
+                            Register Product
                         </button>
-                    )}
-                    <button 
-                        onClick={() => setIsRegisterModalOpen(true)}
-                        className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/95 transition-all"
-                    >
-                        <Plus className="h-3.5 w-3.5" />
-                        Register Product
-                    </button>
+                        
+                        <button
+                            type="button"
+                            onClick={() => setIsMenuOpen(!isMenuOpen)}
+                            className="inline-flex items-center rounded-r-lg bg-primary px-2 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/95 transition-all cursor-pointer"
+                        >
+                            <ChevronDown className="h-3.5 w-3.5" />
+                        </button>
+
+                        {isMenuOpen && (
+                            <>
+                                <div 
+                                    className="fixed inset-0 z-10" 
+                                    onClick={() => setIsMenuOpen(false)} 
+                                />
+                                <div className="absolute right-0 top-full mt-1.5 w-56 rounded-lg bg-card border border-border/80 shadow-lg py-1 z-20 text-xs text-foreground font-semibold divide-y divide-border/40 animate-in slide-in-from-top-1 duration-150">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setIsMenuOpen(false);
+                                            setRegisterForm({
+                                                title: "",
+                                                sku: "",
+                                                baseUom: "L",
+                                                targetSellingPrice: "",
+                                                barcode: "",
+                                                densityFactor: "1.0",
+                                                expectedYield: "100",
+                                                versionName: "v1.0",
+                                                brandId: "",
+                                                categoryId: "",
+                                                description: "",
+                                                costPerUnit: "",
+                                                uomCount: "0",
+                                                classId: "",
+                                                segmentId: "",
+                                                sectionId: "",
+                                                shelfLife: "",
+                                                productImage: "",
+                                                parentId: "",
+                                                productionCapacityPerHour: "",
+                                                supplierIds: [] as string[]
+                                            });
+                                            setIsRegisterModalOpen(true);
+                                        }}
+                                        className="w-full text-left px-3 py-2 hover:bg-muted text-foreground flex items-center gap-2"
+                                    >
+                                        <Plus className="h-3.5 w-3.5 text-muted-foreground" />
+                                        Register New Product
+                                    </button>
+                                    {selectedProduct && !selectedProduct.parent_id && (
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setIsMenuOpen(false);
+                                                setRegisterForm({
+                                                    title: selectedProduct.title,
+                                                    sku: selectedProduct.sku,
+                                                    baseUom: "PCS",
+                                                    targetSellingPrice: "",
+                                                    barcode: "",
+                                                    densityFactor: String(selectedProduct.densityFactor || "1.0"),
+                                                    expectedYield: "100",
+                                                    versionName: "v1.0",
+                                                    brandId: selectedProduct.product_brand ? String(selectedProduct.product_brand) : "",
+                                                    categoryId: selectedProduct.product_category ? String(selectedProduct.product_category) : "",
+                                                    description: selectedProduct.description || "",
+                                                    costPerUnit: "",
+                                                    uomCount: "0",
+                                                    classId: selectedProduct.product_class ? String(selectedProduct.product_class) : "",
+                                                    segmentId: selectedProduct.product_segment ? String(selectedProduct.product_segment) : "",
+                                                    sectionId: selectedProduct.product_section ? String(selectedProduct.product_section) : "",
+                                                    shelfLife: selectedProduct.product_shelf_life ? String(selectedProduct.product_shelf_life) : "",
+                                                    productImage: "",
+                                                    parentId: selectedProduct.id,
+                                                    productionCapacityPerHour: String(selectedProduct.production_capacity_per_hour || ""),
+                                                    supplierIds: [] as string[]
+                                                });
+                                                setIsRegisterModalOpen(true);
+                                            }}
+                                            className="w-full text-left px-3 py-2 hover:bg-muted text-foreground flex items-center gap-2"
+                                        >
+                                            <Layers className="h-3.5 w-3.5 text-primary" />
+                                            <div>
+                                                <span className="block">Add Child Variant</span>
+                                                <span className="block text-[9px] text-muted-foreground font-normal truncate max-w-[180px]">
+                                                    Parent: {selectedProduct.title}
+                                                </span>
+                                            </div>
+                                        </button>
+                                    )}
+                                </div>
+                            </>
+                        )}
+                    </div>
                     <button 
                         onClick={handleSave}
-                        disabled={savingBOM || !selectedProduct || (versions.length === 0 && !isNaN(Number(selectedProductId)))}
+                        disabled={savingBOM || !selectedProduct}
                         className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground transition-all hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         {savingBOM ? (
@@ -553,7 +655,13 @@ export default function FinishedGoodsModule() {
                                         <div key={root.id} className="space-y-1 mb-1">
                                             {/* Render Parent */}
                                             <button
-                                                onClick={() => setSelectedProductId(root.id)}
+                                                onClick={() => {
+                                                    if (hasUnsavedChanges) {
+                                                        if (!confirm("You have unsaved changes. Are you sure you want to navigate away?")) return;
+                                                        setHasUnsavedChanges(false);
+                                                    }
+                                                    setSelectedProductId(root.id);
+                                                }}
                                                 className={`w-full flex flex-col text-left p-3 rounded-lg border transition-all ${
                                                     selectedProductId === root.id 
                                                         ? "bg-card border-primary shadow-sm ring-1 ring-primary/20" 
@@ -583,7 +691,13 @@ export default function FinishedGoodsModule() {
                                                     {displayedChildren.map(child => (
                                                         <button
                                                             key={child.id}
-                                                            onClick={() => setSelectedProductId(child.id)}
+                                                            onClick={() => {
+                                                                if (hasUnsavedChanges) {
+                                                                    if (!confirm("You have unsaved changes. Are you sure you want to navigate away?")) return;
+                                                                    setHasUnsavedChanges(false);
+                                                                }
+                                                                setSelectedProductId(child.id);
+                                                            }}
                                                             className={`w-full flex flex-col text-left p-2.5 rounded-lg border transition-all relative ${
                                                                 selectedProductId === child.id 
                                                                     ? "bg-card border-primary/70 shadow-sm ring-1 ring-primary/10" 
@@ -649,23 +763,60 @@ export default function FinishedGoodsModule() {
                             <div className="flex flex-wrap items-center gap-4 self-start sm:self-center shrink-0 border-l pl-4 border-muted">
                                 {versions.length > 0 && (
                                     <div className="flex flex-col gap-1">
-                                        <label className="text-[10px] font-bold text-muted-foreground uppercase">Active Version</label>
+                                        <label className="text-[10px] font-bold text-muted-foreground uppercase">Viewing Version</label>
                                         <div className="flex items-center gap-2">
                                             <select
                                                 value={selectedVersionId || ""}
-                                                onChange={e => setSelectedVersionId(Number(e.target.value) || null)}
+                                                onChange={e => {
+                                                    if (hasUnsavedChanges) {
+                                                        if (!confirm("You have unsaved changes. Are you sure you want to switch versions?")) return;
+                                                        setHasUnsavedChanges(false);
+                                                    }
+                                                    setSelectedVersionId(Number(e.target.value) || null);
+                                                }}
                                                 className="rounded border px-2 py-1 bg-background text-xs font-semibold text-foreground outline-none focus:ring-1 focus:ring-primary"
                                             >
-                                                {versions.map(v => {
+                                                {versions.map((v, idx) => {
                                                     const cost = versionCosts[v.id];
                                                     const costStr = cost !== undefined && cost > 0 ? ` (Est: ₱${cost.toFixed(2)})` : "";
+                                                    const activeStr = v.is_active ? " [ACTIVE]" : "";
                                                     return (
-                                                        <option key={v.id} value={v.id}>
-                                                            {v.version_name}{costStr}
+                                                        <option key={`${v.id}-${idx}`} value={v.id}>
+                                                            {v.version_name}{activeStr}{costStr}
                                                         </option>
                                                     );
                                                 })}
                                             </select>
+                                            
+                                            {selectedVersionId && !versions.find(v => v.id === selectedVersionId)?.is_active && (
+                                                <button
+                                                    onClick={() => handleActivateVersion(selectedVersionId)}
+                                                    className="inline-flex items-center gap-1 rounded bg-emerald-600 hover:bg-emerald-700 border-none px-2 py-1 text-xs font-bold text-white transition-all cursor-pointer shadow-sm shadow-emerald-950/20"
+                                                    title="Set this version as active"
+                                                >
+                                                    Set Active
+                                                </button>
+                                            )}
+                                            
+                                            {selectedVersionId && versions.find(v => v.id === selectedVersionId)?.is_active && (
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 rounded px-2 py-1 text-[10px] font-bold uppercase tracking-wider">
+                                                        Active
+                                                    </span>
+                                                    <button
+                                                        onClick={() => {
+                                                            if (confirm("Are you sure you want to deactivate all BOM versions for this product?")) {
+                                                                handleActivateVersion(undefined, true);
+                                                            }
+                                                        }}
+                                                        className="inline-flex items-center gap-1 rounded bg-destructive/10 hover:bg-destructive/20 border border-destructive/20 px-2 py-1 text-xs font-bold text-destructive transition-all cursor-pointer"
+                                                        title="Deactivate this version"
+                                                    >
+                                                        Deactivate
+                                                    </button>
+                                                </div>
+                                            )}
+
                                             <button
                                                 onClick={handleRegisterNewVersion}
                                                 className="inline-flex items-center gap-1 rounded bg-muted border px-2 py-1 text-xs font-semibold hover:bg-accent transition-colors text-foreground"
@@ -902,7 +1053,7 @@ export default function FinishedGoodsModule() {
                                 </h4>
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="col-span-2">
-                                        <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Product Name</label>
+                                        <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Product Name <span className="text-red-500">*</span></label>
                                         <input
                                             type="text"
                                             required
@@ -923,7 +1074,7 @@ export default function FinishedGoodsModule() {
                                         />
                                     </div>
                                     <div>
-                                        <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">SKU / Code</label>
+                                        <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">SKU / Code <span className="text-red-500">*</span></label>
                                         <input
                                             type="text"
                                             required
@@ -944,7 +1095,7 @@ export default function FinishedGoodsModule() {
                                         />
                                     </div>
                                     <div>
-                                        <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Brand</label>
+                                        <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Brand <span className="text-red-500">*</span></label>
                                         <CreatableSelect
                                             options={brandOptions}
                                             value={registerForm.brandId}
@@ -957,7 +1108,7 @@ export default function FinishedGoodsModule() {
                                         />
                                     </div>
                                     <div>
-                                        <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Category</label>
+                                        <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Category <span className="text-red-500">*</span></label>
                                         <CreatableSelect
                                             options={categoryOptions}
                                             value={registerForm.categoryId}
@@ -971,10 +1122,11 @@ export default function FinishedGoodsModule() {
                                     </div>
                                     <div className="col-span-2">
                                         <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Parent Product (Optional)</label>
-                                        <select
+                                        <CreatableSelect
+                                            options={parentOptions}
                                             value={registerForm.parentId}
-                                            onChange={e => {
-                                                const selectedId = e.target.value;
+                                            onValueChange={(val) => {
+                                                const selectedId = val;
                                                 const parentProd = products.find(p => p.id === selectedId);
                                                 setRegisterForm(prev => {
                                                     if (parentProd) {
@@ -996,15 +1148,8 @@ export default function FinishedGoodsModule() {
                                                     return { ...prev, parentId: selectedId };
                                                 });
                                             }}
-                                            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
-                                        >
-                                            <option value="">None (This is a parent product)</option>
-                                            {parentOptions.map(opt => (
-                                                <option key={opt.value} value={opt.value}>
-                                                    {opt.label}
-                                                </option>
-                                            ))}
-                                        </select>
+                                            placeholder="Select parent product..."
+                                        />
                                     </div>
                                 </div>
                             </div>
@@ -1016,21 +1161,16 @@ export default function FinishedGoodsModule() {
                                 </h4>
                                 <div className="grid grid-cols-3 gap-4">
                                     <div>
-                                        <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Base UOM</label>
-                                        <select
+                                        <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Base UOM <span className="text-red-500">*</span></label>
+                                        <CreatableSelect
+                                            options={uomOptions}
                                             value={registerForm.baseUom}
-                                            onChange={e => setRegisterForm(prev => ({ ...prev, baseUom: e.target.value }))}
-                                            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
-                                        >
-                                            {units.map(u => (
-                                                <option key={u.unit_id} value={u.unit_shortcut}>
-                                                    {u.unit_name} ({u.unit_shortcut})
-                                                </option>
-                                            ))}
-                                        </select>
+                                            onValueChange={(val) => setRegisterForm(prev => ({ ...prev, baseUom: val }))}
+                                            placeholder="Select Base UOM..."
+                                        />
                                     </div>
                                     <div>
-                                        <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">UOM Count (Pack Mult)</label>
+                                        <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">UOM Count (Pack Mult) <span className="text-red-500">*</span></label>
                                         <input
                                             type="number"
                                             placeholder="e.g. 1"
@@ -1057,7 +1197,7 @@ export default function FinishedGoodsModule() {
                                         />
                                     </div>
                                     <div>
-                                        <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Density conversion factor</label>
+                                        <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Density conversion factor <span className="text-red-500">*</span></label>
                                         <input
                                             type="number"
                                             step="0.001"
@@ -1068,7 +1208,18 @@ export default function FinishedGoodsModule() {
                                         />
                                     </div>
                                     <div>
-                                        <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Shelf Life (Days, Opt)</label>
+                                        <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Expected Yield (%) <span className="text-red-500">*</span></label>
+                                        <input
+                                            type="number"
+                                            required
+                                            placeholder="e.g. 100"
+                                            value={registerForm.expectedYield}
+                                            onChange={e => setRegisterForm(prev => ({ ...prev, expectedYield: e.target.value }))}
+                                            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Shelf Life (Days) <span className="text-red-500">*</span></label>
                                         <input
                                             type="number"
                                             placeholder="e.g. 365"
@@ -1117,7 +1268,7 @@ export default function FinishedGoodsModule() {
                                         />
                                     </div>
                                     <div>
-                                        <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Capacity (Qty/Hr, Opt)</label>
+                                        <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Capacity (Qty/Hr) <span className="text-red-500">*</span></label>
                                         <input
                                             type="number"
                                             placeholder="e.g. 100"
@@ -1295,7 +1446,7 @@ export default function FinishedGoodsModule() {
                                     <Layers className="h-3.5 w-3.5" /> 4. BOM Initial Version
                                 </h4>
                                 <div className="space-y-1">
-                                    <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Initial Version Name</label>
+                                    <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Initial Version Name <span className="text-red-500">*</span></label>
                                     <input
                                         type="text"
                                         required

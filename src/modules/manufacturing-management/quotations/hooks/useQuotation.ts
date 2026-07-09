@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { toast } from "sonner";
 import { useDebounce } from "use-debounce";
-import { QuotationHeader, QuotationSnapshotNode, CatalogProduct, SelectedQuoteProduct, Customer } from "../types";
+import { QuotationHeader, QuotationSnapshotNode, CatalogProduct, SelectedQuoteProduct, Customer, Project } from "../types";
 
 export function useQuotation() {
     // List view vs Create view
@@ -21,20 +21,14 @@ export function useQuotation() {
     const [customerSearchText, setCustomerSearchText] = useState<string>("");
     const [quoteNumber, setQuoteNumber] = useState<string>("");
     const [projectName, setProjectName] = useState<string>("");
+    const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
     const [remarks, setRemarks] = useState<string>("");
     const [priceTypes, setPriceTypes] = useState<{ price_type_id: number; price_type_name: string }[]>([]);
     const [selectedPriceTypeId, setSelectedPriceTypeId] = useState<string>("");
+    const [showValidationErrors, setShowValidationErrors] = useState(false);
     
-    // Catalog and selected products
-    const [catalogProducts, setCatalogProducts] = useState<CatalogProduct[]>([]);
-    const [loadingProducts, setLoadingProducts] = useState(false);
-    const [selectedProductsList, setSelectedProductsList] = useState<SelectedQuoteProduct[]>([]);
-    const [searchQuery, setSearchQuery] = useState("");
-    const [debouncedSearchQuery] = useDebounce(searchQuery, 400);
-    const [currentPage, setCurrentPage] = useState(1);
-    const itemsPerPage = 8;
-    const [priceTypeRatesMap, setPriceTypeRatesMap] = useState<Record<number, number>>({}); // Map: productId -> price
-    const [savingQuote, setSavingQuote] = useState(false);
+    // Project portfolio database registry
+    const [localProjects, setLocalProjects] = useState<{ id: number; project_name: string; customer_id: number; customer_name: string; customer_code: string }[]>([]);
 
     // Load master list of quotations
     const loadQuotes = async () => {
@@ -59,7 +53,25 @@ export function useQuotation() {
         // Fetch active customers initially
         fetch("/api/manufacturing/finished-goods/customers")
             .then(res => res.ok ? res.json() : [])
-            .then(data => setCustomers(data))
+            .then(data => {
+                setCustomers(data);
+                // After customers are loaded, fetch projects from the database to map them correctly!
+                fetch("/api/manufacturing/finished-goods/projects")
+                    .then(res => res.ok ? res.json() : [])
+                    .then(projData => {
+                        const mapped = (projData as Project[]).map(p => {
+                            const matchedCust = data.find((c: Customer) => c.customer_code === p.customer_code);
+                            return {
+                                id: p.id,
+                                project_name: p.project_name,
+                                customer_id: matchedCust ? Number(matchedCust.id) : 0,
+                                customer_name: matchedCust ? matchedCust.customer_name : `Code: ${p.customer_code}`,
+                                customer_code: p.customer_code
+                            };
+                        });
+                        setLocalProjects(mapped);
+                    });
+            })
             .catch(e => console.error("Error fetching customers:", e));
 
         // Fetch price types
@@ -67,9 +79,6 @@ export function useQuotation() {
             .then(res => res.ok ? res.json() : [])
             .then(data => {
                 setPriceTypes(data);
-                if (data.length > 0) {
-                    setSelectedPriceTypeId(String(data[0].price_type_id));
-                }
             })
             .catch(e => console.error("Error fetching price types:", e));
 
@@ -78,7 +87,10 @@ export function useQuotation() {
         fetch("/api/manufacturing/finished-goods/products?limit=250")
             .then(res => res.ok ? res.json() : [])
             .then(data => {
-                setCatalogProducts(data);
+                // QA Fix: Only pull finished goods (items with versions)
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const fgOnly = data.filter((p: any) => p.has_versions === true);
+                setCatalogProducts(fgOnly);
                 setLoadingProducts(false);
             })
             .catch(e => {
@@ -141,8 +153,11 @@ export function useQuotation() {
         setSelectedProductsList([]);
         setRemarks("");
         setProjectName("");
+        setSelectedProjectId(null);
         setSelectedCustomerId("");
         setCustomerSearchText("");
+        setSelectedPriceTypeId("");
+        setShowValidationErrors(false);
         
         // Generate QT-YYYYMMDD-HHMMSS
         const now = new Date();
@@ -153,6 +168,99 @@ export function useQuotation() {
         const min = String(now.getMinutes()).padStart(2, '0');
         const sec = String(now.getSeconds()).padStart(2, '0');
         setQuoteNumber(`QT-${year}${month}${day}-${hour}${min}${sec}`);
+    };
+
+    const startCreateQuoteForProject = (projName: string, customerId: number, projectId?: number) => {
+        setView("create");
+        setSelectedProductsList([]);
+        setRemarks("");
+        setProjectName(projName);
+        setSelectedCustomerId(String(customerId));
+        setSelectedPriceTypeId("");
+        setShowValidationErrors(false);
+
+        if (projectId) {
+            setSelectedProjectId(projectId);
+        } else {
+            // Find database project id inside localProjects list
+            const matchedProj = localProjects.find(p => p.project_name === projName);
+            if (matchedProj) {
+                setSelectedProjectId(Number(matchedProj.id));
+            } else {
+                setSelectedProjectId(null);
+            }
+        }
+
+        const matchedCust = customers.find(c => Number(c.id) === customerId);
+        if (matchedCust) {
+            setCustomerSearchText(`${matchedCust.customer_name} (${matchedCust.customer_code})`);
+        } else {
+            setCustomerSearchText(`Customer ID: ${customerId}`);
+        }
+
+        // Generate QT-YYYYMMDD-HHMMSS
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        const hour = String(now.getHours()).padStart(2, '0');
+        const min = String(now.getMinutes()).padStart(2, '0');
+        const sec = String(now.getSeconds()).padStart(2, '0');
+        setQuoteNumber(`QT-${year}${month}${day}-${hour}${min}${sec}`);
+    };
+
+    const registerNewProject = async (name: string, customerId: number, customerName: string) => {
+        const cleanedName = name.trim().toUpperCase();
+        const matchedCust = customers.find(c => Number(c.id) === customerId);
+        const customerCode = matchedCust ? matchedCust.customer_code : "GEN-CUST";
+
+        try {
+            const res = await fetch("/api/manufacturing/finished-goods/projects", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    project_name: cleanedName,
+                    customer_code: customerCode
+                })
+            });
+
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.error || "Failed to register project");
+            }
+
+            const newProj = await res.json();
+            
+            // Re-fetch projects to update state
+            const projRes = await fetch("/api/manufacturing/finished-goods/projects");
+            if (projRes.ok) {
+                const projData = await projRes.json();
+                const mapped = (projData as Project[]).map(p => {
+                    const matchedCust = customers.find((c: Customer) => c.customer_code === p.customer_code);
+                    return {
+                        id: p.id,
+                        project_name: p.project_name,
+                        customer_id: matchedCust ? Number(matchedCust.id) : 0,
+                        customer_name: matchedCust ? matchedCust.customer_name : `Code: ${p.customer_code}`,
+                        customer_code: p.customer_code
+                    };
+                });
+                setLocalProjects(mapped);
+            }
+
+            // Auto-select for create flow
+            setProjectName(newProj.project_name);
+            setSelectedProjectId(newProj.id);
+            setSelectedCustomerId(String(customerId));
+            setCustomerSearchText(customerName);
+            toast.success(`Project "${newProj.project_name}" registered!`);
+
+            return newProj;
+        } catch (e) {
+            console.error("Error registering project:", e);
+            toast.error(e instanceof Error ? e.message : "Error registering project");
+            return null;
+        }
     };
 
     const reviseQuotation = async (quote: QuotationHeader) => {
@@ -206,7 +314,11 @@ export function useQuotation() {
             setCustomerSearchText(custNameStr);
 
             setRemarks(quote.remarks || "");
-            setProjectName(quote.project_name || "");
+            
+            const quoteProj = quote.project_id && typeof quote.project_id === "object" ? quote.project_id as Project : null;
+            setProjectName(quoteProj ? quoteProj.project_name : "");
+            setSelectedProjectId(quoteProj ? quoteProj.id : null);
+
             setView("create");
         } catch (e) {
             console.error("Error preparing revision:", e);
@@ -215,9 +327,21 @@ export function useQuotation() {
             setLoadingSnapshots(false);
         }
     };
+    
+    // Catalog and selected products
+    const [catalogProducts, setCatalogProducts] = useState<CatalogProduct[]>([]);
+    const [loadingProducts, setLoadingProducts] = useState(false);
+    const [selectedProductsList, setSelectedProductsList] = useState<SelectedQuoteProduct[]>([]);
+    const [searchQuery, setSearchQuery] = useState("");
+    const [debouncedSearchQuery] = useDebounce(searchQuery, 400);
+    const [currentPage, setCurrentPage] = useState(1);
+    const itemsPerPage = 8;
+    const [priceTypeRatesMap, setPriceTypeRatesMap] = useState<Record<number, number>>({}); // Map: productId -> price
+    const [savingQuote, setSavingQuote] = useState(false);
 
     const addProductToQuote = (prod: CatalogProduct) => {
         const alreadyExists = selectedProductsList.some(item => item.product.product_id === prod.product_id);
+        toast.dismiss();
         if (alreadyExists) {
             toast.info("Product already added to list");
             return;
@@ -269,18 +393,20 @@ export function useQuotation() {
     };
 
     const submitQuotation = async () => {
-        if (!selectedCustomerId) {
-            toast.error("Please select a customer");
+        // Enforce required fields validations
+        if (!projectName.trim() || !selectedCustomerId || !selectedPriceTypeId || !quoteNumber.trim()) {
+            toast.error("Please fill in all required fields highlighted in red.");
+            setShowValidationErrors(true);
             return;
         }
         if (selectedProductsList.length === 0) {
             toast.error("Please add at least one product to the quotation list");
             return;
         }
-        if (!quoteNumber.trim()) {
-            toast.error("Quotation number cannot be empty");
-            return;
-        }
+
+        // Save confirmation prompt
+        const confirmSave = window.confirm("Are you sure you want to lock and save this quotation snapshot? This will freeze the costs and simulated margins.");
+        if (!confirmSave) return;
 
         setSavingQuote(true);
         try {
@@ -310,14 +436,20 @@ export function useQuotation() {
             const totalSelling = productsWithLatestCost.reduce((sum, item) => sum + Number(item.agreedPrice || 0), 0);
             const totalCost = productsWithLatestCost.reduce((sum, item) => sum + Number(item.resolvedCost || 0), 0);
 
+            // Construct Philippine Time (PHT, UTC+8) date representation
+            const dateUTC = new Date();
+            const datePHT = new Date(dateUTC.getTime() + (8 * 60 * 60 * 1000));
+            const quoteDateStr = datePHT.toISOString().replace(/Z$/, "");
+
             const header = {
                 quote_number: quoteNumber.trim(),
                 customer_id: parseInt(selectedCustomerId),
+                project_id: selectedProjectId,
                 total_selling_price: totalSelling,
                 total_simulated_cost: totalCost,
-                forex_rate_used: 61.39, // Default forex rate used for quote translation
+                forex_rate_used: 61.39,
                 remarks: remarks || "",
-                project_name: projectName.trim()
+                quote_date: quoteDateStr
             };
 
             const snapshots = productsWithLatestCost.map(item => ({
@@ -382,6 +514,75 @@ export function useQuotation() {
         return filteredCatalog.slice(startIndex, startIndex + itemsPerPage);
     }, [filteredCatalog, currentPage]);
 
+    // Virtual Project Portfolio List: maps each project_name to a single portfolio
+    const allProjects = useMemo(() => {
+        const projectMap = new Map<string, { projectId: number; projectName: string; customerId: number; customerName: string; customerCode: string; quoteCount: number; latest: QuotationHeader; history: QuotationHeader[] }>();
+        
+        quotes.forEach(q => {
+            const projObj = q.project_id && typeof q.project_id === "object" ? q.project_id as Project : null;
+            const key = projObj?.project_name || `No Project Name`;
+            if (key === "No Project Name") return;
+            
+            const cust = q.customer_id && typeof q.customer_id === "object" ? q.customer_id as Customer : null;
+            const custId = cust ? Number(cust.id) : Number(q.customer_id || 0);
+            const custName = cust ? cust.customer_name : `Customer ID: ${q.customer_id}`;
+            const custCode = cust ? cust.customer_code : "";
+            
+            if (!projectMap.has(key)) {
+                projectMap.set(key, {
+                    projectId: projObj ? Number(projObj.id) : 0,
+                    projectName: key,
+                    customerId: custId,
+                    customerName: custName,
+                    customerCode: custCode,
+                    quoteCount: 1,
+                    latest: q,
+                    history: [q]
+                });
+            } else {
+                const group = projectMap.get(key)!;
+                group.quoteCount += 1;
+                group.history.push(q);
+                const currTime = group.latest.quote_date ? new Date(group.latest.quote_date).getTime() : 0;
+                const checkTime = q.quote_date ? new Date(q.quote_date).getTime() : 0;
+                if (checkTime > currTime) {
+                    group.latest = q;
+                }
+            }
+        });
+        
+        // Also add database projects that don't have quotes yet!
+        localProjects.forEach(lp => {
+            if (!projectMap.has(lp.project_name)) {
+                projectMap.set(lp.project_name, {
+                    projectId: lp.id,
+                    projectName: lp.project_name,
+                    customerId: lp.customer_id,
+                    customerName: lp.customer_name,
+                    customerCode: lp.customer_code || "",
+                    quoteCount: 0,
+                    latest: {
+                        id: 0,
+                        quote_number: "No Quotes Yet",
+                        customer_id: lp.customer_id,
+                        total_selling_price: 0,
+                        total_simulated_cost: 0,
+                        forex_rate_used: 61.39,
+                        status: "Draft",
+                        project_id: {
+                            id: lp.id,
+                            project_name: lp.project_name,
+                            customer_code: lp.customer_code
+                        }
+                    },
+                    history: []
+                });
+            }
+        });
+        
+        return Array.from(projectMap.values());
+    }, [quotes, localProjects]);
+
     return {
         view,
         setView,
@@ -403,6 +604,8 @@ export function useQuotation() {
         setRemarks,
         projectName,
         setProjectName,
+        selectedProjectId,
+        setSelectedProjectId,
         priceTypes,
         selectedPriceTypeId,
         setSelectedPriceTypeId,
@@ -428,6 +631,12 @@ export function useQuotation() {
         filteredCatalog,
         totalPages,
         paginatedCatalog,
-        changeProductVersion
+        changeProductVersion,
+        showValidationErrors,
+        setShowValidationErrors,
+        localProjects,
+        registerNewProject,
+        allProjects,
+        startCreateQuoteForProject
     };
 }

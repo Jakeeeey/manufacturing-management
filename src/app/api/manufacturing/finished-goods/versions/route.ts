@@ -28,7 +28,8 @@ export async function GET(request: Request) {
         const json = await res.json();
         
         const versionsList = (json.data || []).map((b: Record<string, unknown> & { bom_id: number; bom_name?: string; is_active?: unknown; version?: { version_name?: string } | null }) => ({
-            bom_id: b.bom_id,
+            id: b.bom_id,
+            product_id: productId,
             version_name: b.version?.version_name || b.bom_name || `BOM #${b.bom_id}`,
             is_active: !!b.is_active
         }));
@@ -219,6 +220,68 @@ export async function POST(request: Request) {
     } catch (e) {
         console.error("API Error registering version:", e);
         return NextResponse.json({ error: (e as { message?: string }).message || "Failed to register version" }, { status: 500 });
+    }
+}
+
+export async function PATCH(request: Request) {
+    try {
+        const body = await request.json();
+        const { productId, bomId, deactivateAll } = body;
+
+        if (!productId) {
+            return NextResponse.json({ error: "Missing required field (productId)" }, { status: 400 });
+        }
+
+        const numericProductId = parseInt(productId);
+        const today = new Date().toISOString().split("T")[0];
+
+        // Fetch all BOMs for this product
+        const getBomsUrl = `${DIRECTUS_URL}/items/manufacturing_boms?filter[product_id][_eq]=${numericProductId}&limit=-1&fields=bom_id`;
+        const bomsRes = await fetch(getBomsUrl, { headers, cache: "no-store" });
+        if (!bomsRes.ok) throw new Error("Failed to fetch product BOMs for deactivation");
+        const bomsJson = await bomsRes.json();
+        const boms = bomsJson.data || [];
+
+        if (deactivateAll) {
+            // Deactivate all BOMs
+            for (const b of boms) {
+                await fetch(`${DIRECTUS_URL}/items/manufacturing_boms/${b.bom_id}`, {
+                    method: "PATCH",
+                    headers,
+                    body: JSON.stringify({ is_active: false, valid_to: today })
+                });
+            }
+            return NextResponse.json({ success: true });
+        }
+
+        if (!bomId) {
+            return NextResponse.json({ error: "Missing required field (bomId)" }, { status: 400 });
+        }
+        const numericBomId = parseInt(bomId);
+
+        // Deactivate all other BOMs
+        for (const b of boms) {
+            if (b.bom_id !== numericBomId) {
+                await fetch(`${DIRECTUS_URL}/items/manufacturing_boms/${b.bom_id}`, {
+                    method: "PATCH",
+                    headers,
+                    body: JSON.stringify({ is_active: false, valid_to: today })
+                });
+            }
+        }
+
+        // Activate the selected BOM
+        const actRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_boms/${numericBomId}`, {
+            method: "PATCH",
+            headers,
+            body: JSON.stringify({ is_active: true, valid_from: today, valid_to: null })
+        });
+        if (!actRes.ok) throw new Error("Failed to activate selected BOM version");
+
+        return NextResponse.json({ success: true });
+    } catch (e) {
+        console.error("API Error activating version:", e);
+        return NextResponse.json({ error: (e as { message?: string }).message || "Failed to activate version" }, { status: 500 });
     }
 }
 
