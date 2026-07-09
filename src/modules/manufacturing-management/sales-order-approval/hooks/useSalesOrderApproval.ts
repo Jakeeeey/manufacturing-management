@@ -21,17 +21,31 @@ export function useSalesOrderApproval() {
     const [currentPage, setCurrentPage] = useState(1);
     const [limit] = useState(10);
     const [searchQuery, setSearchQuery] = useState("");
+    const [statusFilter, setStatusFilter] = useState("For Approval");
+    const [customerCodeFilter, setCustomerCodeFilter] = useState("");
+    const [dateFromFilter, setDateFromFilter] = useState("");
+    const [dateToFilter, setDateToFilter] = useState("");
     const [totalCount, setTotalCount] = useState(0);
     const [totalPages, setTotalPages] = useState(0);
 
-    const loadPendingOrders = async (page = currentPage, search = searchQuery) => {
+    const loadPendingOrders = async (
+        page = currentPage, 
+        search = searchQuery, 
+        status = statusFilter, 
+        customer = customerCodeFilter, 
+        dateFrom = dateFromFilter, 
+        dateTo = dateToFilter
+    ) => {
         setLoading(true);
         try {
             const res = await fetchSalesOrders({
                 page,
                 limit,
                 search,
-                status: "For Approval" // Dedicated to approval workflow
+                status,
+                customerCode: customer,
+                dateFrom,
+                dateTo
             });
             setSalesOrders(res.data);
             setTotalCount(res.meta.totalCount);
@@ -46,9 +60,9 @@ export function useSalesOrderApproval() {
     };
 
     useEffect(() => {
-        loadPendingOrders(currentPage, searchQuery);
+        loadPendingOrders(currentPage, searchQuery, statusFilter, customerCodeFilter, dateFromFilter, dateToFilter);
 // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [currentPage, searchQuery]);
+    }, [currentPage, searchQuery, statusFilter, customerCodeFilter, dateFromFilter, dateToFilter]);
 
     const handleSearchChange = (query: string) => {
         setSearchQuery(query);
@@ -74,7 +88,7 @@ export function useSalesOrderApproval() {
         try {
             await approveSalesOrder(orderId);
             toast.success("Sales Order approved! Released to production floor.");
-            loadPendingOrders(currentPage, searchQuery);
+            loadPendingOrders(currentPage, searchQuery, statusFilter, customerCodeFilter, dateFromFilter, dateToFilter);
             if (selectedOrder && selectedOrder.order_id === orderId) {
                 setSelectedOrder(null);
                 setOrderDetails([]);
@@ -92,7 +106,7 @@ export function useSalesOrderApproval() {
         try {
             await updateSalesOrderStatus(orderId, "Draft");
             toast.success("Sales Order rejected and returned to Draft status.");
-            loadPendingOrders(currentPage, searchQuery);
+            loadPendingOrders(currentPage, searchQuery, statusFilter, customerCodeFilter, dateFromFilter, dateToFilter);
             if (selectedOrder && selectedOrder.order_id === orderId) {
                 setSelectedOrder(null);
                 setOrderDetails([]);
@@ -106,7 +120,7 @@ export function useSalesOrderApproval() {
     };
 
     const refreshData = () => {
-        loadPendingOrders(currentPage, searchQuery);
+        loadPendingOrders(currentPage, searchQuery, statusFilter, customerCodeFilter, dateFromFilter, dateToFilter);
     };
 
     return {
@@ -121,6 +135,14 @@ export function useSalesOrderApproval() {
         setCurrentPage,
         searchQuery,
         setSearchQuery: handleSearchChange,
+        statusFilter,
+        setStatusFilter,
+        customerCodeFilter,
+        setCustomerCodeFilter,
+        dateFromFilter,
+        setDateFromFilter,
+        dateToFilter,
+        setDateToFilter,
         totalCount,
         totalPages,
         limit,

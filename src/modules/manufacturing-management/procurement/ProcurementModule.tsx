@@ -50,7 +50,8 @@ export default function ProcurementModule({ initialTab = "suppliers" }: Procurem
         handleCreateShipment,
         handleAllocateExpenses,
         handleUpdateShipmentStatus,
-        handleRegisterRawMaterial
+        handleRegisterRawMaterial,
+        handleToggleSupplierActive
     } = useProcurement(initialTab);
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -80,6 +81,7 @@ export default function ProcurementModule({ initialTab = "suppliers" }: Procurem
                         isEditingSupplier={isEditingSupplier}
                         onStartEditSupplier={handleStartEditSupplier}
                         onCreateSupplier={handleCreateSupplier}
+                        onToggleSupplierActive={handleToggleSupplierActive}
                         rawMaterials={rawMaterials}
                     />
                 )}

@@ -1,35 +1,7 @@
 import React from "react";
 import { Sliders, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
-
-interface BOMItem {
-    id: string;
-    productId?: number;
-    name: string;
-    type: "raw_material" | "sub_assembly" | "by_product";
-    quantity: number;
-    uom: string;
-    uomId?: number;
-    wastagePercent: number;
-    landedCost: number;
-    densityFactor?: number;
-    isForeign?: boolean;
-    currency?: "PHP" | "USD";
-    originalPrice?: number | null;
-}
-
-interface Product {
-    id: string;
-    sku: string;
-    title: string;
-    description: string;
-    barcode: string;
-    baseUom: string;
-    expectedYieldPercent: number;
-    targetSellingPrice: number;
-    parentProduct?: boolean;
-    densityFactor?: number;
-}
+import { BOMItem, Product } from "../types";
 
 interface ProductOverhead {
     id: string;

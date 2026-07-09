@@ -71,6 +71,9 @@ export async function GET(request: Request) {
         const status = searchParams.get("status") || "";
         const selectedIdsParam = searchParams.get("selectedIds") || "";
         const excludeHasJo = searchParams.get("excludeHasJo") === "true";
+        const customerCode = searchParams.get("customerCode") || "";
+        const dateFrom = searchParams.get("dateFrom") || "";
+        const dateTo = searchParams.get("dateTo") || "";
 
         const fullyScheduledSoIds: number[] = [];
         if (excludeHasJo) {
@@ -169,6 +172,15 @@ export async function GET(request: Request) {
         if (search) {
             filterParts.push(`filter[_or][0][order_no][_icontains]=${encodeURIComponent(search)}`);
             filterParts.push(`filter[_or][1][customer_code][_icontains]=${encodeURIComponent(search)}`);
+        }
+        if (customerCode) {
+            filterParts.push(`filter[customer_code][_eq]=${encodeURIComponent(customerCode)}`);
+        }
+        if (dateFrom) {
+            filterParts.push(`filter[order_date][_gte]=${encodeURIComponent(dateFrom)}`);
+        }
+        if (dateTo) {
+            filterParts.push(`filter[order_date][_lte]=${encodeURIComponent(dateTo)}`);
         }
         if (excludeHasJo && fullyScheduledSoIds.length > 0) {
             filterParts.push(`filter[order_id][_nin]=${fullyScheduledSoIds.join(",")}`);
@@ -304,11 +316,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
     try {
         const body = await request.json();
-        const { quotationId, poNo, dueDate, deliveryDate, paymentTerms, remarks, discountAmount, salesmanId, supplierId, branchId } = body;
-
-        if (!quotationId || !poNo) {
-            return NextResponse.json({ error: "Missing required fields (quotationId, poNo)" }, { status: 400 });
-        }
+        const { quotationId, customerId, poNo, items, dueDate, deliveryDate, paymentTerms, remarks, discountAmount, salesmanId, supplierId, branchId } = body;
 
         // Get logged in user ID from secure access token cookie
         let encoderId: number | null = null;
@@ -333,7 +341,93 @@ export async function POST(request: Request) {
                 }
             }
         } catch (err) {
-            console.error("Error decoding user token in SO conversion:", err);
+            console.error("Error decoding user token in SO creation:", err);
+        }
+
+        if (!quotationId) {
+            if (!customerId || !poNo || !items || items.length === 0) {
+                return NextResponse.json({ error: "Missing required fields for direct creation (customerId, poNo, items)" }, { status: 400 });
+            }
+
+            // 1. Fetch customer details
+            const custRes = await fetch(`${DIRECTUS_URL}/items/customer/${customerId}`, { headers, cache: "no-store" });
+            if (!custRes.ok) throw new Error("Failed to fetch customer");
+            const cust = (await custRes.json()).data;
+            const customerCode = cust.customer_code || cust.customer_name || "CUST-GEN";
+
+            // 2. Generate random SO number
+            const quoteNumberSeq = Math.floor(1000 + Math.random() * 9000);
+            const orderNo = `SO-${quoteNumberSeq}`;
+
+            // Calculate total amount
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const totalAmount = items.reduce((sum: number, it: any) => sum + (Number(it.unit_price || 0) * Number(it.quantity || 0)), 0);
+
+            // 3. Create Sales Order
+            const salesOrderPayload = {
+                order_no: orderNo,
+                po_no: poNo,
+                customer_code: customerCode,
+                order_status: "Draft",
+                total_amount: totalAmount,
+                discount_amount: discountAmount ? Number(discountAmount) : 0,
+                net_amount: totalAmount - (discountAmount ? Number(discountAmount) : 0),
+                remarks: remarks || `Directly Created Sales Order.`,
+                created_date: new Date().toISOString(),
+                created_by: encoderId || null,
+                delivery_date: deliveryDate || null,
+                due_date: dueDate || null,
+                payment_terms: paymentTerms ? Number(paymentTerms) : null,
+                salesman_id: salesmanId ? Number(salesmanId) : null,
+                supplier_id: supplierId ? Number(supplierId) : null,
+                branch_id: branchId ? Number(branchId) : null
+            };
+
+            const createSoRes = await fetch(`${DIRECTUS_URL}/items/sales_order`, {
+                method: "POST",
+                headers,
+                body: JSON.stringify(salesOrderPayload)
+            });
+
+            if (!createSoRes.ok) {
+                const errText = await createSoRes.text();
+                throw new Error(`Failed to create sales order: ${createSoRes.status} - ${errText}`);
+            }
+
+            const newSo = (await createSoRes.json()).data;
+            const newOrderId = newSo.order_id;
+
+            // 4. Create Sales Order Details
+            for (const item of items) {
+                const detailPayload = {
+                    order_id: newOrderId,
+                    product_id: item.product_id,
+                    unit_price: Number(item.unit_price || 0),
+                    ordered_quantity: Number(item.quantity || 1),
+                    allocated_quantity: 0,
+                    served_quantity: 0,
+                    allocated_amount: 0,
+                    net_amount: Number(item.unit_price || 0) * Number(item.quantity || 1),
+                    gross_amount: Number(item.unit_price || 0) * Number(item.quantity || 1),
+                    created_date: new Date().toISOString()
+                };
+
+                const detailRes = await fetch(`${DIRECTUS_URL}/items/sales_order_details`, {
+                    method: "POST",
+                    headers,
+                    body: JSON.stringify(detailPayload)
+                });
+
+                if (!detailRes.ok) {
+                    console.error(`Failed to insert SO detail: ${detailRes.status}`);
+                }
+            }
+
+            return NextResponse.json({ success: true, order_id: newOrderId, order_no: orderNo });
+        }
+
+        if (!poNo) {
+            return NextResponse.json({ error: "Missing required field poNo" }, { status: 400 });
         }
 
         // 1. Fetch the quotation header
@@ -348,8 +442,8 @@ export async function POST(request: Request) {
 
         // Filter snapshots that are actual product quotas
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const items = snapshots.filter((s: any) => s.node_type === "product_quota");
-        if (items.length === 0) {
+        const quoteItems = snapshots.filter((s: any) => s.node_type === "product_quota");
+        if (quoteItems.length === 0) {
             throw new Error("No finished goods found in this quotation.");
         }
 
@@ -397,7 +491,7 @@ export async function POST(request: Request) {
         const newOrderId = newSo.order_id;
 
         // 5. Create Sales Order Details
-        for (const item of items) {
+        for (const item of quoteItems) {
             const detailPayload = {
                 order_id: newOrderId,
                 product_id: item.product_id,

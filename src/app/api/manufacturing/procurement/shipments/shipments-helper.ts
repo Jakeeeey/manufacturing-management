@@ -1,5 +1,5 @@
 import { DIRECTUS_URL, headers } from "@/app/api/manufacturing/directus-api";
-import { DirectusShipment } from "@/types/manufacturing";
+import { DirectusShipment } from "@/modules/manufacturing-management/procurement/types";
 
 interface DirectusPO {
     purchase_order_id: number;
@@ -12,6 +12,9 @@ interface DirectusPO {
     gross_amount?: number | string | null;
     inventory_status?: number | null;
     date_encoded?: string | null;
+    branch_id?: number | null;
+    payment_type?: number | null;
+    price_type?: string | null;
 }
 
 interface DirectusPOProduct {
@@ -101,7 +104,10 @@ export async function fetchIncomingShipments(): Promise<unknown[]> {
                 exchange_rate: 58.00,
                 total_php_value: Number(po.total_amount || po.gross_amount || 0),
                 status: mapPoStatusToShipment(po.inventory_status),
-                created_at: po.date_encoded || ""
+                created_at: po.date_encoded || "",
+                branch_id: po.branch_id || null,
+                payment_type: po.payment_type || null,
+                price_type: po.price_type || null
             };
         });
     } catch (e) {

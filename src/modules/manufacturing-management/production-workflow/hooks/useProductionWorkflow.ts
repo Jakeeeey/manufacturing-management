@@ -564,29 +564,16 @@ export function useProductionWorkflow() {
             productsList.forEach((p: { product_id: number | string; quantity: number }) => {
                 const prodId = Number(p.product_id);
                 
-                // Get target qty for today if a specific day is selected, fallback to total JO qty
-                const dayObj = selectedDayNum 
-                    ? selectedJO.dailyBreakdown?.find((d: { day: number }) => d.day === selectedDayNum)
-                    : null;
-                const targetQty = dayObj ? Number(dayObj.quantity) : p.quantity;
-                
-                initialYields[prodId] = targetQty;
-                initialLots[prodId] = selectedDayNum
-                    ? `MFG-${selectedJO.jo_id}-${prodId}-DAY${selectedDayNum}`
-                    : `MFG-${selectedJO.jo_id}-${prodId}`;
-
-                const catalogProduct = products.find(prod => Number(prod.product_id) === prodId);
-                const shelfLife = catalogProduct?.product_shelf_life || 365;
-                const exp = new Date();
-                exp.setDate(exp.getDate() + Number(shelfLife));
-                initialExpirations[prodId] = exp.toISOString().split("T")[0];
+                // Do not pre-fill; leave them blank
+                initialLots[prodId] = "";
+                initialExpirations[prodId] = "";
             });
 
             setYieldQties(initialYields);
             setLotNumbers(initialLots);
             setExpiryDates(initialExpirations);
         }
-    }, [selectedJO, products, selectedDayNum]);
+    }, [selectedJO, selectedDayNum]);
 
     const handleToggleOperatorForTask = async (
         jo: JobOrder,
@@ -861,6 +848,23 @@ export function useProductionWorkflow() {
                 : true;
             const completeJobOrder = selectedDayNum === null || isLastDay;
 
+            // Validate that manually entered fields are not empty
+            for (const p of productsList) {
+                const prodId = Number(p.product_id);
+                if (yieldQties[prodId] === undefined || yieldQties[prodId] === null || yieldQties[prodId] <= 0) {
+                    toast.error(`Please enter a valid stock yield quantity for "${p.product_name || `Product ID ${prodId}`}".`);
+                    return;
+                }
+                if (!lotNumbers[prodId] || !lotNumbers[prodId].trim()) {
+                    toast.error(`Please enter the lot tracking batch number for "${p.product_name || `Product ID ${prodId}`}".`);
+                    return;
+                }
+                if (!expiryDates[prodId] || !expiryDates[prodId].trim()) {
+                    toast.error(`Please select the computed shelf expiry date for "${p.product_name || `Product ID ${prodId}`}".`);
+                    return;
+                }
+            }
+
             for (const p of productsList) {
                 const prodId = Number(p.product_id);
                 const catalogProduct = products.find(prod => Number(prod.product_id) === prodId);
@@ -890,7 +894,7 @@ export function useProductionWorkflow() {
                     quantityProduced: actualYieldQty,
                     branchId: selectedJO.branch_id ?? "",
                     lotNumber: lotNumbers[prodId] || (selectedDayNum ? `MFG-${selectedJO.jo_id}-${prodId}-DAY${selectedDayNum}` : `MFG-${selectedJO.jo_id}-${prodId}`),
-                    expirationDate: expiryDates[prodId] || new Date().toISOString().split("T")[0],
+                    expirationDate: (expiryDates[prodId] || "").replace(/\//g, "-") || new Date().toISOString().split("T")[0],
                     unitCost: catalogProduct?.cost_per_unit || 0,
                     componentsConsumed: dailyComponents,
                     completeJobOrder,

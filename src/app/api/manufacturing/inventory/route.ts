@@ -21,7 +21,7 @@ export async function GET() {
         const [ledgerRes, batchesRes, productsRes, branchesRes] = await Promise.all([
             fetch(`${DIRECTUS_URL}/items/product_ledger?limit=100&sort=-id`, { headers, cache: "no-store" }),
             fetch(`${DIRECTUS_URL}/items/inventory_lots?limit=500&sort=-id`, { headers, cache: "no-store" }),
-            fetch(`${DIRECTUS_URL}/items/products?limit=500&fields=product_id,product_name,product_code,product_brand.brand_id,product_brand.brand_name,product_category.category_id,product_category.category_name,unit_of_measurement.unit_shortcut,unit_of_measurement.unit_name,cost_per_unit,product_shelf_life`, { headers, cache: "no-store" }),
+            fetch(`${DIRECTUS_URL}/items/products?limit=500&fields=product_id,product_name,product_code,product_brand.brand_id,product_brand.brand_name,product_category.category_id,product_category.category_name,unit_of_measurement.unit_shortcut,unit_of_measurement.unit_name,cost_per_unit,product_shelf_life,parent_id,product_type`, { headers, cache: "no-store" }),
             fetch(`${DIRECTUS_URL}/items/branches?limit=-1`, { headers, cache: "no-store" })
         ]);
 
@@ -41,8 +41,14 @@ export async function GET() {
         if (!branchesRes.ok) throw new Error("Failed to fetch branches from Directus");
 
         const porData = (await batchesRes.json()).data || [];
-        const products = (await productsRes.json()).data || [];
+        const productsData = (await productsRes.json()).data || [];
         const branches = (await branchesRes.json()).data || [];
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const products = productsData.map((p: any) => ({
+            ...p,
+            is_finished_good: Number(p.product_type) === 388
+        }));
 
         // Map inventory lots to the Batch format expected by the frontend
         const batches = porData.map((b: InventoryLot) => ({

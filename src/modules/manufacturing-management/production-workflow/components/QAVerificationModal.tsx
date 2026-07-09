@@ -64,8 +64,8 @@ export function QAVerificationModal({
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 animate-in fade-in duration-200">
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden p-4 sm:p-6 space-y-3.5 sm:space-y-4 max-h-[90vh] overflow-y-auto">
-                <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+            <div className="bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden p-4 sm:p-6 space-y-3.5 sm:space-y-4 max-h-[90vh] overflow-y-auto">
+                <div className="flex justify-between items-center border-b border-slate-200 dark:border-slate-800 pb-3">
                     <h3 className="text-sm font-extrabold text-foreground flex items-center gap-2">
                         <CheckSquare className="h-4.5 w-4.5 text-emerald-500" />
                         Step Yield QA Check-in
@@ -80,7 +80,7 @@ export function QAVerificationModal({
 
                 <div className="space-y-4 text-xs">
                     {/* Current Step Info */}
-                    <div className="p-3 bg-slate-955/40 border border-slate-800 rounded-xl text-xs space-y-0.5">
+                    <div className="p-3 bg-slate-955/40 border border-slate-200 dark:border-slate-800 rounded-xl text-xs space-y-0.5">
                         <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">Active Operation Step</span>
                         <span className="font-extrabold text-foreground text-sm">{qaTaskInfo.taskName}</span>
                     </div>
@@ -92,7 +92,7 @@ export function QAVerificationModal({
                                 <input
                                     type="number"
                                     disabled
-                                    className="w-full bg-slate-955 border border-slate-800 rounded-lg px-3 py-2 text-xs text-muted-foreground font-semibold cursor-not-allowed"
+                                    className="w-full bg-slate-955 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-xs text-muted-foreground font-semibold cursor-not-allowed"
                                     value={qaTaskInfo.expected}
                                 />
                             </div>
@@ -101,7 +101,7 @@ export function QAVerificationModal({
                                 <input
                                     type="number"
                                     step="any"
-                                    className="w-full bg-slate-955 border border-slate-800 rounded-lg px-3 py-2 text-xs text-foreground font-extrabold focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                                    className="w-full bg-slate-955 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-xs text-foreground font-extrabold focus:outline-none focus:ring-1 focus:ring-emerald-500"
                                     value={actualQty}
                                     onChange={(e) => setActualQty(e.target.value)}
                                     placeholder="Enter quantity"
@@ -116,7 +116,7 @@ export function QAVerificationModal({
                                 <button
                                     type="button"
                                     onClick={() => setActualQty(qaTaskInfo.expected.toString())}
-                                    className="px-2 py-1 bg-slate-950 border border-slate-800 text-slate-300 hover:text-white rounded-lg text-[9px] font-bold cursor-pointer hover:bg-slate-850"
+                                    className="px-2 py-1 bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:text-white rounded-lg text-[9px] font-bold cursor-pointer hover:bg-slate-850"
                                 >
                                     Match Expected (100%)
                                 </button>
@@ -126,7 +126,7 @@ export function QAVerificationModal({
                                         const currentVal = parseFloat(actualQty) || 0;
                                         setActualQty(Math.max(0, currentVal - 1).toString());
                                     }}
-                                    className="px-2 py-1 bg-slate-950 border border-slate-800 text-slate-300 hover:text-white rounded-lg text-[9px] font-bold cursor-pointer hover:bg-slate-850"
+                                    className="px-2 py-1 bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:text-white rounded-lg text-[9px] font-bold cursor-pointer hover:bg-slate-850"
                                 >
                                     -1 Unit
                                 </button>
@@ -136,7 +136,7 @@ export function QAVerificationModal({
                                         const currentVal = parseFloat(actualQty) || 0;
                                         setActualQty(Math.max(0, currentVal - 5).toString());
                                     }}
-                                    className="px-2 py-1 bg-slate-950 border border-slate-800 text-slate-300 hover:text-white rounded-lg text-[9px] font-bold cursor-pointer hover:bg-slate-850"
+                                    className="px-2 py-1 bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:text-white rounded-lg text-[9px] font-bold cursor-pointer hover:bg-slate-850"
                                 >
                                     -5 Units
                                 </button>
@@ -146,7 +146,7 @@ export function QAVerificationModal({
                                         const currentVal = parseFloat(actualQty) || 0;
                                         setActualQty(Math.max(0, currentVal - 10).toString());
                                     }}
-                                    className="px-2 py-1 bg-slate-950 border border-slate-800 text-slate-300 hover:text-white rounded-lg text-[9px] font-bold cursor-pointer hover:bg-slate-850"
+                                    className="px-2 py-1 bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:text-white rounded-lg text-[9px] font-bold cursor-pointer hover:bg-slate-850"
                                 >
                                     -10 Units
                                 </button>
@@ -156,7 +156,7 @@ export function QAVerificationModal({
                                         const currentVal = parseFloat(actualQty) || 0;
                                         setActualQty((currentVal + 1).toString());
                                     }}
-                                    className="px-2 py-1 bg-slate-950 border border-slate-800 text-slate-300 hover:text-white rounded-lg text-[9px] font-bold cursor-pointer hover:bg-slate-850"
+                                    className="px-2 py-1 bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:text-white rounded-lg text-[9px] font-bold cursor-pointer hover:bg-slate-850"
                                 >
                                     +1 Unit
                                 </button>
@@ -166,7 +166,7 @@ export function QAVerificationModal({
                                         const currentVal = parseFloat(actualQty) || 0;
                                         setActualQty((currentVal + 5).toString());
                                     }}
-                                    className="px-2 py-1 bg-slate-950 border border-slate-800 text-slate-300 hover:text-white rounded-lg text-[9px] font-bold cursor-pointer hover:bg-slate-850"
+                                    className="px-2 py-1 bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:text-white rounded-lg text-[9px] font-bold cursor-pointer hover:bg-slate-850"
                                 >
                                     +5 Units
                                 </button>
@@ -189,7 +189,7 @@ export function QAVerificationModal({
                     <div className="space-y-2">
                         <label className="block text-[9px] font-bold text-muted-foreground uppercase">Shop Floor Logs & QA Comments</label>
                         <textarea
-                            className="w-full bg-slate-955 border border-slate-800 rounded-xl px-3 py-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500 min-h-[70px] placeholder:text-muted-foreground font-semibold"
+                            className="w-full bg-slate-955 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500 min-h-[70px] placeholder:text-muted-foreground font-semibold"
                             value={qaComments}
                             onChange={(e) => setQaComments(e.target.value)}
                             placeholder="e.g. Oven temperature adjusted, physical count completed, scrap generated..."
@@ -215,7 +215,7 @@ export function QAVerificationModal({
                                             if (!prev) return tpl;
                                             return prev.trim().endsWith(".") || prev.trim().endsWith(",") ? `${prev} ${tpl}` : `${prev}, ${tpl}`;
                                         })}
-                                        className="px-2.5 py-1 bg-slate-950 hover:bg-slate-900 border border-slate-850 hover:border-slate-700 text-slate-400 hover:text-white rounded-lg text-[9px] font-bold cursor-pointer transition-all active:scale-[0.97]"
+                                        className="px-2.5 py-1 bg-slate-100 dark:bg-slate-950 hover:bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-850 hover:border-slate-200 dark:border-slate-700 text-slate-400 hover:text-white rounded-lg text-[9px] font-bold cursor-pointer transition-all active:scale-[0.97]"
                                     >
                                         + {tpl}
                                     </button>
@@ -235,8 +235,8 @@ export function QAVerificationModal({
                                 </div>
                             )}
                         </div>
-                        <div className="grid grid-cols-2 gap-3 mt-1">
-                            <label className={`flex flex-col items-center justify-center gap-2 p-3.5 rounded-2xl border border-dashed border-slate-700 bg-slate-905/40 hover:bg-slate-800/20 hover:border-emerald-500/50 cursor-pointer transition-all active:scale-[0.98] ${uploading ? "opacity-50 cursor-not-allowed pointer-events-none" : ""}`}>
+                        <div className="grid grid-cols-2 md:grid-cols-1 gap-3 mt-1">
+                            <label className={`flex md:hidden flex-col items-center justify-center gap-2 p-3.5 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 bg-slate-905/40 hover:bg-slate-200 dark:hover:bg-slate-800/20 hover:border-emerald-500/50 cursor-pointer transition-all active:scale-[0.98] ${uploading ? "opacity-50 cursor-not-allowed pointer-events-none" : ""}`}>
                                 <div className="p-2 rounded-full bg-emerald-500/10 text-emerald-500">
                                     <Camera className="h-4.5 w-4.5" />
                                 </div>
@@ -254,7 +254,7 @@ export function QAVerificationModal({
                                 />
                             </label>
 
-                            <label className={`flex flex-col items-center justify-center gap-2 p-3.5 rounded-2xl border border-dashed border-slate-700 bg-slate-905/40 hover:bg-slate-800/20 hover:border-emerald-500/50 cursor-pointer transition-all active:scale-[0.98] ${uploading ? "opacity-50 cursor-not-allowed pointer-events-none" : ""}`}>
+                            <label className={`flex flex-col items-center justify-center gap-2 p-3.5 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 bg-slate-905/40 hover:bg-slate-200 dark:hover:bg-slate-800/20 hover:border-emerald-500/50 cursor-pointer transition-all active:scale-[0.98] ${uploading ? "opacity-50 cursor-not-allowed pointer-events-none" : ""}`}>
                                 <div className="p-2 rounded-full bg-primary/10 text-primary">
                                     <Upload className="h-4.5 w-4.5" />
                                 </div>
@@ -279,7 +279,7 @@ export function QAVerificationModal({
                                 <span className="block text-[8px] font-bold text-muted-foreground/60 uppercase">Uploaded Attachments ({uploadedPhotos.length})</span>
                                 <div className="flex flex-wrap gap-2">
                                     {uploadedPhotos.map(id => (
-                                        <div key={id} className="h-14 w-14 border border-slate-800 bg-slate-950 rounded-xl overflow-hidden relative group">
+                                        <div key={id} className="h-14 w-14 border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-950 rounded-xl overflow-hidden relative group">
                                             {/* eslint-disable-next-line @next/next/no-img-element */}
                                             <img
                                                 src={`${process.env.NEXT_PUBLIC_DIRECTUS_URL || "http://vtc:8074"}/assets/${id}?width=80&height=80&fit=cover`}
@@ -302,11 +302,11 @@ export function QAVerificationModal({
                 </div>
 
                 {/* Confirm Dialog Trigger Button */}
-                <div className="border-t border-slate-850 pt-4 flex gap-3">
+                <div className="border-t border-slate-200 dark:border-slate-850 pt-4 flex gap-3">
                     <button
                         type="button"
                         onClick={handleClose}
-                        className="flex-1 py-2.5 text-xs font-bold text-muted-foreground hover:text-foreground hover:bg-slate-800 rounded-xl border border-slate-800 bg-transparent transition-all cursor-pointer"
+                        className="flex-1 py-2.5 text-xs font-bold text-muted-foreground hover:text-foreground hover:bg-slate-200 dark:hover:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-800 bg-transparent transition-all cursor-pointer"
                     >
                         Cancel
                     </button>

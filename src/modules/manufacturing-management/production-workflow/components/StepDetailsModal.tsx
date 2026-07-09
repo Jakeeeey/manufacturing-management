@@ -103,19 +103,19 @@ export function StepDetailsModal({
 
     return (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/75 backdrop-blur-xs p-4 animate-in fade-in duration-200">
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden p-4 sm:p-6 space-y-4 max-h-[90vh] flex flex-col animate-in zoom-in duration-200 text-slate-100">
+            <div className="bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden p-4 sm:p-6 space-y-4 max-h-[90vh] flex flex-col animate-in zoom-in duration-200 text-slate-800 dark:text-slate-100">
                 
                 {/* Header */}
-                <div className="flex justify-between items-start border-b border-slate-800 pb-3 shrink-0">
+                <div className="flex justify-between items-start border-b border-slate-200 dark:border-slate-800 pb-3 shrink-0">
                     <div className="space-y-1">
                         <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded border ${
                             isCompleted
                                 ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
-                                : "bg-slate-950 border-slate-800 text-muted-foreground"
+                                : "bg-slate-100 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-muted-foreground"
                             }`}>
                             Step {routing.sequence_order} • OP {routing.routing_id}
                         </span>
-                        <h3 className="font-extrabold text-white text-base tracking-tight pt-1">
+                        <h3 className="font-extrabold text-foreground text-base tracking-tight pt-1">
                             {routing.operation_name}
                         </h3>
                     </div>
@@ -128,7 +128,7 @@ export function StepDetailsModal({
                                 onClick={async () => {
                                     await handleDuplicateTask(productId, routing);
                                 }}
-                                className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-muted-foreground hover:text-white transition-all border border-slate-700 disabled:opacity-55 cursor-pointer"
+                                className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-muted-foreground hover:text-white transition-all border border-slate-200 dark:border-slate-700 disabled:opacity-55 cursor-pointer"
                             >
                                 {duplicatingStepId === routing.routing_id ? (
                                     <Loader2 className="h-4 w-4 animate-spin text-primary" />
@@ -140,7 +140,7 @@ export function StepDetailsModal({
                         <button
                             type="button"
                             onClick={onClose}
-                            className="text-muted-foreground hover:text-white transition-colors border-none bg-transparent cursor-pointer p-1.5 rounded-xl hover:bg-slate-800"
+                            className="text-muted-foreground hover:text-white transition-colors border-none bg-transparent cursor-pointer p-1.5 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-800"
                         >
                             <X className="h-5 w-5" />
                         </button>
@@ -150,7 +150,7 @@ export function StepDetailsModal({
                 {/* Content */}
                 <div className="flex-1 overflow-y-auto space-y-4 pr-1 scrollbar-thin">
                     {/* Labor/OH/Capacity Stats */}
-                    <div className="grid grid-cols-3 gap-2.5 p-3.5 bg-slate-950/40 border border-slate-800 rounded-xl text-[11px] text-muted-foreground font-semibold">
+                    <div className="grid grid-cols-3 gap-2.5 p-3.5 bg-slate-100 dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800 rounded-xl text-[11px] text-muted-foreground font-semibold">
                         <div>
                             <span className="block text-[8px] font-black text-muted-foreground/60 uppercase">Labor Cost</span>
                             <span className="text-foreground font-bold text-xs">₱{labor.toFixed(2)}</span>
@@ -167,7 +167,7 @@ export function StepDetailsModal({
 
                     {/* Personnel Assign Section */}
                     {["Proceed", "Ongoing", "On Hold"].includes(selectedJO.status) && !isDayCompleted ? (
-                        <div className="space-y-3 p-3 bg-slate-955/20 border border-slate-850 rounded-xl">
+                        <div className="space-y-3 p-3 bg-slate-955/20 border border-slate-200 dark:border-slate-850 rounded-xl">
                             <div className="flex items-center justify-between gap-4">
                                 <span className="text-[10px] font-black text-muted-foreground uppercase flex items-center gap-1.5">
                                     <Users className="h-4 w-4 text-primary" />
@@ -187,7 +187,7 @@ export function StepDetailsModal({
                                             operationName: routing.operation_name
                                         });
                                     }}
-                                    className="bg-slate-950 hover:bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-[10px] text-white font-bold disabled:opacity-50 cursor-pointer transition-all active:scale-[0.98] inline-flex items-center gap-1 hover:border-primary/50"
+                                    className="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-1.5 text-[10px] text-foreground dark:text-slate-100 font-bold disabled:opacity-50 cursor-pointer transition-all active:scale-[0.98] inline-flex items-center gap-1 hover:border-primary/50"
                                 >
                                     <UserPlus className="h-3.5 w-3.5 text-primary" />
                                     <span>Assign Operator</span>
@@ -223,7 +223,7 @@ export function StepDetailsModal({
                             </div>
                         </div>
                     ) : (
-                        <div className="text-[10px] p-3 bg-slate-955/20 border border-slate-850 rounded-xl font-semibold space-y-1">
+                        <div className="text-[10px] p-3 bg-slate-955/20 border border-slate-200 dark:border-slate-850 rounded-xl font-semibold space-y-1">
                             <span className="text-muted-foreground uppercase font-black text-[9px] block">Assigned Personnel</span>
                             <div className="flex flex-wrap gap-1.5">
                                 {relTask?.assignments && relTask.assignments.length > 0 ? (
@@ -231,13 +231,13 @@ export function StepDetailsModal({
                                         const u = users.find((x) => Number(x.user_id) === Number(ass.user_id));
                                         if (!u) return null;
                                         return (
-                                            <span key={ass.user_id} className="bg-slate-800 text-foreground border border-slate-705 text-[10px] px-2.5 py-0.5 rounded-xl font-bold">
+                                            <span key={ass.user_id} className="bg-slate-100 dark:bg-slate-800 text-foreground border border-slate-705 text-[10px] px-2.5 py-0.5 rounded-xl font-bold">
                                                 {u.user_fname} {u.user_lname} ({u.user_position || "Operator"})
                                             </span>
                                         );
                                     })
                                 ) : routing.assigned_personnel ? (
-                                    <span className="bg-slate-800 text-foreground border border-slate-705 text-[10px] px-2.5 py-0.5 rounded-xl font-bold">
+                                    <span className="bg-slate-100 dark:bg-slate-800 text-foreground border border-slate-705 text-[10px] px-2.5 py-0.5 rounded-xl font-bold">
                                         {routing.assigned_personnel.name} ({routing.assigned_personnel.position})
                                     </span>
                                 ) : (
@@ -249,8 +249,8 @@ export function StepDetailsModal({
 
                     {/* Completed Logs Panel inside card */}
                     {isCompleted && (dayQaLog || latestQaLog) && (
-                        <div className="p-3.5 bg-slate-950/50 border border-slate-800 rounded-xl space-y-2.5 text-[11px] text-muted-foreground font-semibold font-mono">
-                            <div className="flex justify-between items-center font-bold text-slate-300">
+                        <div className="p-3.5 bg-slate-100 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-800 rounded-xl space-y-2.5 text-[11px] text-muted-foreground font-semibold font-mono">
+                            <div className="flex justify-between items-center font-bold text-slate-600 dark:text-slate-300">
                                 <span className="flex items-center gap-1 font-sans">
                                     Actual Yield: <strong className="text-emerald-500 font-extrabold text-sm">{actualYield ?? currentQty}</strong> / {currentQty} PCS
                                 </span>
@@ -275,7 +275,7 @@ export function StepDetailsModal({
                                     <span className="text-[8.5px] font-black uppercase text-muted-foreground/60 block font-sans">Logged Images ({qaPhotos.length})</span>
                                     <div className="flex gap-2 overflow-x-auto pt-1 pb-1 scrollbar-thin">
                                         {qaPhotos.map((photoId: string) => (
-                                            <div key={photoId} className="h-14 w-14 shrink-0 rounded-lg overflow-hidden border border-slate-800 bg-slate-950 relative group/thumb">
+                                            <div key={photoId} className="h-14 w-14 shrink-0 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-950 relative group/thumb">
                                                 {/* eslint-disable-next-line @next/next/no-img-element */}
                                                 <img
                                                     src={`${process.env.NEXT_PUBLIC_DIRECTUS_URL || "http://vtc:8074"}/assets/${photoId}`}
@@ -294,7 +294,7 @@ export function StepDetailsModal({
 
                 {/* Footer / Action triggers */}
                 {selectedJO.status === "Ongoing" && !isDayCompleted ? (
-                    <div className="pt-3 border-t border-slate-800 flex items-center justify-between gap-3 shrink-0">
+                    <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 shrink-0">
                         <div className="flex items-center gap-1.5 text-[11px]">
                             <span className="font-bold text-muted-foreground uppercase">Status:</span>
                             {isCompleted ? (
@@ -346,7 +346,7 @@ export function StepDetailsModal({
                                         onClose();
                                         await handleVerifyQAForTask(selectedJO, productId, routing.routing_id, "Pending");
                                     }}
-                                    className="bg-slate-950 hover:bg-slate-900 text-muted-foreground hover:text-white text-[10px] font-bold px-3 py-1.5 rounded-xl border border-slate-800 cursor-pointer flex items-center justify-center gap-1 transition-all"
+                                    className="bg-slate-100 dark:bg-slate-950 hover:bg-slate-100 dark:bg-slate-900 text-muted-foreground hover:text-white text-[10px] font-bold px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 cursor-pointer flex items-center justify-center gap-1 transition-all"
                                 >
                                     <RotateCcw className="h-3.5 w-3.5" /> Undo Step
                                 </button>
@@ -354,14 +354,14 @@ export function StepDetailsModal({
                         </div>
                     </div>
                 ) : (
-                    <div className="pt-3 border-t border-slate-800 flex items-center justify-between text-[11px] shrink-0">
+                    <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-[11px] shrink-0">
                         <span className="font-bold text-muted-foreground uppercase">Status:</span>
                         {isCompleted ? (
                             <span className="inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-500 font-extrabold px-2.5 py-0.5 rounded-lg border border-emerald-500/25 uppercase">
                                 <CheckCircle className="h-3 w-3" /> Done
                             </span>
                         ) : (
-                            <span className="bg-slate-800 text-muted-foreground font-extrabold px-2.5 py-0.5 rounded-lg border border-slate-700 uppercase">
+                            <span className="bg-slate-100 dark:bg-slate-800 text-muted-foreground font-extrabold px-2.5 py-0.5 rounded-lg border border-slate-200 dark:border-slate-700 uppercase">
                                 Waiting
                             </span>
                         )}

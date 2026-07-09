@@ -18,7 +18,8 @@ import {
     fetchSections,
     createSegment,
     createClass,
-    createSection
+    createSection,
+    activateVersion
 } from "../services/finished-goods-api";
 
 export function useFinishedGoods(initialTab: string = "details") {
@@ -67,6 +68,7 @@ export function useFinishedGoods(initialTab: string = "details") {
         targetSellingPrice: "",
         barcode: "",
         densityFactor: "1.0",
+        expectedYield: "100",
         versionName: "v1.0",
         brandId: "",
         categoryId: "",
@@ -88,6 +90,7 @@ export function useFinishedGoods(initialTab: string = "details") {
     const [editedBOM, setEditedBOM] = useState<BOMItem[]>([]);
     const [editedRoutings, setEditedRoutings] = useState<RoutingStep[]>([]);
     const [editedOverheads, setEditedOverheads] = useState<ProductOverhead[]>([]);
+    const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
     // Selected product helper
     const selectedProduct = useMemo(() => {
@@ -102,7 +105,7 @@ export function useFinishedGoods(initialTab: string = "details") {
                     fetchBrands(),
                     fetchCategories(),
                     fetchUnits(),
-                    fetch("/api/manufacturing/finished-goods/products?limit=100"),
+                    fetch("/api/manufacturing/finished-goods/products?limit=-1"),
                     fetch("/api/manufacturing/finished-goods/overhead-types"),
                     fetch("/api/manufacturing/finished-goods/operations"),
                     fetch("https://open.er-api.com/v6/latest/USD").catch(() => null),
@@ -152,14 +155,14 @@ export function useFinishedGoods(initialTab: string = "details") {
             try {
                 const query = new URLSearchParams();
                 if (debouncedSearchQuery) query.append("search", debouncedSearchQuery);
-                query.append("limit", "100");
+                query.append("limit", "-1");
 
                 const res = await fetch(`/api/manufacturing/finished-goods/products?${query.toString()}`);
                 if (!res.ok) throw new Error("Failed to fetch products");
                 const data = await res.json();
 
                 // Map to UI model (only show finished goods which have versions)
-                const finishedGoods = data.filter((p: BFFCatalogProduct) => !!p.has_versions);
+                const finishedGoods = data.filter((p: BFFCatalogProduct) => Number(p.product_type) === 388);
                 const mapped: Product[] = finishedGoods.map((p: BFFCatalogProduct) => {
                     const parentId = p.parent_id && typeof p.parent_id === "object"
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -227,7 +230,9 @@ export function useFinishedGoods(initialTab: string = "details") {
                 const list = await fetchVersions(numericId);
                 setVersions(list);
                 if (list && list.length > 0) {
-                    setSelectedVersionId(list[0].id);
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    const activeVer = list.find((v: any) => v.is_active);
+                    setSelectedVersionId(activeVer ? activeVer.id : list[0].id);
                 } else {
                     setSelectedVersionId(null);
                 }
@@ -278,10 +283,36 @@ export function useFinishedGoods(initialTab: string = "details") {
         const numericId = Number(selectedProductId);
         if (isNaN(numericId) || numericId <= 0) return;
 
+        const baseDetails = {
+            sku: selectedProduct.sku,
+            title: selectedProduct.title,
+            description: selectedProduct.description,
+            barcode: selectedProduct.barcode,
+            baseUom: selectedProduct.baseUom,
+            expectedYieldPercent: selectedProduct.expectedYieldPercent || 100,
+            targetSellingPrice: selectedProduct.targetSellingPrice,
+            densityFactor: selectedProduct.densityFactor || 1.0,
+            product_brand: selectedProduct.product_brand,
+            product_category: selectedProduct.product_category,
+            product_class: selectedProduct.product_class,
+            product_segment: selectedProduct.product_segment,
+            product_section: selectedProduct.product_section,
+            product_shelf_life: selectedProduct.product_shelf_life,
+            cost_per_unit: selectedProduct.cost_per_unit,
+            unit_of_measurement_count: selectedProduct.unit_of_measurement_count,
+            product_image: selectedProduct.product_image,
+            parent_id: selectedProduct.parent_id,
+            customOverhead: selectedProduct.customOverhead || 0,
+            production_capacity_per_hour: selectedProduct.production_capacity_per_hour || 0
+        };
+
         if (selectedVersionId === null) {
             setActiveBOMId(null);
+            setEditedDetails(baseDetails);
             setEditedBOM([]);
             setEditedRoutings([]);
+            setEditedOverheads([]);
+            setHasUnsavedChanges(false);
             return;
         }
 
@@ -292,35 +323,21 @@ export function useFinishedGoods(initialTab: string = "details") {
                 if (details) {
                     setActiveBOMId(details.bomId);
                     setEditedDetails({
-                        sku: selectedProduct.sku,
-                        title: selectedProduct.title,
-                        description: selectedProduct.description,
-                        barcode: selectedProduct.barcode,
-                        baseUom: selectedProduct.baseUom,
+                        ...baseDetails,
                         expectedYieldPercent: details.expectedYieldPercent,
-                        targetSellingPrice: selectedProduct.targetSellingPrice,
-                        densityFactor: selectedProduct.densityFactor || 1.0,
-                        product_brand: selectedProduct.product_brand,
-                        product_category: selectedProduct.product_category,
-                        product_class: selectedProduct.product_class,
-                        product_segment: selectedProduct.product_segment,
-                        product_section: selectedProduct.product_section,
-                        product_shelf_life: selectedProduct.product_shelf_life,
-                        cost_per_unit: selectedProduct.cost_per_unit,
-                        unit_of_measurement_count: selectedProduct.unit_of_measurement_count,
-                        product_image: selectedProduct.product_image,
-                        parent_id: selectedProduct.parent_id,
                         customOverhead: details.customOverhead || 0,
-                        production_capacity_per_hour: selectedProduct.production_capacity_per_hour || 0
                     });
                     setEditedBOM(details.ingredients);
                     setEditedRoutings(details.routings);
                     setEditedOverheads(details.overheads || []);
+                    setHasUnsavedChanges(false);
                 } else {
                     setActiveBOMId(null);
+                    setEditedDetails(baseDetails);
                     setEditedBOM([]);
                     setEditedRoutings([]);
                     setEditedOverheads([]);
+                    setHasUnsavedChanges(false);
                 }
             } catch (e) {
                 console.error("Failed to load BOM version details:", e);
@@ -335,8 +352,50 @@ export function useFinishedGoods(initialTab: string = "details") {
     // Handlers
     const handleRegisterProduct = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!registerForm.title.trim() || !registerForm.sku.trim() || !registerForm.versionName.trim()) {
-            toast.error("Please fill in Product Name, SKU, and Version Name.");
+        
+        // Validate required fields
+        if (!registerForm.title.trim()) {
+            toast.error("Product Name is required.");
+            return;
+        }
+        if (!registerForm.sku.trim()) {
+            toast.error("SKU / Code is required.");
+            return;
+        }
+        if (!registerForm.brandId.trim()) {
+            toast.error("Brand is required.");
+            return;
+        }
+        if (!registerForm.categoryId.trim()) {
+            toast.error("Category is required.");
+            return;
+        }
+        if (!registerForm.baseUom.trim()) {
+            toast.error("Base UOM is required.");
+            return;
+        }
+        if (!registerForm.uomCount.trim() || Number(registerForm.uomCount) <= 0) {
+            toast.error("UOM Count (Pack Mult) must be greater than 0.");
+            return;
+        }
+        if (!registerForm.densityFactor.trim() || Number(registerForm.densityFactor) <= 0) {
+            toast.error("Density conversion factor must be greater than 0.");
+            return;
+        }
+        if (!registerForm.expectedYield.trim() || Number(registerForm.expectedYield) <= 0) {
+            toast.error("Expected Yield (%) must be greater than 0.");
+            return;
+        }
+        if (!registerForm.shelfLife.trim() || Number(registerForm.shelfLife) <= 0) {
+            toast.error("Shelf Life is required and must be greater than 0.");
+            return;
+        }
+        if (!registerForm.productionCapacityPerHour.trim() || Number(registerForm.productionCapacityPerHour) <= 0) {
+            toast.error("Capacity is required and must be greater than 0.");
+            return;
+        }
+        if (!registerForm.versionName.trim()) {
+            toast.error("Version Name is required.");
             return;
         }
 
@@ -376,7 +435,8 @@ export function useFinishedGoods(initialTab: string = "details") {
                     production_capacity_per_hour: Number(registerForm.productionCapacityPerHour) || 0
                 },
                 registerForm.versionName.trim(),
-                registerForm.supplierIds.map(Number)
+                registerForm.supplierIds.map(Number),
+                Number(registerForm.expectedYield)
             );
 
             if (res.success && res.productId) {
@@ -391,6 +451,7 @@ export function useFinishedGoods(initialTab: string = "details") {
                     targetSellingPrice: "",
                     barcode: "",
                     densityFactor: "1.0",
+                    expectedYield: "100",
                     versionName: "v1.0",
                     brandId: "",
                     categoryId: "",
@@ -408,7 +469,7 @@ export function useFinishedGoods(initialTab: string = "details") {
                 });
 
                  // Reload products list
-                const resList = await fetch("/api/manufacturing/finished-goods/products?limit=100");
+                const resList = await fetch("/api/manufacturing/finished-goods/products?limit=-1");
                 const dataList = await resList.json();
                 setAllCatalogProducts(dataList);
                   const list: Product[] = dataList.map((p: BFFCatalogProduct) => {
@@ -450,7 +511,9 @@ export function useFinishedGoods(initialTab: string = "details") {
                 const vList = await fetchVersions(res.productId);
                 setVersions(vList);
                 if (vList && vList.length > 0) {
-                    setSelectedVersionId(vList[0].id);
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    const activeVer = vList.find((v: any) => v.is_active);
+                    setSelectedVersionId(activeVer ? activeVer.id : vList[0].id);
                 }
 
                 // Switch tab straight to BOM
@@ -510,10 +573,16 @@ export function useFinishedGoods(initialTab: string = "details") {
             return;
         }
 
-        if (activeBOMId === null) {
-            toast.error("No active version to save.");
-            return;
-        }
+        const validRoutings = editedRoutings.filter(r => {
+            const hasName = String(r.name || "").trim() !== "";
+            const computedCost = Number(r.laborFlatRate || 0) + (Number(r.machineHourlyRate || 0) * Number(r.durationHours || 0));
+            return hasName || computedCost !== 0;
+        });
+        const validOverheads = editedOverheads.filter(o => {
+            const hasOverhead = Number(o.overheadId || 0) !== 0 || String(o.overheadName || "").trim() !== "";
+            const hasAmount = Number(o.amount || 0) !== 0;
+            return hasOverhead || hasAmount;
+        });
 
         setSavingBOM(true);
         try {
@@ -543,8 +612,8 @@ export function useFinishedGoods(initialTab: string = "details") {
                     productionCapacityPerHour: editedDetails.production_capacity_per_hour
                 },
                 editedBOM,
-                editedRoutings,
-                editedOverheads
+                validRoutings,
+                validOverheads
             );
  
             if (res.success) {
@@ -581,12 +650,34 @@ export function useFinishedGoods(initialTab: string = "details") {
 
                 const vList = await fetchVersions(numericProductId);
                 setVersions(vList);
+                setHasUnsavedChanges(false);
                 toast.success("Finished good configuration saved successfully!");
             }
         } catch (err) {
             console.error("Save error:", err);
             const error = err instanceof Error ? err : new Error(String(err));
             toast.error(error.message || "Error saving configuration");
+        } finally {
+            setSavingBOM(false);
+        }
+    };
+
+    const handleActivateVersion = async (bomId?: number, deactivateAll?: boolean) => {
+        if (!selectedProductId) return;
+        const numericProductId = Number(selectedProductId);
+        setSavingBOM(true);
+        try {
+            const res = await activateVersion(numericProductId, bomId, deactivateAll);
+            if (res.success) {
+                toast.success(deactivateAll ? "All versions deactivated successfully!" : "BOM version activated successfully!");
+                // Reload versions
+                const list = await fetchVersions(numericProductId);
+                setVersions(list);
+            }
+        } catch (e) {
+            console.error("Failed to update version status:", e);
+            const error = e instanceof Error ? e : new Error(String(e));
+            toast.error(error.message || "Failed to update version status");
         } finally {
             setSavingBOM(false);
         }
@@ -713,6 +804,8 @@ export function useFinishedGoods(initialTab: string = "details") {
         setEditedRoutings,
         editedOverheads,
         setEditedOverheads,
+        hasUnsavedChanges,
+        setHasUnsavedChanges,
         overheadTypes,
         setOverheadTypes,
         operationTypes,
@@ -721,7 +814,8 @@ export function useFinishedGoods(initialTab: string = "details") {
         setSimulatedForexRate,
         handleRegisterProduct,
         handleRegisterNewVersion,
-        handleSave
+        handleSave,
+        handleActivateVersion
     };
 }
 

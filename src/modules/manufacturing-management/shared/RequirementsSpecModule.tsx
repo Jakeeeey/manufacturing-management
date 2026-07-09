@@ -117,16 +117,7 @@ const SPECS_REGISTRY: Record<string, RequirementSpec> = {
             "Enforce standardized UOM validation rules on recipe creations."
         ]
     },
-    "approval-workflows": {
-        title: "Approval Threshold Workflows",
-        targetUser: "System Administrators & Directors",
-        userStory: "As a Finance Director, I want to dictate threshold rules so that quotes with weak margins require executive approvals before sending.",
-        functions: [
-            "Define gross margin approval tiers (e.g. GM approval needed if margin < 15%).",
-            "Establish alert rules and notifications for pending approvals.",
-            "Track approvals, rejections, and review comment histories."
-        ]
-    },
+
     "cost-variance": {
         title: "Cost Variance Analytics & Dashboards",
         targetUser: "Executive Team & Cost Accountants",

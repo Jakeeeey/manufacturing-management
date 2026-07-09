@@ -204,7 +204,7 @@ export function WorkflowStation({
 
     if (!selectedJO) {
         return (
-            <div className="flex flex-col items-center justify-center border border-slate-800 rounded-2xl bg-card p-12 text-center space-y-6 shadow-sm min-h-[50dvh]">
+            <div className="flex flex-col items-center justify-center border border-slate-200 dark:border-slate-800 rounded-2xl bg-card p-12 text-center space-y-6 shadow-sm min-h-[50dvh]">
                 <div className="p-4 bg-primary/10 rounded-full text-primary animate-pulse">
                     <Cpu className="h-10 w-10 sm:h-12 sm:w-12" />
                 </div>
@@ -216,14 +216,14 @@ export function WorkflowStation({
                 </div>
 
                 {/* Quick Stats Grid */}
-                <div className="grid grid-cols-3 gap-4 w-full max-w-sm pt-4 border-t border-slate-800/80">
+                <div className="grid grid-cols-3 gap-4 w-full max-w-sm pt-4 border-t border-slate-200/80 dark:border-slate-800/80">
                     <div className="text-center">
                         <span className="block text-lg font-black text-emerald-500">
                             {activeJOs.filter(j => j.status === "Proceed").length}
                         </span>
                         <span className="text-[9px] text-muted-foreground uppercase font-bold">Ready</span>
                     </div>
-                    <div className="text-center border-x border-slate-800">
+                    <div className="text-center border-x border-slate-200 dark:border-slate-800">
                         <span className="block text-lg font-black text-sky-500">
                             {activeJOs.filter(j => j.status === "Ongoing").length}
                         </span>
@@ -245,25 +245,25 @@ export function WorkflowStation({
         : false;
 
     return (
-        <div className="border border-slate-800 rounded-2xl bg-card p-6 shadow-sm space-y-6 max-h-[82dvh] overflow-y-auto pr-2">
+        <div className="border border-slate-200 dark:border-slate-800 rounded-2xl bg-card p-6 shadow-sm space-y-6 max-h-[82dvh] overflow-y-auto pr-2">
             
             {/* Mobile Back Button */}
             {onBackToQueue && (
                 <button
                     type="button"
                     onClick={onBackToQueue}
-                    className="lg:hidden inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground font-black bg-slate-900/60 hover:bg-slate-850 px-3.5 py-2.5 rounded-xl border border-slate-800 active:scale-95 transition-all w-full sm:w-auto justify-center cursor-pointer"
+                    className="lg:hidden inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground font-black bg-slate-100 dark:bg-slate-900/60 hover:bg-slate-850 px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 active:scale-95 transition-all w-full sm:w-auto justify-center cursor-pointer"
                 >
                     ← Back to Production Queue
                 </button>
             )}
 
             {/* Card Header & Start Production Toggle */}
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-800 pb-5">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-200 dark:border-slate-800 pb-5">
                 <div className="space-y-1">
                     <div className="flex flex-wrap items-center gap-2">
-                        <span className="bg-slate-800 text-slate-200 border border-slate-700 text-[10px] font-black px-2.5 py-0.5 rounded-lg font-mono">
-                            {selectedJO.jo_id}
+                        <span className="bg-slate-100 dark:bg-slate-800 text-slate-200 border border-slate-200 dark:border-slate-700 text-[10px] font-black px-2.5 py-0.5 rounded-lg font-mono">
+                            Job Order: {selectedJO.jo_id}
                         </span>
                         <span className="text-[10px] text-muted-foreground font-semibold">
                             Ref SO: #{selectedJO.order_no || "N/A"}
@@ -324,8 +324,8 @@ export function WorkflowStation({
                 </div>
 
                 {selectedJO.dailyBreakdown && selectedJO.dailyBreakdown.length > 0 && (
-                    <div className="bg-slate-950/20 border border-slate-800/80 rounded-2xl p-4.5 space-y-4 shadow-sm">
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-2">
+                    <div className="bg-slate-50 dark:bg-slate-950/20 border border-slate-200/80 dark:border-slate-800/80 rounded-2xl p-4.5 space-y-4 shadow-sm">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-800 pb-2">
                             <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest flex items-center gap-1.5">
                                 <Calendar className="h-4 w-4 text-primary" />
                                 Daily Runs Schedule
@@ -342,7 +342,7 @@ export function WorkflowStation({
                         </div>
 
                         {/* Interactive Filtering and Jump Controls */}
-                        <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900/40 p-2 rounded-xl border border-slate-800/80">
+                        <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-100/50 dark:bg-slate-900/40 p-2 rounded-xl border border-slate-200/80 dark:border-slate-800/80">
                             <div className="flex flex-wrap gap-1">
                                 {(["All", "Pending", "Ongoing", "Completed"] as const).map((status) => {
                                     const count = status === "All" 
@@ -356,7 +356,7 @@ export function WorkflowStation({
                                             className={`px-2.5 py-1.5 rounded-lg text-[9.5px] font-bold transition-all border cursor-pointer ${
                                                 filterStatus === status
                                                     ? "bg-slate-100 border-white text-slate-950 shadow-sm"
-                                                    : "bg-slate-900/60 border-slate-800 text-muted-foreground hover:text-foreground hover:bg-slate-850"
+                                                    : "bg-slate-100 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 text-muted-foreground hover:text-foreground hover:bg-slate-850"
                                             }`}
                                         >
                                             {status} ({count || 0})
@@ -371,7 +371,7 @@ export function WorkflowStation({
                                     className={`px-3 py-1.5 rounded-lg text-[9.5px] font-bold transition-all border cursor-pointer ${
                                         selectedDayNum === null
                                             ? "bg-primary border-primary text-primary-foreground shadow-md font-black"
-                                            : "bg-slate-900/60 border-slate-800 text-muted-foreground hover:text-foreground hover:bg-slate-850"
+                                            : "bg-slate-100 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 text-muted-foreground hover:text-foreground hover:bg-slate-850"
                                     }`}
                                 >
                                     Summary Mode
@@ -391,14 +391,14 @@ export function WorkflowStation({
                         {/* Scroll-Constrained Grid Container */}
                         <div className="max-h-[230px] overflow-y-auto pr-1.5 scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent">
                             {filteredDays.length === 0 ? (
-                                <div className="text-center py-6 text-xs text-muted-foreground border border-dashed border-slate-800/80 rounded-xl">
+                                <div className="text-center py-6 text-xs text-muted-foreground border border-dashed border-slate-200/80 dark:border-slate-800/80 rounded-xl">
                                     No day schedules match the &quot;{filterStatus}&quot; filter status.
                                 </div>
                             ) : (
                                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
                                     {filteredDays.map((day) => {
                                         const isSelected = selectedDayNum === day.day;
-                                        let statusStyle = "border-slate-800 text-muted-foreground bg-slate-900/40 hover:bg-slate-850";
+                                        let statusStyle = "border-slate-200 dark:border-slate-800 text-muted-foreground bg-slate-100/50 dark:bg-slate-900/40 hover:bg-slate-850";
                                         let statusLabel = "Pending";
                                         let statusIcon = "⏳";
                                         
@@ -486,12 +486,12 @@ export function WorkflowStation({
                             const percent = Math.min(100, Math.round((completedStepsCount / totalSteps) * 100));
                             
                             return (
-                                <div className="border border-slate-800/80 rounded-2xl p-4 bg-slate-950/20 space-y-2.5 shadow-sm">
+                                <div className="border border-slate-200/80 dark:border-slate-800/80 rounded-2xl p-4 bg-slate-50 dark:bg-slate-950/20 space-y-2.5 shadow-sm">
                                     <div className="flex justify-between items-center text-xs font-bold text-foreground">
-                                        <span className="tracking-wide text-slate-300">Today&apos;s Route Steps Completed</span>
+                                        <span className="tracking-wide text-slate-600 dark:text-slate-300">Today&apos;s Route Steps Completed</span>
                                         <span className="text-emerald-500 font-extrabold">{percent}% ({completedStepsCount} / {totalSteps} Steps)</span>
                                     </div>
-                                    <div className="h-3.5 w-full bg-slate-950 rounded-full overflow-hidden border border-slate-800 p-0.5">
+                                    <div className="h-3.5 w-full bg-slate-100 dark:bg-slate-950 rounded-full overflow-hidden border border-slate-200 dark:border-slate-800 p-0.5">
                                         <div 
                                             className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full transition-all duration-500 ease-out" 
                                             style={{ width: `${percent}%` }}
@@ -505,7 +505,7 @@ export function WorkflowStation({
 
                 {/* Step Sequence Operations */}
                 <div className="space-y-4 pt-2">
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground block flex items-center gap-1.5 border-b border-slate-850 pb-2">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground block flex items-center gap-1.5 border-b border-slate-200 dark:border-slate-850 pb-2">
                         <CheckSquare className="h-4.5 w-4.5 text-emerald-500" />
                         Operations Checklist (Daily Steps)
                     </h4>
@@ -520,7 +520,7 @@ export function WorkflowStation({
                         return (
                             <div key={pIdx} className="space-y-5">
                                 {/* Routing Title Banner */}
-                                <div className="flex items-center gap-2 border-b border-slate-850 pb-1.5">
+                                <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-850 pb-1.5">
                                     <span className="text-xs font-extrabold uppercase text-primary tracking-wider">
                                         {p.product_name || selectedJO.product_name}
                                     </span>
@@ -530,7 +530,7 @@ export function WorkflowStation({
                                 </div>
 
                                 {/* Vertical Timeline Track */}
-                                <div className="relative pl-7 sm:pl-10 border-l-2 border-slate-800 ml-4 sm:ml-5 space-y-8 py-2">
+                                <div className="relative pl-7 sm:pl-10 border-l-2 border-slate-200 dark:border-slate-800 ml-4 sm:ml-5 space-y-8 py-2">
                                     {routings.map((rout, rIdx) => {
                                         const relTask = selectedJO.routing_tasks?.find(t => Number(t.routing_id) === Number(rout.routing_id));
                                         const taskQAStatus = relTask ? (relTask.status === "Completed" ? "Passed" : "Pending") : (rout.qa_status || "Pending");
@@ -544,7 +544,7 @@ export function WorkflowStation({
                                             : (taskQAStatus === "Passed");
 
                                         // Timeline Badge Status Styles
-                                        let nodeStyle = "border-slate-700 text-slate-500 bg-slate-900";
+                                        let nodeStyle = "border-slate-200 dark:border-slate-700 text-slate-500 bg-slate-100 dark:bg-slate-900";
                                         let nodeIcon = <span className="text-[10px] sm:text-xs font-black">{rout.sequence_order}</span>;
                                         
                                         if (isCompleted) {
@@ -579,7 +579,7 @@ export function WorkflowStation({
                                                     className={`w-full border rounded-2xl p-4 sm:p-4.5 shadow-sm transition-all duration-300 cursor-pointer flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 ${
                                                         isCompleted 
                                                             ? "bg-emerald-955/5 border-emerald-500/20 hover:bg-emerald-500/10 hover:border-emerald-500/40" 
-                                                            : "bg-slate-900/20 border-slate-800 hover:bg-slate-800/40 hover:border-slate-700"
+                                                            : "bg-slate-100 dark:bg-slate-900/20 border-slate-200 dark:border-slate-800 hover:bg-slate-200 dark:hover:bg-slate-800/40 hover:border-slate-200 dark:border-slate-700"
                                                     }`}
                                                 >
                                                     <div className="space-y-1">
@@ -587,7 +587,7 @@ export function WorkflowStation({
                                                             <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded border ${
                                                                 isCompleted
                                                                     ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
-                                                                    : "bg-slate-955 border-slate-800 text-muted-foreground"
+                                                                    : "bg-slate-955 border-slate-200 dark:border-slate-800 text-muted-foreground"
                                                                 }`}>
                                                                 Step {rout.sequence_order} • OP {rout.routing_id}
                                                             </span>
@@ -637,7 +637,7 @@ export function WorkflowStation({
                                                                     Pending
                                                                 </span>
                                                             ) : (
-                                                                <span className="bg-slate-805 text-muted-foreground font-extrabold px-2.5 py-0.5 rounded-lg border border-slate-700 uppercase">
+                                                                <span className="bg-slate-805 text-muted-foreground font-extrabold px-2.5 py-0.5 rounded-lg border border-slate-200 dark:border-slate-700 uppercase">
                                                                     Waiting
                                                                 </span>
                                                             )}
@@ -663,7 +663,7 @@ export function WorkflowStation({
                                 <CheckCircle className="h-6 w-6 text-emerald-400" />
                             </div>
                             <div className="space-y-1">
-                                <h4 className="text-sm font-extrabold text-white uppercase tracking-wider">
+                                <h4 className="text-sm font-extrabold text-emerald-900 dark:text-white uppercase tracking-wider">
                                     {selectedDayNum ? `Day ${selectedDayNum}` : "Job Order"} Production Yield Completed
                                 </h4>
                                 <p className="text-[11px] text-emerald-400 font-semibold">
@@ -681,14 +681,14 @@ export function WorkflowStation({
                                             const difference = actual - target;
                                             if (difference !== 0) {
                                                 return (
-                                                    <div className="mt-2 p-3 rounded-xl border bg-slate-950/80 border-slate-800 text-[10px] space-y-1">
+                                                    <div className="mt-2 p-3 rounded-xl border bg-slate-100 dark:bg-slate-950/80 border-slate-200 dark:border-slate-800 text-[10px] space-y-1">
                                                         <span className="font-extrabold uppercase tracking-wider block text-slate-400 text-[8.5px]">
                                                             Run Yield Audit Discrepancy
                                                         </span>
                                                         <div className="flex flex-wrap items-center gap-2">
-                                                            <span className="text-slate-300 font-semibold">Expected Target: <strong>{target.toLocaleString()}</strong> pcs</span>
+                                                            <span className="text-slate-600 dark:text-slate-300 font-semibold">Expected Target: <strong>{target.toLocaleString()}</strong> pcs</span>
                                                             <span className="text-slate-500 font-bold">•</span>
-                                                            <span className="text-slate-300 font-semibold">Actual Yielded: <strong>{actual.toLocaleString()}</strong> pcs</span>
+                                                            <span className="text-slate-600 dark:text-slate-300 font-semibold">Actual Yielded: <strong>{actual.toLocaleString()}</strong> pcs</span>
                                                             <span className="text-slate-500 font-bold">•</span>
                                                             <span className={`font-black ${difference < 0 ? "text-rose-400 bg-rose-500/10 border border-rose-500/20" : "text-sky-400 bg-sky-500/10 border border-sky-500/20"} px-1.5 py-0.5 rounded`}>
                                                                 {difference < 0 ? `Deficit of ${Math.abs(difference).toLocaleString()}` : `Surplus of ${difference.toLocaleString()}`} pcs
@@ -711,7 +711,7 @@ export function WorkflowStation({
                         </span>
                     </div>
                 ) : !allStepsCompleted ? (
-                    <div className="bg-slate-950/40 border border-slate-800 p-4 rounded-xl text-xs text-muted-foreground italic flex items-center gap-3">
+                    <div className="bg-slate-100 dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800 p-4 rounded-xl text-xs text-muted-foreground italic flex items-center gap-3">
                         <Info className="h-5 w-5 text-amber-500 shrink-0" />
                         <span>Completing all routing operations checklist steps for {selectedDayNum ? `Day ${selectedDayNum}` : "this Job Order"} will unlock the final Finished Goods Stocking Panel.</span>
                     </div>
@@ -722,7 +722,7 @@ export function WorkflowStation({
                                 <ShieldCheck className="h-6 w-6 animate-bounce" />
                             </div>
                             <div>
-                                <h4 className="text-sm font-extrabold text-white uppercase tracking-wider">
+                                <h4 className="text-sm font-extrabold text-emerald-900 dark:text-white uppercase tracking-wider">
                                     Post Finished Goods & Complete Run
                                 </h4>
                                 <p className="text-[10px] text-emerald-400 font-semibold mt-0.5">
@@ -738,10 +738,10 @@ export function WorkflowStation({
                                     ? (selectedJO.dailyBreakdown.find((d) => d.day === selectedDayNum)?.quantity || p.quantity)
                                     : p.quantity;
                                 return (
-                                    <div key={prodId} className="border border-slate-800 bg-slate-950/65 p-4 rounded-xl space-y-4">
-                                        <div className="flex justify-between items-center border-b border-slate-800 pb-2">
+                                    <div key={prodId} className="border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-950/65 p-4 rounded-xl space-y-4">
+                                        <div className="flex justify-between items-center border-b border-slate-200 dark:border-slate-800 pb-2">
                                             <span className="text-xs font-black text-foreground">{p.product_name}</span>
-                                            <span className="text-[9px] text-muted-foreground bg-slate-900 border border-slate-800 px-2 py-0.5 rounded-lg font-mono">Product ID: #{prodId}</span>
+                                            <span className="text-[9px] text-muted-foreground bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-2 py-0.5 rounded-lg font-mono">Product ID: #{prodId}</span>
                                         </div>
                                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
                                             <div className="space-y-1.5">
@@ -753,10 +753,16 @@ export function WorkflowStation({
                                                 </label>
                                                 <input 
                                                     type="number"
-                                                    value={yieldQties[prodId] || 0}
-                                                    onChange={e => setYieldQties(prev => ({ ...prev, [prodId]: Math.max(1, Number(e.target.value)) }))}
+                                                    value={yieldQties[prodId] !== undefined ? yieldQties[prodId] : ""}
+                                                    onChange={e => {
+                                                        const val = e.target.value;
+                                                        setYieldQties(prev => ({ 
+                                                            ...prev, 
+                                                            [prodId]: val === "" ? (undefined as unknown as number) : Math.max(0, Number(val)) 
+                                                        }));
+                                                    }}
                                                     required
-                                                    className="w-full bg-slate-955 border border-slate-800 rounded-lg px-3 py-2 text-xs text-foreground font-bold focus:ring-1 focus:ring-primary outline-none focus:border-primary"
+                                                    className="w-full bg-slate-955 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-xs text-foreground font-bold focus:ring-1 focus:ring-primary outline-none focus:border-primary"
                                                 />
                                             </div>
 
@@ -767,7 +773,7 @@ export function WorkflowStation({
                                                     value={lotNumbers[prodId] || ""}
                                                     onChange={e => setLotNumbers(prev => ({ ...prev, [prodId]: e.target.value }))}
                                                     required
-                                                    className="w-full bg-slate-955 border border-slate-800 rounded-lg px-3 py-2 text-xs text-foreground font-bold focus:ring-1 focus:ring-primary outline-none focus:border-primary"
+                                                    className="w-full bg-slate-955 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-xs text-foreground font-bold focus:ring-1 focus:ring-primary outline-none focus:border-primary"
                                                 />
                                             </div>
 
@@ -776,9 +782,12 @@ export function WorkflowStation({
                                                 <input 
                                                     type="date"
                                                     value={expiryDates[prodId] || ""}
-                                                    onChange={e => setExpiryDates(prev => ({ ...prev, [prodId]: e.target.value }))}
+                                                    onChange={e => {
+                                                        const cleanDate = (e.target.value || "").replace(/\//g, "-");
+                                                        setExpiryDates(prev => ({ ...prev, [prodId]: cleanDate }));
+                                                    }}
                                                     required
-                                                    className="w-full bg-slate-955 border border-slate-800 rounded-lg px-3 py-2 text-xs text-foreground font-bold focus:ring-1 focus:ring-primary outline-none focus:border-primary"
+                                                    className="w-full bg-slate-955 border border-slate-200 dark:border-slate-800 rounded-lg px-3 py-2 text-xs text-foreground font-bold focus:ring-1 focus:ring-primary outline-none focus:border-primary"
                                                 />
                                             </div>
                                         </div>
@@ -808,29 +817,58 @@ export function WorkflowStation({
                 )}
             </div>
 
-            {selectedDetailsStep && (
-                <StepDetailsModal
-                    isOpen={!!selectedDetailsStep}
-                    onClose={() => setSelectedDetailsStep(null)}
-                    selectedJO={selectedJO}
-                    selectedDayNum={selectedDayNum}
-                    productId={selectedDetailsStep.productId}
-                    routing={selectedDetailsStep.routing}
-                    users={users}
-                    assigningStepKeys={assigningStepKeys}
-                    setActiveAssigningTask={setActiveAssigningTask}
-                    setOperatorSearchText={setOperatorSearchText}
-                    handleToggleOperatorForTask={handleToggleOperatorForTask}
-                    handleOpenQADialog={handleOpenQADialog}
-                    handleVerifyQAForTask={handleVerifyQAForTask}
-                    duplicatingStepId={duplicatingStepId}
-                    handleDuplicateTask={handleDuplicateTask}
-                    currentQty={selectedDayNum
-                        ? (selectedJO.dailyBreakdown?.find((d) => d.day === selectedDayNum)?.quantity || productsList.find(p => p.product_id === selectedDetailsStep.productId)?.quantity || selectedJO.quantity)
-                        : (productsList.find(p => p.product_id === selectedDetailsStep.productId)?.quantity || selectedJO.quantity)}
-                    isDayCompleted={isDayCompleted}
-                />
-            )}
+            {selectedDetailsStep && (() => {
+                const product = productsList.find(p => p.product_id === selectedDetailsStep.productId);
+                const baseQty = selectedDayNum
+                    ? (selectedJO?.dailyBreakdown?.find((d) => d.day === selectedDayNum)?.quantity || product?.quantity || selectedJO?.quantity || 0)
+                    : (product?.quantity || selectedJO?.quantity || 0);
+                
+                let expectedQty = baseQty;
+                if (product && product.routings && selectedJO) {
+                    const sortedRoutings = [...product.routings].sort((a, b) => a.sequence_order - b.sequence_order);
+                    const currentIndex = sortedRoutings.findIndex(r => r.routing_id === selectedDetailsStep.routing.routing_id);
+                    if (currentIndex > 0) {
+                        const prevRouting = sortedRoutings[currentIndex - 1];
+                        const relTask = selectedJO.routing_tasks?.find(t => Number(t.routing_id) === Number(prevRouting.routing_id));
+                        if (selectedDayNum) {
+                            const dayObj = selectedJO.dailyBreakdown?.find(d => d.day === selectedDayNum);
+                            const dayQaLog = dayObj?.qa_logs?.[String(prevRouting.routing_id)];
+                            if (dayQaLog && dayQaLog.actual_quantity !== undefined) {
+                                expectedQty = Number(dayQaLog.actual_quantity);
+                            }
+                        } else {
+                            if (relTask && relTask.qa_logs && relTask.qa_logs.length > 0) {
+                                const latestLog = relTask.qa_logs[relTask.qa_logs.length - 1];
+                                if (latestLog.actual_quantity !== undefined) {
+                                    expectedQty = Number(latestLog.actual_quantity);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                return (
+                    <StepDetailsModal
+                        isOpen={!!selectedDetailsStep}
+                        onClose={() => setSelectedDetailsStep(null)}
+                        selectedJO={selectedJO}
+                        selectedDayNum={selectedDayNum}
+                        productId={selectedDetailsStep.productId}
+                        routing={selectedDetailsStep.routing}
+                        users={users}
+                        assigningStepKeys={assigningStepKeys}
+                        setActiveAssigningTask={setActiveAssigningTask}
+                        setOperatorSearchText={setOperatorSearchText}
+                        handleToggleOperatorForTask={handleToggleOperatorForTask}
+                        handleOpenQADialog={handleOpenQADialog}
+                        handleVerifyQAForTask={handleVerifyQAForTask}
+                        duplicatingStepId={duplicatingStepId}
+                        handleDuplicateTask={handleDuplicateTask}
+                        currentQty={expectedQty}
+                        isDayCompleted={isDayCompleted}
+                    />
+                );
+            })()}
         </div>
     );
 }

@@ -43,7 +43,6 @@ export default function QuotationModule() {
         savingQuote,
         loadQuotes,
         viewQuoteDetails,
-        initCreateFlow,
         reviseQuotation,
         addProductToQuote,
         removeProductFromQuote,
@@ -54,7 +53,12 @@ export default function QuotationModule() {
         filteredCatalog,
         totalPages,
         paginatedCatalog,
-        changeProductVersion
+        changeProductVersion,
+        showValidationErrors,
+        registerNewProject,
+        allProjects,
+        startCreateQuoteForProject,
+        selectedProjectId
     } = useQuotation();
 
     return (
@@ -63,10 +67,14 @@ export default function QuotationModule() {
                 <QuotationList
                      quotes={quotes}
                      loadingQuotes={loadingQuotes}
-                     initCreateFlow={initCreateFlow}
                      loadQuotes={loadQuotes}
                      viewQuoteDetails={viewQuoteDetails}
                      reviseQuotation={reviseQuotation}
+                     allProjects={allProjects}
+                     customers={customers}
+                     handleSearchCustomers={handleSearchCustomers}
+                     registerNewProject={registerNewProject}
+                     startCreateQuoteForProject={startCreateQuoteForProject}
                 />
             ) : (
                 <div className="space-y-6">
@@ -108,6 +116,8 @@ export default function QuotationModule() {
                         setRemarks={setRemarks}
                         projectName={projectName}
                         setProjectName={setProjectName}
+                        showValidationErrors={showValidationErrors}
+                        selectedProjectId={selectedProjectId}
                     />
 
                     <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
@@ -123,6 +133,7 @@ export default function QuotationModule() {
                                 currentPage={currentPage}
                                 setCurrentPage={setCurrentPage}
                                 totalPages={totalPages}
+                                selectedProductsList={selectedProductsList}
                             />
                         </div>
 

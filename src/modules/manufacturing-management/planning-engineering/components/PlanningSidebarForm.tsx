@@ -175,9 +175,9 @@ export function PlanningSidebarForm({
 
         return (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs animate-in fade-in duration-200">
-                <div className="bg-card border border-slate-800 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
+                <div className="bg-card border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
                     {/* Header */}
-                    <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 shrink-0 bg-slate-950/40">
+                    <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800 shrink-0 bg-slate-100 dark:bg-slate-950/40">
                         <div className="flex items-center gap-2.5">
                             <Calendar className="h-5 w-5 text-primary animate-pulse" />
                             <div>
@@ -192,23 +192,23 @@ export function PlanningSidebarForm({
                         <button
                             type="button"
                             onClick={() => setIsBreakdownModalOpen(false)}
-                            className="text-muted-foreground hover:text-foreground text-sm font-semibold transition-colors px-3 py-1.5 hover:bg-slate-900 rounded-lg"
+                            className="text-muted-foreground hover:text-foreground text-sm font-semibold transition-colors px-3 py-1.5 hover:bg-slate-100 dark:bg-slate-900 rounded-lg"
                         >
                             Close
                         </button>
                     </div>
 
                     {/* Modal Body */}
-                    <div className="flex-1 overflow-hidden grid grid-cols-1 md:grid-cols-5 divide-y md:divide-y-0 md:divide-x divide-slate-800">
+                    <div className="flex-1 overflow-hidden grid grid-cols-1 md:grid-cols-5 divide-y md:divide-y-0 md:divide-x divide-slate-200 dark:divide-slate-800">
                         {/* Left Side: Parameters Form */}
-                        <div className="md:col-span-2 p-6 overflow-y-auto space-y-5 bg-slate-950/10">
+                        <div className="md:col-span-2 p-6 overflow-y-auto space-y-5 bg-slate-50/50 dark:bg-slate-950/10">
                             <h4 className="text-[11px] font-bold text-primary uppercase tracking-wider block mb-1">
                                 Scheduling Parameters
                             </h4>
 
                             <div className="space-y-4">
                                 {/* Product Details */}
-                                <div className="p-3.5 bg-slate-900/30 border border-slate-850 rounded-xl space-y-1 text-xs">
+                                <div className="p-3.5 bg-slate-100/40 dark:bg-slate-900/30 border border-slate-200 dark:border-slate-850 rounded-xl space-y-1 text-xs">
                                     <span className="text-[10px] font-bold text-muted-foreground uppercase block">Selected finished good SKU</span>
                                     <span className="font-extrabold text-foreground block">
                                         {selectedProd?.product_name || "Unknown SKU"}
@@ -231,7 +231,7 @@ export function PlanningSidebarForm({
                                             value={editingCapacity}
                                             onChange={(e) => setEditingCapacity(e.target.value)}
                                             placeholder="Units producible per hour..."
-                                            className="w-full rounded-lg border border-slate-800 bg-slate-950/20 px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary text-foreground font-semibold"
+                                            className="w-full rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/20 px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary text-foreground font-semibold"
                                         />
                                         <button
                                             type="button"
@@ -262,7 +262,7 @@ export function PlanningSidebarForm({
                                     <select
                                         value={shiftOption}
                                         onChange={(e) => setShiftOption(e.target.value)}
-                                        className="w-full rounded-lg border border-slate-800 bg-slate-950/20 px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary text-foreground font-semibold"
+                                        className="w-full rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/20 px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary text-foreground font-semibold"
                                     >
                                         <option value="8">Single Shift (8 Hours/Day)</option>
                                         <option value="16">Double Shift (16 Hours/Day)</option>
@@ -281,7 +281,7 @@ export function PlanningSidebarForm({
                                             value={joQty}
                                             onChange={(e) => setJoQty(Number(e.target.value))}
                                             min={1}
-                                            className="w-full rounded-lg border border-slate-800 bg-slate-950/20 px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary text-foreground font-semibold"
+                                            className="w-full rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/20 px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary text-foreground font-semibold"
                                         />
                                     </div>
                                 )}
@@ -317,7 +317,7 @@ export function PlanningSidebarForm({
                                 return (
                                     <div className="flex-1 flex flex-col overflow-hidden space-y-4">
                                         {/* Summary Widgets */}
-                                        <div className="grid grid-cols-3 gap-3 bg-slate-900/30 border border-slate-800/80 p-3 rounded-xl text-xs shrink-0 font-semibold text-slate-300">
+                                        <div className="grid grid-cols-3 gap-3 bg-slate-100/40 dark:bg-slate-900/30 border border-slate-200/80 dark:border-slate-800/80 p-3 rounded-xl text-xs shrink-0 font-semibold text-slate-600 dark:text-slate-300">
                                             <div className="space-y-0.5">
                                                 <span className="text-[8px] font-bold text-muted-foreground uppercase block">Run Duration</span>
                                                 <span className="text-[13px] font-extrabold text-primary block">{totalDays} Days</span>
@@ -350,7 +350,7 @@ export function PlanningSidebarForm({
                                                     return (
                                                         <div 
                                                             key={i} 
-                                                            className="flex justify-between items-center bg-slate-950/40 border border-slate-850 hover:border-slate-700/60 rounded-xl px-3 py-2 text-[10px] font-semibold text-foreground transition-all"
+                                                            className="flex justify-between items-center bg-slate-100 dark:bg-slate-950/40 border border-slate-200 dark:border-slate-850 hover:border-slate-200/60 dark:border-slate-700/60 rounded-xl px-3 py-2 text-[10px] font-semibold text-foreground transition-all"
                                                         >
                                                             <div className="flex flex-col gap-0.5">
                                                                 <span className="text-primary font-extrabold">Day {i + 1}</span>
@@ -371,7 +371,7 @@ export function PlanningSidebarForm({
                     </div>
 
                     {/* Footer */}
-                    <div className="px-6 py-4 border-t border-slate-800 bg-slate-950/40 shrink-0 flex justify-end">
+                    <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-950/40 shrink-0 flex justify-end">
                         <button
                             type="button"
                             onClick={() => setIsBreakdownModalOpen(false)}
@@ -517,7 +517,7 @@ export function PlanningSidebarForm({
                             className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary text-foreground font-semibold"
                         />
                         {isBranchFocused && (
-                            <div className="absolute z-50 left-0 right-0 mt-1 max-h-48 overflow-y-auto rounded-lg border border-slate-700 bg-slate-900 shadow-xl divide-y divide-slate-800">
+                            <div className="absolute z-50 left-0 right-0 mt-1 max-h-48 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900 shadow-xl divide-y divide-slate-200 dark:divide-slate-800">
                                 {filteredBranches.map(b => (
                                     <button
                                         type="button"
@@ -527,7 +527,7 @@ export function PlanningSidebarForm({
                                             setBranchSearch(`${b.branch_name} (${b.branch_code})`);
                                             setIsBranchFocused(false);
                                         }}
-                                        className="w-full text-left px-3 py-2 text-xs hover:bg-primary hover:text-primary-foreground text-slate-100 transition-colors"
+                                        className="w-full text-left px-3 py-2 text-xs hover:bg-primary hover:text-primary-foreground text-slate-800 dark:text-slate-100 transition-colors"
                                     >
                                         {b.branch_name} ({b.branch_code})
                                     </button>
@@ -554,7 +554,7 @@ export function PlanningSidebarForm({
                             className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary text-foreground font-semibold"
                         />
                         {isDetailFocused && (
-                            <div className="absolute z-50 left-0 right-0 mt-1 max-h-48 overflow-y-auto rounded-lg border border-slate-700 bg-slate-900 shadow-xl divide-y divide-slate-800">
+                            <div className="absolute z-50 left-0 right-0 mt-1 max-h-48 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900 shadow-xl divide-y divide-slate-200 dark:divide-slate-800">
                                 <button
                                     type="button"
                                     onClick={() => {
@@ -562,7 +562,7 @@ export function PlanningSidebarForm({
                                         setDetailSearch("All Items in Sales Order");
                                         setIsDetailFocused(false);
                                     }}
-                                    className="w-full text-left px-3 py-2 text-xs hover:bg-primary hover:text-primary-foreground text-slate-100 font-bold transition-colors bg-slate-900/50"
+                                    className="w-full text-left px-3 py-2 text-xs hover:bg-primary hover:text-primary-foreground text-slate-800 dark:text-slate-100 font-bold transition-colors bg-slate-50/30 dark:bg-slate-900/50"
                                 >
                                     [All Items in Sales Order] (Qty: {soDetails.reduce((sum, d) => sum + Number(d.ordered_quantity || 0), 0)})
                                 </button>
@@ -575,7 +575,7 @@ export function PlanningSidebarForm({
                                             setDetailSearch(`${d.product_id?.product_name || `ID: ${d.product_id}`} (Qty: ${d.ordered_quantity})`);
                                             setIsDetailFocused(false);
                                         }}
-                                        className="w-full text-left px-3 py-2 text-xs hover:bg-primary hover:text-primary-foreground text-slate-100 transition-colors"
+                                        className="w-full text-left px-3 py-2 text-xs hover:bg-primary hover:text-primary-foreground text-slate-800 dark:text-slate-100 transition-colors"
                                     >
                                         {d.product_id?.product_name || `ID: ${d.product_id}`} (Qty: {d.ordered_quantity})
                                     </button>
@@ -668,13 +668,13 @@ export function PlanningSidebarForm({
                     </div>
 
                     {activeProductId && (
-                        <div className="space-y-1.5 p-3 rounded-lg border border-slate-800 bg-slate-950/20">
+                        <div className="space-y-1.5 p-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/20">
                             <div className="flex justify-between items-center text-[10px]">
                                 <span className="font-bold text-muted-foreground uppercase tracking-wider block">
                                     Scheduling Runs & Capacity
                                 </span>
                                 {getProductCapacity(activeProductId) > 0 ? (
-                                    <span className="text-[8px] bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 px-1.5 py-0.2 rounded font-extrabold uppercase text-slate-300">
+                                    <span className="text-[8px] bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 px-1.5 py-0.2 rounded font-extrabold uppercase text-slate-600 dark:text-slate-300">
                                         {calculateDaysCount(activeProductId, joQty, shiftOption)} Days Run
                                     </span>
                                 ) : (
@@ -686,7 +686,7 @@ export function PlanningSidebarForm({
                             <button
                                 type="button"
                                 onClick={() => setIsBreakdownModalOpen(true)}
-                                className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-slate-900 hover:bg-slate-800/80 py-2 text-xs font-bold text-foreground border border-slate-700/60 shadow-sm transition-all cursor-pointer"
+                                className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-slate-100 dark:bg-slate-900 hover:bg-slate-200/80 dark:hover:bg-slate-800/80 py-2 text-xs font-bold text-foreground border border-slate-200/60 dark:border-slate-700/60 shadow-sm transition-all cursor-pointer"
                             >
                                 <Calendar className="h-3.5 w-3.5 text-primary" />
                                 {getProductCapacity(activeProductId) > 0 
@@ -753,7 +753,7 @@ export function PlanningSidebarForm({
                             className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary text-foreground font-semibold"
                         />
                         {isBranchFocused && (
-                            <div className="absolute z-50 left-0 right-0 mt-1 max-h-48 overflow-y-auto rounded-lg border border-slate-700 bg-slate-900 shadow-xl divide-y divide-slate-800">
+                            <div className="absolute z-50 left-0 right-0 mt-1 max-h-48 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900 shadow-xl divide-y divide-slate-200 dark:divide-slate-800">
                                 {filteredBranches.map(b => (
                                     <button
                                         type="button"
@@ -763,7 +763,7 @@ export function PlanningSidebarForm({
                                             setBranchSearch(`${b.branch_name} (${b.branch_code})`);
                                             setIsBranchFocused(false);
                                         }}
-                                        className="w-full text-left px-3 py-2 text-xs hover:bg-primary hover:text-primary-foreground text-slate-100 transition-colors"
+                                        className="w-full text-left px-3 py-2 text-xs hover:bg-primary hover:text-primary-foreground text-slate-800 dark:text-slate-100 transition-colors"
                                     >
                                         {b.branch_name} ({b.branch_code})
                                     </button>
@@ -821,13 +821,13 @@ export function PlanningSidebarForm({
                     </div>
 
                     {activeProductId && (
-                        <div className="space-y-1.5 p-3 rounded-lg border border-slate-800 bg-slate-950/20">
+                        <div className="space-y-1.5 p-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/20">
                             <div className="flex justify-between items-center text-[10px]">
                                 <span className="font-bold text-muted-foreground uppercase tracking-wider block">
                                     Scheduling Runs & Capacity
                                 </span>
                                 {getProductCapacity(activeProductId) > 0 ? (
-                                    <span className="text-[8px] bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 px-1.5 py-0.2 rounded font-extrabold uppercase text-slate-300">
+                                    <span className="text-[8px] bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 px-1.5 py-0.2 rounded font-extrabold uppercase text-slate-600 dark:text-slate-300">
                                         {calculateDaysCount(activeProductId, joQty, shiftOption)} Days Run
                                     </span>
                                 ) : (
@@ -839,7 +839,7 @@ export function PlanningSidebarForm({
                             <button
                                 type="button"
                                 onClick={() => setIsBreakdownModalOpen(true)}
-                                className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-slate-900 hover:bg-slate-800/80 py-2 text-xs font-bold text-foreground border border-slate-700/60 shadow-sm transition-all cursor-pointer"
+                                className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-slate-100 dark:bg-slate-900 hover:bg-slate-200/80 dark:hover:bg-slate-800/80 py-2 text-xs font-bold text-foreground border border-slate-200/60 dark:border-slate-700/60 shadow-sm transition-all cursor-pointer"
                             >
                                 <Calendar className="h-3.5 w-3.5 text-primary" />
                                 {getProductCapacity(activeProductId) > 0 
@@ -907,7 +907,7 @@ export function PlanningSidebarForm({
                             className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary text-foreground font-semibold"
                         />
                         {isBranchFocused && (
-                            <div className="absolute z-50 left-0 right-0 mt-1 max-h-48 overflow-y-auto rounded-lg border border-slate-700 bg-slate-900 shadow-xl divide-y divide-slate-800">
+                            <div className="absolute z-50 left-0 right-0 mt-1 max-h-48 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900 shadow-xl divide-y divide-slate-200 dark:divide-slate-800">
                                 {filteredBranches.map(b => (
                                     <button
                                         type="button"
@@ -917,7 +917,7 @@ export function PlanningSidebarForm({
                                             setBranchSearch(`${b.branch_name} (${b.branch_code})`);
                                             setIsBranchFocused(false);
                                         }}
-                                        className="w-full text-left px-3 py-2 text-xs hover:bg-primary hover:text-primary-foreground text-slate-100 transition-colors"
+                                        className="w-full text-left px-3 py-2 text-xs hover:bg-primary hover:text-primary-foreground text-slate-800 dark:text-slate-100 transition-colors"
                                     >
                                         {b.branch_name} ({b.branch_code})
                                     </button>
@@ -966,13 +966,13 @@ export function PlanningSidebarForm({
                     </div>
 
                     {activeProductId && (
-                        <div className="space-y-1.5 p-3 rounded-lg border border-slate-800 bg-slate-950/20">
+                        <div className="space-y-1.5 p-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/20">
                             <div className="flex justify-between items-center text-[10px]">
                                 <span className="font-bold text-muted-foreground uppercase tracking-wider block">
                                     Scheduling Runs & Capacity
                                 </span>
                                 {getProductCapacity(activeProductId) > 0 ? (
-                                    <span className="text-[8px] bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 px-1.5 py-0.2 rounded font-extrabold uppercase text-slate-300">
+                                    <span className="text-[8px] bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 px-1.5 py-0.2 rounded font-extrabold uppercase text-slate-600 dark:text-slate-300">
                                         {calculateDaysCount(activeProductId, activeQty, shiftOption)} Days Run
                                     </span>
                                 ) : (
@@ -984,7 +984,7 @@ export function PlanningSidebarForm({
                             <button
                                 type="button"
                                 onClick={() => setIsBreakdownModalOpen(true)}
-                                className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-slate-900 hover:bg-slate-800/80 py-2 text-xs font-bold text-foreground border border-slate-700/60 shadow-sm transition-all cursor-pointer"
+                                className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-slate-100 dark:bg-slate-900 hover:bg-slate-200/80 dark:hover:bg-slate-800/80 py-2 text-xs font-bold text-foreground border border-slate-200/60 dark:border-slate-700/60 shadow-sm transition-all cursor-pointer"
                             >
                                 <Calendar className="h-3.5 w-3.5 text-primary" />
                                 {getProductCapacity(activeProductId) > 0 
@@ -1016,13 +1016,13 @@ export function PlanningSidebarForm({
                                 />
                             </div>
                             {isProductFocused && (
-                                <div className="absolute z-50 left-0 right-0 mt-1 max-h-48 overflow-y-auto rounded-lg border border-slate-700 bg-slate-900 shadow-xl divide-y divide-slate-800">
+                                <div className="absolute z-50 left-0 right-0 mt-1 max-h-48 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900 shadow-xl divide-y divide-slate-200 dark:divide-slate-800">
                                     {filteredProducts.map(p => (
                                         <button
                                             type="button"
                                             key={p.product_id}
                                             onClick={() => handleAddProductLine(p)}
-                                            className="w-full text-left px-3 py-2 text-[11px] hover:bg-primary hover:text-primary-foreground text-slate-100 transition-colors flex justify-between"
+                                            className="w-full text-left px-3 py-2 text-[11px] hover:bg-primary hover:text-primary-foreground text-slate-800 dark:text-slate-100 transition-colors flex justify-between"
                                         >
                                             <span>{p.product_name}</span>
                                             <span className="text-muted-foreground/75 font-semibold text-[9px] uppercase">{p.unit_of_measurement?.unit_shortcut || "PC"}</span>
@@ -1040,7 +1040,7 @@ export function PlanningSidebarForm({
                             {selectedProductsList.map((item, index) => {
                                 const versions = productVersions[item.product_id] || [];
                                 return (
-                                    <div key={item.product_id} className="border border-slate-800 bg-slate-900/50 rounded-lg p-3 space-y-2 relative">
+                                    <div key={item.product_id} className="border border-slate-200 dark:border-slate-800 bg-slate-50/30 dark:bg-slate-900/50 rounded-lg p-3 space-y-2 relative">
                                         <button
                                             onClick={() => handleRemoveProductLine(item.product_id)}
                                             className="absolute top-2.5 right-2.5 text-muted-foreground hover:text-destructive transition-colors cursor-pointer"

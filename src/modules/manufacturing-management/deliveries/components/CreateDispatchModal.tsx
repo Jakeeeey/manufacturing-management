@@ -1,7 +1,8 @@
 import React, { useState } from "react";
 import { PendingInvoice, Vehicle, User, Branch } from "../types";
-import { X, Truck, User as UserIcon, Navigation, ListOrdered, Sparkles } from "lucide-react";
+import { X, Truck, ListOrdered, Sparkles } from "lucide-react";
 import { toast } from "sonner";
+import { CreatableSelect } from "../../finished-goods/components/CreatableSelect";
 
 const cityCoordinates: Record<string, { lat: number; lng: number }> = {
     "urdaneta": { lat: 15.9761, lng: 120.5713 },
@@ -86,6 +87,20 @@ export default function CreateDispatchModal({
     const [selectedHelperIds, setSelectedHelperIds] = useState<number[]>([]);
 
     const [submitting, setSubmitting] = useState(false);
+
+    const driverOptions = React.useMemo(() => {
+        return users.map(u => ({
+            value: String(u.user_id),
+            label: `${u.first_name} ${u.last_name} (${u.email})`
+        }));
+    }, [users]);
+
+    const branchOptions = React.useMemo(() => {
+        return branches.map(b => ({
+            value: String(b.id),
+            label: `${b.branch_name} (${b.branch_code})`
+        }));
+    }, [branches]);
 
     if (!isOpen) return null;
 
@@ -310,26 +325,16 @@ export default function CreateDispatchModal({
                         {/* Driver */}
                         <div className="space-y-1">
                             <label className="text-[9px] font-extrabold uppercase text-muted-foreground">Assigned Driver *</label>
-                            <div className="relative">
-                                <UserIcon className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                                <select
-                                    required
-                                    value={driverId}
-                                    onChange={(e) => {
-                                        setDriverId(e.target.value);
-                                        // Filter out driver from helpers if already selected
-                                        setSelectedHelperIds(prev => prev.filter(id => String(id) !== e.target.value));
-                                    }}
-                                    className="pl-9 w-full bg-muted/40 border border-input rounded-xl px-3.5 py-2 text-xs focus:ring-2 focus:ring-primary/20 outline-none h-[35px]"
-                                >
-                                    <option value="">Select Crew Driver</option>
-                                    {users.map(u => (
-                                        <option key={u.user_id} value={u.user_id}>
-                                            {u.first_name} {u.last_name} ({u.email})
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
+                            <CreatableSelect
+                                options={driverOptions}
+                                value={driverId}
+                                onValueChange={(val) => {
+                                    setDriverId(val);
+                                    // Filter out driver from helpers if already selected
+                                    setSelectedHelperIds(prev => prev.filter(id => String(id) !== val));
+                                }}
+                                placeholder="Select Crew Driver..."
+                            />
                         </div>
 
                         {/* Crew Helpers */}
@@ -382,21 +387,12 @@ export default function CreateDispatchModal({
                         {/* Origin Branch starting_point */}
                         <div className="space-y-1">
                             <label className="text-[9px] font-extrabold uppercase text-muted-foreground">Starting Point / Origin Branch</label>
-                            <div className="relative">
-                                <Navigation className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                                <select
-                                    value={startingPoint}
-                                    onChange={(e) => setStartingPoint(e.target.value)}
-                                    className="pl-9 w-full bg-muted/40 border border-input rounded-xl px-3.5 py-2 text-xs focus:ring-2 focus:ring-primary/20 outline-none h-[35px]"
-                                >
-                                    <option value="">Select origin depot</option>
-                                    {branches.map(b => (
-                                        <option key={b.id} value={b.id}>
-                                            {b.branch_name} ({b.branch_code})
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
+                            <CreatableSelect
+                                options={branchOptions}
+                                value={startingPoint}
+                                onValueChange={(val) => setStartingPoint(val)}
+                                placeholder="Select origin depot..."
+                            />
                         </div>
 
                         {/* Cost & Travel */}

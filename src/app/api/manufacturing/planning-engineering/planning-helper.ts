@@ -1,5 +1,5 @@
 import { DIRECTUS_URL, headers } from "@/app/api/manufacturing/directus-api";
-import { DirectusJobOrder } from "@/types/manufacturing";
+import { DirectusJobOrder } from "@/modules/manufacturing-management/planning-engineering/types";
 
 const headersNoCache = { ...headers, "cache": "no-store" as const };
 
@@ -182,7 +182,9 @@ export async function createJobOrder(joData: Partial<DirectusJobOrder>, salesOrd
             procurement_status: joData.procurement_status || "Idle",
             branch_id: joData.branch_id || null,
             shift_option: joData.shift_option || "8",
-            daily_breakdown: joData.daily_breakdown || null
+            daily_breakdown: joData.daily_breakdown || null,
+            created_at: joData.created_at || null,
+            created_by: joData.created_by || null
         };
 
         const headerRes = await fetch(`${DIRECTUS_URL}/items/job_order`, {

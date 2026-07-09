@@ -57,8 +57,6 @@ export interface JobOrder {
     branch_id?: number;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
     products?: any[];
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-    assignedPersonnel?: any[];
     routing_tasks?: JobOrderRoutingTask[];
     shiftOption?: string;
     dailyBreakdown?: { 
@@ -77,6 +75,8 @@ export interface JobOrder {
             completed_at?: string;
         }>;
     }[] | null;
+    createdAt?: string | null;
+    createdBy?: number | null;
 }
 
 export interface JobOrderRoutingTask {
@@ -115,3 +115,35 @@ export interface JobOrderQALog {
     photos?: string[] | null;
 }
 
+
+// ─── Directus API-layer types (used by API route helpers) ───────────────────
+
+export interface DirectusJobOrder {
+    jo_id: string;
+    due_date?: string | null;
+    status: string;
+    is_batched: boolean;
+    procurement_status: string;
+    branch_id?: number | null;
+    assigned_personnel?: unknown;
+    shift_option?: string | null;
+    daily_breakdown?: unknown;
+    product_id?: number | null;
+    product_name?: string | null;
+    quantity?: number;
+    bom?: unknown;
+    components?: unknown;
+    routings?: unknown;
+    allocation_results?: unknown;
+    products?: {
+        product_id?: number | null;
+        product_name?: string | null;
+        quantity?: number;
+        bom?: unknown;
+        components?: unknown;
+        routings?: unknown;
+        allocation_results?: unknown;
+    }[];
+    sales_orders?: unknown[];
+    [key: string]: unknown;
+}

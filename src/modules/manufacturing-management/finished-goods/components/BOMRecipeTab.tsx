@@ -1,6 +1,7 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { BOMMaterialSelect } from "./BOMMaterialSelect";
+import { CreatableSelect } from "./CreatableSelect";
 import { BOMItem, Unit } from "../types";
 
 interface BOMRecipeTabProps {
@@ -20,6 +21,12 @@ export const BOMRecipeTab: React.FC<BOMRecipeTabProps> = ({
     units,
     baseMaterialCost
 }) => {
+    const uomOptions = useMemo(() => {
+        return units.map(u => ({
+            value: u.unit_shortcut,
+            label: `${u.unit_name} (${u.unit_shortcut})`
+        }));
+    }, [units]);
     return (
         <div className="space-y-6">
             <div className="flex items-center justify-between">
@@ -62,12 +69,26 @@ export const BOMRecipeTab: React.FC<BOMRecipeTabProps> = ({
                                         <td className="p-1 border-r border-muted/20 min-w-[320px] align-middle">
                                             <BOMMaterialSelect
                                                 value={item.productId}
+                                                type={item.type}
                                                 onSelectProduct={(foundProd) => {
                                                     handleBOMChange(item.id, "productId", foundProd.product_id);
                                                     handleBOMChange(item.id, "name", foundProd.product_name);
                                                     handleBOMChange(item.id, "uom", foundProd.unit_of_measurement?.unit_shortcut || "L");
                                                     handleBOMChange(item.id, "uomId", foundProd.unit_of_measurement?.unit_id || undefined);
                                                     handleBOMChange(item.id, "landedCost", Number(foundProd.cost_per_unit || foundProd.price_per_unit || 0));
+                                                    
+                                                    // Auto-detect type
+                                                    let detectedType: BOMItem["type"] = "raw_material";
+                                                    if (foundProd.has_versions) {
+                                                        detectedType = "sub_assembly";
+                                                    } else {
+                                                        const lowerName = foundProd.product_name.toLowerCase();
+                                                        const isPkg = lowerName.includes("box") || lowerName.includes("bottle") || lowerName.includes("cap") || lowerName.includes("sticker") || lowerName.includes("packaging") || lowerName.includes("plastic") || lowerName.includes("wrapper") || lowerName.includes("label");
+                                                        if (isPkg) {
+                                                            detectedType = "packaging";
+                                                        }
+                                                    }
+                                                    handleBOMChange(item.id, "type", detectedType);
                                                 }}
                                             />
                                         </td>
@@ -75,6 +96,7 @@ export const BOMRecipeTab: React.FC<BOMRecipeTabProps> = ({
                                             <select
                                                 value={item.type}
                                                 data-index={index}
+                                                disabled={!!item.productId}
                                                 onChange={e => handleBOMChange(item.id, "type", e.target.value as BOMItem["type"])}
                                                 onKeyDown={e => {
                                                     if (e.key === "ArrowDown") {
@@ -93,17 +115,22 @@ export const BOMRecipeTab: React.FC<BOMRecipeTabProps> = ({
                                                 className="bom-type-select w-full bg-transparent border-0 focus:ring-1 focus:ring-primary focus:bg-background focus:outline-hidden py-1 px-1.5 text-xs text-foreground rounded-sm"
                                             >
                                                 <option value="raw_material">Raw Mat</option>
+                                                <option value="packaging">Packaging</option>
                                                 <option value="sub_assembly">Sub-Assy</option>
                                                 <option value="by_product">By-Prod</option>
+                                                <option value="finished_good">Finished Good</option>
                                             </select>
                                         </td>
                                         <td className="p-1 border-r border-muted/20 w-28 align-middle">
                                             <input 
                                                 type="number" 
                                                 step="0.0001"
-                                                value={item.quantity || ""} 
+                                                value={item.quantity === 0 ? "" : item.quantity} 
                                                 data-index={index}
-                                                onChange={e => handleBOMChange(item.id, "quantity", parseFloat(e.target.value) || 0)}
+                                                onChange={e => {
+                                                    const val = parseFloat(e.target.value);
+                                                    handleBOMChange(item.id, "quantity", isNaN(val) ? 0 : val);
+                                                }}
                                                 onKeyDown={e => {
                                                     if (e.key === "ArrowDown") {
                                                         e.preventDefault();
@@ -113,12 +140,6 @@ export const BOMRecipeTab: React.FC<BOMRecipeTabProps> = ({
                                                         e.preventDefault();
                                                         const el = document.querySelector(`.bom-qty-input[data-index="${index - 1}"]`) as HTMLInputElement;
                                                         if (el) el.focus();
-                                                    } else if (e.key === "ArrowRight") {
-                                                        const el = document.querySelector(`.bom-uom-select[data-index="${index}"]`) as HTMLSelectElement;
-                                                        if (el) el.focus();
-                                                    } else if (e.key === "ArrowLeft") {
-                                                        const el = document.querySelector(`.bom-type-select[data-index="${index}"]`) as HTMLSelectElement;
-                                                        if (el) el.focus();
                                                     }
                                                 }}
                                                 className="bom-qty-input w-full bg-transparent border-0 focus:ring-1 focus:ring-primary focus:bg-background focus:outline-hidden py-1 px-2 text-sm text-foreground rounded-sm"
@@ -126,41 +147,17 @@ export const BOMRecipeTab: React.FC<BOMRecipeTabProps> = ({
                                             />
                                         </td>
                                         <td className="p-1 border-r border-muted/20 w-28 align-middle">
-                                            <select
+                                            <CreatableSelect
+                                                options={uomOptions}
                                                 value={item.uom || ""}
-                                                data-index={index}
-                                                onChange={e => {
-                                                    const shortcut = e.target.value;
-                                                    const matchedUnit = units.find(u => u.unit_shortcut === shortcut);
-                                                    handleBOMChange(item.id, "uom", shortcut);
+                                                onValueChange={(val) => {
+                                                    const matchedUnit = units.find(u => u.unit_shortcut === val);
+                                                    handleBOMChange(item.id, "uom", val);
                                                     handleBOMChange(item.id, "uomId", matchedUnit ? matchedUnit.unit_id : undefined);
                                                 }}
-                                                onKeyDown={e => {
-                                                    if (e.key === "ArrowDown") {
-                                                        e.preventDefault();
-                                                        const el = document.querySelector(`.bom-uom-select[data-index="${index + 1}"]`) as HTMLSelectElement;
-                                                        if (el) el.focus();
-                                                    } else if (e.key === "ArrowUp") {
-                                                        e.preventDefault();
-                                                        const el = document.querySelector(`.bom-uom-select[data-index="${index - 1}"]`) as HTMLSelectElement;
-                                                        if (el) el.focus();
-                                                    } else if (e.key === "ArrowRight") {
-                                                        const el = document.querySelector(`.bom-density-input[data-index="${index}"]`) as HTMLInputElement;
-                                                        if (el) el.focus();
-                                                    } else if (e.key === "ArrowLeft") {
-                                                        const el = document.querySelector(`.bom-qty-input[data-index="${index}"]`) as HTMLInputElement;
-                                                        if (el) el.focus();
-                                                    }
-                                                }}
-                                                className="bom-uom-select w-full bg-transparent border-0 focus:ring-1 focus:ring-primary focus:bg-background focus:outline-hidden py-1 px-1 text-sm text-foreground rounded-sm"
-                                            >
-                                                <option value="">-- UOM --</option>
-                                                {units.map(u => (
-                                                    <option key={u.unit_id} value={u.unit_shortcut}>
-                                                        {u.unit_shortcut}
-                                                    </option>
-                                                ))}
-                                            </select>
+                                                placeholder="UOM"
+                                                disabled={!!item.productId}
+                                            />
                                         </td>
                                         <td className="p-1 border-r border-muted/20 w-24 align-middle">
                                             <input 
@@ -168,7 +165,11 @@ export const BOMRecipeTab: React.FC<BOMRecipeTabProps> = ({
                                                 step="0.001"
                                                 value={item.densityFactor !== undefined ? item.densityFactor : 1.0} 
                                                 data-index={index}
-                                                onChange={e => handleBOMChange(item.id, "densityFactor", parseFloat(e.target.value) || 1.0)}
+                                                disabled={!!item.productId}
+                                                onChange={e => {
+                                                    const val = parseFloat(e.target.value);
+                                                    handleBOMChange(item.id, "densityFactor", isNaN(val) ? 1.0 : val);
+                                                }}
                                                 onKeyDown={e => {
                                                     if (e.key === "ArrowDown") {
                                                         e.preventDefault();
@@ -177,12 +178,6 @@ export const BOMRecipeTab: React.FC<BOMRecipeTabProps> = ({
                                                     } else if (e.key === "ArrowUp") {
                                                         e.preventDefault();
                                                         const el = document.querySelector(`.bom-density-input[data-index="${index - 1}"]`) as HTMLInputElement;
-                                                        if (el) el.focus();
-                                                    } else if (e.key === "ArrowRight") {
-                                                        const el = document.querySelector(`.bom-wastage-input[data-index="${index}"]`) as HTMLInputElement;
-                                                        if (el) el.focus();
-                                                    } else if (e.key === "ArrowLeft") {
-                                                        const el = document.querySelector(`.bom-uom-select[data-index="${index}"]`) as HTMLSelectElement;
                                                         if (el) el.focus();
                                                     }
                                                 }}
@@ -196,7 +191,10 @@ export const BOMRecipeTab: React.FC<BOMRecipeTabProps> = ({
                                                 step="0.1"
                                                 value={item.wastagePercent || 0} 
                                                 data-index={index}
-                                                onChange={e => handleBOMChange(item.id, "wastagePercent", parseFloat(e.target.value) || 0)}
+                                                onChange={e => {
+                                                    const val = parseFloat(e.target.value);
+                                                    handleBOMChange(item.id, "wastagePercent", isNaN(val) ? 0 : val);
+                                                }}
                                                 onKeyDown={e => {
                                                     if (e.key === "ArrowDown") {
                                                         e.preventDefault();
@@ -205,12 +203,6 @@ export const BOMRecipeTab: React.FC<BOMRecipeTabProps> = ({
                                                     } else if (e.key === "ArrowUp") {
                                                         e.preventDefault();
                                                         const el = document.querySelector(`.bom-wastage-input[data-index="${index - 1}"]`) as HTMLInputElement;
-                                                        if (el) el.focus();
-                                                    } else if (e.key === "ArrowRight") {
-                                                        const el = document.querySelector(`.bom-landed-input[data-index="${index}"]`) as HTMLInputElement;
-                                                        if (el) el.focus();
-                                                    } else if (e.key === "ArrowLeft") {
-                                                        const el = document.querySelector(`.bom-density-input[data-index="${index}"]`) as HTMLInputElement;
                                                         if (el) el.focus();
                                                     }
                                                 }}
@@ -224,9 +216,12 @@ export const BOMRecipeTab: React.FC<BOMRecipeTabProps> = ({
                                                 <input 
                                                     type="number" 
                                                     step="0.01"
-                                                    value={item.landedCost || ""} 
+                                                    value={item.landedCost === 0 ? "" : item.landedCost} 
                                                     data-index={index}
-                                                    onChange={e => handleBOMChange(item.id, "landedCost", parseFloat(e.target.value) || 0)}
+                                                    onChange={e => {
+                                                        const val = parseFloat(e.target.value);
+                                                        handleBOMChange(item.id, "landedCost", isNaN(val) ? 0 : val);
+                                                    }}
                                                     onKeyDown={e => {
                                                         if (e.key === "Enter") {
                                                             e.preventDefault();
@@ -244,9 +239,6 @@ export const BOMRecipeTab: React.FC<BOMRecipeTabProps> = ({
                                                         } else if (e.key === "ArrowUp") {
                                                             e.preventDefault();
                                                             const el = document.querySelector(`.bom-landed-input[data-index="${index - 1}"]`) as HTMLInputElement;
-                                                            if (el) el.focus();
-                                                        } else if (e.key === "ArrowLeft") {
-                                                            const el = document.querySelector(`.bom-wastage-input[data-index="${index}"]`) as HTMLInputElement;
                                                             if (el) el.focus();
                                                         }
                                                     }}

@@ -1,31 +1,27 @@
 "use client";
 
-import React from "react";
-import { RefreshCw, DollarSign, FileText, Loader2 } from "lucide-react";
+import React, { useState } from "react";
+import { RefreshCw, Loader2, Plus } from "lucide-react";
 import { useSalesOrder } from "./hooks/useSalesOrder";
 import { ActiveSalesOrdersTable } from "./components/ActiveSalesOrdersTable";
-import { QuotationPipelineTable } from "./components/QuotationPipelineTable";
 import { SalesOrderDetailPanel } from "./components/SalesOrderDetailPanel";
+import { CreateSalesOrderModal } from "./components/CreateSalesOrderModal";
 
 export default function SalesOrderModule() {
     const {
-        activeTab,
-        setActiveTab,
         salesOrders,
-        quotes,
         loading,
         selectedOrder,
         setSelectedOrder,
         orderDetails,
         loadingDetails,
-        convertingId,
         updatingStatusId,
         savingQuantities,
         viewOrderDetails,
         handleApproveOrder,
-        handleConvertQuote,
         handleUpdateQuantities,
         handleSubmitForApproval,
+        handleCreateSalesOrderDirect,
         refreshData,
         currentPage,
         setCurrentPage,
@@ -34,9 +30,17 @@ export default function SalesOrderModule() {
         setSearchQuery,
         statusFilter,
         setStatusFilter,
+        customerCodeFilter,
+        setCustomerCodeFilter,
+        dateFromFilter,
+        setDateFromFilter,
+        dateToFilter,
+        setDateToFilter,
         totalCount,
         totalPages
     } = useSalesOrder();
+
+    const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
  
     return (
         <div className="space-y-6">
@@ -46,36 +50,20 @@ export default function SalesOrderModule() {
                     <h3 className="text-base font-bold text-foreground">Sales Order Management</h3>
                     <p className="text-xs text-muted-foreground">Approve won projects, convert quotations 1:1 to Sales Orders, and lock agreed target pricing.</p>
                 </div>
-                <button
-                    onClick={refreshData}
-                    className="inline-flex items-center gap-1.5 rounded-lg border bg-background px-3 py-2 text-xs font-semibold hover:bg-muted text-muted-foreground transition-all"
-                >
-                    <RefreshCw className="h-4 w-4" /> Refresh
-                </button>
-            </div>
- 
-            {/* Navigation Tabs */}
-            <div className="flex border-b bg-muted/10 shrink-0 rounded-xl overflow-hidden border max-w-md">
-                <button
-                    onClick={() => setActiveTab("sales-orders")}
-                    className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-bold border-b-2 transition-all -mb-[1px] ${
-                        activeTab === "sales-orders"
-                            ? "border-primary text-primary bg-background"
-                            : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/30"
-                     }`}
-                >
-                    <DollarSign className="h-4 w-4" /> Active Sales Orders
-                </button>
-                <button
-                    onClick={() => setActiveTab("quote-pipeline")}
-                    className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-bold border-b-2 transition-all -mb-[1px] ${
-                        activeTab === "quote-pipeline"
-                            ? "border-primary text-primary bg-background"
-                            : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/30"
-                     }`}
-                >
-                    <FileText className="h-4 w-4" /> Quotation Pipeline
-                </button>
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={() => setIsCreateModalOpen(true)}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-primary hover:bg-primary/95 text-primary-foreground px-3 py-2 text-xs font-bold shadow-sm cursor-pointer border-none"
+                    >
+                        <Plus className="h-4 w-4" /> Create Direct SO
+                    </button>
+                    <button
+                        onClick={refreshData}
+                        className="inline-flex items-center gap-1.5 rounded-lg border bg-background px-3 py-2 text-xs font-semibold hover:bg-muted text-muted-foreground transition-all cursor-pointer"
+                    >
+                        <RefreshCw className="h-4 w-4" /> Refresh
+                    </button>
+                </div>
             </div>
  
             {/* Main Content Pane */}
@@ -86,7 +74,7 @@ export default function SalesOrderModule() {
                             <Loader2 className="h-6 w-6 animate-spin text-primary" />
                             <span className="text-xs">Loading orders...</span>
                         </div>
-                    ) : activeTab === "sales-orders" ? (
+                    ) : (
                         <ActiveSalesOrdersTable
                             salesOrders={salesOrders}
                             updatingStatusId={updatingStatusId}
@@ -98,15 +86,15 @@ export default function SalesOrderModule() {
                             setSearchQuery={setSearchQuery}
                             statusFilter={statusFilter}
                             setStatusFilter={setStatusFilter}
+                            customerCodeFilter={customerCodeFilter}
+                            setCustomerCodeFilter={setCustomerCodeFilter}
+                            dateFromFilter={dateFromFilter}
+                            setDateFromFilter={setDateFromFilter}
+                            dateToFilter={dateToFilter}
+                            setDateToFilter={setDateToFilter}
                             totalCount={totalCount}
                             totalPages={totalPages}
                             limit={limit}
-                        />
-                    ) : (
-                        <QuotationPipelineTable
-                            quotes={quotes}
-                            convertingId={convertingId}
-                            handleConvertQuote={handleConvertQuote}
                         />
                     )}
                 </div>
@@ -126,6 +114,12 @@ export default function SalesOrderModule() {
                     />
                 </div>
             </div>
+
+            <CreateSalesOrderModal
+                isOpen={isCreateModalOpen}
+                onClose={() => setIsCreateModalOpen(false)}
+                onSubmit={handleCreateSalesOrderDirect}
+            />
         </div>
     );
 }

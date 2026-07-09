@@ -132,7 +132,7 @@ export default function VehicleRegistry({ vehicles, onSave }: VehicleRegistryPro
         <div className="space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                    <h4 className="text-sm font-bold text-foreground">Delivery Fleet Registry</h4>
+                    <h4 className="text-sm font-bold text-foreground">Fleet Registry</h4>
                     <p className="text-[10px] text-muted-foreground">Manage active shipping vehicles, cargo sizing constraints, and crew allowances.</p>
                 </div>
                 <button
@@ -265,7 +265,7 @@ export default function VehicleRegistry({ vehicles, onSave }: VehicleRegistryPro
 
                         <form onSubmit={handleSubmit} className="p-4 space-y-4 overflow-y-auto">
                             <div className="space-y-1.5">
-                                <label className="text-[10px] font-bold text-muted-foreground uppercase">Vehicle Name / Model</label>
+                                <label className="text-[10px] font-bold text-muted-foreground uppercase">Vehicle Name / Model <span className="text-red-500">*</span></label>
                                 <input
                                     type="text"
                                     value={name}
@@ -277,7 +277,7 @@ export default function VehicleRegistry({ vehicles, onSave }: VehicleRegistryPro
 
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-1.5">
-                                    <label className="text-[10px] font-bold text-muted-foreground uppercase">Vehicle Type</label>
+                                    <label className="text-[10px] font-bold text-muted-foreground uppercase">Vehicle Type <span className="text-red-500">*</span></label>
                                     <select
                                         value={type}
                                         onChange={(e) => setType(e.target.value)}
@@ -289,7 +289,7 @@ export default function VehicleRegistry({ vehicles, onSave }: VehicleRegistryPro
                                     </select>
                                 </div>
                                 <div className="space-y-1.5">
-                                    <label className="text-[10px] font-bold text-muted-foreground uppercase">Plate Number</label>
+                                    <label className="text-[10px] font-bold text-muted-foreground uppercase">Plate Number <span className="text-red-500">*</span></label>
                                     <input
                                         type="text"
                                         value={plate}

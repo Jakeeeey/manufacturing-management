@@ -1,31 +1,78 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { 
-    FileText, Plus, Eye, History, Check, X, ShieldAlert, 
+    FileText, Plus, Eye, History, ShieldAlert,
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    Folder, Loader2, ArrowRight, TrendingUp, TrendingDown, Layers, Clock 
+    Folder, Loader2, ArrowRight, TrendingUp, TrendingDown, Layers, Clock, Search, ChevronLeft, ChevronRight, X
 } from "lucide-react";
 import { toast } from "sonner";
-import { QuotationHeader, Customer, QuotationSnapshotNode } from "../types";
+import { QuotationHeader, Customer, QuotationSnapshotNode, Project } from "../types";
+
+interface ProjectPortfolioItem {
+    projectId: number;
+    projectName: string;
+    customerId: number;
+    customerName: string;
+    quoteCount: number;
+    latest: QuotationHeader;
+    history: QuotationHeader[];
+}
 
 interface QuotationListProps {
     quotes: QuotationHeader[];
     loadingQuotes: boolean;
-    initCreateFlow: () => void;
     loadQuotes: () => void;
     viewQuoteDetails: (quote: QuotationHeader) => void;
     reviseQuotation: (quote: QuotationHeader) => void;
+    allProjects: ProjectPortfolioItem[];
+    customers: Customer[];
+    handleSearchCustomers: (search: string) => void;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    registerNewProject: (name: string, customerId: number, customerName: string) => Promise<any>;
+    startCreateQuoteForProject: (projName: string, customerId: number, projectId?: number) => void;
 }
 
 export function QuotationList({
     quotes,
     loadingQuotes,
-    initCreateFlow,
     loadQuotes,
     viewQuoteDetails,
-    reviseQuotation
+    reviseQuotation,
+    allProjects,
+    customers,
+    handleSearchCustomers,
+    registerNewProject,
+    startCreateQuoteForProject
 }: QuotationListProps) {
     const [subTab, setSubTab] = useState<"pipeline" | "sheets" | "rejected">("pipeline");
-    const [processingId, setProcessingId] = useState<number | null>(null);
+    const [listSearchQuery, setListSearchQuery] = useState("");
+    const [listPage, setListPage] = useState(1);
+    const listItemsPerPage = 10;
+
+    // Project selector modal states
+    const [projectSelectorOpen, setProjectSelectorOpen] = useState(false);
+    const [selectorTab, setSelectorTab] = useState<"select" | "register">("select");
+    const [newProjName, setNewProjName] = useState("");
+    const [newProjCustSearch, setNewProjCustSearch] = useState("");
+    const [selectedCustId, setSelectedCustId] = useState<number | null>(null);
+    const [selectedCustName, setSelectedCustName] = useState("");
+    const [custSearchFocused, setCustSearchFocused] = useState(false);
+    const custSearchContainerRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        function handleClickOutside(event: MouseEvent) {
+            if (custSearchContainerRef.current && !custSearchContainerRef.current.contains(event.target as Node)) {
+                setCustSearchFocused(false);
+            }
+        }
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => {
+            document.removeEventListener("mousedown", handleClickOutside);
+        };
+    }, []);
+
+    React.useEffect(() => {
+        setListPage(1);
+    }, [subTab, listSearchQuery]);
 
     // SKU History Modal States
     const [historyModalOpen, setHistoryModalOpen] = useState(false);
@@ -39,7 +86,8 @@ export function QuotationList({
         const groups: Record<string, { latest: QuotationHeader; history: QuotationHeader[] }> = {};
         
         quotes.forEach(q => {
-            const key = q.project_name?.trim() || `No Project Name (Quote: ${q.quote_number})`;
+            const projObj = q.project_id && typeof q.project_id === "object" ? q.project_id as Project : null;
+            const key = projObj?.project_name || `No Project Name (Quote: ${q.quote_number})`;
             if (!groups[key]) {
                 groups[key] = { latest: q, history: [q] };
             } else {
@@ -53,8 +101,22 @@ export function QuotationList({
                 }
             }
         });
+
+        // Also add database projects that don't have quotes yet into the pipeline!
+        allProjects.forEach(proj => {
+            if (proj.quoteCount === 0) {
+                const key = proj.projectName;
+                if (!groups[key]) {
+                    groups[key] = {
+                        latest: proj.latest,
+                        history: []
+                    };
+                }
+            }
+        });
+
         return groups;
-    }, [quotes]);
+    }, [quotes, allProjects]);
 
     // Active project proposals pipeline: projects where latest version is NOT Rejected and NOT converted to SO
     const activeProjects = React.useMemo(() => {
@@ -72,29 +134,75 @@ export function QuotationList({
             .map(([name, group]) => ({ projectName: name, ...group }));
     }, [projectGroups]);
 
-    const handleApproveProject = (quote: QuotationHeader) => {
-        viewQuoteDetails(quote);
-        toast.info("Please fill in the required Sales Order details (e.g. PO No., dates) to complete conversion.");
-    };
+    // Filters based on search query
+    const filteredActiveProjects = React.useMemo(() => {
+        if (!listSearchQuery.trim()) return activeProjects;
+        const query = listSearchQuery.toLowerCase().trim();
+        return activeProjects.filter(p => {
+            const matchProjectName = p.projectName.toLowerCase().includes(query);
+            const matchQuoteNo = p.latest.quote_number.toLowerCase().includes(query);
+            const customerName = p.latest.customer_id && typeof p.latest.customer_id === "object"
+                ? (p.latest.customer_id as Customer).customer_name
+                : "";
+            const matchCustomer = customerName.toLowerCase().includes(query);
+            return matchProjectName || matchQuoteNo || matchCustomer;
+        });
+    }, [activeProjects, listSearchQuery]);
 
-    const handleRejectProject = async (quote: QuotationHeader) => {
-        setProcessingId(quote.id);
-        try {
-            const res = await fetch("/api/manufacturing/finished-goods/quotes", {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ quoteId: quote.id, status: "Rejected" })
-            });
-            if (!res.ok) throw new Error("Failed to reject proposal");
-            toast.info(`Project proposal ${quote.project_name || quote.quote_number} marked as Rejected.`);
-            loadQuotes();
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-        } catch (e: any) {
-            toast.error(e.message || "Failed to reject project");
-        } finally {
-            setProcessingId(null);
-        }
-    };
+    const filteredRejectedProjects = React.useMemo(() => {
+        if (!listSearchQuery.trim()) return rejectedProjects;
+        const query = listSearchQuery.toLowerCase().trim();
+        return rejectedProjects.filter(p => {
+            const matchProjectName = p.projectName.toLowerCase().includes(query);
+            const matchQuoteNo = p.latest.quote_number.toLowerCase().includes(query);
+            const customerName = p.latest.customer_id && typeof p.latest.customer_id === "object"
+                ? (p.latest.customer_id as Customer).customer_name
+                : "";
+            const matchCustomer = customerName.toLowerCase().includes(query);
+            return matchProjectName || matchQuoteNo || matchCustomer;
+        });
+    }, [rejectedProjects, listSearchQuery]);
+
+    const filteredAllQuotes = React.useMemo(() => {
+        if (!listSearchQuery.trim()) return quotes;
+        const query = listSearchQuery.toLowerCase().trim();
+        return quotes.filter(q => {
+            const projObj = q.project_id && typeof q.project_id === "object" ? q.project_id as Project : null;
+            const matchProjectName = (projObj?.project_name || "").toLowerCase().includes(query);
+            const matchQuoteNo = q.quote_number.toLowerCase().includes(query);
+            const customerName = q.customer_id && typeof q.customer_id === "object"
+                ? (q.customer_id as Customer).customer_name
+                : "";
+            const matchCustomer = customerName.toLowerCase().includes(query);
+            return matchProjectName || matchQuoteNo || matchCustomer;
+        });
+    }, [quotes, listSearchQuery]);
+
+    // Paginated slices
+    const paginatedActiveProjects = React.useMemo(() => {
+        const start = (listPage - 1) * listItemsPerPage;
+        return filteredActiveProjects.slice(start, start + listItemsPerPage);
+    }, [filteredActiveProjects, listPage]);
+
+    const paginatedAllQuotes = React.useMemo(() => {
+        const start = (listPage - 1) * listItemsPerPage;
+        return filteredAllQuotes.slice(start, start + listItemsPerPage);
+    }, [filteredAllQuotes, listPage]);
+
+    const paginatedRejectedProjects = React.useMemo(() => {
+        const start = (listPage - 1) * listItemsPerPage;
+        return filteredRejectedProjects.slice(start, start + listItemsPerPage);
+    }, [filteredRejectedProjects, listPage]);
+
+    const activeTotalPages = Math.ceil(filteredActiveProjects.length / listItemsPerPage) || 1;
+    const allQuotesTotalPages = Math.ceil(filteredAllQuotes.length / listItemsPerPage) || 1;
+    const rejectedTotalPages = Math.ceil(filteredRejectedProjects.length / listItemsPerPage) || 1;
+
+    const currentTotalPagesCount = subTab === "pipeline" 
+        ? activeTotalPages 
+        : subTab === "sheets" 
+        ? allQuotesTotalPages 
+        : rejectedTotalPages;
 
     const handleViewSkuHistory = async (projName: string, historyList: QuotationHeader[]) => {
         setHistoryProjectName(projName);
@@ -175,8 +283,8 @@ export function QuotationList({
                 </div>
                 <div className="flex items-center gap-3">
                     <button
-                        onClick={initCreateFlow}
-                        className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground hover:bg-primary/95 transition-all shadow-md"
+                        onClick={() => setProjectSelectorOpen(true)}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground hover:bg-primary/95 transition-all shadow-md cursor-pointer"
                     >
                         <Plus className="h-4 w-4" /> Create Customer Quote
                     </button>
@@ -189,38 +297,51 @@ export function QuotationList({
                 </div>
             </div>
 
-            {/* Sub-navigation tabs */}
-            <div className="flex border-b bg-muted/10 shrink-0 rounded-xl overflow-hidden border max-w-lg">
-                <button
-                    onClick={() => setSubTab("pipeline")}
-                    className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 text-xs font-bold border-b-2 transition-all -mb-[1px] ${
-                        subTab === "pipeline"
-                            ? "border-primary text-primary bg-background"
-                            : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/30"
-                    }`}
-                >
-                    <Folder className="h-4 w-4" /> Active Projects ({activeProjects.length})
-                </button>
-                <button
-                    onClick={() => setSubTab("sheets")}
-                    className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 text-xs font-bold border-b-2 transition-all -mb-[1px] ${
-                        subTab === "sheets"
-                            ? "border-primary text-primary bg-background"
-                            : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/30"
-                    }`}
-                >
-                    <FileText className="h-4 w-4" /> All Quotation Sheets ({quotes.length})
-                </button>
-                <button
-                    onClick={() => setSubTab("rejected")}
-                    className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 text-xs font-bold border-b-2 transition-all -mb-[1px] ${
-                        subTab === "rejected"
-                            ? "border-primary text-primary bg-background"
-                            : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/30"
-                    }`}
-                >
-                    <ShieldAlert className="h-4 w-4" /> Rejected Projects ({rejectedProjects.length})
-                </button>
+            {/* Sub-navigation tabs and search bar */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex border-b bg-muted/10 shrink-0 rounded-xl overflow-hidden border w-full max-w-lg">
+                    <button
+                        onClick={() => setSubTab("pipeline")}
+                        className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 text-xs font-bold border-b-2 transition-all -mb-[1px] ${
+                            subTab === "pipeline"
+                                ? "border-primary text-primary bg-background"
+                                : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/30"
+                        }`}
+                    >
+                        <Folder className="h-4 w-4" /> Active Projects ({activeProjects.length})
+                    </button>
+                    <button
+                        onClick={() => setSubTab("sheets")}
+                        className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 text-xs font-bold border-b-2 transition-all -mb-[1px] ${
+                            subTab === "sheets"
+                                ? "border-primary text-primary bg-background"
+                                : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/30"
+                        }`}
+                    >
+                        <FileText className="h-4 w-4" /> All Quotation Sheets ({quotes.length})
+                    </button>
+                    <button
+                        onClick={() => setSubTab("rejected")}
+                        className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 text-xs font-bold border-b-2 transition-all -mb-[1px] ${
+                            subTab === "rejected"
+                                ? "border-primary text-primary bg-background"
+                                : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/30"
+                        }`}
+                    >
+                        <ShieldAlert className="h-4 w-4" /> Rejected Projects ({rejectedProjects.length})
+                    </button>
+                </div>
+
+                <div className="relative w-full max-w-xs shrink-0">
+                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <input
+                        type="text"
+                        placeholder="Search project, quote, customer..."
+                        className="pl-9 w-full rounded-lg border border-slate-200 dark:border-slate-800 bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary text-foreground font-semibold"
+                        value={listSearchQuery}
+                        onChange={(e) => setListSearchQuery(e.target.value)}
+                    />
+                </div>
             </div>
 
             {loadingQuotes ? (
@@ -230,7 +351,7 @@ export function QuotationList({
             ) : (
                 <div className="overflow-hidden border rounded-xl bg-card shadow-sm">
                     {subTab === "pipeline" && (
-                        activeProjects.length === 0 ? (
+                        filteredActiveProjects.length === 0 ? (
                             <div className="text-center p-20 max-w-md mx-auto">
                                 <Folder className="h-12 w-12 text-muted-foreground/30 mx-auto mb-3" />
                                 <h4 className="text-sm font-bold text-foreground mb-1">No Active Project Proposals</h4>
@@ -251,7 +372,7 @@ export function QuotationList({
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y">
-                                        {activeProjects.map(proj => {
+                                        {paginatedActiveProjects.map(proj => {
                                             const q = proj.latest;
                                             const custName = (q.customer_id && typeof q.customer_id === "object") 
                                                 ? `${(q.customer_id as Customer).customer_name} (${(q.customer_id as Customer).customer_code})`
@@ -280,22 +401,6 @@ export function QuotationList({
                                                     </td>
                                                     <td className="p-3 text-center flex items-center justify-center gap-2">
                                                         <button
-                                                            disabled={processingId !== null}
-                                                            onClick={() => handleApproveProject(q)}
-                                                            className="inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-[10px] font-bold px-2 py-1 rounded-md transition-all shadow-xs"
-                                                            title="Approve Project & Release SO"
-                                                        >
-                                                            <Check className="h-3.5 w-3.5" /> Approve Project
-                                                        </button>
-                                                        <button
-                                                            disabled={processingId !== null}
-                                                            onClick={() => handleRejectProject(q)}
-                                                            className="inline-flex items-center gap-1 bg-destructive hover:bg-destructive/95 disabled:opacity-50 text-white text-[10px] font-bold px-2 py-1 rounded-md transition-all shadow-xs"
-                                                            title="Reject Project Proposal"
-                                                        >
-                                                            <X className="h-3.5 w-3.5" /> Reject
-                                                        </button>
-                                                        <button
                                                             onClick={() => viewQuoteDetails(q)}
                                                             className="inline-flex items-center justify-center p-1 rounded-md border hover:bg-muted text-muted-foreground transition-all"
                                                             title="View Sheet Snapshot"
@@ -313,7 +418,7 @@ export function QuotationList({
                     )}
 
                     {subTab === "rejected" && (
-                        rejectedProjects.length === 0 ? (
+                        filteredRejectedProjects.length === 0 ? (
                             <div className="text-center p-20 max-w-md mx-auto">
                                 <ShieldAlert className="h-12 w-12 text-muted-foreground/30 mx-auto mb-3" />
                                 <h4 className="text-sm font-bold text-foreground mb-1">No Rejected Projects</h4>
@@ -333,7 +438,7 @@ export function QuotationList({
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y">
-                                        {rejectedProjects.map(proj => {
+                                        {paginatedRejectedProjects.map(proj => {
                                             const q = proj.latest;
                                             const custName = (q.customer_id && typeof q.customer_id === "object") 
                                                 ? `${(q.customer_id as Customer).customer_name} (${(q.customer_id as Customer).customer_code})`
@@ -373,7 +478,7 @@ export function QuotationList({
                     )}
 
                     {subTab === "sheets" && (
-                        quotes.length === 0 ? (
+                        filteredAllQuotes.length === 0 ? (
                             <div className="text-center p-20 max-w-md mx-auto">
                                 <FileText className="h-12 w-12 text-muted-foreground/30 mx-auto mb-3" />
                                 <h4 className="text-sm font-bold text-foreground mb-1">No Quotation Sheets Found</h4>
@@ -394,7 +499,7 @@ export function QuotationList({
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y">
-                                        {quotes.map(q => {
+                                        {paginatedAllQuotes.map(q => {
                                             const custName = (q.customer_id && typeof q.customer_id === "object") 
                                                 ? `${(q.customer_id as Customer).customer_name} (${(q.customer_id as Customer).customer_code})`
                                                 : `Cust ID: ${q.customer_id}`;
@@ -402,11 +507,14 @@ export function QuotationList({
                                             const sellingPrice = Number(q.total_selling_price || 0);
                                             const gp = sellingPrice - simulatedCost;
                                             const margin = sellingPrice > 0 ? (gp / sellingPrice) * 100 : 0;
+                                            
+                                            const projObj = q.project_id && typeof q.project_id === "object" ? q.project_id as Project : null;
+                                            const dispProjName = projObj?.project_name || "—";
 
                                             return (
                                                 <tr key={q.id} className="hover:bg-muted/30 transition-colors">
                                                     <td className="p-3 font-bold text-foreground">{q.quote_number}</td>
-                                                    <td className="p-3 font-semibold text-primary">{q.project_name || "—"}</td>
+                                                    <td className="p-3 font-semibold text-primary">{dispProjName}</td>
                                                     <td className="p-3 font-medium text-foreground">{custName}</td>
                                                     <td className="p-3 text-right text-muted-foreground font-semibold">₱{simulatedCost.toFixed(2)}</td>
                                                     <td className="p-3 text-right font-bold text-foreground">₱{sellingPrice.toFixed(2)}</td>
@@ -449,6 +557,33 @@ export function QuotationList({
                                 </table>
                             </div>
                         )
+                    )}
+
+                    {/* Pagination Controls */}
+                    {currentTotalPagesCount > 1 && (
+                        <div className="flex items-center justify-between px-4 py-3 border-t bg-muted/20 select-none">
+                            <div className="text-[10px] text-muted-foreground font-semibold">
+                                Showing page <span className="text-foreground font-bold">{listPage}</span> of <span className="text-foreground font-bold">{currentTotalPagesCount}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                                <button
+                                    type="button"
+                                    disabled={listPage <= 1}
+                                    onClick={() => setListPage(prev => Math.max(1, prev - 1))}
+                                    className="p-1 rounded-lg border bg-background text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-50 disabled:hover:bg-background transition-colors cursor-pointer"
+                                >
+                                    <ChevronLeft className="h-4 w-4" />
+                                </button>
+                                <button
+                                    type="button"
+                                    disabled={listPage >= currentTotalPagesCount}
+                                    onClick={() => setListPage(prev => Math.min(currentTotalPagesCount, prev + 1))}
+                                    className="p-1 rounded-lg border bg-background text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-50 disabled:hover:bg-background transition-colors cursor-pointer"
+                                >
+                                    <ChevronRight className="h-4 w-4" />
+                                </button>
+                            </div>
+                        </div>
                     )}
                 </div>
             )}
@@ -561,6 +696,196 @@ export function QuotationList({
                                             })}
                                         </tbody>
                                     </table>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal: Select or Register Project Portfolio first */}
+            {projectSelectorOpen && (
+                <div className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+                    <div className="bg-card border rounded-xl shadow-xl w-full max-w-lg overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
+                        {/* Header */}
+                        <div className="px-6 py-4 border-b flex justify-between items-center bg-muted/10">
+                            <div>
+                                <h3 className="text-base font-bold text-foreground">Select Project Portfolio</h3>
+                                <p className="text-xs text-muted-foreground">Select a registered project or register a new one to start creating quotes.</p>
+                            </div>
+                            <button
+                                onClick={() => setProjectSelectorOpen(false)}
+                                className="text-muted-foreground hover:text-foreground text-sm font-semibold p-1 hover:bg-muted rounded-lg transition-colors cursor-pointer"
+                            >
+                                <X className="h-5 w-5" />
+                            </button>
+                        </div>
+
+                        {/* Tabs: Select Existing vs Register New */}
+                        <div className="flex border-b text-xs font-bold bg-muted/5">
+                            <button
+                                onClick={() => setSelectorTab("select")}
+                                className={`flex-1 py-3 text-center border-b-2 transition-all ${
+                                    selectorTab === "select"
+                                        ? "border-primary text-primary bg-background"
+                                        : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/10"
+                                }`}
+                            >
+                                Choose Existing Portfolio ({allProjects.length})
+                            </button>
+                            <button
+                                onClick={() => setSelectorTab("register")}
+                                className={`flex-1 py-3 text-center border-b-2 transition-all ${
+                                    selectorTab === "register"
+                                        ? "border-primary text-primary bg-background"
+                                        : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/10"
+                                }`}
+                            >
+                                ＋ Register New Project
+                            </button>
+                        </div>
+
+                        <div className="p-6 overflow-y-auto max-h-[60vh] space-y-4">
+                            {selectorTab === "select" ? (
+                                <div className="space-y-4">
+                                    {allProjects.length === 0 ? (
+                                        <div className="text-center py-8">
+                                            <Folder className="h-8 w-8 mx-auto text-muted-foreground/30 mb-2" />
+                                            <p className="text-xs text-muted-foreground font-semibold">No registered project portfolios yet.</p>
+                                            <button
+                                                onClick={() => setSelectorTab("register")}
+                                                className="mt-3 text-xs text-primary font-bold hover:underline"
+                                            >
+                                                Register a new project now
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-3">
+                                            <label className="text-[10px] font-bold text-muted-foreground uppercase block">Select Portfolio</label>
+                                            <div className="space-y-2 max-h-[250px] overflow-y-auto pr-1">
+                                                {allProjects.map(proj => (
+                                                    <button
+                                                        key={proj.projectName}
+                                                        onClick={() => {
+                                                            startCreateQuoteForProject(proj.projectName, proj.customerId, proj.projectId);
+                                                            setProjectSelectorOpen(false);
+                                                        }}
+                                                        className="w-full text-left p-3 border rounded-lg hover:border-primary hover:bg-primary/5 transition-all flex items-center justify-between group cursor-pointer"
+                                                    >
+                                                        <div>
+                                                            <span className="text-xs font-bold text-foreground block group-hover:text-primary transition-colors">{proj.projectName}</span>
+                                                            <span className="text-[10px] text-muted-foreground block mt-0.5">{proj.customerName}</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-1 text-[10px] font-bold text-muted-foreground bg-muted/40 px-2 py-0.5 rounded-full">
+                                                            <Clock className="h-3 w-3" /> {proj.quoteCount} quote(s)
+                                                        </div>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            ) : (
+                                <div className="space-y-4">
+                                    {/* New Project Name */}
+                                    <div>
+                                        <label className="text-[10px] font-bold text-muted-foreground uppercase block mb-1">Project Portfolio Name</label>
+                                        <input
+                                            type="text"
+                                            value={newProjName}
+                                            onChange={e => setNewProjName(e.target.value)}
+                                            placeholder="e.g. PROJECT VERTEX PH-2"
+                                            className="w-full rounded border border-slate-200 dark:border-slate-800 bg-background px-3 py-2 text-xs text-foreground outline-none focus:ring-1 focus:ring-primary font-bold uppercase"
+                                        />
+                                    </div>
+
+                                    {/* Customer Selection */}
+                                    <div className="relative" ref={custSearchContainerRef}>
+                                        <label className="text-[10px] font-bold text-muted-foreground uppercase block mb-1">Customer / Client</label>
+                                        <div className="relative">
+                                            <input
+                                                type="text"
+                                                placeholder="Type to search customers..."
+                                                value={newProjCustSearch}
+                                                onFocus={() => {
+                                                    setCustSearchFocused(true);
+                                                    if (customers.length === 0) handleSearchCustomers("");
+                                                }}
+                                                onChange={e => {
+                                                    setCustSearchFocused(true);
+                                                    handleSearchCustomers(e.target.value);
+                                                    setNewProjCustSearch(e.target.value);
+                                                }}
+                                                className="w-full rounded border border-slate-200 dark:border-slate-800 bg-background pl-3 pr-8 py-2 text-xs text-foreground outline-none focus:ring-1 focus:ring-primary font-semibold"
+                                            />
+                                            {selectedCustId && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setSelectedCustId(null);
+                                                        setSelectedCustName("");
+                                                        setNewProjCustSearch("");
+                                                    }}
+                                                    className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground"
+                                                >
+                                                    <X className="h-3.5 w-3.5" />
+                                                </button>
+                                            )}
+
+                                            {custSearchFocused && !selectedCustId && (
+                                                <div className="absolute left-0 right-0 top-full mt-1 max-h-[160px] overflow-y-auto border bg-card rounded-md shadow-lg z-50 divide-y">
+                                                    {customers.slice(0, 10).map(c => (
+                                                        <button
+                                                            key={c.id}
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setSelectedCustId(Number(c.id));
+                                                                setSelectedCustName(c.customer_name);
+                                                                setNewProjCustSearch(`${c.customer_name} (${c.customer_code})`);
+                                                                setCustSearchFocused(false);
+                                                            }}
+                                                            className="w-full text-left px-3 py-2 text-xs hover:bg-muted transition-colors font-semibold text-foreground block cursor-pointer"
+                                                        >
+                                                            {c.customer_name} ({c.customer_code})
+                                                        </button>
+                                                    ))}
+                                                    {customers.length === 0 && (
+                                                        <div className="px-3 py-2 text-xs text-muted-foreground text-center">
+                                                            No customers found.
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Action button */}
+                                    <button
+                                        type="button"
+                                        onClick={async () => {
+                                            if (!newProjName.trim()) {
+                                                toast.error("Please enter a project portfolio name");
+                                                return;
+                                            }
+                                            if (!selectedCustId) {
+                                                toast.error("Please select a customer");
+                                                return;
+                                            }
+                                            const newProj = await registerNewProject(newProjName, selectedCustId, selectedCustName);
+                                            if (newProj && newProj.id) {
+                                                startCreateQuoteForProject(newProj.project_name, selectedCustId, newProj.id);
+                                                setProjectSelectorOpen(false);
+                                                // Reset inputs
+                                                setNewProjName("");
+                                                setSelectedCustId(null);
+                                                setSelectedCustName("");
+                                                setNewProjCustSearch("");
+                                            }
+                                        }}
+                                        className="w-full rounded-lg bg-primary py-2.5 text-xs font-semibold text-primary-foreground hover:bg-primary/95 transition-all shadow-md mt-2 cursor-pointer text-center"
+                                    >
+                                        Register Portfolio & Create Quote
+                                    </button>
                                 </div>
                             )}
                         </div>
