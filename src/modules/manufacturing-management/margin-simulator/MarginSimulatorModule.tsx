@@ -17,7 +17,7 @@ interface BOMItem {
     isForeign?: boolean;
     productId?: number;
     uomId?: number;
-    type?: "raw_material" | "sub_assembly" | "by_product";
+    type?: "raw_material" | "packaging" | "sub_assembly" | "by_product" | "finished_good";
 }
 
 interface Product {

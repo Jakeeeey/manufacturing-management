@@ -5,7 +5,8 @@ import {
     DirectusRouting,
     DirectusBOMComponentInput,
     DirectusRoutingStepInput
-} from "@/types/manufacturing";
+} from "@/modules/manufacturing-management/finished-goods/types";
+
 import { fetchAllUnits } from "../units/units-helper";
 import { fetchAllOperations } from "../operations/operations-helper";
 
@@ -181,6 +182,12 @@ export async function syncRoutingSteps(
     isNewBOM = false
 ): Promise<boolean> {
     try {
+        const validRoutings = routings.filter(r => {
+            const hasName = String(r.name || "").trim() !== "";
+            const computedCost = Number(r.laborFlatRate || 0) + (Number(r.machineHourlyRate || 0) * Number(r.durationHours || 0));
+            return hasName || computedCost !== 0;
+        });
+
         let finalVersionId = versionId;
         if (!finalVersionId || finalVersionId === 0) {
             const bomRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_boms/${bomId}`, { headers });
@@ -195,7 +202,7 @@ export async function syncRoutingSteps(
         const operations = await fetchAllOperations();
 
         if (isNewBOM) {
-            for (const step of routings) {
+            for (const step of validRoutings) {
                 const matchedOp = operations.find(o => o.operation_name.trim().toLowerCase() === String(step.name || "").trim().toLowerCase());
                 const payload = {
                     bom_id: bomId,
@@ -217,14 +224,14 @@ export async function syncRoutingSteps(
         const resGet = await fetch(getUrl, { headers, cache: "no-store" });
         if (!resGet.ok) throw new Error("Failed to fetch routing steps");
         const existing: { routing_id: number }[] = (await resGet.json()).data || [];
-        const uiIds = new Set(routings.map(step => String(step.id)));
+        const uiIds = new Set(validRoutings.map(step => String(step.id)));
 
         const toDelete = existing.filter(e => !uiIds.has(String(e.routing_id)));
         for (const step of toDelete) {
             await fetch(`${DIRECTUS_URL}/items/manufacturing_routings/${step.routing_id}`, { method: "DELETE", headers });
         }
 
-        for (const step of routings) {
+        for (const step of validRoutings) {
             const matchedOp = operations.find(o => o.operation_name.trim().toLowerCase() === String(step.name || "").trim().toLowerCase());
             const payload = {
                 bom_id: bomId,

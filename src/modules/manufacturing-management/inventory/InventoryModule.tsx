@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
+import { toast } from "sonner";
 import { 
     Boxes, 
     History, 
@@ -25,15 +26,47 @@ import {
     Tag,
     Sliders,
     Plus,
-    X
+    X,
+    Bookmark
 } from "lucide-react";
-import { toast } from "sonner";
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+interface LedgerItem {
+    id: number;
+    product_id: number;
+    transaction_type: string;
+    quantity: number;
+    balance_after: number;
+    created_date: string;
+    reference_no?: string;
+    remarks?: string;
+}
+
+interface BatchItem {
+    line_id: number;
+    product_id: number;
+    branch_id: number;
+    lot_number: string;
+    expiration_date: string | null;
+    quantity_received: number;
+    base_unit_cost_php: number;
+    final_landed_unit_cost?: number;
+    branch_name?: string;
+    expiryStatus?: string;
+    daysToExpiry?: number;
+}
 
 export default function InventoryModule() {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [data, setData] = useState<{ ledger: any[]; batches: any[]; products: any[]; branches: any[] } | null>(null);
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState<"stock" | "batches" | "ledger">("stock");
+    const [ledgerType, setLedgerType] = useState<"raw" | "fg">("raw");
+    const [filterBranch, setFilterBranch] = useState("all");
+    const [filterBrand, setFilterBrand] = useState("all");
+    const [filterCategory, setFilterCategory] = useState("all");
+    const [filterProduct, setFilterProduct] = useState("all");
+    const [filterStartDate, setFilterStartDate] = useState("");
+    const [filterEndDate, setFilterEndDate] = useState("");
     const [searchQuery, setSearchQuery] = useState("");
     const [lowStockFilter, setLowStockFilter] = useState(false);
     const [expiryFilter, setExpiryFilter] = useState<"all" | "active" | "soon" | "expired">("all");
@@ -145,9 +178,14 @@ export default function InventoryModule() {
         let ws: WebSocket | null = null;
         let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
         let isDisposed = false;
+        let reconnectAttempts = 0;
 
         const connectWebSocket = () => {
             if (isDisposed) return;
+            if (reconnectAttempts >= 3) {
+                // Silently stop attempting after 3 failures to avoid console spam
+                return;
+            }
             
             try {
                 const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://vtc:8074";
@@ -157,6 +195,7 @@ export default function InventoryModule() {
 
                 ws.onopen = () => {
                     console.log("[Directus Realtime] Connected to WebSocket");
+                    reconnectAttempts = 0; // Reset on successful connection
                     
                     // Authenticate with the server using the static token 'test'
                     ws?.send(JSON.stringify({
@@ -206,21 +245,20 @@ export default function InventoryModule() {
                 };
 
                 ws.onclose = () => {
-                    console.warn("[Directus Realtime] WebSocket connection closed. Reconnecting...");
                     ws = null;
-                    if (!isDisposed) {
+                    if (!isDisposed && reconnectAttempts < 3) {
+                        reconnectAttempts++;
                         reconnectTimeout = setTimeout(connectWebSocket, 5000);
                     }
                 };
 
-                ws.onerror = (err) => {
-                    console.error("[Directus Realtime] WebSocket error:", err);
+                ws.onerror = () => {
                     ws?.close();
                 };
 
-            } catch (err) {
-                console.error("[Directus Realtime] Failed to initialize WebSocket:", err);
-                if (!isDisposed) {
+            } catch {
+                if (!isDisposed && reconnectAttempts < 3) {
+                    reconnectAttempts++;
                     reconnectTimeout = setTimeout(connectWebSocket, 5000);
                 }
             }
@@ -318,6 +356,10 @@ export default function InventoryModule() {
         const stockMap: Record<number, { qty: number; branches: Record<number, number> }> = {};
 
         ledger.forEach(entry => {
+            const entryDate = entry.documentDate || entry.date_added || "";
+            if (filterStartDate && entryDate < filterStartDate) return;
+            if (filterEndDate && entryDate > filterEndDate) return;
+
             const pId = Number(entry.productId);
             const qty = Number(entry.quantity) || 0;
             const bId = Number(entry.branchId);
@@ -331,27 +373,34 @@ export default function InventoryModule() {
 
         return products.map(prod => {
             const stockInfo = stockMap[Number(prod.product_id)] || { qty: 0, branches: {} };
+            const currentStock = filterBranch === "all" ? stockInfo.qty : (stockInfo.branches[Number(filterBranch)] || 0);
             return {
                 ...prod,
-                currentStock: stockInfo.qty,
+                currentStock,
                 branchStocks: stockInfo.branches
             };
         }).filter(item => {
-            // Apply queries
-            const query = searchQuery.toLowerCase();
+            const matchesLedgerType = ledgerType === "fg" ? !!item.is_finished_good : !item.is_finished_good;
+            if (!matchesLedgerType) return false;
+
             const brandName = item.product_brand?.brand_name || "Generic Brand";
             const categoryName = item.product_category?.category_name || "Unassigned Category";
 
+            const query = searchQuery.toLowerCase();
             const matchesQuery = item.product_name.toLowerCase().includes(query) || 
                                  item.product_code.toLowerCase().includes(query) ||
                                  brandName.toLowerCase().includes(query) ||
                                  categoryName.toLowerCase().includes(query);
             
             const matchesLowStock = !lowStockFilter || item.currentStock < 50;
+            const matchesBrand = filterBrand === "all" || brandName === filterBrand;
+            const matchesCategory = filterCategory === "all" || categoryName === filterCategory;
+            const matchesProduct = filterProduct === "all" || String(item.product_id) === filterProduct;
+            const matchesBranch = filterBranch === "all" || (item.branchStocks[Number(filterBranch)] !== undefined && item.branchStocks[Number(filterBranch)] > 0);
 
-            return matchesQuery && matchesLowStock;
+            return matchesQuery && matchesLowStock && matchesBrand && matchesCategory && matchesProduct && matchesBranch;
         });
-    }, [data, searchQuery, lowStockFilter]);
+    }, [data, searchQuery, lowStockFilter, ledgerType, filterBranch, filterBrand, filterCategory, filterProduct, filterStartDate, filterEndDate]);
 
     // Grouping category > brand > product
     const groupedStock = useMemo(() => {
@@ -373,50 +422,97 @@ export default function InventoryModule() {
         return categories;
     }, [stockLevels]);
 
-    // 2. Filterable Expiry batches
-    const filteredBatches = useMemo(() => {
+    // 2. Consolidated FIFO product batches (Main table & Dropdown table)
+    const productBatchesGrouped = useMemo(() => {
         if (!data) return [];
         const { batches, products, branches = [] } = data;
 
-        return batches.map(b => {
-            const prod = products.find(p => Number(p.product_id) === Number(b.product_id));
-            const branchObj = branches.find(br => Number(br.id) === Number(b.branch_id));
-            const branchName = branchObj ? branchObj.branch_name : `Branch #${b.branch_id}`;
-
-            const daysToExpiry = b.expiration_date 
-                ? Math.ceil((new Date(b.expiration_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
-                : null;
-            
-            let status: "active" | "soon" | "expired" = "active";
-            if (daysToExpiry !== null) {
-                if (daysToExpiry < 0) status = "expired";
-                else if (daysToExpiry <= 90) status = "soon";
+        const groupedMap: Record<number, typeof batches> = {};
+        batches.forEach(b => {
+            const pId = Number(b.product_id);
+            if (!groupedMap[pId]) {
+                groupedMap[pId] = [];
             }
+            groupedMap[pId].push(b);
+        });
+
+        return products.map(prod => {
+            const prodBatches = groupedMap[Number(prod.product_id)] || [];
+            
+            const mappedBatches = prodBatches.map(b => {
+                const branchObj = branches.find(br => Number(br.id) === Number(b.branch_id));
+                const branchName = branchObj ? branchObj.branch_name : `Branch #${b.branch_id}`;
+
+                const daysToExpiry = b.expiration_date 
+                    ? Math.ceil((new Date(b.expiration_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
+                    : null;
+                
+                let status: "active" | "soon" | "expired" = "active";
+                if (daysToExpiry !== null) {
+                    if (daysToExpiry < 0) status = "expired";
+                    else if (daysToExpiry <= 90) status = "soon";
+                }
+
+                return {
+                    ...b,
+                    branch_name: branchName,
+                    daysToExpiry,
+                    expiryStatus: status
+                };
+            });
+
+            const totalStock = mappedBatches.reduce((sum, b) => sum + Number(b.quantity_received || 0), 0);
+            const totalValue = mappedBatches.reduce((sum, b) => sum + (Number(b.quantity_received || 0) * Number(b.final_landed_unit_cost || b.base_unit_cost_php || 0)), 0);
+
+            // Find oldest active batch expiry
+            const activeExpirations = mappedBatches
+                .map(b => b.expiration_date)
+                .filter(Boolean) as string[];
+            const oldestExpiry = activeExpirations.length > 0
+                ? activeExpirations.sort()[0]
+                : null;
 
             return {
-                ...b,
-                product_name: prod?.product_name || "Unknown Product",
-                product_code: prod?.product_code || "",
-                unit_name: prod?.unit_of_measurement?.unit_name || "Units",
-                branch_name: branchName,
-                daysToExpiry,
-                expiryStatus: status
+                ...prod,
+                batches: mappedBatches,
+                totalStock,
+                totalValue,
+                batchesCount: mappedBatches.length,
+                oldestExpiry
             };
-        }).filter(b => {
+        }).filter(p => {
+            const matchesLedgerType = ledgerType === "fg" ? !!p.is_finished_good : !p.is_finished_good;
+            if (!matchesLedgerType) return false;
+
+            const brandName = p.product_brand?.brand_name || "Generic Brand";
+            const categoryName = p.product_category?.category_name || "Unassigned Category";
+
             const query = searchQuery.toLowerCase();
-            const matchesQuery = b.product_name.toLowerCase().includes(query) || 
-                                 b.product_code.toLowerCase().includes(query) ||
-                                 (b.lot_number && b.lot_number.toLowerCase().includes(query)) ||
-                                 b.branch_name.toLowerCase().includes(query);
+            const matchesQuery = p.product_name.toLowerCase().includes(query) || 
+                                 p.product_code.toLowerCase().includes(query) ||
+                                 brandName.toLowerCase().includes(query) ||
+                                 categoryName.toLowerCase().includes(query) ||
+                                 p.batches.some((b: BatchItem) => (b.lot_number || "").toLowerCase().includes(query) || (b.branch_name || "").toLowerCase().includes(query));
 
             if (!matchesQuery) return false;
 
-            if (expiryFilter === "expired") return b.expiryStatus === "expired";
-            if (expiryFilter === "soon") return b.expiryStatus === "soon";
-            if (expiryFilter === "active") return b.expiryStatus === "active";
-            return true;
+            const matchesBranch = filterBranch === "all" || p.batches.some((b: BatchItem) => String(b.branch_id) === filterBranch);
+            const matchesBrand = filterBrand === "all" || brandName === filterBrand;
+            const matchesCategory = filterCategory === "all" || categoryName === filterCategory;
+            const matchesProduct = filterProduct === "all" || String(p.product_id) === filterProduct;
+
+            const matchesDateRange = p.batches.length === 0 || p.batches.some((b: BatchItem) => {
+                const expDate = b.expiration_date || "";
+                const matchesStartDate = !filterStartDate || !expDate || expDate >= filterStartDate;
+                const matchesEndDate = !filterEndDate || !expDate || expDate <= filterEndDate;
+                return matchesStartDate && matchesEndDate;
+            });
+
+            const matchesExpiry = expiryFilter === "all" || p.batches.some((b: BatchItem) => b.expiryStatus === expiryFilter);
+
+            return matchesBranch && matchesBrand && matchesCategory && matchesProduct && matchesDateRange && matchesExpiry;
         });
-    }, [data, searchQuery, expiryFilter]);
+    }, [data, searchQuery, expiryFilter, ledgerType, filterBranch, filterBrand, filterCategory, filterProduct, filterStartDate, filterEndDate]);
 
     // 3. Filtered Audit Ledger
     const filteredLedger = useMemo(() => {
@@ -433,17 +529,39 @@ export default function InventoryModule() {
                 productName: prod?.product_name || "Unknown Product",
                 productCode: prod?.product_code || "",
                 unitName: prod?.unit_of_measurement?.unit_name || "Units",
-                branchName: branchName
+                branchName: branchName,
+                is_finished_good: prod?.is_finished_good,
+                product_brand: prod?.product_brand,
+                product_category: prod?.product_category
             };
         }).filter(l => {
+            const matchesLedgerType = ledgerType === "fg" ? !!l.is_finished_good : !l.is_finished_good;
+            if (!matchesLedgerType) return false;
+
+            const brandName = l.product_brand?.brand_name || "Generic Brand";
+            const categoryName = l.product_category?.category_name || "Unassigned Category";
+
             const query = searchQuery.toLowerCase();
-            return l.productName.toLowerCase().includes(query) || 
-                   l.productCode.toLowerCase().includes(query) ||
-                   (l.documentNo && l.documentNo.toLowerCase().includes(query)) ||
-                   (l.documentDescription && l.documentDescription.toLowerCase().includes(query)) ||
-                   l.branchName.toLowerCase().includes(query);
+            const matchesQuery = l.productName.toLowerCase().includes(query) || 
+                                 l.productCode.toLowerCase().includes(query) ||
+                                 (l.documentNo && l.documentNo.toLowerCase().includes(query)) ||
+                                 (l.documentDescription && l.documentDescription.toLowerCase().includes(query)) ||
+                                 l.branchName.toLowerCase().includes(query);
+
+            if (!matchesQuery) return false;
+
+            const matchesBranch = filterBranch === "all" || String(l.branchId) === filterBranch;
+            const matchesBrand = filterBrand === "all" || brandName === filterBrand;
+            const matchesCategory = filterCategory === "all" || categoryName === filterCategory;
+            const matchesProduct = filterProduct === "all" || String(l.productId) === filterProduct;
+            
+            const entryDate = l.documentDate || l.date_added || "";
+            const matchesStartDate = !filterStartDate || entryDate >= filterStartDate;
+            const matchesEndDate = !filterEndDate || entryDate <= filterEndDate;
+
+            return matchesBranch && matchesBrand && matchesCategory && matchesProduct && matchesStartDate && matchesEndDate;
         });
-    }, [data, searchQuery]);
+    }, [data, searchQuery, ledgerType, filterBranch, filterBrand, filterCategory, filterProduct, filterStartDate, filterEndDate]);
 
     if (loading && !data) {
         return (
@@ -579,6 +697,112 @@ export default function InventoryModule() {
                         >
                             <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Sync stock
                         </button>
+                    </div>
+                </div>
+                {/* Ledger Switcher */}
+                <div className="flex bg-slate-900 border border-slate-800 p-0.5 rounded-lg w-fit">
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setLedgerType("raw");
+                            setFilterProduct("all");
+                        }}
+                        className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all border-none cursor-pointer flex items-center gap-1.5 ${
+                            ledgerType === "raw" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground bg-transparent"
+                        }`}
+                    >
+                        <Boxes className="h-4 w-4" /> Raw Materials & Packaging Items
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setLedgerType("fg");
+                            setFilterProduct("all");
+                        }}
+                        className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all border-none cursor-pointer flex items-center gap-1.5 ${
+                            ledgerType === "fg" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground bg-transparent"
+                        }`}
+                    >
+                        <Layers className="h-4 w-4" /> Finished Goods
+                    </button>
+                </div>
+
+                {/* Advanced Multi-Criteria Filters */}
+                <div className="grid grid-cols-2 md:grid-cols-6 gap-3 bg-slate-950/20 p-3 rounded-lg border border-slate-800">
+                    <div className="space-y-1">
+                        <label className="text-[9px] font-black text-muted-foreground uppercase tracking-wider block">Branch</label>
+                        <select
+                            value={filterBranch}
+                            onChange={(e) => setFilterBranch(e.target.value)}
+                            className="w-full bg-background border border-slate-850 rounded-lg px-2 py-1.5 text-xs text-foreground font-semibold outline-none"
+                        >
+                            <option value="all">All Branches</option>
+                            {data?.branches?.map(b => (
+                                <option key={b.id} value={String(b.id)}>{b.branch_name}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    <div className="space-y-1">
+                        <label className="text-[9px] font-black text-muted-foreground uppercase tracking-wider block">Brand</label>
+                        <select
+                            value={filterBrand}
+                            onChange={(e) => setFilterBrand(e.target.value)}
+                            className="w-full bg-background border border-slate-850 rounded-lg px-2 py-1.5 text-xs text-foreground font-semibold outline-none"
+                        >
+                            <option value="all">All Brands</option>
+                            {Array.from(new Set(data?.products?.map(p => p.product_brand?.brand_name).filter(Boolean))).map(brand => (
+                                <option key={String(brand)} value={String(brand)}>{String(brand)}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    <div className="space-y-1">
+                        <label className="text-[9px] font-black text-muted-foreground uppercase tracking-wider block">Category</label>
+                        <select
+                            value={filterCategory}
+                            onChange={(e) => setFilterCategory(e.target.value)}
+                            className="w-full bg-background border border-slate-850 rounded-lg px-2 py-1.5 text-xs text-foreground font-semibold outline-none"
+                        >
+                            <option value="all">All Categories</option>
+                            {Array.from(new Set(data?.products?.map(p => p.product_category?.category_name).filter(Boolean))).map(cat => (
+                                <option key={String(cat)} value={String(cat)}>{String(cat)}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    <div className="space-y-1">
+                        <label className="text-[9px] font-black text-muted-foreground uppercase tracking-wider block">Product</label>
+                        <select
+                            value={filterProduct}
+                            onChange={(e) => setFilterProduct(e.target.value)}
+                            className="w-full bg-background border border-slate-850 rounded-lg px-2 py-1.5 text-xs text-foreground font-semibold outline-none"
+                        >
+                            <option value="all">All Products</option>
+                            {data?.products?.filter(p => ledgerType === "fg" ? p.is_finished_good : !p.is_finished_good).map(p => (
+                                <option key={p.product_id} value={String(p.product_id)}>{p.product_name}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    <div className="space-y-1">
+                        <label className="text-[9px] font-black text-muted-foreground uppercase tracking-wider block">Start Date</label>
+                        <input
+                            type="date"
+                            value={filterStartDate}
+                            onChange={(e) => setFilterStartDate(e.target.value)}
+                            className="w-full bg-background border border-slate-850 rounded-lg px-2.5 py-1 text-xs text-foreground outline-none font-semibold"
+                        />
+                    </div>
+
+                    <div className="space-y-1">
+                        <label className="text-[9px] font-black text-muted-foreground uppercase tracking-wider block">End Date</label>
+                        <input
+                            type="date"
+                            value={filterEndDate}
+                            onChange={(e) => setFilterEndDate(e.target.value)}
+                            className="w-full bg-background border border-slate-850 rounded-lg px-2.5 py-1 text-xs text-foreground outline-none font-semibold"
+                        />
                     </div>
                 </div>
 
@@ -824,81 +1048,124 @@ export default function InventoryModule() {
                     {activeTab === "batches" && (
                         <table className="w-full border-collapse text-left text-xs">
                             <thead>
-                                <tr className="border-b border-slate-850 text-muted-foreground">
-                                    <th className="py-3 px-4 font-bold">Lot Number</th>
-                                    <th className="py-3 px-4 font-bold">Product</th>
-                                    <th className="py-3 px-4 font-bold hidden sm:table-cell">Expiry Date</th>
-                                    <th className="py-3 px-4 font-bold hidden sm:table-cell">Warehouse Branch</th>
-                                    <th className="py-3 px-4 font-bold text-right">Qty Received</th>
-                                    <th className="py-3 px-4 font-bold text-right hidden md:table-cell">Landed Cost</th>
-                                    <th className="py-3 px-4 font-bold">Expiry Status</th>
+                                <tr className="border-b border-input text-muted-foreground">
+                                    <th className="py-3 px-4 font-bold">Product Details</th>
+                                    <th className="py-3 px-4 font-bold text-right">Total Stock</th>
+                                    <th className="py-3 px-4 font-bold text-right hidden sm:table-cell">Landed Asset Value</th>
+                                    <th className="py-3 px-4 font-bold text-center">Active Batches</th>
+                                    <th className="py-3 px-4 font-bold hidden md:table-cell">Oldest Batch Expiry</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {filteredBatches.map((batch, idx) => {
-                                    const cost = Number(batch.final_landed_unit_cost || batch.base_unit_cost_php || 0);
-                                    const isExpanded = !!expandedBatches[Number(batch.line_id)];
+                                {productBatchesGrouped.map((prod, idx) => {
+                                    const isExpanded = !!expandedBatches[Number(prod.product_id)];
 
                                     return (
-                                        <React.Fragment key={batch.line_id || idx}>
+                                        <React.Fragment key={prod.product_id || idx}>
                                             <tr 
-                                                className="border-b border-slate-850/50 hover:bg-slate-950/20 cursor-pointer select-none"
-                                                onClick={() => toggleBatchExpand(Number(batch.line_id))}
+                                                className="border-b border-input/60 hover:bg-muted/10 cursor-pointer select-none"
+                                                onClick={() => toggleBatchExpand(Number(prod.product_id))}
                                             >
-                                                <td className="py-3.5 px-4 font-extrabold text-foreground">
-                                                    <div className="flex items-center gap-1.5">
-                                                        <ChevronRight className={`h-3 w-3 text-muted-foreground transition-transform duration-200 ${isExpanded ? "rotate-90 text-primary" : ""}`} />
-                                                        <code>{batch.lot_number}</code>
+                                                <td className="py-3.5 px-4">
+                                                    <div className="flex items-center gap-2">
+                                                        <ChevronRight className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${isExpanded ? "rotate-90 text-primary" : ""}`} />
+                                                        <div>
+                                                            <span className="font-extrabold text-foreground block text-sm">{prod.product_name}</span>
+                                                            <span className="text-[10px] font-bold text-muted-foreground uppercase">{prod.product_code} • {prod.product_category?.category_name || "Unassigned"}</span>
+                                                        </div>
                                                     </div>
                                                 </td>
-                                                <td className="py-3.5 px-4">
-                                                    <div>
-                                                        <span className="font-bold text-foreground block">{batch.product_name}</span>
-                                                        <span className="text-[10px] text-muted-foreground">{batch.product_code}</span>
-                                                    </div>
+                                                <td className="py-3.5 px-4 text-right font-black text-foreground text-sm">
+                                                    {prod.totalStock.toLocaleString()} {prod.unit_of_measurement?.unit_shortcut || "PCS"}
                                                 </td>
-                                                <td className="py-3.5 px-4 font-semibold text-foreground hidden sm:table-cell">
-                                                    {batch.expiration_date || <span className="text-muted-foreground italic">None (Static)</span>}
+                                                <td className="py-3.5 px-4 text-right font-bold text-foreground hidden sm:table-cell">
+                                                    ₱{prod.totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                                 </td>
-                                                <td className="py-3.5 px-4 font-semibold text-foreground hidden sm:table-cell">{batch.branch_name}</td>
-                                                <td className="py-3.5 px-4 text-right font-extrabold text-foreground">{Number(batch.quantity_received).toLocaleString()} {batch.unit_name}</td>
-                                                <td className="py-3.5 px-4 text-right font-semibold text-foreground hidden md:table-cell">₱{cost.toFixed(2)}</td>
-                                                <td className="py-3.5 px-4">
-                                                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold border ${
-                                                        batch.expiryStatus === "expired"
-                                                            ? "bg-rose-500/10 text-rose-500 border-rose-500/20"
-                                                            : batch.expiryStatus === "soon"
-                                                            ? "bg-amber-500/10 text-amber-500 border-amber-500/20"
-                                                            : "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
-                                                    }`}>
-                                                        {batch.expiryStatus === "expired" 
-                                                            ? "EXPIRED" 
-                                                            : batch.expiryStatus === "soon"
-                                                            ? `Expiring in ${batch.daysToExpiry} days`
-                                                            : "Active Safe"}
+                                                <td className="py-3.5 px-4 text-center font-bold text-primary">
+                                                    <span className="bg-primary/10 px-2.5 py-1 rounded-full text-xs">
+                                                        {prod.batchesCount} Batches
                                                     </span>
+                                                </td>
+                                                <td className="py-3.5 px-4 font-bold text-muted-foreground hidden md:table-cell">
+                                                    {prod.oldestExpiry ? (
+                                                        <span className="font-mono text-foreground">{prod.oldestExpiry}</span>
+                                                    ) : (
+                                                        <span className="italic text-muted-foreground/60">No Expirations (Static)</span>
+                                                    )}
                                                 </td>
                                             </tr>
                                             {isExpanded && (
-                                                <tr className="bg-slate-950/15 border-b border-slate-850/50">
-                                                    <td colSpan={7} className="p-4">
-                                                        <div className="border-l-2 border-primary/45 pl-4 py-1.5 space-y-2">
-                                                            <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Batch Details</div>
-                                                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                                                                <div className="p-2 rounded-lg bg-slate-900/40 border border-slate-850">
-                                                                    <div className="text-[9px] text-muted-foreground uppercase font-bold">Expiration Date</div>
-                                                                    <div className="text-xs font-semibold text-foreground mt-0.5">
-                                                                        {batch.expiration_date || <span className="text-muted-foreground italic">None (Static)</span>}
-                                                                    </div>
-                                                                </div>
-                                                                <div className="p-2 rounded-lg bg-slate-900/40 border border-slate-850">
-                                                                    <div className="text-[9px] text-muted-foreground uppercase font-bold">Branch Location</div>
-                                                                    <div className="text-xs font-semibold text-foreground mt-0.5">{batch.branch_name}</div>
-                                                                </div>
-                                                                <div className="p-2 rounded-lg bg-slate-900/40 border border-slate-850">
-                                                                    <div className="text-[9px] text-muted-foreground uppercase font-bold">Landed Unit Cost</div>
-                                                                    <div className="text-xs font-semibold text-foreground mt-0.5">₱{cost.toFixed(2)}</div>
-                                                                </div>
+                                                <tr className="bg-muted/5">
+                                                    <td colSpan={5} className="p-4 border-b border-input">
+                                                        <div className="border-l-4 border-primary pl-4 py-2 space-y-3">
+                                                            <h5 className="text-[10px] font-black text-muted-foreground uppercase tracking-widest flex items-center gap-1.5">
+                                                                <Bookmark className="h-4 w-4 text-primary" />
+                                                                FIFO Lot Batch Breakdown
+                                                            </h5>
+                                                            <div className="overflow-x-auto border border-input rounded-xl bg-card">
+                                                                <table className="w-full text-xs text-left">
+                                                                    <thead>
+                                                                        <tr className="bg-muted/30 border-b border-input text-[9px] font-black uppercase text-muted-foreground">
+                                                                            <th className="py-2.5 px-3">Lot Number</th>
+                                                                            <th className="py-2.5 px-3">Warehouse Branch</th>
+                                                                            <th className="py-2.5 px-3 text-right">Received Qty</th>
+                                                                            <th className="py-2.5 px-3 text-right">Landed Unit Cost</th>
+                                                                            <th className="py-2.5 px-3 text-right">Landed Total Value</th>
+                                                                            <th className="py-2.5 px-3">Expiry / Reception Date</th>
+                                                                            <th className="py-2.5 px-3 text-center">Status</th>
+                                                                        </tr>
+                                                                    </thead>
+                                                                    <tbody className="divide-y divide-input/50">
+                                                                        {prod.batches.length === 0 ? (
+                                                                            <tr>
+                                                                                <td colSpan={7} className="py-4 text-center text-muted-foreground italic">
+                                                                                    No active batches found for this product.
+                                                                                </td>
+                                                                            </tr>
+                                                                        ) : (
+                                                                            prod.batches.map((batch: BatchItem, bIdx: number) => {
+                                                                                const cost = Number(batch.final_landed_unit_cost || batch.base_unit_cost_php || 0);
+                                                                                return (
+                                                                                    <tr key={bIdx} className="hover:bg-muted/10 font-medium text-foreground">
+                                                                                        <td className="py-2 px-3 font-bold font-mono">
+                                                                                            {batch.lot_number}
+                                                                                        </td>
+                                                                                        <td className="py-2 px-3 font-semibold text-muted-foreground">
+                                                                                            {batch.branch_name}
+                                                                                        </td>
+                                                                                        <td className="py-2 px-3 text-right font-black">
+                                                                                            {Number(batch.quantity_received).toLocaleString()}
+                                                                                        </td>
+                                                                                        <td className="py-2 px-3 text-right font-bold text-muted-foreground">
+                                                                                            ₱{cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                                                        </td>
+                                                                                        <td className="py-2 px-3 text-right font-bold">
+                                                                                            ₱{(Number(batch.quantity_received) * cost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                                                        </td>
+                                                                                        <td className="py-2 px-3 font-semibold text-muted-foreground">
+                                                                                            {batch.expiration_date || <span className="italic text-[10px]">Static (No Expiration)</span>}
+                                                                                        </td>
+                                                                                        <td className="py-2 px-3 text-center">
+                                                                                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold border ${
+                                                                                                batch.expiryStatus === "expired"
+                                                                                                    ? "bg-rose-500/10 text-rose-500 border-rose-500/20"
+                                                                                                    : batch.expiryStatus === "soon"
+                                                                                                    ? "bg-amber-500/10 text-amber-500 border-amber-500/20"
+                                                                                                    : "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
+                                                                                            }`}>
+                                                                                                {batch.expiryStatus === "expired" 
+                                                                                                    ? "EXPIRED" 
+                                                                                                    : batch.expiryStatus === "soon"
+                                                                                                    ? `Expiring in ${batch.daysToExpiry} days`
+                                                                                                    : "Active Safe"}
+                                                                                            </span>
+                                                                                        </td>
+                                                                                    </tr>
+                                                                                );
+                                                                            })
+                                                                        )}
+                                                                    </tbody>
+                                                                </table>
                                                             </div>
                                                         </div>
                                                     </td>
@@ -908,10 +1175,10 @@ export default function InventoryModule() {
                                     );
                                 })}
 
-                                {filteredBatches.length === 0 && (
+                                {productBatchesGrouped.length === 0 && (
                                     <tr>
-                                        <td colSpan={7} className="py-8 text-center text-muted-foreground">
-                                            No active lot batches found.
+                                        <td colSpan={5} className="py-8 text-center text-muted-foreground border border-dashed rounded-xl bg-card">
+                                            No active FIFO product batches found matching search filters.
                                         </td>
                                     </tr>
                                 )}
@@ -922,7 +1189,7 @@ export default function InventoryModule() {
                     {activeTab === "ledger" && (
                         <table className="w-full border-collapse text-left text-xs">
                             <thead>
-                                <tr className="border-b border-slate-850 text-muted-foreground">
+                                <tr className="border-b border-input text-muted-foreground">
                                     <th className="py-3 px-4 font-bold">Tx Date</th>
                                     <th className="py-3 px-4 font-bold hidden sm:table-cell">Doc No</th>
                                     <th className="py-3 px-4 font-bold">Product</th>
@@ -941,7 +1208,7 @@ export default function InventoryModule() {
                                     return (
                                         <React.Fragment key={log.id || idx}>
                                             <tr 
-                                                className="border-b border-slate-850/50 hover:bg-slate-950/20 cursor-pointer select-none"
+                                                className="border-b border-input/60 hover:bg-muted/10 cursor-pointer select-none"
                                                 onClick={() => toggleLedgerExpand(Number(log.id))}
                                             >
                                                 <td className="py-3.5 px-4 font-semibold text-muted-foreground">
@@ -975,24 +1242,24 @@ export default function InventoryModule() {
                                                 </td>
                                             </tr>
                                             {isExpanded && (
-                                                <tr className="bg-slate-950/15 border-b border-slate-850/50">
+                                                <tr className="bg-muted/5 border-b border-input">
                                                     <td colSpan={7} className="p-4">
-                                                        <div className="border-l-2 border-primary/45 pl-4 py-1.5 space-y-2">
+                                                        <div className="border-l-4 border-primary pl-4 py-1.5 space-y-2">
                                                             <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Transaction Ledger Details</div>
                                                             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
-                                                                <div className="p-2 rounded-lg bg-slate-900/40 border border-slate-850">
+                                                                <div className="p-2 rounded-lg bg-card border border-input">
                                                                     <div className="text-[9px] text-muted-foreground uppercase font-bold">Document Number</div>
                                                                     <div className="text-xs font-semibold text-foreground mt-0.5">{log.documentNo || "ADJ"}</div>
                                                                 </div>
-                                                                <div className="p-2 rounded-lg bg-slate-900/40 border border-slate-850">
+                                                                <div className="p-2 rounded-lg bg-card border border-input">
                                                                     <div className="text-[9px] text-muted-foreground uppercase font-bold">Document Type</div>
                                                                     <div className="text-xs font-semibold text-foreground mt-0.5">{log.documentType}</div>
                                                                 </div>
-                                                                <div className="p-2 rounded-lg bg-slate-900/40 border border-slate-850">
+                                                                <div className="p-2 rounded-lg bg-card border border-input">
                                                                     <div className="text-[9px] text-muted-foreground uppercase font-bold">Branch Location</div>
                                                                     <div className="text-xs font-semibold text-foreground mt-0.5">{log.branchName}</div>
                                                                 </div>
-                                                                <div className="p-2 rounded-lg bg-slate-900/40 border border-slate-850">
+                                                                <div className="p-2 rounded-lg bg-card border border-input">
                                                                     <div className="text-[9px] text-muted-foreground uppercase font-bold">Description / Remarks</div>
                                                                     <div className="text-xs font-semibold text-foreground mt-0.5 whitespace-pre-wrap">{log.documentDescription || "No details provided."}</div>
                                                                 </div>
@@ -1007,7 +1274,7 @@ export default function InventoryModule() {
 
                                 {filteredLedger.length === 0 && (
                                     <tr>
-                                        <td colSpan={7} className="py-8 text-center text-muted-foreground">
+                                        <td colSpan={7} className="py-8 text-center text-muted-foreground border border-dashed rounded-xl bg-card">
                                             No transaction history entries.
                                         </td>
                                     </tr>

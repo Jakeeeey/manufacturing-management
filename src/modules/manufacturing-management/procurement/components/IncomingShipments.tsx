@@ -8,11 +8,36 @@ interface UOMOption {
     cost_per_unit: number;
 }
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-import { Search, Plus, Calendar, ShieldCheck, Truck, Layers, Anchor, AlertCircle, Info, Landmark, Edit, RefreshCw, Loader2, Trash2, CheckCircle2, CheckSquare } from "lucide-react";
+import { Search, Plus, Calendar, ShieldCheck, Truck, Layers, Anchor, AlertCircle, Info, Landmark, Edit, RefreshCw, Loader2, Trash2, CheckCircle2, CheckSquare, X } from "lucide-react";
 import { toast } from "sonner";
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { BOMMaterialSelect } from "@/modules/manufacturing-management/finished-goods/components/BOMMaterialSelect";
 import { CreatableSelect } from "@/modules/manufacturing-management/finished-goods/components/CreatableSelect";
+
+export interface ManifestLineFormItem {
+    product_id: string;
+    quantity_ordered: string;
+    base_unit_cost_php: string;
+    parent_product_id: string;
+    product_name?: string;
+    product_code?: string;
+    selected_uom?: string;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    uom_options?: any[];
+}
+
+export interface ShipmentFormState {
+    reference_number: string;
+    supplier_id: string;
+    exchange_rate: string;
+    total_foreign_currency: string;
+    total_php_value: string;
+    status: "Ordered" | "Approved" | "En Route" | "Receiving (QA)" | "Received";
+    date_received: string;
+    branch_id: number;
+    payment_type: number;
+    price_type: string;
+}
 
 interface IncomingShipmentsProps {
     shipments: IncomingShipment[];
@@ -24,14 +49,10 @@ interface IncomingShipmentsProps {
     lines: ShipmentLineItem[];
     isModalOpen: boolean;
     setIsModalOpen: (open: boolean) => void;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-    shipmentForm: any;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-    setShipmentForm: React.Dispatch<React.SetStateAction<any>>;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-    linesForm: any[];
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-    setLinesForm: React.Dispatch<React.SetStateAction<any[]>>;
+    shipmentForm: ShipmentFormState;
+    setShipmentForm: React.Dispatch<React.SetStateAction<ShipmentFormState>>;
+    linesForm: ManifestLineFormItem[];
+    setLinesForm: React.Dispatch<React.SetStateAction<ManifestLineFormItem[]>>;
     onCreateShipment: (e: React.FormEvent) => void;
     onTriggerAllocation: (s: IncomingShipment) => void;
     onUpdateShipmentStatus: (shipmentId: number, status: "Ordered" | "Approved" | "En Route" | "Receiving (QA)" | "Received") => void;
@@ -72,6 +93,7 @@ function RawProductSelector({
     const [isOpen, setIsOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
     const [highlightedIndex, setHighlightedIndex] = useState(0);
+    const [dropUp, setDropUp] = useState(false);
 
     const dropdownRef = React.useRef<HTMLDivElement>(null);
     const inputRef = React.useRef<HTMLInputElement>(null);
@@ -88,6 +110,11 @@ function RawProductSelector({
         const currentName = productName || rawMaterials.find(m => String(m.product_id) === String(parentProductId || selectedProductId))?.product_name || "";
         setSearchQuery(currentName);
         setHighlightedIndex(0);
+        if (inputRef.current) {
+            const rect = inputRef.current.getBoundingClientRect();
+            const windowHeight = window.innerHeight;
+            setDropUp(rect.bottom > windowHeight * 0.6);
+        }
     };
 
     const displayValue = isOpen 
@@ -209,6 +236,11 @@ function RawProductSelector({
             if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "Enter") {
                 setIsOpen(true);
                 e.preventDefault();
+                if (inputRef.current) {
+                    const rect = inputRef.current.getBoundingClientRect();
+                    const windowHeight = window.innerHeight;
+                    setDropUp(rect.bottom > windowHeight * 0.6);
+                }
             }
             return;
         }
@@ -274,7 +306,7 @@ function RawProductSelector({
                     <div 
                         ref={dropdownRef}
                         data-dropdown-open="true"
-                        className="absolute left-0 right-0 top-full mt-1 bg-card border rounded-xl shadow-2xl z-[50] max-h-60 overflow-y-auto divide-y"
+                        className={`absolute left-0 right-0 ${dropUp ? "bottom-full mb-1" : "top-full mt-1"} bg-card border rounded-xl shadow-2xl z-[50] max-h-60 overflow-y-auto divide-y`}
                     >
                         {groupedResults.map((group) => {
                             const hasHighlightedOption = group.options.some((x: RawMaterial) => {
@@ -370,6 +402,65 @@ export default function IncomingShipments({
     const [search, setSearch] = useState("");
     const [isOverridden, setIsOverridden] = useState(false);
 
+    const [priceTypes, setPriceTypes] = useState<Array<{ price_type_id: number; name: string }>>([]);
+    const [priceTypeRatesMap, setPriceTypeRatesMap] = useState<Record<number, number>>({});
+
+    useEffect(() => {
+        fetch("/api/manufacturing/finished-goods/price-types")
+            .then(res => res.ok ? res.json() : [])
+            .then(data => {
+                setPriceTypes(data);
+            })
+            .catch(e => console.error("Error fetching price types:", e));
+    }, []);
+
+    useEffect(() => {
+        let active = true;
+        if (!shipmentForm.price_type || priceTypes.length === 0) {
+            setTimeout(() => {
+                if (active) setPriceTypeRatesMap({});
+            }, 0);
+            return () => { active = false; };
+        }
+
+        const match = priceTypes.find(pt => pt.name?.toLowerCase() === shipmentForm.price_type.toLowerCase());
+        if (!match) {
+            setTimeout(() => {
+                if (active) setPriceTypeRatesMap({});
+            }, 0);
+            return () => { active = false; };
+        }
+
+        fetch(`/api/manufacturing/finished-goods/price-types?priceTypeId=${match.price_type_id}`)
+            .then(res => res.ok ? res.json() : [])
+            .then((data) => {
+                if (!active) return;
+                const map: Record<number, number> = {};
+                (data as { product_id: number | { product_id: number } | null; price: string | number }[]).forEach(item => {
+                    const prodId = typeof item.product_id === "object" && item.product_id !== null ? item.product_id.product_id : item.product_id;
+                    if (prodId) {
+                        map[Number(prodId)] = parseFloat(String(item.price)) || 0;
+                    }
+                });
+                setPriceTypeRatesMap(map);
+
+                // Auto update already added rows in manifest list
+                setLinesForm(prev => prev.map(line => {
+                    if (!line.product_id) return line;
+                    const specialPrice = map[Number(line.product_id)];
+                    if (specialPrice !== undefined && specialPrice > 0) {
+                        return { ...line, base_unit_cost_php: String(specialPrice) };
+                    }
+                    return line;
+                }));
+            })
+            .catch(e => {
+                if (active) console.error("Error fetching price type rates:", e);
+            });
+
+        return () => { active = false; };
+    }, [shipmentForm.price_type, priceTypes, setLinesForm]);
+
 
 
     const isFinanceManager = React.useMemo(() => {
@@ -443,7 +534,7 @@ export default function IncomingShipments({
         const linkedIds = supplierLinkedProducts
             .map(lp => {
                 if (typeof lp.product_id === "object" && lp.product_id !== null) {
-                    return Number(lp.product_id.id || (lp.product_id as { id: number; product_id?: number }).product_id);
+                    return Number((lp.product_id as { product_id?: number; id?: number }).product_id || (lp.product_id as { product_id?: number; id?: number }).id);
                 } else if (lp.product_id) {
                     return Number(lp.product_id);
                 }
@@ -472,12 +563,12 @@ export default function IncomingShipments({
     }, [linesForm]);
 
     const totalUsdValue = React.useMemo(() => {
-        const rate = parseFloat(shipmentForm.exchange_rate) || 58.00;
+        const rate = parseFloat(String(shipmentForm.exchange_rate)) || 58.00;
         return totalPhpValue / rate;
     }, [totalPhpValue, shipmentForm.exchange_rate]);
 
     const handleAddLineForm = () => {
-        setLinesForm([...linesForm, { product_id: "", quantity_ordered: "", base_unit_cost_php: "" }]);
+        setLinesForm([...linesForm, { parent_product_id: "", product_id: "", quantity_ordered: "", base_unit_cost_php: "" }]);
     };
 
     const handleRemoveLineForm = (index: number) => {
@@ -486,13 +577,12 @@ export default function IncomingShipments({
         setLinesForm(copy);
     };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const handleLineFormChange = (index: number, fieldOrObject: string | Record<string, any>, value?: any) => {
+    const handleLineFormChange = (index: number, fieldOrObject: string | Record<string, unknown>, value?: unknown) => {
         const copy = [...linesForm];
-        if (typeof fieldOrObject === "object") {
-            copy[index] = { ...copy[index], ...fieldOrObject };
+        if (typeof fieldOrObject === "object" && fieldOrObject !== null) {
+            copy[index] = { ...copy[index], ...fieldOrObject } as ManifestLineFormItem;
         } else {
-            copy[index] = { ...copy[index], [fieldOrObject]: value };
+            copy[index] = { ...copy[index], [fieldOrObject]: value } as ManifestLineFormItem;
         }
         setLinesForm(copy);
     };
@@ -539,8 +629,17 @@ export default function IncomingShipments({
                             placeholder="Search BL/Reference, Supplier..."
                             value={search}
                             onChange={e => setSearch(e.target.value)}
-                            className="w-full pl-9 pr-4 py-2 border rounded-lg text-xs bg-background outline-none focus:ring-1 focus:ring-primary font-medium"
+                            className="w-full pl-9 pr-8 py-2 border rounded-lg text-xs bg-background outline-none focus:ring-1 focus:ring-primary font-medium"
                         />
+                        {search && (
+                            <button
+                                onClick={() => setSearch("")}
+                                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-1 transition-colors hover:bg-muted rounded"
+                                title="Clear Search"
+                            >
+                                <X className="h-3 w-3" />
+                            </button>
+                        )}
                     </div>
                 </div>
 
@@ -559,7 +658,7 @@ export default function IncomingShipments({
                                 <button
                                     key={s.shipment_id}
                                     onClick={() => setSelectedShipment(s)}
-                                    className={`w-full text-left p-4 hover:bg-muted/30 transition-all flex flex-col gap-2 ${
+                                    className={`w-full text-left p-4 hover:bg-muted/40 transition-all flex flex-col gap-2 hover:-translate-y-0.5 hover:shadow-[0_4px_12px_rgba(0,0,0,0.03)] focus:bg-primary/5 active:translate-y-0 ${
                                         activeShipment?.shipment_id === s.shipment_id ? "bg-primary/5 border-l-2 border-primary" : ""
                                     }`}
                                 >
@@ -608,6 +707,47 @@ export default function IncomingShipments({
                                         })()}
                                     </strong>
                                 </p>
+                                <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs mt-2.5 text-muted-foreground bg-muted/40 border p-3 rounded-lg max-w-fit font-sans">
+                                    <span>
+                                        Destination Branch:{" "}
+                                        <strong className="text-foreground font-bold">
+                                            {(() => {
+                                                const branchId = (activeShipment as IncomingShipment & { branch_id?: number | null }).branch_id;
+                                                switch (Number(branchId)) {
+                                                    case 183: return "Main Branch";
+                                                    case 163: return "Urdaneta Branch";
+                                                    case 181: return "Bihon Branch";
+                                                    case 182: return "Bihon Bad Branch";
+                                                    default: return branchId ? `Branch #${branchId}` : "Unassigned Branch";
+                                                }
+                                            })()}
+                                        </strong>
+                                    </span>
+                                    <span className="hidden sm:inline text-muted-foreground/30 font-light">|</span>
+                                    <span>
+                                        Payment Type:{" "}
+                                        <strong className="text-foreground font-bold">
+                                            {(() => {
+                                                const payType = (activeShipment as IncomingShipment & { payment_type?: number | null }).payment_type;
+                                                switch (Number(payType)) {
+                                                    case 1: return "Advance Payment";
+                                                    case 2: return "Partial Payment";
+                                                    case 3: return "Full Payment";
+                                                    case 4: return "Refund";
+                                                    case 5: return "Installment";
+                                                    default: return payType ? `Payment Type #${payType}` : "N/A";
+                                                }
+                                            })()}
+                                        </strong>
+                                    </span>
+                                    <span className="hidden sm:inline text-muted-foreground/30 font-light">|</span>
+                                    <span>
+                                        Price Type:{" "}
+                                        <strong className="text-foreground font-bold">
+                                            {(activeShipment as IncomingShipment & { price_type?: string | null }).price_type || "Standard"}
+                                        </strong>
+                                    </span>
+                                </div>
                                 {/* Status Progress Stepper (Read-Only) */}
                                 <div className="mt-4 border bg-muted/20 rounded-xl p-4 space-y-3">
                                     <div className="text-[10px] font-extrabold text-muted-foreground uppercase tracking-wider block">Shipment Life Cycle Progress</div>
@@ -824,7 +964,7 @@ export default function IncomingShipments({
                                     <label className="text-[11px] font-semibold text-muted-foreground">Select Vendor / Supplier *</label>
                                     <CreatableSelect
                                         options={suppliers.map(s => ({ value: String(s.id), label: s.supplier_name }))}
-                                        value={shipmentForm.supplier_id}
+                                        value={String(shipmentForm.supplier_id)}
                                         onValueChange={(val) => setShipmentForm({...shipmentForm, supplier_id: val})}
                                         placeholder="Select Supplier..."
                                         className="h-9 text-xs w-full bg-background font-semibold"
@@ -854,7 +994,7 @@ export default function IncomingShipments({
                                         type="number"
                                         step="0.0001"
                                         readOnly={!isOverridden || !isFinanceManager}
-                                        value={shipmentForm.exchange_rate}
+                                        value={String(shipmentForm.exchange_rate)}
                                         onChange={e => setShipmentForm({...shipmentForm, exchange_rate: e.target.value})}
                                         className={`w-full rounded-lg border px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary font-mono font-semibold ${
                                             (!isOverridden || !isFinanceManager) ? "bg-muted text-muted-foreground cursor-not-allowed" : "bg-background text-foreground"
@@ -871,36 +1011,36 @@ export default function IncomingShipments({
                                 <div className="space-y-1.5 flex flex-col">
                                     <label className="text-[11px] font-semibold text-muted-foreground">Destination Branch *</label>
                                     <select
-                                        value={shipmentForm.branch_id}
+                                        value={Number(shipmentForm.branch_id)}
                                         onChange={e => setShipmentForm({...shipmentForm, branch_id: parseInt(e.target.value)})}
                                         className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary font-semibold text-foreground h-9"
                                     >
-                                        <option value={183}>Main Branch (ID: 183)</option>
-                                        <option value={163}>Urdaneta Branch (ID: 163)</option>
-                                        <option value={181}>Bihon Branch (ID: 181)</option>
-                                        <option value={182}>Bihon Bad Branch (ID: 182)</option>
+                                        <option value={183}>Main Branch</option>
+                                        <option value={163}>Urdaneta Branch</option>
+                                        <option value={181}>Bihon Branch</option>
+                                        <option value={182}>Bihon Bad Branch</option>
                                     </select>
                                 </div>
 
                                 <div className="space-y-1.5 flex flex-col">
                                     <label className="text-[11px] font-semibold text-muted-foreground">Payment Type *</label>
                                     <select
-                                        value={shipmentForm.payment_type}
+                                        value={Number(shipmentForm.payment_type)}
                                         onChange={e => setShipmentForm({...shipmentForm, payment_type: parseInt(e.target.value)})}
                                         className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary font-semibold text-foreground h-9"
                                     >
-                                        <option value={3}>Full Payment (ID: 3)</option>
-                                        <option value={1}>Advance Payment (ID: 1)</option>
-                                        <option value={2}>Partial Payment (ID: 2)</option>
-                                        <option value={4}>Refund (ID: 4)</option>
-                                        <option value={5}>Installment (ID: 5)</option>
+                                        <option value={3}>Full Payment</option>
+                                        <option value={1}>Advance Payment</option>
+                                        <option value={2}>Partial Payment</option>
+                                        <option value={4}>Refund</option>
+                                        <option value={5}>Installment</option>
                                     </select>
                                 </div>
 
                                 <div className="space-y-1.5 flex flex-col">
                                     <label className="text-[11px] font-semibold text-muted-foreground">Price Type *</label>
                                     <select
-                                        value={shipmentForm.price_type}
+                                        value={String(shipmentForm.price_type)}
                                         onChange={e => setShipmentForm({...shipmentForm, price_type: e.target.value})}
                                         className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary font-semibold text-foreground h-9"
                                     >
@@ -955,7 +1095,23 @@ export default function IncomingShipments({
                                                     <RawProductSelector
                                                         id={`search-input-${idx}`}
                                                         autoFocus={idx === linesForm.length - 1 && linesForm.length > 1}
-                                                        rawMaterials={supplierRawMaterials}
+                                                        rawMaterials={supplierRawMaterials.filter(rm => {
+                                                            const isAlreadySelected = linesForm.some((l, lIdx) => {
+                                                                if (lIdx === idx) return false;
+                                                                const selectedId = String(l.product_id);
+                                                                const selectedParentId = l.parent_product_id ? String(l.parent_product_id) : "";
+                                                                const currentId = String(rm.product_id);
+                                                                const currentParentId = rm.parent_id ? String(rm.parent_id) : "";
+
+                                                                return (
+                                                                    selectedId === currentId ||
+                                                                    (selectedParentId && selectedParentId === currentId) ||
+                                                                    (currentParentId && selectedId === currentParentId) ||
+                                                                    (selectedParentId && currentParentId && selectedParentId === currentParentId)
+                                                                );
+                                                            });
+                                                            return !isAlreadySelected;
+                                                        })}
                                                         selectedProductId={line.product_id}
                                                         parentProductId={line.parent_product_id}
                                                         productName={line.product_name}
@@ -965,7 +1121,14 @@ export default function IncomingShipments({
                                                                 toast.error(`"${selected.product_name}" is already added to this manifest. Please adjust the quantity instead.`);
                                                                 return;
                                                             }
-                                                            handleLineFormChange(idx, selected);
+                                                            
+                                                            const finalSelected = { ...selected };
+                                                            const specialPrice = priceTypeRatesMap[Number(selected.product_id)];
+                                                            if (specialPrice !== undefined && specialPrice > 0) {
+                                                                finalSelected.base_unit_cost_php = String(specialPrice);
+                                                            }
+
+                                                            handleLineFormChange(idx, finalSelected);
                                                             // Move focus to Qty Ordered input of the same row
                                                             setTimeout(() => {
                                                                 const nextInput = document.getElementById(`qty-input-${idx}`);
@@ -994,10 +1157,15 @@ export default function IncomingShipments({
                                                                 }
                                                                 const opt = line.uom_options?.find((o: UOMOption) => String(o.product_id) === String(selectedId));
                                                                 if (opt) {
+                                                                    let costVal = opt.cost_per_unit;
+                                                                    const specialPrice = priceTypeRatesMap[Number(selectedId)];
+                                                                    if (specialPrice !== undefined && specialPrice > 0) {
+                                                                        costVal = specialPrice;
+                                                                    }
                                                                     handleLineFormChange(idx, {
                                                                         product_id: String(selectedId),
                                                                         selected_uom: opt.unit_shortcut,
-                                                                        base_unit_cost_php: String(opt.cost_per_unit)
+                                                                        base_unit_cost_php: String(costVal)
                                                                     });
                                                                 }
                                                             }}

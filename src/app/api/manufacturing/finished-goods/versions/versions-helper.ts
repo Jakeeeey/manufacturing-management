@@ -3,7 +3,7 @@ import {
     DirectusBOM, 
     DirectusBOMComponent, 
     DirectusRouting 
-} from "@/types/manufacturing";
+} from "@/modules/manufacturing-management/finished-goods/types";
 
 export async function getActiveBOMForProduct(productId: number): Promise<{
     bom: DirectusBOM | null;

@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
-import { Supplier, IncomingShipment, ShipmentLineItem, ShipmentExpense, RawMaterial, LinkedProduct } from "../types";
+import { Supplier, SupplierRepresentative, IncomingShipment, ShipmentLineItem, ShipmentExpense, RawMaterial, LinkedProduct } from "../types";
+import type { ShipmentFormState, ManifestLineFormItem } from "../components/IncomingShipments";
 import { 
     fetchSuppliers, 
     createSupplier, 
@@ -49,11 +50,11 @@ export function useProcurement(defaultTab: string = "suppliers") {
         state_province: "",
         country: "Philippines",
         postal_code: "",
-        contact_person: "",
-        payment_terms: "Cash On Delivery",
-        delivery_terms: "Delivery",
+        payment_terms: "",
+        delivery_terms: "",
         currency: "PHP",
-        notes_or_comments: ""
+        notes_or_comments: "",
+        representatives: [] as SupplierRepresentative[]
     });
 
     const [isEditingSupplier, setIsEditingSupplier] = useState(false);
@@ -70,30 +71,20 @@ export function useProcurement(defaultTab: string = "suppliers") {
         }
     }, [isSupplierModalOpen]);
 
-    const [shipmentForm, setShipmentForm] = useState({
+    const [shipmentForm, setShipmentForm] = useState<ShipmentFormState>({
         reference_number: "",
         supplier_id: "",
         exchange_rate: "58.00",
         total_foreign_currency: "0",
         total_php_value: "0",
-        status: "Ordered" as const,
+        status: "Ordered",
         date_received: new Date().toISOString().split("T")[0],
         branch_id: 183,
         payment_type: 3,
         price_type: "Internal"
     });
 
-    const [shipmentLinesForm, setShipmentLinesForm] = useState<Array<{
-        parent_product_id: string;
-        product_id: string;
-        product_name?: string;
-        product_code?: string;
-        selected_uom?: string;
-        quantity_ordered: string;
-        base_unit_cost_php: string;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-        uom_options?: any[];
-    }>>([{ parent_product_id: "", product_id: "", quantity_ordered: "", base_unit_cost_php: "" }]);
+    const [shipmentLinesForm, setShipmentLinesForm] = useState<ManifestLineFormItem[]>([{ parent_product_id: "", product_id: "", quantity_ordered: "", base_unit_cost_php: "" }]);
 
     const [expenseAllocationForm, setExpenseAllocationForm] = useState<{
         allocation_method: "Value" | "Weight" | "Volume";
@@ -261,6 +252,9 @@ export function useProcurement(defaultTab: string = "suppliers") {
 
     function parseCreationError(errorMsg: string): string {
         const msg = errorMsg.toLowerCase();
+        if (msg.includes("unique") && (msg.includes("supplier") || msg.includes("collection"))) {
+            return "A supplier with this Corporate Name or Code already exists. Please choose unique values.";
+        }
         if (msg.includes("supplier_name") || msg.includes("name already exists") || msg.includes("unique") && msg.includes("name")) {
             return "This Supplier Name already exists. Please choose a unique name.";
         }
@@ -289,6 +283,53 @@ export function useProcurement(defaultTab: string = "suppliers") {
         if (!supplierForm.address.trim()) {
             setSupplierError("Business Street Address is required");
             toast.error("Business Street Address is required");
+            return;
+        }
+        if (!supplierForm.payment_terms) {
+            setSupplierError("Payment Terms is required");
+            toast.error("Payment Terms is required");
+            return;
+        }
+        if (!supplierForm.delivery_terms) {
+            setSupplierError("Delivery Terms is required");
+            toast.error("Delivery Terms is required");
+            return;
+        }
+
+        // Validate representatives
+        const reps = supplierForm.representatives || [];
+        for (let i = 0; i < reps.length; i++) {
+            const rep = reps[i];
+            if (!rep.first_name?.trim() || !rep.last_name?.trim()) {
+                setSupplierError(`Representative #${i + 1} first name and last name are required.`);
+                toast.error(`Representative #${i + 1} first name and last name are required.`);
+                return;
+            }
+            if (!rep.email?.trim() && !rep.contact_number?.trim()) {
+                setSupplierError(`Representative #${i + 1} (${rep.first_name} ${rep.last_name}) must have either an email address or a contact number.`);
+                toast.error(`Representative #${i + 1} (${rep.first_name} ${rep.last_name}) must have either an email address or a contact number.`);
+                return;
+            }
+        }
+
+        // Check for duplicates
+        const isDuplicateName = suppliers.some(s => 
+            s.id !== editingSupplierId &&
+            s.supplier_name.trim().toLowerCase() === supplierForm.supplier_name.trim().toLowerCase()
+        );
+        if (isDuplicateName) {
+            setSupplierError("This Supplier Corporate Name already exists. Please choose a unique name.");
+            toast.error("This Supplier Corporate Name already exists. Please choose a unique name.");
+            return;
+        }
+
+        const isDuplicateCode = suppliers.some(s => 
+            s.id !== editingSupplierId &&
+            s.supplier_shortcut?.trim().toLowerCase() === supplierForm.supplier_shortcut.trim().toLowerCase()
+        );
+        if (isDuplicateCode) {
+            setSupplierError("This Supplier Code/Shortcut already exists. Please choose a unique code.");
+            toast.error("This Supplier Code/Shortcut already exists. Please choose a unique code.");
             return;
         }
 
@@ -327,11 +368,11 @@ export function useProcurement(defaultTab: string = "suppliers") {
                 state_province: "",
                 country: "Philippines",
                 postal_code: "",
-                contact_person: "",
-                payment_terms: "Cash On Delivery",
-                delivery_terms: "Delivery",
+                payment_terms: "",
+                delivery_terms: "",
                 currency: "PHP",
-                notes_or_comments: ""
+                notes_or_comments: "",
+                representatives: []
             });
             setSupplierError(null);
             loadSuppliers();
@@ -362,11 +403,11 @@ export function useProcurement(defaultTab: string = "suppliers") {
             state_province: supplier.state_province || "",
             country: supplier.country || "Philippines",
             postal_code: supplier.postal_code || "",
-            contact_person: supplier.contact_person || "",
-            payment_terms: supplier.payment_terms || "Cash On Delivery",
-            delivery_terms: supplier.delivery_terms || "Delivery",
+            payment_terms: supplier.payment_terms || "",
+            delivery_terms: supplier.delivery_terms || "",
             currency: currency,
-            notes_or_comments: cleanNotes
+            notes_or_comments: cleanNotes,
+            representatives: supplier.representatives || []
         });
 
         setIsEditingSupplier(true);
@@ -547,6 +588,21 @@ export function useProcurement(defaultTab: string = "suppliers") {
         }
     };
 
+    const handleToggleSupplierActive = async (supplier: Supplier) => {
+        setLoading(true);
+        try {
+            const newActive = Number(supplier.isActive) === 0 ? 1 : 0;
+            await updateSupplier(supplier.id, { isActive: newActive });
+            toast.success(`Supplier "${supplier.supplier_name}" ${newActive ? "activated" : "deactivated"} successfully`);
+            await loadSuppliers();
+        } catch (e) {
+            console.error(e);
+            toast.error((e as Error).message || "Failed to update supplier active status");
+        } finally {
+            setLoading(false);
+        }
+    };
+
     return {
         activeTab,
         setActiveTab,
@@ -582,6 +638,7 @@ export function useProcurement(defaultTab: string = "suppliers") {
         handleCreateShipment,
         handleAllocateExpenses,
         handleUpdateShipmentStatus,
-        handleRegisterRawMaterial
+        handleRegisterRawMaterial,
+        handleToggleSupplierActive
     };
 }

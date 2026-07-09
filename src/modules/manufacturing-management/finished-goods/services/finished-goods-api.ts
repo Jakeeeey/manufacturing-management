@@ -129,7 +129,7 @@ export async function fetchBOMDetails(productId: number, versionId: number, fore
 
 export async function saveBOMDetails(
     productId: number,
-    bomId: number,
+    bomId: number | null,
     details: {
         title: string;
         sku: string;
@@ -161,7 +161,14 @@ export async function saveBOMDetails(
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ productId, bomId, details, ingredients, routings, overheads })
     });
-    if (!res.ok) throw new Error("Failed to save BOM details via BFF");
+    if (!res.ok) {
+        let msg = "Failed to save BOM details via BFF";
+        try {
+            const errJson = await res.json();
+            if (errJson && errJson.error) msg = errJson.error;
+        } catch {}
+        throw new Error(msg);
+    }
     return res.json();
 }
 
@@ -187,14 +194,22 @@ export async function registerProduct(
         production_capacity_per_hour?: number;
     },
     versionName: string,
-    supplierIds?: number[]
+    supplierIds?: number[],
+    expectedYield?: number
 ): Promise<{ success: boolean; productId: number; bom: unknown }> {
     const res = await fetch("/api/manufacturing/finished-goods/products", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productDetails, versionName, supplierIds })
+        body: JSON.stringify({ productDetails, versionName, supplierIds, expectedYield })
     });
-    if (!res.ok) throw new Error("Failed to register product via BFF");
+    if (!res.ok) {
+        let msg = "Failed to register product via BFF";
+        try {
+            const errJson = await res.json();
+            if (errJson && errJson.error) msg = errJson.error;
+        } catch {}
+        throw new Error(msg);
+    }
     return res.json();
 }
 
@@ -261,5 +276,22 @@ export async function createSection(sectionName: string): Promise<{ success: boo
         body: JSON.stringify({ section_name: sectionName })
     });
     if (!res.ok) throw new Error("Failed to create section via BFF");
+    return res.json();
+}
+
+export async function activateVersion(productId: number, bomId?: number, deactivateAll?: boolean): Promise<{ success: boolean }> {
+    const res = await fetch("/api/manufacturing/finished-goods/versions", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productId, bomId, deactivateAll })
+    });
+    if (!res.ok) {
+        let msg = "Failed to update version status via BFF";
+        try {
+            const errJson = await res.json();
+            if (errJson && errJson.error) msg = errJson.error;
+        } catch {}
+        throw new Error(msg);
+    }
     return res.json();
 }

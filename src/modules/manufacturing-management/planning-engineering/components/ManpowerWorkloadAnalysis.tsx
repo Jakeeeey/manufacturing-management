@@ -210,9 +210,9 @@ export function ManpowerWorkloadAnalysis({ jobOrders, users }: ManpowerWorkloadA
     }, [analysis]);
 
     return (
-        <div className="space-y-6 bg-slate-900/10 border p-5 rounded-xl">
+        <div className="space-y-6 bg-slate-50/50 dark:bg-slate-900/10 border p-5 rounded-xl">
             {/* Header section */}
-            <div className="bg-slate-950/40 border border-slate-800/80 rounded-xl p-5 shadow-sm">
+            <div className="bg-slate-100 dark:bg-slate-950/40 border border-slate-200/80 dark:border-slate-800/80 rounded-xl p-5 shadow-sm">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div className="space-y-1">
                         <div className="flex items-center gap-2">
@@ -242,20 +242,20 @@ export function ManpowerWorkloadAnalysis({ jobOrders, users }: ManpowerWorkloadA
                 </div>
 
                 {/* Stat summary grid */}
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-5 pt-5 border-t border-slate-850">
-                    <div className="p-3 bg-slate-900/50 rounded-lg border border-slate-800/60">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-5 pt-5 border-t border-slate-200 dark:border-slate-850">
+                    <div className="p-3 bg-slate-50/30 dark:bg-slate-900/50 rounded-lg border border-slate-200 dark:border-slate-800/60">
                         <span className="text-[9px] uppercase font-bold text-muted-foreground block">Total Workload</span>
                         <span className="text-base font-extrabold text-foreground">{analysis.totalWorkloadHours.toFixed(1)} <span className="text-[10px] text-muted-foreground font-normal">hrs</span></span>
                     </div>
-                    <div className="p-3 bg-slate-900/50 rounded-lg border border-slate-800/60">
+                    <div className="p-3 bg-slate-50/30 dark:bg-slate-900/50 rounded-lg border border-slate-200 dark:border-slate-800/60">
                         <span className="text-[9px] uppercase font-bold text-muted-foreground block">Total Workforce</span>
                         <span className="text-base font-extrabold text-foreground">{users.length} <span className="text-[10px] text-muted-foreground font-normal">Active</span></span>
                     </div>
-                    <div className="p-3 bg-slate-900/50 rounded-lg border border-slate-800/60">
+                    <div className="p-3 bg-slate-50/30 dark:bg-slate-900/50 rounded-lg border border-slate-200 dark:border-slate-800/60">
                         <span className="text-[9px] uppercase font-bold text-muted-foreground block">Average Load</span>
                         <span className="text-base font-extrabold text-primary">{averageWorkload.toFixed(1)} <span className="text-[10px] text-primary/70 font-normal">hrs / op</span></span>
                     </div>
-                    <div className="p-3 bg-slate-900/50 rounded-lg border border-slate-800/60">
+                    <div className="p-3 bg-slate-50/30 dark:bg-slate-900/50 rounded-lg border border-slate-200 dark:border-slate-800/60">
                         <span className="text-[9px] uppercase font-bold text-muted-foreground block">Unassigned Steps</span>
                         <span className={`text-base font-extrabold ${analysis.unassigned.length > 0 ? "text-amber-500" : "text-emerald-500"}`}>
                             {analysis.unassigned.length} <span className="text-[10px] font-normal">Steps</span>
@@ -283,7 +283,7 @@ export function ManpowerWorkloadAnalysis({ jobOrders, users }: ManpowerWorkloadA
                             const capacityPercent = Math.min(100, (w.totalHours / 40) * 100);
 
                             return (
-                                <div key={w.user.user_id} className="bg-card border border-slate-800 rounded-xl p-4 space-y-3 shadow-xs">
+                                <div key={w.user.user_id} className="bg-card border border-slate-200 dark:border-slate-800 rounded-xl p-4 space-y-3 shadow-xs">
                                     <div className="flex items-start justify-between">
                                         <div>
                                             <span className="font-bold text-foreground text-xs block">{w.user.user_fname} {w.user.user_lname}</span>
@@ -299,7 +299,7 @@ export function ManpowerWorkloadAnalysis({ jobOrders, users }: ManpowerWorkloadA
 
                                     {/* Capacity Progress Bar */}
                                     <div className="space-y-1">
-                                        <div className="w-full bg-slate-850 rounded-full h-1.5 overflow-hidden">
+                                        <div className="w-full bg-slate-100 dark:bg-slate-850 rounded-full h-1.5 overflow-hidden">
                                             <div 
                                                 className={`h-full rounded-full transition-all duration-300 ${
                                                     isOverloaded ? "bg-destructive" : w.totalHours > 30 ? "bg-amber-500" : "bg-emerald-500"
@@ -311,11 +311,11 @@ export function ManpowerWorkloadAnalysis({ jobOrders, users }: ManpowerWorkloadA
 
                                     {/* Detail Tasks assigned */}
                                     {w.tasks.length > 0 ? (
-                                        <div className="pt-2 border-t border-slate-800/60 space-y-1">
+                                        <div className="pt-2 border-t border-slate-200 dark:border-slate-800/60 space-y-1">
                                             <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground block">Assigned Tasks:</span>
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                                                 {w.tasks.map((t, idx) => (
-                                                    <div key={idx} className="bg-slate-950/20 border border-slate-800/50 rounded p-2 flex items-center justify-between text-[10px]">
+                                                    <div key={idx} className="bg-slate-50 dark:bg-slate-950/20 border border-slate-200 dark:border-slate-800/50 rounded p-2 flex items-center justify-between text-[10px]">
                                                         <div>
                                                             <span className="font-bold text-foreground block">{t.joId} • {t.operation}</span>
                                                             <span className="text-muted-foreground block text-[9px] truncate max-w-[150px]">{t.productName} ({t.qty} PCS)</span>
@@ -337,7 +337,7 @@ export function ManpowerWorkloadAnalysis({ jobOrders, users }: ManpowerWorkloadA
                 {/* Side Analytics: Recommendations & Operations */}
                 <div className="space-y-6">
                     {/* Dynamic Balancing Suggestions */}
-                    <div className="bg-slate-900/40 border border-slate-850 rounded-xl p-4 space-y-4">
+                    <div className="bg-slate-100/50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-850 rounded-xl p-4 space-y-4">
                         <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
                             <Sparkles className="h-4 w-4 text-amber-400" />
                             Workload Advisor
@@ -382,7 +382,7 @@ export function ManpowerWorkloadAnalysis({ jobOrders, users }: ManpowerWorkloadA
                     </div>
 
                     {/* Routing Operations Bottleneck Breakdown */}
-                    <div className="bg-slate-900/40 border border-slate-850 rounded-xl p-4 space-y-4">
+                    <div className="bg-slate-100/50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-850 rounded-xl p-4 space-y-4">
                         <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
                             <Cpu className="h-4 w-4 text-emerald-400" />
                             Route Operation Demand
@@ -400,7 +400,7 @@ export function ManpowerWorkloadAnalysis({ jobOrders, users }: ManpowerWorkloadA
                                             <span>{op.taskCount} occurrences</span>
                                             <span className="font-semibold text-primary">{op.workersCount} assigned</span>
                                         </div>
-                                        <div className="w-full bg-slate-850 rounded-full h-1 overflow-hidden">
+                                        <div className="w-full bg-slate-100 dark:bg-slate-850 rounded-full h-1 overflow-hidden">
                                             <div 
                                                 className="bg-emerald-500 h-full rounded-full" 
                                                 style={{ width: `${Math.min(100, (op.totalHours / Math.max(1, analysis.totalWorkloadHours)) * 100)}%` }}

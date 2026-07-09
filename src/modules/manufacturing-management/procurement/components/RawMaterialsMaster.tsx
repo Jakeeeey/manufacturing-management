@@ -47,6 +47,7 @@ export default function RawMaterialsMaster({ rawMaterials, suppliers, onRegister
     const [formDensity, setFormDensity] = useState("1.000");
     const [formBrand, setFormBrand] = useState("");
     const [formCategory, setFormCategory] = useState("");
+    const [formProductType, setFormProductType] = useState<number>(389);
     const [selectedSupplierIds, setSelectedSupplierIds] = useState<number[]>([]);
     const [supplierSearch, setSupplierSearch] = useState("");
 
@@ -89,18 +90,14 @@ export default function RawMaterialsMaster({ rawMaterials, suppliers, onRegister
             setFormDensity("1.000");
             setFormBrand("");
             setFormCategory("");
+            setFormProductType(389);
             setSelectedSupplierIds([]);
             setSupplierSearch("");
         }
     }, [isModalOpen]);
 
     const isItemPkg = (item: RawMaterial) => {
-        const pkgCategoryIds = [329, 330, 338]; // Bottle, Box, Plastic
-        if (item.product_category && pkgCategoryIds.includes(Number(item.product_category))) {
-            return true;
-        }
-        const lower = item.product_name.toLowerCase();
-        return lower.includes("box") || lower.includes("bottle") || lower.includes("cap") || lower.includes("sticker") || lower.includes("packaging");
+        return Number(item.product_type) === 390;
     };
 
     const handleCreateBrandOnTheFly = async (name: string) => {
@@ -227,7 +224,8 @@ export default function RawMaterialsMaster({ rawMaterials, suppliers, onRegister
             density_factor: parseFloat(formDensity) || 1.0,
             price_per_unit: 0, // Default price to 0 for raw ingredients
             product_brand: formBrand ? Number(formBrand) : undefined,
-            product_category: Number(formCategory)
+            product_category: Number(formCategory),
+            product_type: formProductType
         };
 
         const success = await onRegisterRawMaterial(payload, selectedSupplierIds);
@@ -323,8 +321,17 @@ export default function RawMaterialsMaster({ rawMaterials, suppliers, onRegister
                             placeholder="Search ingredients, packaging..."
                             value={search}
                             onChange={e => setSearch(e.target.value)}
-                            className="w-full pl-9 pr-4 py-2 border rounded-lg text-xs bg-background outline-none focus:ring-1 focus:ring-primary font-medium"
+                            className="w-full pl-9 pr-8 py-2 border rounded-lg text-xs bg-background outline-none focus:ring-1 focus:ring-primary font-medium"
                         />
+                        {search && (
+                            <button
+                                onClick={() => setSearch("")}
+                                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-1 transition-colors hover:bg-muted rounded"
+                                title="Clear Search"
+                            >
+                                <X className="h-3 w-3" />
+                            </button>
+                        )}
                     </div>
                     <button
                         onClick={() => setIsModalOpen(true)}
@@ -541,6 +548,19 @@ export default function RawMaterialsMaster({ rawMaterials, suppliers, onRegister
                                         onChange={e => setFormCode(e.target.value)}
                                         className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary font-mono text-foreground font-bold"
                                     />
+                                </div>
+
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Item Classification *</label>
+                                    <select
+                                        required
+                                        value={formProductType}
+                                        onChange={e => setFormProductType(Number(e.target.value))}
+                                        className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary text-foreground font-semibold"
+                                    >
+                                        <option value={389}>Raw Materials</option>
+                                        <option value={390}>Packaging Items</option>
+                                    </select>
                                 </div>
 
                                 <div className="space-y-1.5">

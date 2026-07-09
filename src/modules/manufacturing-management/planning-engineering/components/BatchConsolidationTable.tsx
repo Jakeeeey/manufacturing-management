@@ -1,6 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-import { Merge, CheckSquare, Square, Calendar, ChevronRight, Play } from "lucide-react";
+import { Calendar, Play, X, MapPin, Hash, RefreshCw, Check, ShoppingCart, Merge } from "lucide-react";
 import { SalesOrder, SalesOrderDetail } from "../types";
 import { addJobOrder } from "../services/planning-api";
 import { toast } from "sonner";
@@ -8,14 +7,14 @@ import { toast } from "sonner";
 interface BatchConsolidationTableProps {
     salesOrders: SalesOrder[];
     soDetailsMap: Record<number, SalesOrderDetail[]>;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     branches: any[];
     selectedBranchId: number | "";
     setSelectedBranchId: (val: number) => void;
     onBatchCreated: () => void;
     selectedIds: number[];
     setSelectedIds: React.Dispatch<React.SetStateAction<number[]>>;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     products: any[];
 }
 
@@ -33,6 +32,7 @@ export function BatchConsolidationTable({
     const [joNumber, setJoNumber] = useState(`JO-BATCH-${Math.floor(1000 + Math.random() * 9000)}`);
     const [dueDate, setDueDate] = useState("");
     const [submitting, setSubmitting] = useState(false);
+    const [isCheckoutModalOpen, setIsCheckoutModalOpen] = useState(false);
     const [branchSearch, setBranchSearch] = useState("");
     const [isBranchFocused, setIsBranchFocused] = useState(false);
     const [shiftOption, setShiftOption] = useState<string>("8");
@@ -105,6 +105,20 @@ export function BatchConsolidationTable({
         });
 
         return Object.values(prodMap);
+    }, [selectedIds, soDetailsMap]);
+
+    // Calculate stats for selection summary
+    const selectedStats = useMemo(() => {
+        let totalQty = 0;
+        let totalItems = 0;
+        selectedIds.forEach(id => {
+            const details = soDetailsMap[id] || [];
+            totalItems += details.length;
+            details.forEach(det => {
+                totalQty += Number(det.ordered_quantity || 0);
+            });
+        });
+        return { totalQty, totalItems };
     }, [selectedIds, soDetailsMap]);
 
     const getProductCapacity = (productId: number): number => {
@@ -227,13 +241,20 @@ export function BatchConsolidationTable({
                 quantity: consolidatedProducts.reduce((sum, p) => sum + p.quantity, 0)
             };
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             await addJobOrder(batchJO as any, selectedIds);
-            toast.success(`Consolidated Job Order ${joNumber} successfully generated!`);
+            toast.success(
+                selectedIds.length > 1
+                    ? `Consolidated Job Order ${joNumber} successfully generated!`
+                    : `Job Order ${joNumber} successfully generated!`
+            );
             onBatchCreated();
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
-            toast.error(e.message || "Failed to schedule consolidated Job Order");
+            toast.error(
+                e.message || 
+                (selectedIds.length > 1 ? "Failed to schedule consolidated Job Order" : "Failed to schedule Job Order")
+            );
         } finally {
             setSubmitting(false);
         }
@@ -252,175 +273,341 @@ export function BatchConsolidationTable({
     }
 
     return (
-        <div className="grid grid-cols-1 xl:grid-cols-5 gap-6 items-start">
-            {/* Left Section: Sales Orders Selector */}
-            <div className="xl:col-span-3 border rounded-xl bg-card shadow-sm overflow-hidden space-y-4">
-                <div className="flex justify-between items-center bg-muted/30 border-b p-3.5">
+        <div className="w-full space-y-6">
+            {/* Sales Orders Tabular Selector */}
+            <div className="border rounded-2xl bg-card shadow-lg border-slate-200 dark:border-slate-850 overflow-hidden">
+                <div className="flex flex-col sm:flex-row justify-between sm:items-center bg-slate-50/50 dark:bg-slate-900/10 border-b border-slate-200/80 dark:border-slate-850 px-5 py-4 gap-4">
                     <div>
-                        <h4 className="text-xs font-extrabold text-foreground uppercase tracking-wider">Select Sales Orders for Consolidation</h4>
-                        <p className="text-[10px] text-muted-foreground mt-0.5">Choose orders to sum up and schedule as a single floor batch run.</p>
+                        <h4 className="text-xs font-black text-foreground uppercase tracking-wider">Select Sales Orders for Scheduling</h4>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">Toggle orders to schedule their item requirements into a production run.</p>
                     </div>
-                    <button
-                        onClick={toggleAll}
-                        className="inline-flex items-center gap-1 text-[11px] font-bold text-primary hover:underline"
-                    >
-                        {salesOrders.length > 0 && salesOrders.map(so => so.order_id).every(id => selectedIds.includes(id)) ? "Deselect Page" : "Select Page"}
-                    </button>
+                    {selectedIds.length > 0 && (
+                        <button
+                            type="button"
+                            onClick={() => {
+                                const isConsolidated = selectedIds.length > 1;
+                                const prefix = isConsolidated ? "JO-BATCH-" : "JO-";
+                                setJoNumber(`${prefix}${Math.floor(1000 + Math.random() * 9000)}`);
+                                setIsCheckoutModalOpen(true);
+                            }}
+                            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-primary hover:bg-primary/95 text-primary-foreground text-xs font-extrabold shadow-md transition-all duration-200 hover:scale-[1.02] border-none cursor-pointer"
+                        >
+                            <ShoppingCart className="h-4 w-4" />
+                            {selectedIds.length > 1 ? `Proceed to Batch Checkout (${selectedIds.length})` : "Proceed to Checkout"}
+                        </button>
+                    )}
                 </div>
 
-                <div className="divide-y max-h-[500px] overflow-y-auto">
-                    {salesOrders.map(so => {
-                        const isChecked = selectedIds.includes(so.order_id);
-                        const details = soDetailsMap[so.order_id] || [];
+                <div className="overflow-x-auto max-h-[550px] overflow-y-auto">
+                    <table className="w-full text-left border-collapse">
+                        <thead>
+                            <tr className="bg-slate-50/20 dark:bg-slate-950/5 border-b border-slate-200/80 dark:border-slate-850 text-[10px] font-black text-muted-foreground uppercase tracking-wider">
+                                <th className="p-4 w-12 text-center">
+                                    <button
+                                        type="button"
+                                        onClick={toggleAll}
+                                        className={`h-5 w-5 rounded-md border-2 flex items-center justify-center cursor-pointer transition-all ${
+                                            salesOrders.length > 0 && salesOrders.map(so => so.order_id).every(id => selectedIds.includes(id))
+                                                ? "border-primary bg-primary text-primary-foreground shadow-xs"
+                                                : "border-slate-200 dark:border-slate-850 hover:border-slate-350 dark:hover:border-slate-700 bg-background"
+                                        }`}
+                                    >
+                                        {salesOrders.length > 0 && salesOrders.map(so => so.order_id).every(id => selectedIds.includes(id)) && (
+                                            <Check className="h-3.5 w-3.5 stroke-[3.5]" />
+                                        )}
+                                    </button>
+                                </th>
+                                <th className="p-4 text-[10px]">Order Details</th>
+                                <th className="p-4 text-[10px]">Customer</th>
+                                <th className="p-4 text-[10px]">Items / Products Breakdown</th>
+                                <th className="p-4 text-right text-[10px] pr-6">Summary</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 dark:divide-slate-850">
+                            {salesOrders.map(so => {
+                                const isChecked = selectedIds.includes(so.order_id);
+                                const details = soDetailsMap[so.order_id] || [];
+                                const orderQtySum = details.reduce((sum, d) => sum + Number(d.ordered_quantity || 0), 0);
 
-                        return (
-                            <div 
-                                key={so.order_id} 
-                                onClick={() => toggleOrder(so.order_id)}
-                                className={`flex items-start gap-3 p-3.5 hover:bg-muted/20 cursor-pointer transition-colors ${isChecked ? 'bg-primary/5' : ''}`}
-                            >
-                                <div className="mt-0.5 text-primary shrink-0">
-                                    {isChecked ? (
-                                        <CheckSquare className="h-4.5 w-4.5 text-primary fill-primary/10" />
-                                    ) : (
-                                        <Square className="h-4.5 w-4.5 text-muted-foreground/50" />
-                                    )}
-                                </div>
-                                <div className="flex-1 space-y-1">
-                                    <div className="flex items-center justify-between">
-                                        <span className="font-extrabold text-foreground text-xs leading-none">{so.order_no}</span>
-                                        <span className="text-[9px] text-muted-foreground font-bold">{so.order_date}</span>
-                                    </div>
-                                    <div className="flex items-center justify-between text-[10px] text-muted-foreground font-medium">
-                                        <span>Customer: <strong className="text-foreground font-semibold">{so.customer_name || so.customer_code}</strong></span>
-                                        <span className="text-primary font-bold">{details.length} item(s)</span>
-                                    </div>
-                                    {/* Brief items preview */}
-                                    <div className="text-[9px] text-muted-foreground bg-muted/40 p-1.5 rounded-md mt-1 italic border border-muted-foreground/10">
-                                        {details.map(d => `${d.product_id?.product_name || 'Item'} (${d.ordered_quantity} ${d.product_id?.uom || "PCS"})`).join(", ") || "No items"}
-                                    </div>
-                                </div>
-                            </div>
-                        );
-                    })}
+                                return (
+                                    <tr 
+                                        key={so.order_id} 
+                                        onClick={() => toggleOrder(so.order_id)}
+                                        className={`group hover:bg-slate-50/50 dark:hover:bg-slate-900/10 cursor-pointer transition-all duration-150 ${
+                                            isChecked ? 'bg-primary/[0.02]' : ''
+                                        }`}
+                                    >
+                                        <td className="p-4 text-center" onClick={(e) => e.stopPropagation()}>
+                                            <button
+                                                type="button"
+                                                onClick={() => toggleOrder(so.order_id)}
+                                                className={`h-5 w-5 rounded-md border-2 flex items-center justify-center cursor-pointer transition-all ${
+                                                    isChecked 
+                                                        ? 'border-primary bg-primary text-primary-foreground shadow-xs' 
+                                                        : 'border-slate-200 dark:border-slate-800 hover:border-slate-350 dark:hover:border-slate-700 bg-background'
+                                                }`}
+                                            >
+                                                {isChecked && <Check className="h-3.5 w-3.5 stroke-[3.5]" />}
+                                            </button>
+                                        </td>
+                                        <td className="p-4">
+                                            <div className="flex flex-col gap-0.5">
+                                                <span className="font-extrabold text-foreground text-xs group-hover:text-primary transition-colors">{so.order_no}</span>
+                                                <span className="text-[9px] text-muted-foreground font-semibold">{so.order_date}</span>
+                                            </div>
+                                        </td>
+                                        <td className="p-4">
+                                            <div className="flex flex-col gap-0.5">
+                                                <span className="font-extrabold text-foreground text-xs truncate max-w-[200px] block">{so.customer_name || so.customer_code}</span>
+                                                <span className="text-[9px] text-muted-foreground font-semibold uppercase tracking-wider">Code: {so.customer_code}</span>
+                                            </div>
+                                        </td>
+                                        <td className="p-4">
+                                            {details.length === 0 ? (
+                                                <span className="text-[10px] text-muted-foreground italic">No products available.</span>
+                                            ) : (
+                                                <div className="flex flex-wrap gap-1.5 max-h-16 overflow-y-auto max-w-[480px]">
+                                                    {details.map((d, dIdx) => (
+                                                        <span 
+                                                            key={dIdx} 
+                                                            className="inline-flex items-center gap-1 bg-slate-100 dark:bg-slate-900 border border-slate-200/50 dark:border-slate-800/80 rounded-lg px-2 py-0.5 text-[9px] font-semibold text-foreground whitespace-nowrap"
+                                                        >
+                                                            <span>{d.product_id?.product_name || 'Item'}</span>
+                                                            <span className="h-1 w-1 rounded-full bg-slate-300 dark:bg-slate-600" />
+                                                            <strong className="text-primary">{d.ordered_quantity} {d.product_id?.uom || "PCS"}</strong>
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </td>
+                                        <td className="p-4 text-right pr-6">
+                                            <div className="flex flex-col items-end gap-0.5">
+                                                <span className="font-extrabold text-foreground text-xs">{orderQtySum.toLocaleString()} units</span>
+                                                <span className="text-[9px] text-muted-foreground font-semibold">{details.length} SKU Line{details.length !== 1 ? 's' : ''}</span>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
                 </div>
-            </div>
 
-            {/* Right Section: Consolidated Checkout Summary */}
-            <div className="xl:col-span-2 border rounded-xl bg-card shadow-sm p-5 space-y-4">
-                <div className="border-b pb-3.5">
-                    <h4 className="text-xs font-extrabold text-foreground uppercase tracking-wider">Consolidated Batch Checkout</h4>
-                    <p className="text-[10px] text-muted-foreground mt-0.5">Summed products and quantities from selected orders.</p>
-                </div>
-
-                {selectedIds.length === 0 ? (
-                    <div className="text-center py-12 text-muted-foreground text-[11px] border border-dashed rounded-xl p-4">
-                        Select one or more Sales Orders on the left to review the consolidated product quantities.
-                    </div>
-                ) : (
-                    <div className="space-y-4.5">
-                        {/* Consolidated Products List */}
-                        <div className="space-y-2">
-                            <span className="text-[9px] font-extrabold text-muted-foreground uppercase tracking-wider block">Consolidated Products</span>
-                            <div className="border rounded-xl divide-y overflow-hidden max-h-[200px] overflow-y-auto">
-                                {consolidatedProducts.map(p => (
-                                    <div key={p.product_id} className="p-3 flex justify-between items-center text-xs bg-muted/5">
-                                        <div className="space-y-0.5">
-                                            <span className="font-extrabold text-foreground block leading-tight">{p.product_name}</span>
-                                            <span className="text-[9px] text-muted-foreground font-bold block">SKU: {p.product_code} (Count: {p.uom_count})</span>
-                                            <span className="text-[9px] text-muted-foreground font-semibold block">Brand: {p.brand} • Cat: {p.category}</span>
-                                        </div>
-                                        <span className="font-black text-primary shrink-0">{p.quantity.toLocaleString()} {p.uom}</span>
-                                    </div>
-                                ))}
+                {/* Floating Dock style Bottom Action Bar */}
+                {selectedIds.length > 0 && (
+                    <div className="bg-slate-100/50 dark:bg-slate-900/10 border-t border-slate-200/80 dark:border-slate-850 p-4.5 flex flex-col sm:flex-row items-center justify-between gap-4">
+                        <div className="flex flex-wrap gap-4 text-xs font-semibold text-muted-foreground">
+                            <div>
+                                Selected: <strong className="text-foreground font-extrabold text-sm">{selectedIds.length}</strong> <span className="text-[10px]">Orders</span>
                             </div>
-                        </div>
-
-                        {/* Batch scheduling form */}
-                        <div className="space-y-3 pt-2 border-t">
-                             {/* Target Branch Searchable Select */}
-                             <div className="space-y-1.5 relative">
-                                 <label className="text-[10px] font-extrabold text-muted-foreground uppercase tracking-wider block">Target Production Branch</label>
-                                 <input
-                                     type="text"
-                                     placeholder="Type to search branch..."
-                                     value={branchSearch}
-                                     onFocus={() => setIsBranchFocused(true)}
-                                     onBlur={() => setTimeout(() => setIsBranchFocused(false), 200)}
-                                     onChange={(e) => {
-                                         setBranchSearch(e.target.value);
-                                     }}
-                                     className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary text-foreground font-semibold"
-                                 />
-                                 {isBranchFocused && (
-                                     <div className="absolute z-50 left-0 right-0 mt-1 max-h-48 overflow-y-auto rounded-lg border border-slate-700 bg-slate-900 shadow-xl divide-y divide-slate-800">
-                                         {filteredBranches.map(b => (
-                                             <button
-                                                 type="button"
-                                                 key={b.id}
-                                                 onClick={() => {
-                                                     setSelectedBranchId(Number(b.id));
-                                                     setBranchSearch(`${b.branch_name} (${b.branch_code})`);
-                                                     setIsBranchFocused(false);
-                                                 }}
-                                                 className="w-full text-left px-3 py-2 text-xs hover:bg-primary hover:text-primary-foreground text-slate-100 transition-colors"
-                                             >
-                                                 {b.branch_name} ({b.branch_code})
-                                             </button>
-                                         ))}
-                                         {filteredBranches.length === 0 && (
-                                             <div className="p-2 text-xs text-muted-foreground text-center">No branches found</div>
-                                         )}
-                                     </div>
-                                 )}
-                             </div>
-
-                            <div className="space-y-1.5">
-                                <label className="text-[10px] font-extrabold text-muted-foreground uppercase tracking-wider block">Consolidated JO Number</label>
-                                <input
-                                    type="text"
-                                    value={joNumber}
-                                    onChange={(e) => setJoNumber(e.target.value)}
-                                    className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary text-foreground font-semibold"
-                                    placeholder="JO-BATCH-XXXX"
-                                />
+                            <div className="h-4 w-px bg-slate-200 dark:bg-slate-800 hidden sm:block" />
+                            <div>
+                                Total SKU Lines: <strong className="text-foreground font-extrabold text-sm">{selectedStats.totalItems}</strong>
                             </div>
-
-                             <div className="space-y-1.5">
-                                 <label className="text-[10px] font-extrabold text-muted-foreground uppercase tracking-wider block">Production Shift Schedule</label>
-                                 <select
-                                     value={shiftOption}
-                                     onChange={(e) => setShiftOption(e.target.value)}
-                                     className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary text-foreground font-semibold cursor-pointer"
-                                 >
-                                     <option value="8">Single Shift (8 Hours/Day)</option>
-                                     <option value="16">Double Shift (16 Hours/Day)</option>
-                                     <option value="24">Triple Shift (24 Hours/Day)</option>
-                                 </select>
-                             </div>
-
-                            <div className="space-y-1.5">
-                                <label className="text-[10px] font-extrabold text-muted-foreground uppercase tracking-wider block">Target Delivery/Due Date</label>
-                                <input
-                                    type="date"
-                                    value={dueDate}
-                                    onChange={(e) => setDueDate(e.target.value)}
-                                    className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary text-foreground font-semibold"
-                                />
+                            <div className="h-4 w-px bg-slate-200 dark:bg-slate-800 hidden sm:block" />
+                            <div>
+                                Total Volume: <strong className="text-primary font-black text-sm">{selectedStats.totalQty.toLocaleString()}</strong> <span className="text-[10px] text-primary">units</span>
                             </div>
-
-                            <button
-                                disabled={submitting}
-                                onClick={handleCreateBatch}
-                                className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 py-2.5 text-xs font-bold text-white shadow-md transition-all disabled:opacity-50"
-                            >
-                                <Play className="h-4 w-4" />
-                                {submitting ? "Scheduling Batch..." : "Release Batch Job Order"}
-                            </button>
                         </div>
                     </div>
                 )}
             </div>
+
+            {/* Pop-up Checkout Modal */}
+            {isCheckoutModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-xs animate-in fade-in duration-300">
+                    <div className="bg-card border border-slate-200 dark:border-slate-800 w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200">
+                        {/* Modal Header */}
+                        <div className="p-5 border-b border-slate-200/80 dark:border-slate-855 flex items-center justify-between bg-slate-100/50 dark:bg-slate-900/10 shrink-0">
+                            <div className="flex items-center gap-2.5">
+                                <span className="p-1.5 rounded-lg bg-primary/10 text-primary">
+                                    <Merge className="h-4.5 w-4.5" />
+                                </span>
+                                <div>
+                                    <h4 className="text-sm font-black text-foreground">
+                                        {selectedIds.length > 1 ? "Consolidated Batch Checkout" : "Job Order Checkout"}
+                                    </h4>
+                                    <p className="text-[10px] text-muted-foreground mt-0.5">
+                                        {selectedIds.length > 1
+                                            ? `Scheduling consolidation for ${selectedIds.length} orders.`
+                                            : "Scheduling production for selected order."}
+                                    </p>
+                                </div>
+                            </div>
+                            <button 
+                                type="button"
+                                onClick={() => setIsCheckoutModalOpen(false)} 
+                                className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg text-muted-foreground hover:text-foreground border-none bg-transparent cursor-pointer transition-colors"
+                            >
+                                <X className="h-4 w-4" />
+                            </button>
+                        </div>
+
+                        {/* Modal Body */}
+                        <div className="flex-1 overflow-y-auto p-6 space-y-5">
+                            {/* Consolidated Products List */}
+                            <div className="space-y-2">
+                                <span className="text-[10px] font-black text-muted-foreground uppercase tracking-wider block">
+                                    {selectedIds.length > 1 ? "Consolidated Products Breakdown" : "Products Breakdown"}
+                                </span>
+                                <div className="grid grid-cols-1 gap-2 max-h-[220px] overflow-y-auto pr-1">
+                                    {consolidatedProducts.map(p => (
+                                        <div key={p.product_id} className="p-3 flex justify-between items-center bg-slate-50 dark:bg-slate-900/40 border border-slate-200/60 dark:border-slate-800/80 rounded-xl hover:border-slate-350 dark:hover:border-slate-700 transition-colors">
+                                            <div className="space-y-1">
+                                                <span className="font-extrabold text-foreground text-xs block leading-tight">{p.product_name}</span>
+                                                <div className="flex flex-wrap gap-1.5 items-center text-[9px]">
+                                                    <span className="bg-slate-100 dark:bg-slate-800 text-muted-foreground px-1.5 py-0.2 rounded font-mono font-bold">SKU: {p.product_code}</span>
+                                                    <span className="text-muted-foreground">•</span>
+                                                    <span className="text-muted-foreground font-semibold">{p.brand}</span>
+                                                    <span className="text-muted-foreground">•</span>
+                                                    <span className="bg-primary/10 text-primary px-1.5 py-0.2 rounded font-extrabold uppercase">{p.category}</span>
+                                                </div>
+                                            </div>
+                                            <div className="text-right shrink-0">
+                                                <span className="font-black text-xs text-primary block">{p.quantity.toLocaleString()}</span>
+                                                <span className="text-[8px] uppercase font-bold text-muted-foreground">{p.uom}</span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Batch scheduling form */}
+                            <div className="space-y-4 pt-4 border-t border-slate-100 dark:border-slate-850">
+                                {/* Target Branch Searchable Select */}
+                                <div className="space-y-1.5 relative">
+                                    <label className="text-[10px] font-black text-muted-foreground uppercase tracking-wider block">Target Production Branch</label>
+                                    <div className="relative">
+                                        <MapPin className="absolute left-3 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                                        <input
+                                            type="text"
+                                            placeholder="Type to search branch..."
+                                            value={branchSearch}
+                                            onFocus={() => setIsBranchFocused(true)}
+                                            onBlur={() => setTimeout(() => setIsBranchFocused(false), 200)}
+                                            onChange={(e) => {
+                                                setBranchSearch(e.target.value);
+                                            }}
+                                            className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-background pl-9 pr-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary text-foreground font-semibold"
+                                        />
+                                    </div>
+                                    {isBranchFocused && (
+                                        <div className="absolute z-50 left-0 right-0 mt-1 max-h-48 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900 shadow-xl divide-y divide-slate-200 dark:divide-slate-800">
+                                            {filteredBranches.map(b => (
+                                                <button
+                                                    type="button"
+                                                    key={b.id}
+                                                    onClick={() => {
+                                                        setSelectedBranchId(Number(b.id));
+                                                        setBranchSearch(`${b.branch_name} (${b.branch_code})`);
+                                                        setIsBranchFocused(false);
+                                                    }}
+                                                    className="w-full text-left px-3 py-2 text-xs hover:bg-primary hover:text-primary-foreground text-slate-800 dark:text-slate-100 transition-colors border-none bg-transparent cursor-pointer"
+                                                >
+                                                    {b.branch_name} ({b.branch_code})
+                                                </button>
+                                            ))}
+                                            {filteredBranches.length === 0 && (
+                                                <div className="p-2 text-xs text-muted-foreground text-center">No branches found</div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* JO Number with randomizer button */}
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-black text-muted-foreground uppercase tracking-wider block">
+                                        {selectedIds.length > 1 ? "Consolidated JO Number" : "Job Order Number"}
+                                    </label>
+                                    <div className="flex gap-2">
+                                        <div className="relative flex-1">
+                                            <Hash className="absolute left-3 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                                            <input
+                                                type="text"
+                                                value={joNumber}
+                                                onChange={(e) => setJoNumber(e.target.value)}
+                                                className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-background pl-9 pr-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary text-foreground font-semibold"
+                                                placeholder="JO-BATCH-XXXX"
+                                            />
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                const prefix = selectedIds.length > 1 ? "JO-BATCH-" : "JO-";
+                                                setJoNumber(`${prefix}${Math.floor(1000 + Math.random() * 9000)}`);
+                                            }}
+                                            className="px-3 border border-slate-200 dark:border-slate-800 bg-background hover:bg-slate-100 dark:hover:bg-slate-900 rounded-xl text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
+                                            title="Generate Random JO ID"
+                                        >
+                                            <RefreshCw className="h-3.5 w-3.5" />
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Shift Option as segment control */}
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-black text-muted-foreground uppercase tracking-wider block">Production Shift Schedule</label>
+                                    <div className="grid grid-cols-3 gap-2 bg-slate-100 dark:bg-slate-900/50 p-1 rounded-xl border border-slate-200/60 dark:border-slate-800/80">
+                                        {[
+                                            { label: "Single Shift", hours: "8", desc: "8 hrs/day" },
+                                            { label: "Double Shift", hours: "16", desc: "16 hrs/day" },
+                                            { label: "Triple Shift", hours: "24", desc: "24 hrs/day" }
+                                        ].map(opt => {
+                                            const isSelected = shiftOption === opt.hours;
+                                            return (
+                                                <button
+                                                    type="button"
+                                                    key={opt.hours}
+                                                    onClick={() => setShiftOption(opt.hours)}
+                                                    className={`py-2 px-1 rounded-lg text-center transition-all cursor-pointer border-none flex flex-col items-center justify-center ${
+                                                        isSelected 
+                                                            ? "bg-card text-primary shadow-xs ring-1 ring-slate-200/50 dark:ring-slate-700/30"
+                                                            : "text-muted-foreground hover:text-foreground hover:bg-slate-200/30 dark:hover:bg-slate-800/30"
+                                                    }`}
+                                                >
+                                                    <span className="text-[10px] font-extrabold">{opt.label}</span>
+                                                    <span className="text-[8px] opacity-70 mt-0.5">{opt.desc}</span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+
+                                {/* Target Delivery/Due Date */}
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-black text-muted-foreground uppercase tracking-wider block">Target Delivery/Due Date</label>
+                                    <div className="relative">
+                                        <Calendar className="absolute left-3 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                                        <input
+                                            type="date"
+                                            value={dueDate}
+                                            onChange={(e) => setDueDate(e.target.value)}
+                                            className="w-full rounded-xl border border-slate-200 dark:border-slate-800 bg-background pl-9 pr-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary text-foreground font-semibold"
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* Create Button */}
+                                <button
+                                    disabled={submitting}
+                                    onClick={async () => {
+                                        await handleCreateBatch();
+                                        setIsCheckoutModalOpen(false);
+                                    }}
+                                    className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 py-3 text-xs font-extrabold text-white shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-[1.01] disabled:opacity-50 mt-4 border-none cursor-pointer"
+                                >
+                                    <Play className="h-4 w-4" />
+                                    {submitting
+                                        ? "Scheduling..."
+                                        : selectedIds.length > 1
+                                        ? "Release Batch Job Order"
+                                        : "Release Job Order"}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

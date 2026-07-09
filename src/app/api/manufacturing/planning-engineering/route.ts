@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { 
     fetchJobOrders, 
     createJobOrder, 
@@ -92,11 +93,12 @@ export async function GET(request: Request) {
                 procurementStatus: item.procurement_status,
                 branch_id: item.branch_id,
                 products: item.products || [],
-                assignedPersonnel: item.assigned_personnel || [],
                 routing_tasks: item.routing_tasks || [],
                 routingTasks: item.routing_tasks || [],
                 shiftOption: item.shift_option || "8",
-                dailyBreakdown: item.daily_breakdown || null
+                dailyBreakdown: item.daily_breakdown || null,
+                createdAt: item.created_at || null,
+                createdBy: item.created_by || null
             }));
             return NextResponse.json(camelCaseList);
         }
@@ -113,6 +115,32 @@ export async function POST(request: Request) {
 
         if (!jo || !jo.jo_id) {
             return NextResponse.json({ error: "Missing job order configuration" }, { status: 400 });
+        }
+
+        // Get logged in user ID from secure access token cookie
+        let encoderId: number | null = null;
+        try {
+            const cookieStore = await cookies();
+            const token = cookieStore.get("vos_access_token")?.value;
+            if (token) {
+                const parts = token.split(".");
+                if (parts.length >= 2) {
+                    const base64Url = parts[1];
+                    let base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+                    while (base64.length % 4) base64 += "=";
+                    const jsonPayload = Buffer.from(base64, "base64").toString("utf8");
+                    const payload = JSON.parse(jsonPayload);
+                    const rawId = payload?.id || payload?.user_id || payload?.sub;
+                    if (rawId) {
+                        const parsed = Number(rawId);
+                        if (!isNaN(parsed)) {
+                            encoderId = parsed;
+                        }
+                    }
+                }
+            }
+        } catch (err) {
+            console.error("Error decoding user token in JO creation:", err);
         }
 
         // Map camelCase from frontend to snake_case for Directus database
@@ -132,9 +160,10 @@ export async function POST(request: Request) {
             allocation_results: jo.allocationResults || null,
             procurement_status: jo.procurementStatus || "Idle",
             branch_id: jo.branch_id || null,
-            assigned_personnel: jo.assignedPersonnel || null,
             shift_option: jo.shiftOption || "8",
             daily_breakdown: jo.dailyBreakdown || null,
+            created_at: new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, -1) + "+08:00",
+            created_by: encoderId,
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
             products: jo.products ? jo.products.map((p: any) => ({
                 product_id: p.product_id,

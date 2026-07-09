@@ -1,17 +1,23 @@
 import React from "react";
-import { ClipboardList, Play } from "lucide-react";
+import { ClipboardList, Play, CheckSquare, Square } from "lucide-react";
 import { SalesOrder, SalesOrderDetail } from "../types";
 
 interface ReleasedSalesOrdersTableProps {
     salesOrders: SalesOrder[];
     handleSelectSO: (so: SalesOrder) => void;
     soDetailsMap: Record<number, SalesOrderDetail[]>;
+    selectedIds: number[];
+    onToggleOrder: (orderId: number) => void;
+    onToggleAll: () => void;
 }
 
 export function ReleasedSalesOrdersTable({
     salesOrders,
     handleSelectSO,
-    soDetailsMap
+    soDetailsMap,
+    selectedIds,
+    onToggleOrder,
+    onToggleAll
 }: ReleasedSalesOrdersTableProps) {
     if (salesOrders.length === 0) {
         return (
@@ -23,22 +29,52 @@ export function ReleasedSalesOrdersTable({
         );
     }
 
+    const allSelected = salesOrders.length > 0 && salesOrders.every(so => selectedIds.includes(so.order_id));
+
     return (
         <div className="overflow-visible border rounded-xl bg-card shadow-sm">
             <table className="w-full border-collapse text-left text-xs table-fixed">
-                <thead className="bg-muted/50 border-b">
+                <thead className="bg-muted/50 border-b text-muted-foreground">
                     <tr>
-                        <th className="p-3 w-1/3 font-semibold text-muted-foreground uppercase">Order No</th>
-                        <th className="p-3 w-1/3 font-semibold text-muted-foreground uppercase">Customer</th>
-                        <th className="p-3 w-1/3 font-semibold text-muted-foreground uppercase text-center">Schedule</th>
+                        <th className="p-3 w-16 text-center font-semibold uppercase">
+                            <button
+                                type="button"
+                                onClick={onToggleAll}
+                                title="Toggle Select All on Page"
+                                className="inline-flex items-center justify-center p-1 hover:bg-muted rounded-md text-primary bg-transparent border-none cursor-pointer"
+                            >
+                                {allSelected ? (
+                                    <CheckSquare className="h-4.5 w-4.5 text-primary fill-primary/10" />
+                                ) : (
+                                    <Square className="h-4.5 w-4.5 text-muted-foreground/50" />
+                                )}
+                            </button>
+                        </th>
+                        <th className="p-3 w-1/3 font-semibold uppercase">Order No</th>
+                        <th className="p-3 w-1/3 font-semibold uppercase">Customer</th>
+                        <th className="p-3 w-28 font-semibold uppercase text-center">Schedule</th>
                     </tr>
                 </thead>
                 <tbody className="divide-y">
                     {salesOrders.map(so => {
                         const details = soDetailsMap[so.order_id] || [];
+                        const isChecked = selectedIds.includes(so.order_id);
 
                         return (
-                            <tr key={so.order_id} className="hover:bg-muted/30 transition-colors group relative">
+                            <tr key={so.order_id} className={`hover:bg-muted/30 transition-colors group relative ${isChecked ? 'bg-primary/5' : ''}`}>
+                                <td className="p-3 text-center">
+                                    <button
+                                        type="button"
+                                        onClick={() => onToggleOrder(so.order_id)}
+                                        className="inline-flex items-center justify-center p-1 hover:bg-muted rounded-md text-primary bg-transparent border-none cursor-pointer"
+                                    >
+                                        {isChecked ? (
+                                            <CheckSquare className="h-4.5 w-4.5 text-primary fill-primary/10" />
+                                        ) : (
+                                            <Square className="h-4.5 w-4.5 text-muted-foreground/50" />
+                                        )}
+                                    </button>
+                                </td>
                                 <td className="p-3 font-bold text-foreground relative overflow-visible">
                                     <span className="cursor-help border-b border-dotted border-muted-foreground/50 pb-0.5">
                                         {so.order_no}
@@ -78,7 +114,7 @@ export function ReleasedSalesOrdersTable({
                                 <td className="p-3 text-center">
                                     <button
                                         onClick={() => handleSelectSO(so)}
-                                        className="inline-flex items-center gap-1 bg-primary hover:bg-primary/95 text-primary-foreground text-xs font-bold px-2.5 py-1.5 rounded-lg shadow-sm"
+                                        className="inline-flex items-center gap-1 bg-primary hover:bg-primary/95 text-primary-foreground text-xs font-bold px-2.5 py-1.5 rounded-lg shadow-sm cursor-pointer border-none"
                                     >
                                         Schedule JO
                                         <Play className="h-3 w-3" />

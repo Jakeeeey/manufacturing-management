@@ -110,9 +110,9 @@ export function useQAReceiving() {
                 const isPkg = prodName.includes("box") || prodName.includes("bottle") || prodName.includes("cap") || prodName.includes("sticker") || prodName.includes("packaging") || prodName.includes("plastic") || prodName.includes("wrapper");
                 
                 rowsInit[l.line_id] = {
-                    acceptedQty: Number(l.quantity_ordered || 0),
-                    lotNumber: l.lot_number || "",
-                    expirationDate: l.expiration_date || "",
+                    acceptedQty: "",
+                    lotNumber: "",
+                    expirationDate: "",
                     rejectionReason: l.rejection_reason || "",
                     qaStatus: l.qa_status || "Passed",
                     isPackaging: isPkg
@@ -158,14 +158,21 @@ export function useQAReceiving() {
 
             const name = line.product_id?.product_name || `Item ${line.product_id}`;
 
+            if (row.acceptedQty === "") {
+                toast.error(`Please enter Accepted Quantity for: ${name}`);
+                return;
+            }
+
+            const accepted = Number(row.acceptedQty);
+
             // Expiration rule for raw materials
-            if (!row.isPackaging && !row.expirationDate && row.acceptedQty > 0) {
+            if (!row.isPackaging && !row.expirationDate && accepted > 0) {
                 toast.error(`Expiration Date is mandatory for Raw Material: ${name}`);
                 return;
             }
 
             // Batch/lot number rule for packaging
-            if (row.isPackaging && !row.lotNumber.trim() && row.acceptedQty > 0) {
+            if (row.isPackaging && !row.lotNumber.trim() && accepted > 0) {
                 toast.error(`Batch / Lot Number is mandatory for Packaging item: ${name}`);
                 return;
             }
@@ -179,15 +186,16 @@ export function useQAReceiving() {
             const lineItemUpdates = lineItems.map(line => {
                 const row = inspectionRows[line.line_id]!;
                 const qtyOrdered = Number(line.quantity_ordered || 0);
-                const qtyRejected = Math.max(0, qtyOrdered - row.acceptedQty);
+                const accepted = Number(row.acceptedQty || 0);
+                const qtyRejected = Math.max(0, qtyOrdered - accepted);
 
                 return {
                     line_id: line.line_id,
                     product_id: line.product_id.product_id,
-                    quantity_received: row.acceptedQty,
+                    quantity_received: accepted,
                     quantity_rejected: qtyRejected,
                     lot_number: row.lotNumber || null,
-                    expiration_date: row.expirationDate || null,
+                    expiration_date: row.expirationDate ? row.expirationDate.replace(/\//g, "-") : null,
                     rejection_reason: row.rejectionReason || null,
                     qa_status: row.qaStatus
                 };

@@ -55,13 +55,31 @@ export const ProductDetailsTab: React.FC<ProductDetailsTabProps> = ({
     const [uploadingImage, setUploadingImage] = React.useState(false);
 
     const parentOptions = React.useMemo(() => {
-        return products
+        const baseOptions = products
             .filter((p) => p.id !== selectedProduct.id && !p.parent_id)
             .map((p) => ({
                 value: String(p.id),
                 label: `${p.title} (${p.sku}) - ${p.baseUom}`
             }));
+        return [
+            { value: "", label: "None (This is a parent product)" },
+            ...baseOptions
+        ];
     }, [products, selectedProduct.id]);
+
+    const uomOptions = React.useMemo(() => {
+        if (!units || units.length === 0) {
+            return [
+                { value: "L", label: "Liter (L)" },
+                { value: "KG", label: "Kilogram (KG)" },
+                { value: "PCS", label: "Piece (PCS)" }
+            ];
+        }
+        return units.map((u) => ({
+            value: u.unit_shortcut,
+            label: `${u.unit_name} (${u.unit_shortcut})`
+        }));
+    }, [units]);
 
     const isParent = !selectedProduct.parent_id;
     
@@ -139,7 +157,7 @@ export const ProductDetailsTab: React.FC<ProductDetailsTabProps> = ({
                     
                     <div className="space-y-3">
                         <div className="space-y-1">
-                            <label className="text-[11px] font-bold text-muted-foreground uppercase">Product Title</label>
+                            <label className="text-[11px] font-bold text-muted-foreground uppercase">Product Title <span className="text-red-500">*</span></label>
                             <input 
                                 type="text" 
                                 value={editedDetails.title || ""} 
@@ -150,7 +168,7 @@ export const ProductDetailsTab: React.FC<ProductDetailsTabProps> = ({
 
                         <div className="grid grid-cols-2 gap-3">
                             <div className="space-y-1">
-                                <label className="text-[11px] font-bold text-muted-foreground uppercase">SKU / Code</label>
+                                <label className="text-[11px] font-bold text-muted-foreground uppercase">SKU / Code <span className="text-red-500">*</span></label>
                                 <input 
                                     type="text" 
                                     value={editedDetails.sku || ""} 
@@ -171,7 +189,7 @@ export const ProductDetailsTab: React.FC<ProductDetailsTabProps> = ({
 
                         <div className="grid grid-cols-2 gap-3">
                             <div className="space-y-1">
-                                <label className="text-[11px] font-bold text-muted-foreground uppercase">Brand</label>
+                                <label className="text-[11px] font-bold text-muted-foreground uppercase">Brand <span className="text-red-500">*</span></label>
                                 <CreatableSelect
                                     options={brandOptions}
                                     value={editedDetails.product_brand ? String(editedDetails.product_brand) : ""}
@@ -184,7 +202,7 @@ export const ProductDetailsTab: React.FC<ProductDetailsTabProps> = ({
                                 />
                             </div>
                             <div className="space-y-1">
-                                <label className="text-[11px] font-bold text-muted-foreground uppercase">Category</label>
+                                <label className="text-[11px] font-bold text-muted-foreground uppercase">Category <span className="text-red-500">*</span></label>
                                 <CreatableSelect
                                     options={categoryOptions}
                                     value={editedDetails.product_category ? String(editedDetails.product_category) : ""}
@@ -200,18 +218,12 @@ export const ProductDetailsTab: React.FC<ProductDetailsTabProps> = ({
 
                         <div className="space-y-1">
                             <label className="text-[11px] font-bold text-muted-foreground uppercase">Parent Product (Optional)</label>
-                            <select
+                            <CreatableSelect
+                                options={parentOptions}
                                 value={editedDetails.parent_id ? String(editedDetails.parent_id) : ""}
-                                onChange={e => handleDetailChange("parent_id", e.target.value ? Number(e.target.value) : null)}
-                                className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
-                            >
-                                <option value="">None (This is a parent product)</option>
-                                {parentOptions.map(opt => (
-                                    <option key={opt.value} value={opt.value}>
-                                        {opt.label}
-                                    </option>
-                                ))}
-                            </select>
+                                onValueChange={(val) => handleDetailChange("parent_id", val ? Number(val) : null)}
+                                placeholder="Select parent product..."
+                            />
                         </div>
 
                         <div className="grid grid-cols-3 gap-2">
@@ -361,30 +373,17 @@ export const ProductDetailsTab: React.FC<ProductDetailsTabProps> = ({
                         
                         <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-1">
-                                <label className="text-[11px] font-bold text-muted-foreground uppercase">Base UOM</label>
-                                <select 
-                                    value={editedDetails.baseUom || ""} 
-                                    onChange={e => handleDetailChange("baseUom", e.target.value)}
-                                    className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
-                                >
-                                    {units.length > 0 ? (
-                                        units.map((u) => (
-                                            <option key={u.unit_id} value={u.unit_shortcut}>
-                                                {u.unit_name} ({u.unit_shortcut})
-                                            </option>
-                                        ))
-                                    ) : (
-                                        <>
-                                            <option value="L">Liter (L)</option>
-                                            <option value="KG">Kilogram (KG)</option>
-                                            <option value="PCS">Piece (PCS)</option>
-                                        </>
-                                    )}
-                                </select>
+                                <label className="text-[11px] font-bold text-muted-foreground uppercase">Base UOM <span className="text-red-500">*</span></label>
+                                <CreatableSelect
+                                    options={uomOptions}
+                                    value={editedDetails.baseUom || ""}
+                                    onValueChange={(val) => handleDetailChange("baseUom", val)}
+                                    placeholder="Select Base UOM..."
+                                />
                             </div>
 
                             <div className="space-y-1">
-                                <label className="text-[11px] font-bold text-muted-foreground uppercase">UOM Count (Pack Multiplier)</label>
+                                <label className="text-[11px] font-bold text-muted-foreground uppercase">UOM Count (Pack Multiplier) <span className="text-red-500">*</span></label>
                                 <input 
                                     type="number" 
                                     value={editedDetails.unit_of_measurement_count || ""} 
@@ -408,7 +407,7 @@ export const ProductDetailsTab: React.FC<ProductDetailsTabProps> = ({
                             </div>
 
                             <div className="space-y-1">
-                                <label className="text-[11px] font-bold text-muted-foreground uppercase">Density Factor (KG/L)</label>
+                                <label className="text-[11px] font-bold text-muted-foreground uppercase">Density Factor (KG/L) <span className="text-red-500">*</span></label>
                                 <input 
                                     type="number" 
                                     step="0.001"
@@ -419,7 +418,7 @@ export const ProductDetailsTab: React.FC<ProductDetailsTabProps> = ({
                             </div>
 
                             <div className="space-y-1">
-                                <label className="text-[11px] font-bold text-muted-foreground uppercase">Expected Yield %</label>
+                                <label className="text-[11px] font-bold text-muted-foreground uppercase">Expected Yield % <span className="text-red-500">*</span></label>
                                 <div className="relative">
                                     <Activity className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/60" />
                                     <input 
@@ -434,7 +433,7 @@ export const ProductDetailsTab: React.FC<ProductDetailsTabProps> = ({
 
                             <div className="space-y-1">
                                 <label className="text-[11px] font-bold text-muted-foreground uppercase flex items-center gap-1">
-                                    <Calendar className="h-3 w-3 text-muted-foreground" /> Shelf Life (Days)
+                                    <Calendar className="h-3 w-3 text-muted-foreground" /> Shelf Life (Days) <span className="text-red-500">*</span>
                                 </label>
                                 <input 
                                     type="number" 
@@ -447,7 +446,7 @@ export const ProductDetailsTab: React.FC<ProductDetailsTabProps> = ({
 
                             <div className="space-y-1">
                                 <label className="text-[11px] font-bold text-muted-foreground uppercase flex items-center gap-1">
-                                    <Sliders className="h-3 w-3 text-muted-foreground" /> Capacity (Qty/Hr)
+                                    <Sliders className="h-3 w-3 text-muted-foreground" /> Capacity (Qty/Hr) <span className="text-red-500">*</span>
                                 </label>
                                 <input 
                                     type="number" 

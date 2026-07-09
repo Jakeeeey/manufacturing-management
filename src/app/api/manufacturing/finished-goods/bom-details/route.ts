@@ -62,7 +62,7 @@ export async function GET(request: Request) {
                 id: String(c.component_id),
                 productId: c.component_product_id,
                 name,
-                type: c.component_type === "by_product" ? "by_product" : c.component_type === "sub_assembly" ? "sub_assembly" : "raw_material",
+                type: String(c.component_type) === "by_product" ? "by_product" : String(c.component_type) === "sub_assembly" ? "sub_assembly" : String(c.component_type) === "packaging" ? "packaging" : String(c.component_type) === "finished_good" ? "finished_good" : "raw_material",
                 quantity: c.quantity_required,
                 uom: uomShortcut,
                 uomId: Number(c.unit_of_measurement) || undefined,
@@ -142,12 +142,12 @@ export async function POST(request: Request) {
         const body = await request.json();
         const { productId, bomId, details, ingredients, routings, overheads } = body;
 
-        if (!productId || !bomId) {
-            return NextResponse.json({ error: "Missing productId or bomId" }, { status: 400 });
+        if (!productId) {
+            return NextResponse.json({ error: "Missing productId" }, { status: 400 });
         }
 
         const numericProductId = parseInt(productId);
-        const numericBomId = parseInt(bomId);
+        const numericBomId = bomId ? parseInt(bomId) : null;
 
         // 1. Update Product Details
         const prodOk = await updateProductDetails(numericProductId, {
@@ -170,46 +170,50 @@ export async function POST(request: Request) {
         });
         if (!prodOk) throw new Error("Failed to update product details in Directus");
 
-        // 1b. Update Product Version Overhead
-        if (details.customOverhead !== undefined) {
-            await updateProductVersionOverhead(numericBomId, Number(details.customOverhead) || 0);
-        }
+        let rollupResult = null;
 
-        // 2. Update BOM yield details
-        const bomOk = await saveActiveBOMDetails(numericBomId, details.expectedYieldPercent);
-        if (!bomOk) throw new Error("Failed to update BOM yield details in Directus");
+        if (numericBomId && numericBomId > 0) {
+            // 1b. Update Product Version Overhead
+            if (details.customOverhead !== undefined) {
+                await updateProductVersionOverhead(numericBomId, Number(details.customOverhead) || 0);
+            }
 
-        // 3. Sync BOM components list
-        const compOk = await syncBOMComponents(numericBomId, ingredients, false);
-        if (!compOk) throw new Error("Failed to sync BOM components in Directus");
+            // 2. Update BOM yield details
+            const bomOk = await saveActiveBOMDetails(numericBomId, details.expectedYieldPercent);
+            if (!bomOk) throw new Error("Failed to update BOM yield details in Directus");
 
-        // 4. Sync routing steps
-        const routOk = await syncRoutingSteps(numericBomId, routings, 0, false);
-        if (!routOk) throw new Error("Failed to sync routings in Directus");
+            // 3. Sync BOM components list
+            const compOk = await syncBOMComponents(numericBomId, ingredients, false);
+            if (!compOk) throw new Error("Failed to sync BOM components in Directus");
 
-        // 4b. Sync product overhead variables
-        if (overheads) {
-            let versionId = 0;
-            const bomRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_boms/${numericBomId}`, {
-                headers
-            });
-            if (bomRes.ok) {
-                const bomJson = await bomRes.json();
-                const bomVersion = bomJson.data?.version;
-                if (bomVersion) {
-                    versionId = typeof bomVersion === "object" ? bomVersion.id : Number(bomVersion);
+            // 4. Sync routing steps
+            const routOk = await syncRoutingSteps(numericBomId, routings, 0, false);
+            if (!routOk) throw new Error("Failed to sync routings in Directus");
+
+            // 4b. Sync product overhead variables
+            if (overheads) {
+                let versionId = 0;
+                const bomRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_boms/${numericBomId}`, {
+                    headers
+                });
+                if (bomRes.ok) {
+                    const bomJson = await bomRes.json();
+                    const bomVersion = bomJson.data?.version;
+                    if (bomVersion) {
+                        versionId = typeof bomVersion === "object" ? bomVersion.id : Number(bomVersion);
+                    }
+                }
+                if (versionId > 0) {
+                    const overheadsOk = await syncProductOverheads(numericProductId, versionId, overheads);
+                    if (!overheadsOk) throw new Error("Failed to sync product overhead variables in Directus");
                 }
             }
-            if (versionId > 0) {
-                const overheadsOk = await syncProductOverheads(numericProductId, versionId, overheads);
-                if (!overheadsOk) throw new Error("Failed to sync product overhead variables in Directus");
-            }
-        }
 
-        // 5. Run standard rollup costing recalculation and save to product standard cost field
-        const rollupResult = await calculateRollupCost(numericProductId);
-        if (rollupResult.bomId) {
-            await updateProductStandardCost(numericProductId, rollupResult.totalBaseCost);
+            // 5. Run standard rollup costing recalculation and save to product standard cost field
+            rollupResult = await calculateRollupCost(numericProductId);
+            if (rollupResult.bomId) {
+                await updateProductStandardCost(numericProductId, rollupResult.totalBaseCost);
+            }
         }
 
         return NextResponse.json({

@@ -358,7 +358,7 @@ export function SalesOrderDetailPanel({
                 {hasChanges && (
                     <div className="bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20 rounded-lg p-2.5 flex items-start gap-2 text-[11px] font-semibold leading-relaxed">
                         <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-amber-600" />
-                        <span>You have unsaved quantity changes. Press &quot;Save Quantities&quot; below to commit them.</span>
+                        <span>You have unsaved quantity changes. Press &quot;Allocate Inventory&quot; below to commit them.</span>
                     </div>
                 )}
 
@@ -378,13 +378,14 @@ export function SalesOrderDetailPanel({
                                     ? "bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-600"
                                     : "border border-slate-700 bg-slate-800/40 hover:bg-slate-800 text-slate-400"
                             }`}
+                            title="Transitioning to Pending will allocate items..."
                         >
                             {savingQuantities ? (
                                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
                             ) : (
                                 <Save className="h-3.5 w-3.5" />
                             )}
-                            Save Quantities
+                            Allocate Inventory
                         </button>
                         <button
                             disabled={updatingStatusId === selectedOrder.order_id || orderDetails.length === 0 || hasChanges}

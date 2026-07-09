@@ -38,7 +38,7 @@ export interface ShipmentLineItem {
 }
 
 export interface InspectionRow {
-    acceptedQty: number;
+    acceptedQty: number | string;
     lotNumber: string;
     expirationDate: string;
     rejectionReason: string;
