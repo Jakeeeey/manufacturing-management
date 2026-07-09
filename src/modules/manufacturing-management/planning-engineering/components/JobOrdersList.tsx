@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Cpu, Merge, Loader2, Layers, AlertTriangle, ArrowRight, CheckCircle, Clock, DollarSign, Users, UserPlus, CheckSquare, Square, Calendar, Play, Copy } from "lucide-react";
+import { Cpu, Merge, Loader2, Layers, AlertTriangle, ArrowRight, CheckCircle, Clock, DollarSign, Users, Calendar, Play, Copy, ChevronDown, ChevronRight } from "lucide-react";
 import { JobOrder } from "../types";
 import { toast } from "sonner";
 
@@ -57,8 +57,6 @@ interface JobOrdersListProps {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
     products: any[];
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    handleAssignPersonnel: (joId: string, personnel: any[]) => void;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
     modifyJobOrder: (joId: string, patch: any) => Promise<void>;
 }
 
@@ -76,11 +74,8 @@ export function JobOrdersList({
     users,
     suppliers,
     products,
-    handleAssignPersonnel,
     modifyJobOrder
 }: JobOrdersListProps) {
-    const [assigningJoId, setAssigningJoId] = useState<string | null>(null);
-    const [selectedUserIds, setSelectedUserIds] = useState<number[]>([]);
 
     const [prereqParentJo, setPrereqParentJo] = useState<JobOrder | null>(null);
     const [prereqCompName, setPrereqCompName] = useState<string>("");
@@ -89,6 +84,23 @@ export function JobOrdersList({
     const [prereqCapacity, setPrereqCapacity] = useState<string>("");
     const [prereqShiftOption, setPrereqShiftOption] = useState<string>("8");
     const [isPrereqModalOpen, setIsPrereqModalOpen] = useState<boolean>(false);
+
+    const [expandedJoIds, setExpandedJoIds] = useState<Record<string, boolean>>({});
+
+    const toggleExpand = (joId: string) => {
+        setExpandedJoIds(prev => ({
+            ...prev,
+            [joId]: !prev[joId]
+        }));
+    };
+
+    const toggleAllExpand = (expand: boolean) => {
+        const next: Record<string, boolean> = {};
+        jobOrders.forEach(jo => {
+            next[jo.jo_id] = expand;
+        });
+        setExpandedJoIds(next);
+    };
 
     const getProductCapacityLocal = (productId: number) => {
         const p = products.find(prod => Number(prod.product_id) === Number(productId));
@@ -394,6 +406,24 @@ export function JobOrdersList({
 
     return (
         <div className="space-y-4">
+            {jobOrders.length > 1 && (
+                <div className="flex justify-end gap-2 pr-1">
+                    <button
+                        type="button"
+                        onClick={() => toggleAllExpand(true)}
+                        className="px-2.5 py-1 text-[10px] font-bold text-muted-foreground hover:text-foreground border border-slate-200 dark:border-slate-800 bg-background rounded-lg cursor-pointer transition-colors shadow-xs"
+                    >
+                        Expand All
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => toggleAllExpand(false)}
+                        className="px-2.5 py-1 text-[10px] font-bold text-muted-foreground hover:text-foreground border border-slate-200 dark:border-slate-800 bg-background rounded-lg cursor-pointer transition-colors shadow-xs"
+                    >
+                        Collapse All
+                    </button>
+                </div>
+            )}
             {jobOrders.map(jo => {
                 // Summarize duration routing metrics if available
                 const totalHours = jo.routings ? jo.routings.reduce((sum, r) => sum + (Number(r.duration_hours) || 0), 0) : 0;
@@ -423,14 +453,72 @@ export function JobOrdersList({
                     return total || 1;
                 })();
 
-                const currentAssigned = jo.assignedPersonnel || [];
+                const taskAssignmentsSummary = (() => {
+                    interface TaskAssignment {
+                        userId: number;
+                        name: string;
+                        position: string;
+                        tasks: Array<{
+                            productName: string;
+                            operationName: string;
+                            sequenceOrder: number;
+                        }>;
+                    }
+                    const summaryMap: Record<number, TaskAssignment> = {};
+
+                    const pList = jo.products && jo.products.length > 0 ? jo.products : [{
+                        product_id: jo.product_id,
+                        product_name: jo.product_name,
+                        quantity: jo.quantity,
+                        routings: jo.routings
+                    }];
+
+                    pList.forEach((p) => {
+                        const routings = (p as { routings?: Array<{ assigned_personnel?: { id?: number | string; user_id?: number | string; first_name?: string; last_name?: string; email?: string; name?: string; user_fname?: string; user_lname?: string; position?: string; user_position?: string }; operation_name?: string; sequence_order?: number }> }).routings;
+                        if (routings) {
+                            routings.forEach((r) => {
+                                if (r.assigned_personnel) {
+                                    const ap = r.assigned_personnel;
+                                    const uId = Number(ap.id || ap.user_id);
+                                    if (uId) {
+                                        if (!summaryMap[uId]) {
+                                            summaryMap[uId] = {
+                                                userId: uId,
+                                                name: ap.name || `${ap.user_fname || ""} ${ap.user_lname || ""}`.trim() || "Unknown",
+                                                position: ap.position || ap.user_position || "Operator",
+                                                tasks: []
+                                            };
+                                        }
+                                        summaryMap[uId].tasks.push({
+                                            productName: p.product_name || jo.product_name || "Product",
+                                            operationName: r.operation_name || "Operation",
+                                            sequenceOrder: r.sequence_order || 0
+                                        });
+                                    }
+                                }
+                            });
+                        }
+                    });
+
+                    return Object.values(summaryMap);
+                })();
 
                 return (
                     <div key={jo.jo_id} className="border rounded-xl bg-card p-5 shadow-sm space-y-4">
                         {/* Top Card Bar */}
-                        <div className="flex justify-between items-start border-b pb-3">
+                        <div 
+                            onClick={() => toggleExpand(jo.jo_id)}
+                            className="flex justify-between items-start border-b pb-3 cursor-pointer hover:bg-slate-50/50 dark:hover:bg-slate-900/10 rounded-lg p-1.5 -m-1.5 transition-all select-none"
+                        >
                             <div>
                                 <div className="flex items-center gap-2">
+                                    <span className="p-0.5 rounded-md text-muted-foreground">
+                                        {expandedJoIds[jo.jo_id] ? (
+                                            <ChevronDown className="h-4.5 w-4.5" />
+                                        ) : (
+                                            <ChevronRight className="h-4.5 w-4.5" />
+                                        )}
+                                    </span>
                                     <span className="font-extrabold text-foreground text-sm">{jo.jo_id}</span>
                                     {jo.is_batched ? (
                                         <span className="inline-flex items-center gap-0.5 bg-primary/10 text-primary text-[9px] font-bold px-2 py-0.5 rounded-full border border-primary/20">
@@ -441,22 +529,38 @@ export function JobOrdersList({
                                         <span className="text-[10px] text-muted-foreground font-semibold">Ref SO: {jo.order_no}</span>
                                     )}
                                 </div>
-                                {jo.products && jo.products.length > 1 ? (
-                                    <div className="mt-2 space-y-1 pl-3 border-l-2 border-primary/30">
-                                        <span className="text-[9px] text-muted-foreground font-extrabold uppercase block tracking-wider">Products in this Run:</span>
-{/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                                        {jo.products.map((p: any, pIdx: number) => (
-                                            <div key={pIdx} className="text-[11px] text-foreground flex items-center gap-4 font-semibold">
-                                                <span>• {p.product_name}</span>
-                                                <span className="text-primary text-[10px] ml-auto font-bold">{p.quantity ? Number(p.quantity) : 0} PCS</span>
+                                
+                                {expandedJoIds[jo.jo_id] ? (
+                                    <>
+                                        {jo.products && jo.products.length > 1 ? (
+                                            <div className="mt-2 space-y-1 pl-3 border-l-2 border-primary/30">
+                                                <span className="text-[9px] text-muted-foreground font-extrabold uppercase block tracking-wider">Products in this Run:</span>
+                                                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                                                {jo.products.map((p: any, pIdx: number) => (
+                                                    <div key={pIdx} className="text-[11px] text-foreground flex items-center gap-4 font-semibold">
+                                                        <span>• {p.product_name}</span>
+                                                        <span className="text-primary text-[10px] ml-auto font-bold">{p.quantity ? Number(p.quantity) : 0} PCS</span>
+                                                    </div>
+                                                ))}
                                             </div>
-                                        ))}
-                                    </div>
+                                        ) : (
+                                            <h4 className="text-xs font-bold text-muted-foreground mt-1">Product: <span className="text-foreground">{jo.product_name}</span></h4>
+                                        )}
+                                        {jo.is_batched && (
+                                            <p className="text-[9px] text-muted-foreground mt-0.5 font-medium">Consolidated Sales Orders: <span className="text-foreground font-bold">{jo.order_no}</span></p>
+                                        )}
+                                    </>
                                 ) : (
-                                    <h4 className="text-xs font-bold text-muted-foreground mt-1">Product: <span className="text-foreground">{jo.product_name}</span></h4>
-                                )}
-                                {jo.is_batched && (
-                                    <p className="text-[9px] text-muted-foreground mt-0.5 font-medium">Consolidated Sales Orders: <span className="text-foreground font-bold">{jo.order_no}</span></p>
+                                    <h4 className="text-xs font-bold text-muted-foreground mt-1.5 flex items-center gap-2">
+                                        <span>Product:</span>
+                                        {jo.products && jo.products.length > 1 ? (
+                                            <span className="text-foreground">
+                                                {jo.products.length} Products (Total: {jo.products.reduce((acc: number, cur: { quantity?: number }) => acc + Number(cur.quantity || 0), 0)} PCS)
+                                            </span>
+                                        ) : (
+                                            <span className="text-foreground">{jo.product_name} ({jo.quantity} PCS)</span>
+                                        )}
+                                    </h4>
                                 )}
                             </div>
                             <div className="flex items-center gap-2">
@@ -493,17 +597,19 @@ export function JobOrdersList({
                             </div>
                         </div>
 
-                        {/* Details section */}
-                        <div className="grid grid-cols-2 sm:grid-cols-6 gap-4 text-[11px] bg-muted/5 p-3 rounded-lg border">
-                            <div>
-                                <span className="text-muted-foreground font-bold block uppercase text-[9px]">Target Branch</span>
-                                <span className="font-bold text-foreground text-[10px]">
-                                    {branches.find(b => Number(b.id) === Number(jo.branch_id))?.branch_name || `ID: ${jo.branch_id || "N/A"}`}
-                                </span>
-                            </div>
-                            <div>
-                                <span className="text-muted-foreground font-bold block uppercase text-[9px]">Build Qty</span>
-                                <span className="font-extrabold text-foreground">{jo.quantity} PCS</span>
+                        {expandedJoIds[jo.jo_id] && (
+                            <>
+                                {/* Details section */}
+                                <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-4 text-[11px] bg-muted/5 p-3 rounded-lg border">
+                                    <div>
+                                        <span className="text-muted-foreground font-bold block uppercase text-[9px]">Target Branch</span>
+                                        <span className="font-bold text-foreground text-[10px]">
+                                            {branches.find(b => Number(b.id) === Number(jo.branch_id))?.branch_name || `ID: ${jo.branch_id || "N/A"}`}
+                                        </span>
+                                    </div>
+                                    <div>
+                                        <span className="text-muted-foreground font-bold block uppercase text-[9px]">Build Qty</span>
+                                        <span className="font-extrabold text-foreground">{jo.quantity} PCS</span>
                             </div>
                             <div>
                                 <span className="text-muted-foreground font-bold block uppercase text-[9px]">Target Due Date</span>
@@ -524,78 +630,138 @@ export function JobOrdersList({
                                     {suggestedManpower} Workers
                                 </span>
                             </div>
+                            <div>
+                                <span className="text-muted-foreground font-bold block uppercase text-[9px]">Created At</span>
+                                <span className="font-bold text-foreground block truncate" title={jo.createdAt || "N/A"}>
+                                    {(() => {
+                                        if (!jo.createdAt) return "N/A";
+                                        try {
+                                            const d = new Date(jo.createdAt);
+                                            const datePart = d.toLocaleDateString("en-US", { timeZone: "Asia/Manila", month: "short", day: "numeric", year: "2-digit" });
+                                            const timePart = d.toLocaleTimeString("en-US", { timeZone: "Asia/Manila", hour: "2-digit", minute: "2-digit", hour12: true });
+                                            return `${datePart} ${timePart}`;
+                                        } catch {
+                                            return jo.createdAt;
+                                        }
+                                    })()}
+                                </span>
+                            </div>
+                            <div>
+                                <span className="text-muted-foreground font-bold block uppercase text-[9px]">Created By</span>
+                                <span className="font-bold text-foreground block truncate" title={(() => {
+                                    const creatorUser = users.find(u => Number(u.user_id || u.id) === Number(jo.createdBy));
+                                    return creatorUser 
+                                        ? `${creatorUser.user_fname || creatorUser.first_name || ""} ${creatorUser.user_lname || creatorUser.last_name || ""}`.trim() || creatorUser.email || `ID: ${jo.createdBy}`
+                                        : (jo.createdBy ? `ID: ${jo.createdBy}` : "System");
+                                })()}>
+                                    {(() => {
+                                        const creatorUser = users.find(u => Number(u.user_id || u.id) === Number(jo.createdBy));
+                                        return creatorUser 
+                                            ? `${creatorUser.user_fname || creatorUser.first_name || ""}`.trim() || creatorUser.email?.split("@")[0] || `User #${jo.createdBy}`
+                                            : (jo.createdBy ? `User #${jo.createdBy}` : "System");
+                                    })()}
+                                </span>
+                            </div>
                         </div>
 
-                        {/* Daily runs breakdown section */}
+                        {/* Projected Finish Date & Calendar Plot */}
                         {jo.dailyBreakdown && jo.dailyBreakdown.length > 0 && (
-                            <div className="mt-3 border-t border-slate-800/80 pt-3 space-y-2.5">
-                                <div className="flex items-center justify-between">
+                            <div className="mt-3 border-t border-slate-100 dark:border-slate-850 pt-3 flex flex-col md:flex-row gap-4 justify-between items-start">
+                                {/* Text info */}
+                                <div className="space-y-2 flex-1 w-full">
                                     <span className="text-[10px] font-extrabold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
                                         <Calendar className="h-3.5 w-3.5 text-primary" />
-                                        Daily Production Runs Breakdown
+                                        Production Timeline Plot
                                     </span>
-                                    {jo.shiftOption && (
-                                        <span className="text-[9px] font-semibold bg-primary/10 text-primary border border-primary/20 px-2 py-0.5 rounded-full">
-                                            {jo.shiftOption === "8" ? "Single Shift (8h)" : jo.shiftOption === "16" ? "Double Shift (16h)" : "Triple Shift (24h)"}
-                                        </span>
-                                    )}
-                                </div>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2">
-                                    {jo.dailyBreakdown.map((run) => (
-                                        <div 
-                                            key={run.day} 
-                                            className="bg-slate-950/20 border border-slate-800/80 p-2.5 rounded-xl text-[10px] flex flex-col gap-1.5 hover:border-slate-700/80 transition-colors"
-                                        >
-                                            <div className="flex justify-between items-center">
-                                                <span className="font-extrabold text-primary">Day {run.day}</span>
-                                                <span className={`text-[8px] border px-1.5 py-0.2 rounded font-bold uppercase ${
-                                                    run.status === "Finished" || run.status === "Completed"
-                                                        ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
-                                                        : run.status === "Ongoing" || run.status === "In Progress"
-                                                        ? "bg-amber-500/10 text-amber-500 border-amber-500/20"
-                                                        : "bg-slate-800 text-muted-foreground border-slate-700"
-                                                }`}>
-                                                    {run.status}
+                                    <div className="bg-slate-50 dark:bg-slate-900/30 p-3 rounded-xl border border-slate-200/50 dark:border-slate-800/80 space-y-2 text-xs">
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-muted-foreground font-medium">Projected Finish Date:</span>
+                                            <strong className="text-foreground">{jo.dailyBreakdown[jo.dailyBreakdown.length - 1].date}</strong>
+                                        </div>
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-muted-foreground font-medium">Total Duration:</span>
+                                            <strong className="text-foreground">{jo.dailyBreakdown.length} Production Days</strong>
+                                        </div>
+                                        {jo.shiftOption && (
+                                            <div className="flex justify-between items-center pt-1.5 border-t border-slate-100 dark:border-slate-850">
+                                                <span className="text-muted-foreground font-medium">Daily Schedule:</span>
+                                                <span className="text-[9px] font-bold bg-primary/10 text-primary border border-primary/20 px-2 py-0.5 rounded-full">
+                                                    {jo.shiftOption === "8" ? "Single Shift (8h/day)" : jo.shiftOption === "16" ? "Double Shift (16h/day)" : "Triple Shift (24h/day)"}
                                                 </span>
                                             </div>
-                                            <div className="text-muted-foreground font-semibold space-y-1">
-                                                <div className="flex justify-between">
-                                                    <span>{run.date}</span>
-                                                    <span className="font-bold text-foreground">Target: {run.quantity.toLocaleString()}</span>
-                                                </div>
-                                                {(run.status === "Finished" || run.status === "Completed") && (
-                                                    <div className="flex justify-between items-center border-t border-slate-800/40 pt-1 text-[9.5px]">
-                                                        <span className="text-muted-foreground">Yielded:</span>
-                                                        {(() => {
-                                                            const actual = run.actual_yield ?? run.quantity;
-                                                            const target = run.quantity;
-                                                            const diff = actual - target;
-                                                            
-                                                            if (diff < 0) {
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Mini Calendar monthly grids */}
+                                <div className="flex flex-wrap gap-3 w-full md:w-auto shrink-0">
+                                    {(() => {
+                                        const monthsGroup: Record<string, { year: number; month: number; dates: Set<string> }> = {};
+                                        jo.dailyBreakdown.forEach(run => {
+                                            const d = new Date(run.date);
+                                            const key = `${d.getFullYear()}-${d.getMonth()}`;
+                                            if (!monthsGroup[key]) {
+                                                monthsGroup[key] = {
+                                                    year: d.getFullYear(),
+                                                    month: d.getMonth(),
+                                                    dates: new Set<string>()
+                                                };
+                                            }
+                                            monthsGroup[key].dates.add(run.date);
+                                        });
+
+                                        return Object.values(monthsGroup)
+                                            .sort((a, b) => (a.year * 12 + a.month) - (b.year * 12 + b.month))
+                                            .map(({ year, month, dates }) => {
+                                                const tempDate = new Date(year, month, 1);
+                                                const monthName = tempDate.toLocaleString("en-US", { month: "short" });
+                                                const firstDay = tempDate.getDay();
+                                                const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+                                                const blanks = Array(firstDay).fill(null);
+                                                const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
+                                                const cells = [...blanks, ...days];
+
+                                                return (
+                                                    <div key={`${year}-${month}`} className="border border-slate-200/80 dark:border-slate-800 p-3 rounded-2xl bg-slate-50/10 dark:bg-slate-900/5 flex flex-col items-center select-none">
+                                                        <span className="text-[10px] font-black text-foreground uppercase mb-2 tracking-wide">
+                                                            {monthName} {year}
+                                                        </span>
+                                                        <div className="grid grid-cols-7 gap-1 text-center text-[9px]">
+                                                            {/* Weekday labels */}
+                                                            {["S", "M", "T", "W", "T", "F", "S"].map((w, wIdx) => (
+                                                                <span key={wIdx} className="font-extrabold text-muted-foreground w-5 h-5 flex items-center justify-center">
+                                                                    {w}
+                                                                </span>
+                                                            ))}
+                                                            {/* Calendar cells */}
+                                                            {cells.map((cellDay, cellIdx) => {
+                                                                if (cellDay === null) {
+                                                                    return <div key={`blank-${cellIdx}`} className="w-5 h-5" />;
+                                                                }
+
+                                                                const curDateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(cellDay).padStart(2, "0")}`;
+                                                                const isSelected = dates.has(curDateStr);
+
                                                                 return (
-                                                                    <span className="font-extrabold text-rose-500">
-                                                                        {actual.toLocaleString()} ({diff.toLocaleString()})
-                                                                    </span>
+                                                                    <div
+                                                                        key={`day-${cellDay}`}
+                                                                        className={`w-5 h-5 rounded-md flex items-center justify-center text-[9px] font-bold ${
+                                                                            isSelected
+                                                                                ? "bg-primary text-primary-foreground shadow-xs scale-105"
+                                                                                : "text-muted-foreground opacity-60"
+                                                                        }`}
+                                                                        title={curDateStr}
+                                                                    >
+                                                                        {cellDay}
+                                                                    </div>
                                                                 );
-                                                            } else if (diff > 0) {
-                                                                return (
-                                                                    <span className="font-extrabold text-sky-500">
-                                                                        {actual.toLocaleString()} (+{diff.toLocaleString()})
-                                                                    </span>
-                                                                );
-                                                            } else {
-                                                                return (
-                                                                    <span className="font-extrabold text-emerald-500">
-                                                                        {actual.toLocaleString()}
-                                                                    </span>
-                                                                );
-                                                            }
-                                                        })()}
+                                                            })}
+                                                        </div>
                                                     </div>
-                                                )}
-                                            </div>
-                                        </div>
-                                    ))}
+                                                );
+                                            });
+                                    })()}
                                 </div>
                             </div>
                         )}
@@ -1234,7 +1400,7 @@ export function JobOrdersList({
                                                 </span>
                                                 <button
                                                     onClick={() => modifyJobOrder(jo.jo_id, { status: "Finished" })}
-                                                    className="bg-slate-800 hover:bg-slate-700 text-foreground text-[10px] font-bold px-2.5 py-1.5 rounded-lg border border-slate-700 cursor-pointer"
+                                                    className="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-foreground text-[10px] font-bold px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer"
                                                 >
                                                     Re-sync Inventory Stock
                                                 </button>
@@ -1329,7 +1495,7 @@ export function JobOrdersList({
 
                                                             return (
                                                                 <React.Fragment key={rout.routing_id}>
-                                                                    <div className="w-80 shrink-0 flex flex-col justify-between bg-slate-900/35 hover:bg-slate-900/50 border border-slate-800/80 rounded-xl p-3.5 shadow-lg relative transition-all duration-200 space-y-3 overflow-hidden">
+                                                                    <div className="w-80 shrink-0 flex flex-col justify-between bg-slate-100 dark:bg-slate-900/35 hover:bg-slate-50/30 dark:bg-slate-900/50 border border-slate-200/80 dark:border-slate-800/80 rounded-xl p-3.5 shadow-lg relative transition-all duration-200 space-y-3 overflow-hidden">
                                                                         <div className="space-y-2.5 text-[10px]">
                                                                             <div className="flex justify-between font-bold text-foreground">
                                                                                 <span className="text-[9px] text-primary font-extrabold uppercase tracking-wider flex items-center gap-1.5">
@@ -1338,7 +1504,7 @@ export function JobOrdersList({
                                                                                         <button
                                                                                             title="Duplicate Task"
                                                                                             onClick={() => handleDuplicateTask(jo, Number(p.product_id), rout)}
-                                                                                            className="p-0.5 rounded bg-slate-800 hover:bg-slate-700 text-muted-foreground hover:text-foreground transition-colors inline-flex items-center justify-center border border-slate-700"
+                                                                                            className="p-0.5 rounded bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-muted-foreground hover:text-foreground transition-colors inline-flex items-center justify-center border border-slate-200 dark:border-slate-700"
                                                                                         >
                                                                                             <Copy className="h-2.5 w-2.5" />
                                                                                         </button>
@@ -1349,14 +1515,14 @@ export function JobOrdersList({
                                                                             <div className="font-extrabold text-foreground text-xs min-h-[28px] flex items-center">
                                                                                 {rout.operation_name}
                                                                             </div>
-                                                                            <div className="flex justify-between text-muted-foreground pt-1.5 border-t border-slate-800/40">
+                                                                            <div className="flex justify-between text-muted-foreground pt-1.5 border-t border-slate-200 dark:border-slate-800/40">
                                                                                 <span>Labor: ₱{labor.toFixed(2)} | OH: ₱{overhead.toFixed(2)}</span>
                                                                                 <span className="text-primary font-bold">{stepManpower} Workers suggested</span>
                                                                             </div>
                                                                             
                                                                             {/* Operator Assignment per Task */}
                                                                             {jo.status === "Ongoing" ? (
-                                                                                <div className="flex flex-col gap-1.5 mt-2 pt-2 border-t border-slate-800/40">
+                                                                                <div className="flex flex-col gap-1.5 mt-2 pt-2 border-t border-slate-200 dark:border-slate-800/40">
                                                                                     <div className="flex items-center justify-between gap-2">
                                                                                         <span className="text-[9px] font-bold text-muted-foreground uppercase flex items-center gap-1 shrink-0">
                                                                                             Assign Operator:
@@ -1364,39 +1530,61 @@ export function JobOrdersList({
                                                                                                 <Loader2 className="h-2.5 w-2.5 animate-spin text-emerald-500" />
                                                                                             )}
                                                                                         </span>
-                                                                                        <select
-                                                                                            disabled={assigningStepKeys[`${jo.jo_id}-${p.product_id}-${rout.routing_id}`]}
-                                                                                            className="bg-background border border-slate-800 rounded px-1.5 py-0.5 text-[10px] text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500 disabled:opacity-50 max-w-[140px] truncate"
-                                                                                            value={rout.assigned_personnel?.id?.toString() || ""}
-                                                                                            onChange={(e) => handleAssignPersonnelToTask(jo, Number(p.product_id), rout.routing_id, e.target.value)}
-                                                                                        >
-                                                                                            <option value="">-- Choose Operator --</option>
-                                                                                            {[...users].map(u => {
-                                                                                                const workload = userWorkloads[String(u.user_id)] || 0;
-                                                                                                const isOver = workload > 40;
-                                                                                                const opName = (rout.operation_name || "").toLowerCase();
-                                                                                                const pos = (u.user_position || "").toLowerCase();
-                                                                                                const isRoleMatch = pos && opName && (opName.includes(pos) || pos.includes(opName) ||
-                                                                                                    (pos.includes("welder") && opName.includes("weld")) ||
-                                                                                                    (pos.includes("mixer") && opName.includes("mix")) ||
-                                                                                                    (pos.includes("operator") && opName.includes("assemble")) ||
-                                                                                                    (pos.includes("baker") && opName.includes("bake")) ||
-                                                                                                    (pos.includes("packer") && opName.includes("pack")));
-                                                                                                return { ...u, workload, isRoleMatch, isOver };
-                                                                                            }).sort((a, b) => {
-                                                                                                if (a.isRoleMatch && !b.isRoleMatch) return -1;
-                                                                                                if (!a.isRoleMatch && b.isRoleMatch) return 1;
-                                                                                                return a.workload - b.workload;
-                                                                                            }).map(u => {
-                                                                                                const statusStr = u.isOver ? "⚠️ OVERLOADED" : `${u.workload.toFixed(1)} hrs`;
-                                                                                                const prefix = u.isRoleMatch ? "⭐ [Match] " : "";
-                                                                                                return (
-                                                                                                    <option key={u.user_id || u.id} value={u.user_id || u.id}>
-                                                                                                        {prefix}{u.user_fname} {u.user_lname} ({u.user_position || "Operator"}) — {statusStr}
-                                                                                                    </option>
-                                                                                                );
-                                                                                            })}
-                                                                                        </select>
+                                                                                        {(() => {
+                                                                                            const assignedOperatorIdsInJO = new Set<string>();
+                                                                                            const productsList = jo.products && jo.products.length > 0 ? jo.products : [{
+                                                                                                routings: jo.routings
+                                                                                            }];
+                                                                                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                                                                            productsList.forEach((pSub: any) => {
+                                                                                                if (pSub.routings) {
+                                                                                                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                                                                                    pSub.routings.forEach((rSub: any) => {
+                                                                                                        if (rSub.assigned_personnel?.id && Number(rSub.routing_id) !== Number(rout.routing_id)) {
+                                                                                                            assignedOperatorIdsInJO.add(rSub.assigned_personnel.id.toString());
+                                                                                                        }
+                                                                                                    });
+                                                                                                }
+                                                                                            });
+
+                                                                                            return (
+                                                                                                <select
+                                                                                                    disabled={assigningStepKeys[`${jo.jo_id}-${p.product_id}-${rout.routing_id}`]}
+                                                                                                    className="bg-background border border-slate-200 dark:border-slate-800 rounded px-1.5 py-0.5 text-[10px] text-foreground focus:outline-none focus:ring-1 focus:ring-emerald-500 disabled:opacity-50 max-w-[140px] truncate font-semibold"
+                                                                                                    value={rout.assigned_personnel?.id?.toString() || ""}
+                                                                                                    onChange={(e) => handleAssignPersonnelToTask(jo, Number(p.product_id), rout.routing_id, e.target.value)}
+                                                                                                >
+                                                                                                    <option value="">-- Choose Operator --</option>
+                                                                                                    {[...users].map(u => {
+                                                                                                        const workload = userWorkloads[String(u.user_id)] || 0;
+                                                                                                        const isOver = workload > 40;
+                                                                                                        const opName = (rout.operation_name || "").toLowerCase();
+                                                                                                        const pos = (u.user_position || "").toLowerCase();
+                                                                                                        const isRoleMatch = pos && opName && (opName.includes(pos) || pos.includes(opName) ||
+                                                                                                            (pos.includes("welder") && opName.includes("weld")) ||
+                                                                                                            (pos.includes("mixer") && opName.includes("mix")) ||
+                                                                                                            (pos.includes("operator") && opName.includes("assemble")) ||
+                                                                                                            (pos.includes("baker") && opName.includes("bake")) ||
+                                                                                                            (pos.includes("packer") && opName.includes("pack")));
+                                                                                                        const isAlreadyAssignedInThisJO = assignedOperatorIdsInJO.has(u.user_id.toString());
+                                                                                                        return { ...u, workload, isRoleMatch, isOver, isAlreadyAssignedInThisJO };
+                                                                                                    }).sort((a, b) => {
+                                                                                                        if (a.isRoleMatch && !b.isRoleMatch) return -1;
+                                                                                                        if (!a.isRoleMatch && b.isRoleMatch) return 1;
+                                                                                                        return a.workload - b.workload;
+                                                                                                    }).map(u => {
+                                                                                                        const statusStr = u.isOver ? "⚠️ OVERLOADED" : `${u.workload.toFixed(1)} hrs`;
+                                                                                                        const prefix = u.isRoleMatch ? "⭐ [Match] " : "";
+                                                                                                        const suffix = u.isAlreadyAssignedInThisJO ? " 🚫 [Already assigned]" : "";
+                                                                                                        return (
+                                                                                                            <option key={u.user_id || u.id} value={u.user_id || u.id} disabled={u.isAlreadyAssignedInThisJO}>
+                                                                                                                {prefix}{u.user_fname} {u.user_lname} ({u.user_position || "Operator"}) — {statusStr}{suffix}
+                                                                                                            </option>
+                                                                                                        );
+                                                                                                    })}
+                                                                                                </select>
+                                                                                            );
+                                                                                        })()}
                                                                                     </div>
                                                                                     {rout.assigned_personnel && (
                                                                                         <div className="flex flex-wrap gap-1 mt-0.5">
@@ -1407,11 +1595,11 @@ export function JobOrdersList({
                                                                                     )}
                                                                                 </div>
                                                                             ) : (
-                                                                                <div className="text-[10px] mt-2 pt-2 border-t border-slate-800/40 text-muted-foreground font-semibold flex flex-col gap-1">
+                                                                                <div className="text-[10px] mt-2 pt-2 border-t border-slate-200 dark:border-slate-800/40 text-muted-foreground font-semibold flex flex-col gap-1">
                                                                                     <span>Assigned Worker:</span>
                                                                                     {rout.assigned_personnel ? (
                                                                                         <div className="flex flex-wrap gap-1">
-                                                                                            <span className="bg-slate-800 text-foreground border border-slate-700 text-[9px] px-2 py-0.5 rounded leading-normal">
+                                                                                            <span className="bg-slate-100 dark:bg-slate-800 text-foreground border border-slate-200 dark:border-slate-700 text-[9px] px-2 py-0.5 rounded leading-normal">
                                                                                                 {rout.assigned_personnel.name} ({rout.assigned_personnel.position})
                                                                                             </span>
                                                                                         </div>
@@ -1423,7 +1611,7 @@ export function JobOrdersList({
 
                                                                             {/* If completed, show QA Log details */}
                                                                             {isCompleted && latestQaLog && (
-                                                                                <div className="mt-2 p-2 bg-slate-950/40 border border-slate-850 rounded-lg space-y-1 text-[9px] text-muted-foreground">
+                                                                                <div className="mt-2 p-2 bg-slate-100 dark:bg-slate-950/40 border border-slate-200 dark:border-slate-850 rounded-lg space-y-1 text-[9px] text-muted-foreground">
                                                                                     <div className="flex justify-between font-semibold">
                                                                                         <span>Yield: <strong className="text-foreground">{actualYield ?? p.quantity}</strong> / {p.quantity} PCS</span>
                                                                                         {latestQaLog.recorded_at && (
@@ -1431,14 +1619,14 @@ export function JobOrdersList({
                                                                                         )}
                                                                                     </div>
                                                                                     {qaComments && (
-                                                                                        <div className="text-slate-300 italic border-l border-slate-700 pl-1.5 py-0.5">
+                                                                                        <div className="text-slate-600 dark:text-slate-300 italic border-l border-slate-200 dark:border-slate-700 pl-1.5 py-0.5">
                                                                                             &quot;{qaComments}&quot;
                                                                                         </div>
                                                                                     )}
                                                                                     {qaPhotos.length > 0 && (
                                                                                         <div className="flex gap-1 overflow-x-auto pt-1 scrollbar-none">
                                                                                             {qaPhotos.map((photoId: string) => (
-                                                                                                <div key={photoId} className="h-8 w-8 shrink-0 rounded overflow-hidden border border-slate-850 bg-slate-900">
+                                                                                                <div key={photoId} className="h-8 w-8 shrink-0 rounded overflow-hidden border border-slate-200 dark:border-slate-850 bg-slate-100 dark:bg-slate-900">
                                                                                                     {/* eslint-disable-next-line @next/next/no-img-element */}
                                                                                                     <img
                                                                                                         src={`http://vtc:8074/assets/${photoId}`}
@@ -1455,7 +1643,7 @@ export function JobOrdersList({
 
                                                                             {/* Task Status & QA Verification */}
                                                                             {jo.status === "Ongoing" ? (
-                                                                                <div className="flex items-center justify-between border-t border-slate-800/40 pt-2 mt-2">
+                                                                                <div className="flex items-center justify-between border-t border-slate-200 dark:border-slate-800/40 pt-2 mt-2">
                                                                                     <div className="flex items-center gap-1.5">
                                                                                         <span className="text-[9px] font-bold text-muted-foreground uppercase">Task QA:</span>
                                                                                         {isCompleted ? (
@@ -1479,21 +1667,21 @@ export function JobOrdersList({
                                                                                     ) : (
                                                                                         <button
                                                                                             onClick={() => handleVerifyQAForTask(jo, Number(p.product_id), rout.routing_id, "Pending")}
-                                                                                            className="bg-slate-800 hover:bg-slate-700 text-muted-foreground hover:text-foreground text-[9px] font-bold px-2 py-1 rounded shadow-sm border-none cursor-pointer flex items-center gap-1"
+                                                                                            className="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-muted-foreground hover:text-foreground text-[9px] font-bold px-2 py-1 rounded shadow-sm border-none cursor-pointer flex items-center gap-1"
                                                                                         >
                                                                                             Reset Task
                                                                                         </button>
                                                                                     )}
                                                                                 </div>
                                                                             ) : (
-                                                                                <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-slate-800/40 text-[9px]">
+                                                                                <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-slate-200 dark:border-slate-800/40 text-[9px]">
                                                                                     <span className="font-bold text-muted-foreground uppercase">Task QA:</span>
                                                                                     {isCompleted ? (
                                                                                         <span className="inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-600 font-extrabold px-2 py-0.5 rounded border border-emerald-500/20 uppercase">
                                                                                             <CheckCircle className="h-2.5 w-2.5" /> QA Passed {rout.completed_at && `(at ${new Date(rout.completed_at).toLocaleString()})`}
                                                                                         </span>
                                                                                     ) : (
-                                                                                        <span className="bg-slate-800 text-muted-foreground font-extrabold px-2 py-0.5 rounded border border-slate-700 uppercase">
+                                                                                        <span className="bg-slate-100 dark:bg-slate-800 text-muted-foreground font-extrabold px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700 uppercase">
                                                                                             Not Started
                                                                                         </span>
                                                                                     )}
@@ -1519,116 +1707,62 @@ export function JobOrdersList({
                         )}
 
                         {/* Personnel and Payroll Section */}
-                        <div className="border rounded-lg p-4 bg-slate-900/50 border-slate-700/50 space-y-3">
-                            <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                        <div className="border rounded-lg p-4 bg-slate-50/30 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700/50 space-y-3">
+                            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
                                 <div className="flex items-center gap-1.5 text-xs font-bold text-foreground">
                                     <Users className="h-4 w-4 text-primary" />
-                                    <span>Assigned Personnel for Payroll Run</span>
+                                    <span>Assigned Personnel (Summary of Tasks)</span>
                                 </div>
                                 <span className="text-[10px] text-muted-foreground font-semibold">
                                     Requires {suggestedManpower} operators (suggested)
                                 </span>
                             </div>
 
-                            {/* Assigned badges list */}
-                            <div className="flex flex-wrap gap-2">
-                                {currentAssigned.length > 0 ? (
-                                    currentAssigned.map((u: { user_fname?: string; user_lname?: string; user_position?: string }, uIdx: number) => (
-                                        <span key={uIdx} className="inline-flex items-center gap-1 bg-slate-800 border border-slate-700 rounded-md px-2 py-0.5 text-[10px] font-semibold text-foreground">
-                                            <span className="h-1.5 w-1.5 rounded-full bg-primary" />
-                                            {u.user_fname} {u.user_lname} ({u.user_position || "Operator"})
-                                        </span>
-                                    ))
+                            {/* Summarized assigned task personnel */}
+                            <div className="space-y-2">
+                                {taskAssignmentsSummary.length > 0 ? (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                        {taskAssignmentsSummary.map((summary) => (
+                                            <div key={summary.userId} className="flex flex-col gap-1.5 p-3 rounded-lg border bg-background border-slate-200 dark:border-slate-800/80 text-[10px] shadow-sm">
+                                                <div className="flex items-center gap-1.5 border-b pb-1.5 border-slate-100 dark:border-slate-850/60">
+                                                    <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                                                    <strong className="text-foreground text-xs">{summary.name}</strong>
+                                                    <span className="text-muted-foreground">({summary.position})</span>
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">Assigned Tasks:</span>
+                                                    <div className="flex flex-wrap gap-1.5">
+                                                        {summary.tasks.map((t, tIdx) => (
+                                                            <span key={tIdx} className="inline-flex items-center bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700/60 rounded px-1.5 py-0.5 font-semibold text-foreground">
+                                                                Step {t.sequenceOrder}: {t.operationName}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
                                 ) : (
-                                    <span className="text-[10px] text-muted-foreground italic font-medium">No personnel assigned to this job order yet.</span>
+                                    <div className="flex items-center gap-2.5 p-3 rounded-xl border border-dashed border-slate-200 dark:border-slate-850 bg-slate-50/10 dark:bg-slate-900/5 text-[10px] text-muted-foreground font-semibold leading-relaxed">
+                                        <Users className="h-3.5 w-3.5 text-primary shrink-0" />
+                                        <span>No personnel assigned to any routing steps of this job order yet. Choose operators in the sequence steps above.</span>
+                                    </div>
                                 )}
                             </div>
-
-                            {/* Assignment trigger & form */}
-                            {assigningJoId === jo.jo_id ? (
-                                <div className="border border-slate-700 rounded-lg p-3 bg-slate-900 space-y-3">
-                                    <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Select Workers to Assign</div>
-                                    <div className="max-h-36 overflow-y-auto divide-y divide-slate-800 border border-slate-800 rounded bg-background">
-                                        {[...users].map(u => {
-                                            const workload = userWorkloads[String(u.user_id)] || 0;
-                                            const isOver = workload > 40;
-                                            return { ...u, workload, isOver };
-                                        }).sort((a, b) => a.workload - b.workload).map((u: { user_id: number; user_fname?: string; user_lname?: string; user_position?: string; workload: number; isOver: boolean }) => {
-                                            const isSelected = selectedUserIds.includes(Number(u.user_id));
-                                            return (
-                                                <button
-                                                    type="button"
-                                                    key={u.user_id}
-                                                    onClick={() => {
-                                                        if (isSelected) {
-                                                            setSelectedUserIds(selectedUserIds.filter(id => id !== Number(u.user_id)));
-                                                        } else {
-                                                            setSelectedUserIds([...selectedUserIds, Number(u.user_id)]);
-                                                        }
-                                                    }}
-                                                    className="w-full text-left px-3 py-2 text-[10px] flex items-center justify-between hover:bg-muted/30 text-foreground transition-colors cursor-pointer"
-                                                >
-                                                    <div>
-                                                        <strong className="text-foreground">{u.user_fname} {u.user_lname}</strong>
-                                                        <span className="text-muted-foreground ml-1.5">({u.user_position})</span>
-                                                        <span className={`ml-2 px-1 py-0.5 rounded text-[8px] font-bold ${u.isOver ? "bg-destructive/20 text-destructive border border-destructive/30" : "bg-primary/10 text-primary"}`}>
-                                                            {u.workload.toFixed(1)} hrs assigned
-                                                        </span>
-                                                    </div>
-                                                    {isSelected ? (
-                                                        <CheckSquare className="h-3.5 w-3.5 text-primary" />
-                                                    ) : (
-                                                        <Square className="h-3.5 w-3.5 text-muted-foreground/50" />
-                                                    )}
-                                                </button>
-                                            );
-                                        })}
-                                        {users.length === 0 && (
-                                            <div className="p-2 text-center text-muted-foreground text-[10px]">No personnel found in department.</div>
-                                        )}
-                                    </div>
-                                    <div className="flex justify-end gap-2 text-[10px]">
-                                        <button
-                                            onClick={() => setAssigningJoId(null)}
-                                            className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 font-bold text-foreground cursor-pointer"
-                                        >
-                                            Cancel
-                                        </button>
-                                        <button
-                                            onClick={() => {
-                                                const mappedUsers = selectedUserIds.map(id => users.find(u => Number(u.user_id) === id)).filter(Boolean);
-                                                handleAssignPersonnel(jo.jo_id, mappedUsers);
-                                                setAssigningJoId(null);
-                                            }}
-                                            className="px-2.5 py-1 rounded bg-primary text-primary-foreground font-bold hover:bg-primary/90 cursor-pointer"
-                                        >
-                                            Save Assignments
-                                        </button>
-                                    </div>
-                                </div>
-                            ) : (
-                                <button
-                                    onClick={() => {
-                                        setAssigningJoId(jo.jo_id);
-                                        setSelectedUserIds(currentAssigned.map((u: { id?: number; user_id?: number } | number | string) => typeof u === "object" && u !== null ? Number(u.id || u.user_id) : Number(u)));
-                                    }}
-                                    className="inline-flex items-center gap-1 bg-primary/10 border border-primary/20 hover:bg-primary/20 text-primary text-[10px] font-bold px-2.5 py-1 rounded-md cursor-pointer transition-colors"
-                                >
-                                    <UserPlus className="h-3 w-3" />
-                                    Assign / Edit Workers
-                                </button>
-                            )}
                         </div>
+                        {/* Closing expanded block tag */}
+                        </>
+                        )}
                     </div>
                 );
             })}
 
             {/* Prerequisite Parameters Modal */}
             {isPrereqModalOpen && prereqCompProductId && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-sm animate-in fade-in duration-200">
-                    <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-100 dark:bg-slate-950/85 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
                         {/* Header */}
-                        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-950/50">
+                        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-950/50">
                             <div className="flex items-center gap-2.5">
                                 <div className="p-1.5 rounded-lg bg-primary/10 text-primary">
                                     <Cpu className="h-5 w-5" />
@@ -1649,7 +1783,7 @@ export function JobOrdersList({
                         {/* Content */}
                         <div className="p-6 space-y-5 overflow-y-auto flex-1">
                             {/* SKU Info */}
-                            <div className="grid grid-cols-2 gap-4 p-3 bg-slate-950/40 border border-slate-800/40 rounded-xl text-xs">
+                            <div className="grid grid-cols-2 gap-4 p-3 bg-slate-100 dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800/40 rounded-xl text-xs">
                                 <div>
                                     <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Sub-Assembly SKU</div>
                                     <div className="font-semibold text-foreground mt-0.5">{prereqCompName}</div>
@@ -1673,7 +1807,7 @@ export function JobOrdersList({
                                         value={prereqCapacity}
                                         onChange={(e) => setPrereqCapacity(e.target.value)}
                                         placeholder="Units producible per hour..."
-                                        className="w-full rounded-lg border border-slate-800 bg-slate-950/20 px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary text-foreground font-semibold"
+                                        className="w-full rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/20 px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary text-foreground font-semibold"
                                     />
                                     <span className="text-[9px] text-muted-foreground block">
                                         Adjust rate. Creating the Job Order will also update this rate in the Finished Goods master.
@@ -1687,7 +1821,7 @@ export function JobOrdersList({
                                     <select
                                         value={prereqShiftOption}
                                         onChange={(e) => setPrereqShiftOption(e.target.value)}
-                                        className="w-full rounded-lg border border-slate-800 bg-slate-950/20 px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary text-foreground font-semibold"
+                                        className="w-full rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/20 px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary text-foreground font-semibold"
                                     >
                                         <option value="8">Single Shift (8h Run/Day)</option>
                                         <option value="16">Double Shift (16h Run/Day)</option>
@@ -1699,22 +1833,22 @@ export function JobOrdersList({
                             {/* Live Stats Preview */}
                             {previewDailyBreakdown && (
                                 <div className="space-y-3">
-                                    <div className="border border-slate-800 rounded-xl p-4 bg-slate-950/20 space-y-3">
+                                    <div className="border border-slate-200 dark:border-slate-800 rounded-xl p-4 bg-slate-50 dark:bg-slate-950/20 space-y-3">
                                         <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Estimated Metrics</div>
                                         <div className="grid grid-cols-3 gap-2 text-center">
-                                            <div className="p-2.5 bg-slate-950/50 border border-slate-800/40 rounded-lg">
+                                            <div className="p-2.5 bg-slate-100 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-800/40 rounded-lg">
                                                 <div className="text-[8px] font-bold text-muted-foreground uppercase">Duration</div>
                                                 <div className="text-xs font-extrabold text-foreground mt-0.5">
                                                     {previewDailyBreakdown.totalDays} Day{previewDailyBreakdown.totalDays !== 1 ? "s" : ""}
                                                 </div>
                                             </div>
-                                            <div className="p-2.5 bg-slate-950/50 border border-slate-800/40 rounded-lg">
+                                            <div className="p-2.5 bg-slate-100 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-800/40 rounded-lg">
                                                 <div className="text-[8px] font-bold text-muted-foreground uppercase">Daily Output</div>
                                                 <div className="text-xs font-extrabold text-primary mt-0.5">
                                                     {previewDailyBreakdown.dailyRate.toLocaleString()}
                                                 </div>
                                             </div>
-                                            <div className="p-2.5 bg-slate-950/50 border border-slate-800/40 rounded-lg">
+                                            <div className="p-2.5 bg-slate-100 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-800/40 rounded-lg">
                                                 <div className="text-[8px] font-bold text-muted-foreground uppercase">Rate / Hour</div>
                                                 <div className="text-xs font-extrabold text-emerald-600 mt-0.5">
                                                     {Number(prereqCapacity) || 0}
@@ -1732,9 +1866,9 @@ export function JobOrdersList({
                                                     <span className="text-[9px] text-amber-500 font-semibold normal-case">Showing first 100 days</span>
                                                 )}
                                             </div>
-                                            <div className="max-h-40 overflow-y-auto border border-slate-800 rounded-xl divide-y divide-slate-800 bg-slate-950/10">
+                                            <div className="max-h-40 overflow-y-auto border border-slate-200 dark:border-slate-800 rounded-xl divide-y divide-slate-200 dark:divide-slate-800 bg-slate-50/50 dark:bg-slate-950/10">
                                                 {previewDailyBreakdown.breakdown.map((day: { day: number, date: string, quantity: number }) => (
-                                                    <div key={day.day} className="px-4 py-2 flex items-center justify-between hover:bg-slate-900/50 text-xs">
+                                                    <div key={day.day} className="px-4 py-2 flex items-center justify-between hover:bg-slate-50/30 dark:bg-slate-900/50 text-xs">
                                                         <div className="flex items-center gap-2">
                                                             <Calendar className="h-3.5 w-3.5 text-muted-foreground/60" />
                                                             <span className="font-semibold text-foreground">Day {day.day}</span>
@@ -1751,10 +1885,10 @@ export function JobOrdersList({
                         </div>
 
                         {/* Footer */}
-                        <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-800 bg-slate-950/50 text-xs font-bold">
+                        <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-950/50 text-xs font-bold">
                             <button
                                 onClick={() => setIsPrereqModalOpen(false)}
-                                className="px-4 py-2 rounded-lg bg-slate-850 hover:bg-slate-800 text-foreground cursor-pointer transition-colors"
+                                className="px-4 py-2 rounded-lg bg-slate-100 dark:bg-slate-850 hover:bg-slate-200 dark:hover:bg-slate-800 text-foreground cursor-pointer transition-colors"
                             >
                                 Cancel
                             </button>

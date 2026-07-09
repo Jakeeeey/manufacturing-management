@@ -1,22 +1,41 @@
 import React, { useState, useEffect } from "react";
 import { Supplier, RawMaterial, PSGCItem } from "../types";
-import { Search, Plus, MapPin, Phone, Mail, Award, FileText, CheckCircle2, AlertCircle, Globe, Building2, UserSquare2, Trash2, Link } from "lucide-react";
+import { Search, Plus, MapPin, Phone, Mail, Award, FileText, CheckCircle2, AlertCircle, Globe, Building2, UserSquare2, Trash2, Link, X } from "lucide-react";
 import { fetchLinkedProducts, linkProductToSupplier, unlinkProductFromSupplier, fetchPHProvinces, fetchPHCities, fetchPHBarangays } from "../services/procurement-api";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
+import { CreatableSelect } from "../../finished-goods/components/CreatableSelect";
+
+interface SupplierFormState {
+    supplier_name: string;
+    supplier_shortcut: string;
+    tin_number: string;
+    phone_number: string;
+    email_address: string;
+    address: string;
+    city: string;
+    brgy: string;
+    state_province: string;
+    country: string;
+    postal_code: string;
+    payment_terms: string;
+    delivery_terms: string;
+    currency: string;
+    notes_or_comments: string;
+    representatives: import("../types").SupplierRepresentative[];
+}
 
 interface SuppliersDirectoryProps {
     suppliers: Supplier[];
     isModalOpen: boolean;
     setIsModalOpen: (open: boolean) => void;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-    supplierForm: any;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-    setSupplierForm: React.Dispatch<React.SetStateAction<any>>;
+    supplierForm: SupplierFormState;
+    setSupplierForm: React.Dispatch<React.SetStateAction<SupplierFormState>>;
     supplierError?: string | null;
     isEditingSupplier?: boolean;
     onStartEditSupplier?: (supplier: Supplier) => void;
     onCreateSupplier: (e: React.FormEvent) => void;
+    onToggleSupplierActive?: (supplier: Supplier) => Promise<void>;
     rawMaterials?: RawMaterial[];
 }
 
@@ -24,13 +43,14 @@ export interface LinkedProduct {
     id: number;
     supplier_id: number;
     product_id?: {
-        id: number;
+        product_id: number;
         product_code?: string;
         product_name?: string;
         description?: string;
         unit_of_measurement?: {
-            id: number;
-            uom_name?: string;
+            unit_id: number;
+            unit_name?: string;
+            unit_shortcut?: string;
         };
     };
 }
@@ -56,6 +76,7 @@ export default function SuppliersDirectory({
     isEditingSupplier = false,
     onStartEditSupplier,
     onCreateSupplier,
+    onToggleSupplierActive,
     rawMaterials = []
 }: SuppliersDirectoryProps) {
     const [search, setSearch] = useState("");
@@ -73,13 +94,17 @@ export default function SuppliersDirectory({
     const [loadingCities, setLoadingCities] = useState(false);
     const [loadingBarangays, setLoadingBarangays] = useState(false);
 
-    const filteredSuppliers = suppliers.filter(s =>
-        s.supplier_name.toLowerCase().includes(search.toLowerCase()) ||
-        s.supplier_shortcut?.toLowerCase().includes(search.toLowerCase()) ||
-        s.tin_number?.includes(search)
-    );
+    const filteredSuppliers = React.useMemo(() => {
+        return suppliers.filter(s =>
+            s.supplier_name.toLowerCase().includes(search.toLowerCase()) ||
+            s.supplier_shortcut?.toLowerCase().includes(search.toLowerCase()) ||
+            s.tin_number?.includes(search)
+        );
+    }, [suppliers, search]);
 
-    const activeSupplier = selectedSupplier || filteredSuppliers[0];
+    const activeSupplier = React.useMemo(() => {
+        return selectedSupplier || filteredSuppliers[0];
+    }, [selectedSupplier, filteredSuppliers]);
 
     const isPH = !supplierForm.country || supplierForm.country.toLowerCase() === "philippines" || supplierForm.country.toLowerCase() === "ph";
 
@@ -107,16 +132,15 @@ export default function SuppliersDirectory({
         setLoadingProvinces(false);
     };
 
-    const handleProvinceChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
-        const code = e.target.value;
-        const matched = provinces.find(p => p.code === code);
-        const name = matched ? matched.name : "";
-        
+    const handleProvinceSelect = async (code: string) => {
         setSelectedProvinceCode(code);
         setSelectedCityCode("");
         setSelectedBarangayCode("");
         setCities([]);
         setBarangays([]);
+        
+        const matched = provinces.find(p => p.code === code);
+        const name = matched ? matched.name : "";
         
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         setSupplierForm((prev: any) => ({
@@ -134,14 +158,13 @@ export default function SuppliersDirectory({
         }
     };
 
-    const handleCityChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
-        const code = e.target.value;
-        const matched = cities.find(c => c.code === code);
-        const name = matched ? matched.name : "";
-        
+    const handleCitySelect = async (code: string) => {
         setSelectedCityCode(code);
         setSelectedBarangayCode("");
         setBarangays([]);
+        
+        const matched = cities.find(c => c.code === code);
+        const name = matched ? matched.name : "";
         
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         setSupplierForm((prev: any) => ({
@@ -158,12 +181,11 @@ export default function SuppliersDirectory({
         }
     };
 
-    const handleBarangayChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-        const code = e.target.value;
+    const handleBarangaySelect = (code: string) => {
+        setSelectedBarangayCode(code);
+        
         const matched = barangays.find(b => b.code === code);
         const name = matched ? matched.name : "";
-        
-        setSelectedBarangayCode(code);
         
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         setSupplierForm((prev: any) => ({
@@ -172,11 +194,50 @@ export default function SuppliersDirectory({
         }));
     };
 
+    // Resolve codes from names when editing
+    useEffect(() => {
+        if (isModalOpen && isPH && provinces.length > 0 && supplierForm.state_province && !selectedProvinceCode) {
+            const matchedProv = provinces.find(p => p.name.toLowerCase() === (supplierForm.state_province || "").toLowerCase());
+            if (matchedProv) {
+                setSelectedProvinceCode(matchedProv.code);
+                setLoadingCities(true);
+                fetchPHCities(matchedProv.code).then(list => {
+                    setCities(list);
+                    setLoadingCities(false);
+                });
+            }
+        }
+    }, [isModalOpen, isPH, provinces, supplierForm.state_province, selectedProvinceCode]);
+
+    useEffect(() => {
+        if (isModalOpen && isPH && cities.length > 0 && supplierForm.city && !selectedCityCode) {
+            const matchedCity = cities.find(c => c.name.toLowerCase() === (supplierForm.city || "").toLowerCase());
+            if (matchedCity) {
+                setSelectedCityCode(matchedCity.code);
+                setLoadingBarangays(true);
+                fetchPHBarangays(matchedCity.code).then(list => {
+                    setBarangays(list);
+                    setLoadingBarangays(false);
+                });
+            }
+        }
+    }, [isModalOpen, isPH, cities, supplierForm.city, selectedCityCode]);
+
+    useEffect(() => {
+        if (isModalOpen && isPH && barangays.length > 0 && supplierForm.brgy && !selectedBarangayCode) {
+            const matchedBrgy = barangays.find(b => b.name.toLowerCase() === (supplierForm.brgy || "").toLowerCase());
+            if (matchedBrgy) {
+                setSelectedBarangayCode(matchedBrgy.code);
+            }
+        }
+    }, [isModalOpen, isPH, barangays, supplierForm.brgy, selectedBarangayCode]);
+
     const [linkedProducts, setLinkedProducts] = useState<LinkedProduct[]>([]);
     const [loadingLinkedProducts, setLoadingLinkedProducts] = useState(false);
 
     const [isLinkingOpen, setIsLinkingOpen] = useState(false);
-    const [selectedProductIdToLink, setSelectedProductIdToLink] = useState("");
+    const [selectedProductIdsToLink, setSelectedProductIdsToLink] = useState<string[]>([]);
+    const [linkProductSearch, setLinkProductSearch] = useState("");
 
     const loadLinkedProducts = async (supplierId: number) => {
         setLoadingLinkedProducts(true);
@@ -197,20 +258,24 @@ export default function SuppliersDirectory({
             setLinkedProducts([]);
         }
         setIsLinkingOpen(false);
-        setSelectedProductIdToLink("");
+        setSelectedProductIdsToLink([]);
+        setLinkProductSearch("");
     }, [activeSupplier]);
 
-    const handleLinkProduct = async () => {
-        if (!selectedProductIdToLink || !activeSupplier) return;
+    const handleLinkMultipleProducts = async () => {
+        if (selectedProductIdsToLink.length === 0 || !activeSupplier) return;
         try {
-            await linkProductToSupplier(activeSupplier.id, Number(selectedProductIdToLink));
-            toast.success("Product linked successfully");
+            await Promise.all(
+                selectedProductIdsToLink.map(id => linkProductToSupplier(activeSupplier!.id, Number(id)))
+            );
+            toast.success(`Successfully linked ${selectedProductIdsToLink.length} products`);
             setIsLinkingOpen(false);
-            setSelectedProductIdToLink("");
+            setSelectedProductIdsToLink([]);
+            setLinkProductSearch("");
             loadLinkedProducts(activeSupplier.id);
         } catch (e) {
             console.error(e);
-            toast.error("Failed to link product");
+            toast.error("Failed to link one or more products");
         }
     };
 
@@ -251,8 +316,17 @@ export default function SuppliersDirectory({
                             placeholder="Search suppliers name, TIN, code..."
                             value={search}
                             onChange={e => setSearch(e.target.value)}
-                            className="w-full pl-9 pr-4 py-2 border rounded-lg text-xs bg-background outline-none focus:ring-1 focus:ring-primary font-medium"
+                            className="w-full pl-9 pr-8 py-2 border rounded-lg text-xs bg-background outline-none focus:ring-1 focus:ring-primary font-medium"
                         />
+                        {search && (
+                            <button
+                                onClick={() => setSearch("")}
+                                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-1 transition-colors hover:bg-muted rounded"
+                                title="Clear Search"
+                            >
+                                <X className="h-3 w-3" />
+                            </button>
+                        )}
                     </div>
                 </div>
 
@@ -266,17 +340,24 @@ export default function SuppliersDirectory({
                             <button
                                 key={s.id}
                                 onClick={() => setSelectedSupplier(s)}
-                                className={`w-full text-left p-4 hover:bg-muted/30 transition-all flex flex-col gap-1.5 ${
+                                className={`w-full text-left p-4 hover:bg-muted/40 transition-all flex flex-col gap-1.5 hover:-translate-y-0.5 hover:shadow-[0_4px_12px_rgba(0,0,0,0.03)] focus:bg-primary/5 active:translate-y-0 ${
                                     activeSupplier?.id === s.id ? "bg-primary/5 border-l-2 border-primary" : ""
-                                }`}
+                                } ${Number(s.isActive) === 0 ? "opacity-60" : ""}`}
                             >
                                 <div className="flex items-start justify-between gap-2">
                                     <span className="font-semibold text-xs text-foreground truncate">{s.supplier_name}</span>
-                                    {s.supplier_shortcut && (
-                                        <span className="bg-primary/10 text-primary px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0">
-                                            {s.supplier_shortcut}
-                                        </span>
-                                    )}
+                                    <div className="flex items-center gap-1 shrink-0">
+                                        {Number(s.isActive) === 0 && (
+                                            <span className="bg-red-500/15 text-red-600 border border-red-500/20 px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wide">
+                                                Inactive
+                                            </span>
+                                        )}
+                                        {s.supplier_shortcut && (
+                                            <span className="bg-primary/10 text-primary px-1.5 py-0.5 rounded text-[10px] font-bold">
+                                                {s.supplier_shortcut}
+                                            </span>
+                                        )}
+                                    </div>
                                 </div>
                                 <div className="flex items-center justify-between text-[11px] text-muted-foreground">
                                     <span className="truncate flex items-center gap-1">
@@ -302,21 +383,39 @@ export default function SuppliersDirectory({
                                 <div className="flex items-center gap-3">
                                     <div className="flex items-center gap-2">
                                         <h2 className="text-lg font-bold text-foreground leading-tight">{activeSupplier.supplier_name}</h2>
-                                        <span className="bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase">
-                                            Active
-                                        </span>
+                                        {Number(activeSupplier.isActive) === 0 ? (
+                                            <span className="bg-red-500/10 text-red-600 border border-red-500/20 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase">
+                                                Inactive
+                                            </span>
+                                        ) : (
+                                            <span className="bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase">
+                                                Active
+                                            </span>
+                                        )}
                                     </div>
-                                    <button
-                                        onClick={() => onStartEditSupplier?.(activeSupplier)}
-                                        className="text-[10px] text-primary hover:underline font-bold border border-primary/20 px-2 py-1 rounded bg-primary/5 hover:bg-primary/10 transition-all cursor-pointer"
-                                    >
-                                        Edit Details
-                                    </button>
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            onClick={() => onStartEditSupplier?.(activeSupplier)}
+                                            className="text-[10px] text-primary hover:underline font-bold border border-primary/20 px-2 py-1 rounded bg-primary/5 hover:bg-primary/10 transition-all cursor-pointer"
+                                        >
+                                            Edit Details
+                                        </button>
+                                        <button
+                                            onClick={() => onToggleSupplierActive?.(activeSupplier)}
+                                            className={`text-[10px] font-bold border px-2 py-1 rounded transition-all cursor-pointer ${
+                                                Number(activeSupplier.isActive) === 0
+                                                    ? "text-emerald-600 border-emerald-500/20 bg-emerald-500/5 hover:bg-emerald-500/10 hover:underline"
+                                                    : "text-red-600 border-red-500/20 bg-red-500/5 hover:bg-red-500/10 hover:underline"
+                                            }`}
+                                        >
+                                            {Number(activeSupplier.isActive) === 0 ? "Activate" : "Deactivate"}
+                                        </button>
+                                    </div>
                                 </div>
-                                <p className="text-xs text-muted-foreground flex items-center gap-1.5">
-                                    <UserSquare2 className="h-3.5 w-3.5 text-muted-foreground" />
-                                    Contact Person: <strong className="text-foreground font-medium">{activeSupplier.contact_person || "Not Listed"}</strong>
-                                </p>
+                                 <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                                     <UserSquare2 className="h-3.5 w-3.5 text-muted-foreground" />
+                                     Representatives: <strong className="text-foreground font-medium">{(activeSupplier.representatives || []).length} Registered</strong>
+                                 </p>
                             </div>
                             <div className="text-left sm:text-right font-mono text-[10px] text-muted-foreground bg-muted/40 p-2.5 rounded-lg border">
                                 <div>TIN: {activeSupplier.tin_number || "Pending Registration"}</div>
@@ -326,8 +425,8 @@ export default function SuppliersDirectory({
                         {/* Profile Info Fields */}
                         <div className="grid gap-6 sm:grid-cols-2">
                             <div className="space-y-4">
-                                <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5 border-b pb-1.5">
-                                    <Building2 className="h-4 w-4 text-primary" />
+                                <h4 className="text-xs font-extrabold text-foreground uppercase tracking-wider flex items-center gap-2 border-l-4 border-primary pl-2.5 mb-2">
+                                    <Building2 className="h-4 w-4 text-primary shrink-0" />
                                     Company Address
                                 </h4>
                                 <div className="space-y-2.5 text-xs text-foreground/80">
@@ -356,8 +455,8 @@ export default function SuppliersDirectory({
                             </div>
 
                             <div className="space-y-4">
-                                <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5 border-b pb-1.5">
-                                    <Phone className="h-4 w-4 text-primary" />
+                                <h4 className="text-xs font-extrabold text-foreground uppercase tracking-wider flex items-center gap-2 border-l-4 border-primary pl-2.5 mb-2">
+                                    <Phone className="h-4 w-4 text-primary shrink-0" />
                                     Communications & Contact
                                 </h4>
                                 <div className="space-y-2.5 text-xs text-foreground/80">
@@ -375,8 +474,8 @@ export default function SuppliersDirectory({
 
                         {/* Trade terms */}
                         <div className="space-y-4 pt-4">
-                            <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5 border-b pb-1.5">
-                                <Award className="h-4 w-4 text-primary" />
+                            <h4 className="text-xs font-extrabold text-foreground uppercase tracking-wider flex items-center gap-2 border-l-4 border-primary pl-2.5 mb-2">
+                                <Award className="h-4 w-4 text-primary shrink-0" />
                                 Commercial Agreement & Trade Terms
                             </h4>
                             <div className="grid gap-4 sm:grid-cols-4">
@@ -419,11 +518,43 @@ export default function SuppliersDirectory({
                             </div>
                         )}
 
+                        {/* Representatives Card */}
+                        <div className="space-y-4 pt-4 border-t">
+                            <h4 className="text-xs font-extrabold text-foreground uppercase tracking-wider flex items-center gap-2 border-l-4 border-primary pl-2.5 mb-2">
+                                <UserSquare2 className="h-4 w-4 text-primary shrink-0" />
+                                Representatives ({(activeSupplier.representatives || []).length})
+                            </h4>
+                            {(activeSupplier.representatives || []).length > 0 ? (
+                                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                                    {(activeSupplier.representatives || []).map((rep, rIdx) => {
+                                        const fullName = [rep.first_name, rep.middle_name, rep.last_name, rep.suffix].filter(Boolean).join(" ");
+                                        return (
+                                            <div key={rep.id || rIdx} className="border rounded-xl p-3 bg-muted/20 space-y-1">
+                                                <p className="text-xs font-bold text-foreground">{fullName}</p>
+                                                {rep.contact_number && (
+                                                    <p className="text-[11px] text-muted-foreground flex items-center gap-1">
+                                                        <Phone className="h-3 w-3" /> {rep.contact_number}
+                                                    </p>
+                                                )}
+                                                {rep.email && (
+                                                    <p className="text-[11px] text-muted-foreground flex items-center gap-1 truncate">
+                                                        <Mail className="h-3 w-3" /> {rep.email}
+                                                    </p>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            ) : (
+                                <p className="text-xs text-muted-foreground italic">No representatives registered for this supplier</p>
+                            )}
+                        </div>
+
                         {/* Associated Products Section */}
                         <div className="space-y-4 pt-4 border-t">
                             <div className="flex items-center justify-between">
-                                <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                                    <Link className="h-4 w-4 text-primary" />
+                                <h4 className="text-xs font-extrabold text-foreground uppercase tracking-wider flex items-center gap-2 border-l-4 border-primary pl-2.5">
+                                    <Link className="h-4 w-4 text-primary shrink-0" />
                                     Associated Raw Materials & Products
                                 </h4>
                                 {!isLinkingOpen && (
@@ -437,37 +568,103 @@ export default function SuppliersDirectory({
                             </div>
 
                             {isLinkingOpen && (
-                                <div className="flex gap-2 items-center bg-muted/20 p-3 rounded-lg border">
-                                    <select
-                                        value={selectedProductIdToLink}
-                                        onChange={e => setSelectedProductIdToLink(e.target.value)}
-                                        className="flex-1 rounded-lg border bg-background px-3 py-1.5 text-xs outline-none focus:ring-1 focus:ring-primary font-medium"
-                                    >
-                                        <option key="default" value="">-- Select Product to Link --</option>
-                                        {rawMaterials.filter(rm => 
-                                            !linkedProducts.some(lp => lp.product_id?.id === rm.product_id)
-                                        ).map(rm => (
-                                            <option key={rm.product_id} value={rm.product_id}>
-                                                {rm.product_code ? `[${rm.product_code}] ` : ""}{rm.product_name}
-                                            </option>
-                                        ))}
-                                    </select>
-                                    <button
-                                        onClick={handleLinkProduct}
-                                        disabled={!selectedProductIdToLink}
-                                        className="bg-primary text-primary-foreground px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-primary/95 disabled:opacity-50 transition-all cursor-pointer"
-                                    >
-                                        Link
-                                    </button>
-                                    <button
-                                        onClick={() => {
-                                            setIsLinkingOpen(false);
-                                            setSelectedProductIdToLink("");
-                                        }}
-                                        className="text-muted-foreground hover:text-foreground text-xs font-semibold px-2 py-1.5"
-                                    >
-                                        Cancel
-                                    </button>
+                                <div className="bg-muted/20 p-3 rounded-lg border w-full space-y-3">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-xs font-bold text-foreground">Select Products to Link</span>
+                                        {selectedProductIdsToLink.length > 0 && (
+                                            <span className="text-[10px] bg-primary/10 text-primary font-bold px-2 py-0.5 rounded-full">
+                                                {selectedProductIdsToLink.length} selected
+                                            </span>
+                                        )}
+                                    </div>
+                                    
+                                    <input
+                                        type="text"
+                                        placeholder="Search products to link..."
+                                        value={linkProductSearch}
+                                        onChange={e => setLinkProductSearch(e.target.value)}
+                                        className="w-full rounded-lg border bg-background px-3 py-1.5 text-xs outline-none focus:ring-1 focus:ring-primary font-medium"
+                                    />
+                                    
+                                    <div className="border rounded-lg bg-background p-2.5 max-h-[160px] overflow-y-auto divide-y divide-muted/30">
+                                        {rawMaterials.filter(rm => {
+                                            // Filter out already linked products
+                                            const isLinked = linkedProducts.some(lp => {
+                                                const lpProdId = typeof lp.product_id === "object" ? (lp.product_id as Record<string, unknown>)?.product_id || (lp.product_id as Record<string, unknown>)?.id : lp.product_id;
+                                                return Number(lpProdId) === Number(rm.product_id);
+                                            });
+                                            if (isLinked) return false;
+                                            
+                                            // Filter by search query
+                                            const query = linkProductSearch.toLowerCase().trim();
+                                            if (!query) return true;
+                                            return rm.product_name.toLowerCase().includes(query) || (rm.product_code && rm.product_code.toLowerCase().includes(query));
+                                        }).length === 0 ? (
+                                            <div className="text-center py-4 text-xs text-muted-foreground italic">No products available to link</div>
+                                        ) : (
+                                            rawMaterials.filter(rm => {
+                                                const isLinked = linkedProducts.some(lp => {
+                                                    const lpProdId = typeof lp.product_id === "object" ? (lp.product_id as Record<string, unknown>)?.product_id || (lp.product_id as Record<string, unknown>)?.id : lp.product_id;
+                                                    return Number(lpProdId) === Number(rm.product_id);
+                                                });
+                                                if (isLinked) return false;
+                                                
+                                                const query = linkProductSearch.toLowerCase().trim();
+                                                if (!query) return true;
+                                                return rm.product_name.toLowerCase().includes(query) || (rm.product_code && rm.product_code.toLowerCase().includes(query));
+                                            }).map(rm => {
+                                                const isChecked = selectedProductIdsToLink.includes(String(rm.product_id));
+                                                return (
+                                                    <label 
+                                                        key={rm.product_id}
+                                                        className="flex items-center gap-2 py-1.5 hover:bg-muted/10 cursor-pointer select-none text-xs font-semibold text-foreground px-2"
+                                                    >
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={isChecked}
+                                                            onChange={() => {
+                                                                const valStr = String(rm.product_id);
+                                                                if (isChecked) {
+                                                                    setSelectedProductIdsToLink(prev => prev.filter(id => id !== valStr));
+                                                                } else {
+                                                                    setSelectedProductIdsToLink(prev => [...prev, valStr]);
+                                                                }
+                                                            }}
+                                                            className="rounded text-primary focus:ring-0 h-3.5 w-3.5"
+                                                        />
+                                                        <span>
+                                                            {rm.product_code ? `[${rm.product_code}] ` : ""}{rm.product_name}
+                                                            {rm.unit_of_measurement?.unit_name && (
+                                                                <span className="text-[10px] text-muted-foreground font-normal ml-1 italic">
+                                                                    ({rm.unit_of_measurement.unit_name})
+                                                                </span>
+                                                            )}
+                                                        </span>
+                                                    </label>
+                                                );
+                                            })
+                                        )}
+                                    </div>
+                                    
+                                    <div className="flex justify-end gap-2 pt-1">
+                                        <button
+                                            onClick={() => {
+                                                setIsLinkingOpen(false);
+                                                setSelectedProductIdsToLink([]);
+                                                setLinkProductSearch("");
+                                            }}
+                                            className="text-muted-foreground hover:text-foreground text-xs font-semibold px-3 py-1.5"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            onClick={handleLinkMultipleProducts}
+                                            disabled={selectedProductIdsToLink.length === 0}
+                                            className="bg-primary text-primary-foreground px-4 py-1.5 rounded-lg text-xs font-semibold hover:bg-primary/95 disabled:opacity-50 transition-all cursor-pointer shadow-sm"
+                                        >
+                                            Link Selected ({selectedProductIdsToLink.length})
+                                        </button>
+                                    </div>
                                 </div>
                             )}
 
@@ -484,17 +681,21 @@ export default function SuppliersDirectory({
                                     {linkedProducts.map((lp: LinkedProduct) => (
                                         <div key={lp.id} className="border rounded-xl p-3 flex items-center justify-between bg-muted/10">
                                             <div className="space-y-1 min-w-0 pr-2">
-                                                <div className="flex items-center gap-1.5">
+                                                <div className="flex items-center gap-1.5 flex-wrap">
                                                     <span className="font-mono text-[9px] text-muted-foreground bg-muted border px-1.5 py-0.5 rounded font-bold uppercase shrink-0">
                                                         {lp.product_id?.product_code || "N/A"}
                                                     </span>
                                                     <span className="text-xs font-bold text-foreground truncate block">
                                                         {lp.product_id?.product_name || "Unknown Product"}
+                                                        {lp.product_id?.unit_of_measurement?.unit_name && (
+                                                            <span className="text-[10px] text-muted-foreground font-normal ml-1 italic">
+                                                                ({lp.product_id.unit_of_measurement.unit_name})
+                                                            </span>
+                                                        )}
                                                     </span>
                                                 </div>
                                                 <p className="text-[10px] text-muted-foreground truncate">
                                                     {lp.product_id?.description || "No description"}
-                                                    {lp.product_id?.unit_of_measurement?.uom_name ? ` • (${lp.product_id?.unit_of_measurement?.uom_name})` : ""}
                                                 </p>
                                             </div>
                                             <button
@@ -590,15 +791,136 @@ export default function SuppliersDirectory({
                                         />
                                     </div>
 
-                                    <div className="space-y-1.5">
-                                        <label className="text-[11px] font-semibold text-muted-foreground">Contact Person</label>
-                                        <input
-                                            type="text"
-                                            placeholder="e.g. Caezar De Vera"
-                                            value={supplierForm.contact_person}
-                                            onChange={e => setSupplierForm({...supplierForm, contact_person: e.target.value})}
-                                            className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary font-medium"
-                                        />
+                                    {/* Representatives List (One-to-Many) */}
+                                    <div className="col-span-2 border-t pt-4 mt-2 space-y-3">
+                                        <div className="flex items-center justify-between">
+                                            <label className="text-[11px] font-bold text-primary uppercase tracking-wider flex items-center gap-1.5">
+                                                <UserSquare2 className="h-4 w-4" /> Representatives ({(supplierForm.representatives || []).length})
+                                            </label>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    const reps = [...(supplierForm.representatives || [])];
+                                                    reps.push({ first_name: "", last_name: "", middle_name: "", suffix: "", email: "", contact_number: "" });
+                                                    setSupplierForm({ ...supplierForm, representatives: reps });
+                                                }}
+                                                className="inline-flex items-center gap-1 text-[10px] font-bold text-primary hover:underline border border-dashed border-primary/40 px-2.5 py-1 rounded bg-primary/5 hover:bg-primary/10 transition-all cursor-pointer"
+                                            >
+                                                <Plus className="h-3 w-3" /> Add Representative
+                                            </button>
+                                        </div>
+                                        
+                                        <div className="space-y-3 max-h-[220px] overflow-y-auto pr-1">
+                                            {(supplierForm.representatives || []).map((rep, idx) => (
+                                                <div key={idx} className="bg-muted/30 border rounded-lg p-3 relative space-y-2.5">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            const reps = (supplierForm.representatives || []).filter((_, i) => i !== idx);
+                                                            setSupplierForm({ ...supplierForm, representatives: reps });
+                                                        }}
+                                                        className="absolute top-2.5 right-2.5 text-muted-foreground hover:text-red-500 transition-colors"
+                                                    >
+                                                        <Trash2 className="h-4 w-4" />
+                                                    </button>
+                                                    
+                                                    <div className="grid grid-cols-2 gap-3">
+                                                        <div className="space-y-1">
+                                                            <label className="text-[9px] font-bold text-muted-foreground uppercase">First Name <span className="text-red-500">*</span></label>
+                                                            <input
+                                                                type="text"
+                                                                required
+                                                                placeholder="First Name"
+                                                                value={rep.first_name || ""}
+                                                                onChange={e => {
+                                                                    const reps = [...(supplierForm.representatives || [])];
+                                                                    reps[idx] = { ...reps[idx], first_name: e.target.value };
+                                                                    setSupplierForm({ ...supplierForm, representatives: reps });
+                                                                }}
+                                                                className="w-full rounded-lg border bg-background px-2.5 py-1.5 text-xs outline-none focus:ring-1 focus:ring-primary font-medium"
+                                                            />
+                                                        </div>
+                                                        <div className="space-y-1">
+                                                            <label className="text-[9px] font-bold text-muted-foreground uppercase">Last Name <span className="text-red-500">*</span></label>
+                                                            <input
+                                                                type="text"
+                                                                required
+                                                                placeholder="Last Name"
+                                                                value={rep.last_name || ""}
+                                                                onChange={e => {
+                                                                    const reps = [...(supplierForm.representatives || [])];
+                                                                    reps[idx] = { ...reps[idx], last_name: e.target.value };
+                                                                    setSupplierForm({ ...supplierForm, representatives: reps });
+                                                                }}
+                                                                className="w-full rounded-lg border bg-background px-2.5 py-1.5 text-xs outline-none focus:ring-1 focus:ring-primary font-medium"
+                                                            />
+                                                        </div>
+                                                        <div className="space-y-1">
+                                                            <label className="text-[9px] font-bold text-muted-foreground uppercase">Middle Name</label>
+                                                            <input
+                                                                type="text"
+                                                                placeholder="Middle Name"
+                                                                value={rep.middle_name || ""}
+                                                                onChange={e => {
+                                                                    const reps = [...(supplierForm.representatives || [])];
+                                                                    reps[idx] = { ...reps[idx], middle_name: e.target.value };
+                                                                    setSupplierForm({ ...supplierForm, representatives: reps });
+                                                                }}
+                                                                className="w-full rounded-lg border bg-background px-2.5 py-1.5 text-xs outline-none focus:ring-1 focus:ring-primary font-medium"
+                                                            />
+                                                        </div>
+                                                        <div className="space-y-1">
+                                                            <label className="text-[9px] font-bold text-muted-foreground uppercase">Suffix</label>
+                                                            <input
+                                                                type="text"
+                                                                placeholder="e.g. Jr., III"
+                                                                value={rep.suffix || ""}
+                                                                onChange={e => {
+                                                                    const reps = [...(supplierForm.representatives || [])];
+                                                                    reps[idx] = { ...reps[idx], suffix: e.target.value };
+                                                                    setSupplierForm({ ...supplierForm, representatives: reps });
+                                                                }}
+                                                                className="w-full rounded-lg border bg-background px-2.5 py-1.5 text-xs outline-none focus:ring-1 focus:ring-primary font-medium"
+                                                            />
+                                                        </div>
+                                                        <div className="space-y-1">
+                                                            <label className="text-[9px] font-bold text-muted-foreground uppercase">Email (Required if no phone) <span className="text-red-500">*</span></label>
+                                                            <input
+                                                                type="email"
+                                                                placeholder="e.g. email@company.com"
+                                                                value={rep.email || ""}
+                                                                onChange={e => {
+                                                                    const reps = [...(supplierForm.representatives || [])];
+                                                                    reps[idx] = { ...reps[idx], email: e.target.value };
+                                                                    setSupplierForm({ ...supplierForm, representatives: reps });
+                                                                }}
+                                                                className="w-full rounded-lg border bg-background px-2.5 py-1.5 text-xs outline-none focus:ring-1 focus:ring-primary font-medium"
+                                                            />
+                                                        </div>
+                                                        <div className="space-y-1">
+                                                            <label className="text-[9px] font-bold text-muted-foreground uppercase">Contact Number (Required if no email) <span className="text-red-500">*</span></label>
+                                                            <input
+                                                                type="text"
+                                                                placeholder="e.g. 09171234567"
+                                                                value={rep.contact_number || ""}
+                                                                onChange={e => {
+                                                                    const reps = [...(supplierForm.representatives || [])];
+                                                                    reps[idx] = { ...reps[idx], contact_number: e.target.value };
+                                                                    setSupplierForm({ ...supplierForm, representatives: reps });
+                                                                }}
+                                                                className="w-full rounded-lg border bg-background px-2.5 py-1.5 text-xs outline-none focus:ring-1 focus:ring-primary font-medium"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                            
+                                            {(supplierForm.representatives || []).length === 0 && (
+                                                <div className="text-center py-4 border border-dashed rounded-lg bg-muted/10">
+                                                    <span className="text-xs text-muted-foreground italic">No representatives added yet.</span>
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
 
                                     <div className="space-y-1.5">
@@ -665,50 +987,41 @@ export default function SuppliersDirectory({
                                                     <label className="text-[11px] font-semibold text-muted-foreground">
                                                         Province {loadingProvinces && "(Loading...)"}
                                                     </label>
-                                                    <select
+                                                    <CreatableSelect
+                                                        options={provinces.map(p => ({ value: p.code, label: p.name }))}
                                                         value={selectedProvinceCode}
-                                                        onChange={handleProvinceChange}
-                                                        className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary text-foreground font-semibold"
-                                                    >
-                                                        <option key="default" value="">-- Select Province --</option>
-                                                        {provinces.map(p => (
-                                                            <option key={p.code} value={p.code}>{p.name}</option>
-                                                        ))}
-                                                    </select>
+                                                        onValueChange={handleProvinceSelect}
+                                                        placeholder="Select Province..."
+                                                        className="text-xs font-semibold"
+                                                    />
                                                 </div>
 
                                                 <div className="space-y-1.5">
                                                     <label className="text-[11px] font-semibold text-muted-foreground">
                                                         City / Municipality {loadingCities && "(Loading...)"}
                                                     </label>
-                                                    <select
-                                                        disabled={!selectedProvinceCode}
+                                                    <CreatableSelect
+                                                        options={cities.map(c => ({ value: c.code, label: c.name }))}
                                                         value={selectedCityCode}
-                                                        onChange={handleCityChange}
-                                                        className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary text-foreground font-semibold disabled:opacity-50"
-                                                    >
-                                                        <option key="default" value="">-- Select City --</option>
-                                                        {cities.map(c => (
-                                                            <option key={c.code} value={c.code}>{c.name}</option>
-                                                        ))}
-                                                    </select>
+                                                        onValueChange={handleCitySelect}
+                                                        placeholder="Select City..."
+                                                        disabled={!selectedProvinceCode}
+                                                        className="text-xs font-semibold"
+                                                    />
                                                 </div>
 
                                                 <div className="space-y-1.5 col-span-2">
                                                     <label className="text-[11px] font-semibold text-muted-foreground">
                                                         Barangay {loadingBarangays && "(Loading...)"}
                                                     </label>
-                                                    <select
-                                                        disabled={!selectedCityCode}
+                                                    <CreatableSelect
+                                                        options={barangays.map(b => ({ value: b.code, label: b.name }))}
                                                         value={selectedBarangayCode}
-                                                        onChange={handleBarangayChange}
-                                                        className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary text-foreground font-semibold disabled:opacity-50"
-                                                    >
-                                                        <option key="default" value="">-- Select Barangay --</option>
-                                                        {barangays.map(b => (
-                                                            <option key={b.code} value={b.code}>{b.name}</option>
-                                                        ))}
-                                                    </select>
+                                                        onValueChange={handleBarangaySelect}
+                                                        placeholder="Select Barangay..."
+                                                        disabled={!selectedCityCode}
+                                                        className="text-xs font-semibold"
+                                                    />
                                                 </div>
                                             </motion.div>
                                         ) : (
@@ -750,8 +1063,9 @@ export default function SuppliersDirectory({
                                             required
                                             value={supplierForm.payment_terms}
                                             onChange={e => setSupplierForm({...supplierForm, payment_terms: e.target.value})}
-                                            className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary text-foreground font-semibold"
+                                            className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary text-foreground font-semibold font-medium"
                                         >
+                                            <option value="">-- Select Payment Terms --</option>
                                             <option value="Cash On Delivery">Cash On Delivery</option>
                                             <option value="Net 15 Days">Net 15 Days</option>
                                             <option value="Net 30 Days">Net 30 Days</option>
@@ -761,12 +1075,14 @@ export default function SuppliersDirectory({
                                     </div>
 
                                     <div className="space-y-1.5">
-                                        <label className="text-[11px] font-semibold text-muted-foreground">Delivery Terms</label>
+                                        <label className="text-[11px] font-semibold text-muted-foreground">Delivery Terms <span className="text-red-500">*</span></label>
                                         <select
+                                            required
                                             value={supplierForm.delivery_terms}
                                             onChange={e => setSupplierForm({...supplierForm, delivery_terms: e.target.value})}
-                                            className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary text-foreground font-semibold"
+                                            className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary text-foreground font-semibold font-medium"
                                         >
+                                            <option value="">-- Select Delivery Terms --</option>
                                             <option value="Delivery">Local Delivery</option>
                                             <option value="FOB (Free on Board)">FOB (Free on Board)</option>
                                             <option value="EXW (Ex Works)">EXW (Ex Works)</option>

@@ -14,18 +14,29 @@ import { toast } from "sonner";
 import { BOMMaterialSelect } from "@/modules/manufacturing-management/finished-goods/components/BOMMaterialSelect";
 import { CreatableSelect } from "@/modules/manufacturing-management/finished-goods/components/CreatableSelect";
 
-interface ManifestLineFormItem {
+export interface ManifestLineFormItem {
     product_id: string;
     quantity_ordered: string;
     base_unit_cost_php: string;
-    parent_product_id?: string;
+    parent_product_id: string;
     product_name?: string;
+    product_code?: string;
     selected_uom?: string;
-    uom_options?: Array<{
-        product_id: number;
-        unit_shortcut: string;
-        cost_per_unit: number;
-    }>;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    uom_options?: any[];
+}
+
+export interface ShipmentFormState {
+    reference_number: string;
+    supplier_id: string;
+    exchange_rate: string;
+    total_foreign_currency: string;
+    total_php_value: string;
+    status: "Ordered" | "Approved" | "En Route" | "Receiving (QA)" | "Received";
+    date_received: string;
+    branch_id: number;
+    payment_type: number;
+    price_type: string;
 }
 
 interface IncomingShipmentsProps {
@@ -38,8 +49,8 @@ interface IncomingShipmentsProps {
     lines: ShipmentLineItem[];
     isModalOpen: boolean;
     setIsModalOpen: (open: boolean) => void;
-    shipmentForm: Partial<IncomingShipment>;
-    setShipmentForm: React.Dispatch<React.SetStateAction<Partial<IncomingShipment>>>;
+    shipmentForm: ShipmentFormState;
+    setShipmentForm: React.Dispatch<React.SetStateAction<ShipmentFormState>>;
     linesForm: ManifestLineFormItem[];
     setLinesForm: React.Dispatch<React.SetStateAction<ManifestLineFormItem[]>>;
     onCreateShipment: (e: React.FormEvent) => void;
@@ -552,12 +563,12 @@ export default function IncomingShipments({
     }, [linesForm]);
 
     const totalUsdValue = React.useMemo(() => {
-        const rate = parseFloat(shipmentForm.exchange_rate) || 58.00;
+        const rate = parseFloat(String(shipmentForm.exchange_rate)) || 58.00;
         return totalPhpValue / rate;
     }, [totalPhpValue, shipmentForm.exchange_rate]);
 
     const handleAddLineForm = () => {
-        setLinesForm([...linesForm, { product_id: "", quantity_ordered: "", base_unit_cost_php: "" }]);
+        setLinesForm([...linesForm, { parent_product_id: "", product_id: "", quantity_ordered: "", base_unit_cost_php: "" }]);
     };
 
     const handleRemoveLineForm = (index: number) => {
@@ -701,7 +712,7 @@ export default function IncomingShipments({
                                         Destination Branch:{" "}
                                         <strong className="text-foreground font-bold">
                                             {(() => {
-                                                const branchId = activeShipment.branch_id;
+                                                const branchId = (activeShipment as IncomingShipment & { branch_id?: number | null }).branch_id;
                                                 switch (Number(branchId)) {
                                                     case 183: return "Main Branch";
                                                     case 163: return "Urdaneta Branch";
@@ -717,7 +728,7 @@ export default function IncomingShipments({
                                         Payment Type:{" "}
                                         <strong className="text-foreground font-bold">
                                             {(() => {
-                                                const payType = activeShipment.payment_type;
+                                                const payType = (activeShipment as IncomingShipment & { payment_type?: number | null }).payment_type;
                                                 switch (Number(payType)) {
                                                     case 1: return "Advance Payment";
                                                     case 2: return "Partial Payment";
@@ -733,7 +744,7 @@ export default function IncomingShipments({
                                     <span>
                                         Price Type:{" "}
                                         <strong className="text-foreground font-bold">
-                                            {activeShipment.price_type || "Standard"}
+                                            {(activeShipment as IncomingShipment & { price_type?: string | null }).price_type || "Standard"}
                                         </strong>
                                     </span>
                                 </div>
@@ -953,7 +964,7 @@ export default function IncomingShipments({
                                     <label className="text-[11px] font-semibold text-muted-foreground">Select Vendor / Supplier *</label>
                                     <CreatableSelect
                                         options={suppliers.map(s => ({ value: String(s.id), label: s.supplier_name }))}
-                                        value={shipmentForm.supplier_id}
+                                        value={String(shipmentForm.supplier_id)}
                                         onValueChange={(val) => setShipmentForm({...shipmentForm, supplier_id: val})}
                                         placeholder="Select Supplier..."
                                         className="h-9 text-xs w-full bg-background font-semibold"
@@ -983,7 +994,7 @@ export default function IncomingShipments({
                                         type="number"
                                         step="0.0001"
                                         readOnly={!isOverridden || !isFinanceManager}
-                                        value={shipmentForm.exchange_rate}
+                                        value={String(shipmentForm.exchange_rate)}
                                         onChange={e => setShipmentForm({...shipmentForm, exchange_rate: e.target.value})}
                                         className={`w-full rounded-lg border px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary font-mono font-semibold ${
                                             (!isOverridden || !isFinanceManager) ? "bg-muted text-muted-foreground cursor-not-allowed" : "bg-background text-foreground"
@@ -1000,7 +1011,7 @@ export default function IncomingShipments({
                                 <div className="space-y-1.5 flex flex-col">
                                     <label className="text-[11px] font-semibold text-muted-foreground">Destination Branch *</label>
                                     <select
-                                        value={shipmentForm.branch_id}
+                                        value={Number(shipmentForm.branch_id)}
                                         onChange={e => setShipmentForm({...shipmentForm, branch_id: parseInt(e.target.value)})}
                                         className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary font-semibold text-foreground h-9"
                                     >
@@ -1014,7 +1025,7 @@ export default function IncomingShipments({
                                 <div className="space-y-1.5 flex flex-col">
                                     <label className="text-[11px] font-semibold text-muted-foreground">Payment Type *</label>
                                     <select
-                                        value={shipmentForm.payment_type}
+                                        value={Number(shipmentForm.payment_type)}
                                         onChange={e => setShipmentForm({...shipmentForm, payment_type: parseInt(e.target.value)})}
                                         className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary font-semibold text-foreground h-9"
                                     >
@@ -1029,7 +1040,7 @@ export default function IncomingShipments({
                                 <div className="space-y-1.5 flex flex-col">
                                     <label className="text-[11px] font-semibold text-muted-foreground">Price Type *</label>
                                     <select
-                                        value={shipmentForm.price_type}
+                                        value={String(shipmentForm.price_type)}
                                         onChange={e => setShipmentForm({...shipmentForm, price_type: e.target.value})}
                                         className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary font-semibold text-foreground h-9"
                                     >
