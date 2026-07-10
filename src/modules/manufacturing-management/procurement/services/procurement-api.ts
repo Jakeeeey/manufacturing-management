@@ -75,10 +75,14 @@ export async function fetchRawMaterials(): Promise<RawMaterial[]> {
     const rawItems = products.filter((p: any) => Number(p.product_type) === 389 || Number(p.product_type) === 390);
     
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return rawItems.map((p: any) => ({
-        product_id: p.product_id,
-        parent_id: p.parent_id ? (typeof p.parent_id === "object" ? p.parent_id.product_id : p.parent_id) : null,
-        product_code: p.product_code || `SKU-${p.product_id}`,
+    return rawItems.map((p: any) => {
+        const parentIdValue = p.parent_id ? (typeof p.parent_id === "object" ? p.parent_id.product_id : p.parent_id) : null;
+        const parentItem = parentIdValue ? products.find((x: any) => Number(x.product_id) === Number(parentIdValue)) : null;
+        return {
+            product_id: p.product_id,
+            parent_id: parentIdValue ? Number(parentIdValue) : null,
+            parent_name: parentItem ? parentItem.product_name : null,
+            product_code: p.product_code || `SKU-${p.product_id}`,
         product_name: p.product_name,
         description: p.description || "",
         barcode: p.barcode || "",
@@ -87,13 +91,17 @@ export async function fetchRawMaterials(): Promise<RawMaterial[]> {
             unit_shortcut: p.unit_of_measurement.unit_shortcut,
             unit_name: p.unit_of_measurement.unit_name || p.unit_of_measurement.unit_shortcut
         } : undefined,
+        unit_of_measurement_count: p.unit_of_measurement_count ? Number(p.unit_of_measurement_count) : null,
         cost_per_unit: Number(p.cost_per_unit || 0),
         estimated_unit_cost: Number(p.estimated_unit_cost || 0),
         density_factor: Number(p.density_factor || 1.0),
         product_category: p.product_category ? (typeof p.product_category === "object" ? Number(p.product_category.category_id || p.product_category.id) : Number(p.product_category)) : null,
+        product_brand: p.product_brand ? (typeof p.product_brand === "object" ? Number(p.product_brand.brand_id || p.product_brand.id) : Number(p.product_brand)) : null,
+        product_type: p.product_type ? Number(p.product_type) : null,
         date_added: p.date_added,
         last_updated: p.last_updated
-    }));
+        };
+    });
 }
 
 export async function registerRawMaterial(
@@ -106,15 +114,47 @@ export async function registerRawMaterial(
         density_factor?: number;
         unit_of_measurement?: number;
         price_per_unit?: number;
+        parent_id?: number | null;
+        unit_of_measurement_count?: number | null;
+        product_brand?: number | null;
+        product_category?: number | null;
+        product_type?: number | null;
     },
-    supplierIds?: number[]
+    supplierIds?: number[],
+    packagingVariants?: any[]
 ): Promise<{ success: boolean; productId: number }> {
     const res = await fetch("/api/manufacturing/procurement/raw-materials", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productDetails, supplierIds })
+        body: JSON.stringify({ productDetails, supplierIds, packagingVariants })
     });
     return handleResponse(res, "Failed to register raw material");
+}
+
+export async function updateRawMaterial(
+    productId: number,
+    productDetails: {
+        product_name: string;
+        product_code: string;
+        description?: string;
+        barcode?: string;
+        density_factor?: number;
+        unit_of_measurement?: number;
+        unit_of_measurement_count?: number | null;
+        parent_id?: number | null;
+        product_brand?: number | null;
+        product_category?: number | null;
+        product_type?: number | null;
+    },
+    supplierIds?: number[],
+    packagingVariants?: any[]
+): Promise<{ success: boolean }> {
+    const res = await fetch("/api/manufacturing/procurement/raw-materials", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productId, productDetails, supplierIds, packagingVariants })
+    });
+    return handleResponse(res, "Failed to update raw material");
 }
 
 export async function updateShipmentStatus(shipmentId: number, status: string): Promise<unknown> {

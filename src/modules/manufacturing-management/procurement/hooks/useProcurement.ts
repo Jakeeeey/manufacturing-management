@@ -13,6 +13,7 @@ import {
     fetchRawMaterials,
     updateShipmentStatus,
     registerRawMaterial,
+    updateRawMaterial,
     updateSupplier,
     fetchLinkedProducts
 } from "../services/procurement-api";
@@ -426,6 +427,12 @@ export function useProcurement(defaultTab: string = "suppliers") {
             return;
         }
 
+        const hasBlankProduct = shipmentLinesForm.some(l => !l.product_id);
+        if (hasBlankProduct) {
+            toast.error("Please fill out the product selection field for all rows in the cargo manifest.");
+            return;
+        }
+
         const validLines = shipmentLinesForm.filter(l => l.product_id && l.quantity_ordered && l.base_unit_cost_php);
         if (validLines.length === 0) {
             toast.error("At least one product item is required");
@@ -541,14 +548,14 @@ export function useProcurement(defaultTab: string = "suppliers") {
         }
     };
 
-    const handleUpdateShipmentStatus = async (shipmentId: number, status: "Ordered" | "Approved" | "En Route" | "Receiving (QA)" | "Received") => {
+    const handleUpdateShipmentStatus = async (shipmentId: number, status: "Ordered" | "Approved" | "En Route" | "Receiving (QA)" | "Received" | "Rejected") => {
         setLoading(true);
         try {
             await updateShipmentStatus(shipmentId, status);
             toast.success(`Shipment status updated to ${status}`);
             await Promise.all([loadShipments(), loadRawMaterials()]);
             if (selectedShipment && selectedShipment.shipment_id === shipmentId) {
-                setSelectedShipment(prev => prev ? { ...prev, status } : null);
+                setSelectedShipment(null);
             }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
@@ -569,12 +576,18 @@ export function useProcurement(defaultTab: string = "suppliers") {
             density_factor?: number;
             unit_of_measurement?: number;
             price_per_unit?: number;
+            parent_id?: number | null;
+            unit_of_measurement_count?: number | null;
+            product_brand?: number | null;
+            product_category?: number | null;
+            product_type?: number | null;
         },
-        supplierIds?: number[]
+        supplierIds?: number[],
+        packagingVariants?: any[]
     ): Promise<boolean> => {
         setLoading(true);
         try {
-            await registerRawMaterial(productDetails, supplierIds);
+            await registerRawMaterial(productDetails, supplierIds, packagingVariants);
             toast.success(`Successfully registered raw material "${productDetails.product_name}"`);
             await loadRawMaterials();
             return true;
@@ -582,6 +595,39 @@ export function useProcurement(defaultTab: string = "suppliers") {
         } catch (e: any) {
             console.error(e);
             toast.error(e.message || "Failed to register raw material");
+            return false;
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleUpdateRawMaterial = async (
+        productId: number,
+        productDetails: {
+            product_name: string;
+            product_code: string;
+            description?: string;
+            barcode?: string;
+            density_factor?: number;
+            unit_of_measurement?: number;
+            unit_of_measurement_count?: number | null;
+            parent_id?: number | null;
+            product_brand?: number | null;
+            product_category?: number | null;
+            product_type?: number | null;
+        },
+        supplierIds?: number[],
+        packagingVariants?: any[]
+    ): Promise<boolean> => {
+        setLoading(true);
+        try {
+            await updateRawMaterial(productId, productDetails, supplierIds, packagingVariants);
+            toast.success(`Successfully updated raw material "${productDetails.product_name}"`);
+            await loadRawMaterials();
+            return true;
+        } catch (e: any) {
+            console.error(e);
+            toast.error(e.message || "Failed to update raw material");
             return false;
         } finally {
             setLoading(false);
@@ -603,7 +649,41 @@ export function useProcurement(defaultTab: string = "suppliers") {
         }
     };
 
+    const handleEditShipment = async (
+        shipmentId: number,
+        shipmentData: any,
+        lineItems: any[]
+    ) => {
+        setLoading(true);
+        try {
+            const res = await fetch(`/api/manufacturing/procurement/shipments`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    shipmentId,
+                    shipmentData,
+                    lineItems
+                })
+            });
+
+            if (!res.ok) {
+                const errJson = await res.json();
+                throw new Error(errJson.error || "Failed to update shipment");
+            }
+
+            toast.success("Purchase Order updated and resubmitted successfully.");
+            setSelectedShipment(null);
+            await loadShipments();
+        } catch (e: any) {
+            console.error(e);
+            toast.error(e.message || "Failed to update Purchase Order");
+        } finally {
+            setLoading(false);
+        }
+    };
+
     return {
+        handleEditShipment,
         activeTab,
         setActiveTab,
         loading,
@@ -639,6 +719,7 @@ export function useProcurement(defaultTab: string = "suppliers") {
         handleAllocateExpenses,
         handleUpdateShipmentStatus,
         handleRegisterRawMaterial,
+        handleUpdateRawMaterial,
         handleToggleSupplierActive
     };
 }

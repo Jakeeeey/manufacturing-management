@@ -36,14 +36,41 @@ export function useQAReceiving() {
     const [fifoSearch, setFifoSearch] = useState("");
     const [showReceived, setShowReceived] = useState(false);
 
+    // Filter states for shipments queue
+    const [searchPO, setSearchPO] = useState("");
+    const [searchStatus, setSearchStatus] = useState("");
+    const [startDate, setStartDate] = useState("");
+    const [endDate, setEndDate] = useState("");
+
     const filteredShipments = useMemo(() => {
         return shipments.filter(s => {
-            if (showReceived) {
-                return ["Ordered", "Approved", "En Route", "Receiving (QA)", "Received"].includes(s.status);
+            // 1. PO# filter (case-insensitive search on reference_number or shipment_id)
+            if (searchPO.trim()) {
+                const poMatch = s.reference_number.toLowerCase().includes(searchPO.toLowerCase()) || 
+                                String(s.shipment_id).includes(searchPO);
+                if (!poMatch) return false;
             }
-            return ["Ordered", "Approved", "En Route", "Receiving (QA)"].includes(s.status);
+
+            // 2. Status filter
+            if (searchStatus) {
+                if (s.status !== searchStatus) return false;
+            } else {
+                // If no specific status is selected, follow showReceived logic
+                if (!showReceived && s.status === "Received") return false;
+            }
+
+            // 3. Date range filter (using s.date_received or s.created_at)
+            const dateStr = s.date_received || s.created_at?.split('T')[0];
+            if (dateStr) {
+                if (startDate && dateStr < startDate) return false;
+                if (endDate && dateStr > endDate) return false;
+            } else if (startDate || endDate) {
+                return false;
+            }
+
+            return true;
         });
-    }, [shipments, showReceived]);
+    }, [shipments, searchPO, searchStatus, startDate, endDate, showReceived]);
 
     // Load base data
     useEffect(() => {
@@ -110,18 +137,25 @@ export function useQAReceiving() {
                 const isPkg = prodName.includes("box") || prodName.includes("bottle") || prodName.includes("cap") || prodName.includes("sticker") || prodName.includes("packaging") || prodName.includes("plastic") || prodName.includes("wrapper");
                 
                 rowsInit[l.line_id] = {
+                    receivedQty: "",
                     acceptedQty: "",
+                    boQty: "",
                     lotNumber: "",
                     expirationDate: "",
                     rejectionReason: l.rejection_reason || "",
-                    qaStatus: l.qa_status || "Passed",
+                    qaStatus: "", // Must default to an unselected placeholder state
                     isPackaging: isPkg
                 };
             });
             setInspectionRows(rowsInit);
-            // Pre-select first branch if available
-            if (branches.length > 0 && !selectedBranchId) {
+            
+            // Pre-select the receiving branch defined in the original Purchase Order / Procurement record
+            if (shipment.branch_id) {
+                setSelectedBranchId(shipment.branch_id.toString());
+            } else if (branches.length > 0) {
                 setSelectedBranchId(branches[0].id.toString());
+            } else {
+                setSelectedBranchId("");
             }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
@@ -134,13 +168,31 @@ export function useQAReceiving() {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const handleUpdateRow = (lineId: number, field: string, value: any) => {
-        setInspectionRows(prev => ({
-            ...prev,
-            [lineId]: {
+        setInspectionRows(prev => {
+            const updatedRow = {
                 ...prev[lineId],
                 [field]: value
+            };
+            
+            // If receivedQty or acceptedQty is updated, compute boQty dynamically
+            if (field === "receivedQty" || field === "acceptedQty") {
+                const recVal = field === "receivedQty" ? value : updatedRow.receivedQty;
+                const accVal = field === "acceptedQty" ? value : updatedRow.acceptedQty;
+                
+                if (recVal !== "" && accVal !== "") {
+                    // BO qty = shortfall only — never negative.
+                    // If accepted > received, BO = 0 (over-acceptance; all received plus extras are logged as accepted)
+                    updatedRow.boQty = Math.max(0, Number(recVal) - Number(accVal));
+                } else {
+                    updatedRow.boQty = "";
+                }
             }
-        }));
+            
+            return {
+                ...prev,
+                [lineId]: updatedRow
+            };
+        });
     };
 
     const handleSubmitInspection = async (e: React.FormEvent) => {
@@ -151,19 +203,52 @@ export function useQAReceiving() {
             return;
         }
 
-        // Validation for expiration and batch rules
+        // Validation for new fields and QA constraints
         for (const line of lineItems) {
             const row = inspectionRows[line.line_id];
             if (!row) continue;
 
             const name = line.product_id?.product_name || `Item ${line.product_id}`;
 
-            if (row.acceptedQty === "") {
+            if (row.receivedQty === "" || isNaN(Number(row.receivedQty))) {
+                toast.error(`Please enter Received Quantity for: ${name}`);
+                return;
+            }
+
+            if (row.acceptedQty === "" || isNaN(Number(row.acceptedQty))) {
                 toast.error(`Please enter Accepted Quantity for: ${name}`);
                 return;
             }
 
+            if (!row.qaStatus || row.qaStatus === "") {
+                toast.error(`Please select QA Status Decision for: ${name}`);
+                return;
+            }
+
+            if (!row.lotNumber || !row.lotNumber.trim()) {
+                toast.error(`Please enter Lot / Batch ID for: ${name}`);
+                return;
+            }
+
+            const received = Number(row.receivedQty);
             const accepted = Number(row.acceptedQty);
+            // BO is always the shortfall (non-negative). When accepted > received, BO = 0.
+            const bo = Math.max(0, received - accepted);
+            const ordered = Number(line.quantity_ordered || 0);
+
+            if (received < 0 || accepted < 0) {
+                toast.error(`Quantities cannot be negative for: ${name}`);
+                return;
+            }
+
+            // When accepted ≤ received: the standard reconciliation check applies.
+            // When accepted > received: this is an over-acceptance event (supplier delivered more
+            // than what was physically counted as "received", e.g., loose items found during inspection).
+            // We allow it but require remarks.
+            if (accepted <= received && received !== accepted + bo) {
+                toast.error(`Discrepancy for ${name}: Received Qty (${received}) must equal Accepted Qty (${accepted}) + BO Qty (${bo}).`);
+                return;
+            }
 
             // Expiration rule for raw materials
             if (!row.isPackaging && !row.expirationDate && accepted > 0) {
@@ -171,9 +256,22 @@ export function useQAReceiving() {
                 return;
             }
 
-            // Batch/lot number rule for packaging
-            if (row.isPackaging && !row.lotNumber.trim() && accepted > 0) {
-                toast.error(`Batch / Lot Number is mandatory for Packaging item: ${name}`);
+            // Remarks validation:
+            // 1. If BO Qty > 0, remarks field is mandatory
+            if (bo > 0 && (!row.rejectionReason || !row.rejectionReason.trim())) {
+                toast.error(`Remarks are mandatory for ${name} because there is a Bad Order quantity (${bo} units).`);
+                return;
+            }
+
+            // 2. If Received Qty !== Ordered Qty (Shortage or Over-shipment), remarks field is mandatory
+            if (received !== ordered && (!row.rejectionReason || !row.rejectionReason.trim())) {
+                toast.error(`Remarks are mandatory for ${name} due to logistics discrepancy (Received: ${received}, Ordered: ${ordered}).`);
+                return;
+            }
+
+            // 3. If Accepted Qty > Received Qty (over-acceptance / bonus stock), remarks field is mandatory
+            if (accepted > received && (!row.rejectionReason || !row.rejectionReason.trim())) {
+                toast.error(`Remarks are mandatory for ${name} because Accepted Qty (${accepted}) exceeds Received Qty (${received}). Please document the source of extra units.`);
                 return;
             }
         }
@@ -185,15 +283,17 @@ export function useQAReceiving() {
         try {
             const lineItemUpdates = lineItems.map(line => {
                 const row = inspectionRows[line.line_id]!;
-                const qtyOrdered = Number(line.quantity_ordered || 0);
+                const received = Number(row.receivedQty || 0);
                 const accepted = Number(row.acceptedQty || 0);
-                const qtyRejected = Math.max(0, qtyOrdered - accepted);
+                // BO = shortfall only — never negative. Over-accepted units are all written to accepted stock.
+                const bo = Math.max(0, received - accepted);
 
                 return {
                     line_id: line.line_id,
                     product_id: line.product_id.product_id,
-                    quantity_received: accepted,
-                    quantity_rejected: qtyRejected,
+                    quantity_received: received,
+                    quantity_accepted: accepted,
+                    quantity_rejected: bo, // BO Qty (shortfall, non-negative)
                     lot_number: row.lotNumber || null,
                     expiration_date: row.expirationDate ? row.expirationDate.replace(/\//g, "-") : null,
                     rejection_reason: row.rejectionReason || null,
@@ -345,6 +445,16 @@ export function useQAReceiving() {
         filteredShipments,
         filteredFifoList,
         handleLoadFifoInventory,
-        toggleProductExpand
+        toggleProductExpand,
+
+        // Expose new filter states
+        searchPO,
+        setSearchPO,
+        searchStatus,
+        setSearchStatus,
+        startDate,
+        setStartDate,
+        endDate,
+        setEndDate
     };
 }

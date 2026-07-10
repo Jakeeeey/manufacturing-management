@@ -182,8 +182,8 @@ export default function InventoryModule() {
 
         const connectWebSocket = () => {
             if (isDisposed) return;
-            if (reconnectAttempts >= 3) {
-                // Silently stop attempting after 3 failures to avoid console spam
+            if (reconnectAttempts >= 10) {
+                console.warn("[Directus Realtime] Maximum reconnect attempts reached (10). Standing by.");
                 return;
             }
             
@@ -246,20 +246,26 @@ export default function InventoryModule() {
 
                 ws.onclose = () => {
                     ws = null;
-                    if (!isDisposed && reconnectAttempts < 3) {
+                    if (!isDisposed && reconnectAttempts < 10) {
                         reconnectAttempts++;
-                        reconnectTimeout = setTimeout(connectWebSocket, 5000);
+                        const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+                        console.log(`[Directus Realtime] WebSocket closed. Attempting reconnect ${reconnectAttempts}/10 in ${delay}ms...`);
+                        reconnectTimeout = setTimeout(connectWebSocket, delay);
                     }
                 };
 
-                ws.onerror = () => {
-                    ws?.close();
+                ws.onerror = (errorEvent) => {
+                    const errorMessage = errorEvent instanceof Error ? errorEvent.message : "Connection refused or network down";
+                    // Downgraded to warn: WS errors are expected when the Directus realtime endpoint
+                    // is unreachable (e.g. dev mode, network drop). Reconnection is handled by onclose.
+                    console.warn("[Directus Realtime] WebSocket unavailable:", errorMessage);
                 };
 
             } catch {
-                if (!isDisposed && reconnectAttempts < 3) {
+                if (!isDisposed && reconnectAttempts < 10) {
                     reconnectAttempts++;
-                    reconnectTimeout = setTimeout(connectWebSocket, 5000);
+                    const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+                    reconnectTimeout = setTimeout(connectWebSocket, delay);
                 }
             }
         };
@@ -601,18 +607,18 @@ export default function InventoryModule() {
             `}</style>
             {/* KPI metrics bar */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="bg-card border border-slate-800 rounded-xl p-4 flex items-center justify-between shadow-xs">
+                <div className="bg-card border border-border rounded-xl p-4 flex items-center justify-between shadow-xs">
                     <div>
                         <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider block">Estimated Stock Value</span>
                         <h4 className="text-lg font-black text-foreground mt-1">₱{totalStockVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h4>
                         <span className="text-[9px] text-muted-foreground block mt-0.5">Based on active standard costs</span>
                     </div>
-                    <div className="bg-emerald-950/20 p-3 rounded-lg border border-emerald-500/10">
+                    <div className="bg-emerald-500/10 p-3 rounded-lg border border-emerald-500/20">
                         <Boxes className="h-5 w-5 text-emerald-500" />
                     </div>
                 </div>
 
-                <div className="bg-card border border-slate-800 rounded-xl p-4 flex items-center justify-between shadow-xs">
+                <div className="bg-card border border-border rounded-xl p-4 flex items-center justify-between shadow-xs">
                     <div>
                         <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider block">Consolidated SKUs</span>
                         <h4 className="text-lg font-black text-foreground mt-1">{stockLevels.length} Products</h4>
@@ -623,33 +629,33 @@ export default function InventoryModule() {
                     </div>
                 </div>
 
-                <div className="bg-card border border-slate-800 rounded-xl p-4 flex items-center justify-between shadow-xs">
+                <div className="bg-card border border-border rounded-xl p-4 flex items-center justify-between shadow-xs">
                     <div>
                         <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider block">Shortages & Low Stock</span>
                         <h4 className="text-lg font-black text-amber-500 mt-1">{lowStockCount} Items</h4>
                         <span className="text-[9px] text-muted-foreground block mt-0.5">Stock balance &lt; 50 units</span>
                     </div>
-                    <div className="bg-amber-950/20 p-3 rounded-lg border border-amber-500/10">
+                    <div className="bg-amber-500/10 p-3 rounded-lg border border-amber-500/20">
                         <TrendingDown className="h-5 w-5 text-amber-500" />
                     </div>
                 </div>
 
-                <div className="bg-card border border-slate-800 rounded-xl p-4 flex items-center justify-between shadow-xs">
+                <div className="bg-card border border-border rounded-xl p-4 flex items-center justify-between shadow-xs">
                     <div>
                         <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider block">Lots Expiring (90 days)</span>
                         <h4 className="text-lg font-black text-rose-500 mt-1">{soonExpiredCount} Batches</h4>
                         <span className="text-[9px] text-muted-foreground block mt-0.5">Active FIFO inventory warning</span>
                     </div>
-                    <div className="bg-rose-950/20 p-3 rounded-lg border border-rose-500/10">
+                    <div className="bg-rose-500/10 p-3 rounded-lg border border-rose-500/20">
                         <AlertTriangle className="h-5 w-5 text-rose-500" />
                     </div>
                 </div>
             </div>
 
             {/* View navigation & Controls */}
-            <div className="border border-slate-800 rounded-xl bg-card p-4 space-y-4">
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-800 pb-3">
-                    <div className="flex bg-slate-950/40 border border-slate-800 p-1 rounded-lg gap-1">
+            <div className="border border-border rounded-xl bg-card p-4 space-y-4">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-border pb-3">
+                    <div className="flex bg-muted/40 border border-border p-1 rounded-lg gap-1">
                         <button
                             onClick={() => { setActiveTab("stock"); setSearchQuery(""); }}
                             className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all border-none cursor-pointer flex items-center gap-1.5 ${
@@ -677,7 +683,7 @@ export default function InventoryModule() {
                     </div>
 
                     <div className="flex items-center gap-2">
-                        <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-950/30 border border-emerald-500/20 text-emerald-400 text-[10px] font-black rounded-lg uppercase tracking-wider shadow-xs">
+                        <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-[10px] font-black rounded-lg uppercase tracking-wider shadow-xs">
                             <span className="relative flex h-1.5 w-1.5">
                                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                                 <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
@@ -692,7 +698,7 @@ export default function InventoryModule() {
                         </button>
                         <button 
                             onClick={loadInventoryData}
-                            className="bg-slate-850 hover:bg-slate-800 text-foreground border border-slate-700 text-xs font-bold px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-all cursor-pointer"
+                            className="bg-muted hover:bg-muted/80 text-foreground border border-border text-xs font-bold px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-all cursor-pointer"
                             disabled={loading}
                         >
                             <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Sync stock
@@ -700,7 +706,7 @@ export default function InventoryModule() {
                     </div>
                 </div>
                 {/* Ledger Switcher */}
-                <div className="flex bg-slate-900 border border-slate-800 p-0.5 rounded-lg w-fit">
+                <div className="flex bg-muted/50 border border-border p-0.5 rounded-lg w-fit">
                     <button
                         type="button"
                         onClick={() => {
@@ -728,13 +734,13 @@ export default function InventoryModule() {
                 </div>
 
                 {/* Advanced Multi-Criteria Filters */}
-                <div className="grid grid-cols-2 md:grid-cols-6 gap-3 bg-slate-950/20 p-3 rounded-lg border border-slate-800">
+                <div className="grid grid-cols-2 md:grid-cols-6 gap-3 bg-muted/20 p-3 rounded-lg border border-border">
                     <div className="space-y-1">
                         <label className="text-[9px] font-black text-muted-foreground uppercase tracking-wider block">Branch</label>
                         <select
                             value={filterBranch}
                             onChange={(e) => setFilterBranch(e.target.value)}
-                            className="w-full bg-background border border-slate-850 rounded-lg px-2 py-1.5 text-xs text-foreground font-semibold outline-none"
+                            className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-xs text-foreground font-semibold outline-none"
                         >
                             <option value="all">All Branches</option>
                             {data?.branches?.map(b => (
@@ -748,7 +754,7 @@ export default function InventoryModule() {
                         <select
                             value={filterBrand}
                             onChange={(e) => setFilterBrand(e.target.value)}
-                            className="w-full bg-background border border-slate-850 rounded-lg px-2 py-1.5 text-xs text-foreground font-semibold outline-none"
+                            className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-xs text-foreground font-semibold outline-none"
                         >
                             <option value="all">All Brands</option>
                             {Array.from(new Set(data?.products?.map(p => p.product_brand?.brand_name).filter(Boolean))).map(brand => (
@@ -762,7 +768,7 @@ export default function InventoryModule() {
                         <select
                             value={filterCategory}
                             onChange={(e) => setFilterCategory(e.target.value)}
-                            className="w-full bg-background border border-slate-850 rounded-lg px-2 py-1.5 text-xs text-foreground font-semibold outline-none"
+                            className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-xs text-foreground font-semibold outline-none"
                         >
                             <option value="all">All Categories</option>
                             {Array.from(new Set(data?.products?.map(p => p.product_category?.category_name).filter(Boolean))).map(cat => (
@@ -776,7 +782,7 @@ export default function InventoryModule() {
                         <select
                             value={filterProduct}
                             onChange={(e) => setFilterProduct(e.target.value)}
-                            className="w-full bg-background border border-slate-850 rounded-lg px-2 py-1.5 text-xs text-foreground font-semibold outline-none"
+                            className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-xs text-foreground font-semibold outline-none"
                         >
                             <option value="all">All Products</option>
                             {data?.products?.filter(p => ledgerType === "fg" ? p.is_finished_good : !p.is_finished_good).map(p => (
@@ -791,7 +797,7 @@ export default function InventoryModule() {
                             type="date"
                             value={filterStartDate}
                             onChange={(e) => setFilterStartDate(e.target.value)}
-                            className="w-full bg-background border border-slate-850 rounded-lg px-2.5 py-1 text-xs text-foreground outline-none font-semibold"
+                            className="w-full bg-background border border-border rounded-lg px-2.5 py-1 text-xs text-foreground outline-none font-semibold"
                         />
                     </div>
 
@@ -801,7 +807,7 @@ export default function InventoryModule() {
                             type="date"
                             value={filterEndDate}
                             onChange={(e) => setFilterEndDate(e.target.value)}
-                            className="w-full bg-background border border-slate-850 rounded-lg px-2.5 py-1 text-xs text-foreground outline-none font-semibold"
+                            className="w-full bg-background border border-border rounded-lg px-2.5 py-1 text-xs text-foreground outline-none font-semibold"
                         />
                     </div>
                 </div>
@@ -815,7 +821,7 @@ export default function InventoryModule() {
                             placeholder="Search by product name, code, brand, or lot number..."
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            className="w-full bg-background border border-slate-850 rounded-xl pl-9 pr-4 py-2 text-xs text-foreground focus:ring-1 focus:ring-primary outline-none"
+                            className="w-full bg-background border border-border rounded-xl pl-9 pr-4 py-2 text-xs text-foreground focus:ring-1 focus:ring-primary outline-none"
                         />
                     </div>
 
@@ -841,7 +847,7 @@ export default function InventoryModule() {
                                 value={expiryFilter}
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                                 onChange={(e: any) => setExpiryFilter(e.target.value)}
-                                className="bg-background border border-slate-850 rounded-lg px-2 py-1 text-xs text-foreground font-semibold outline-none"
+                                className="bg-background border border-border rounded-lg px-2 py-1 text-xs text-foreground font-semibold outline-none"
                             >
                                 <option value="all">All Batches</option>
                                 <option value="active">Safe Lots (&gt;90 days)</option>
@@ -875,11 +881,11 @@ export default function InventoryModule() {
                                 });
 
                                 return (
-                                    <div key={catName} className="border border-slate-800 rounded-xl overflow-hidden bg-slate-900/10">
+                                    <div key={catName} className="border border-border rounded-xl overflow-hidden bg-muted/5">
                                         {/* Category Header */}
                                         <button
                                             onClick={() => toggleGroup(catKey)}
-                                            className="w-full flex items-center justify-between bg-slate-950/50 p-4 border-none text-left cursor-pointer transition-all hover:bg-slate-950/70"
+                                            className="w-full flex items-center justify-between bg-muted/30 p-4 border-none text-left cursor-pointer transition-all hover:bg-muted/50"
                                         >
                                             <div className="flex items-center gap-3">
                                                 {catExpanded ? <ChevronDown className="h-4.5 w-4.5 text-primary" /> : <ChevronRight className="h-4.5 w-4.5 text-primary" />}
@@ -897,7 +903,7 @@ export default function InventoryModule() {
 
                                         {/* Brand Level */}
                                         {catExpanded && (
-                                            <div className="p-4 space-y-4 bg-slate-950/20 border-t border-slate-800">
+                                            <div className="p-4 space-y-4 bg-muted/10 border-t border-border">
                                                 {Object.keys(catBrands).map((brandName) => {
                                                     const brandProds = catBrands[brandName];
                                                     const brandKey = `brand-${catName}-${brandName}`;
@@ -907,17 +913,17 @@ export default function InventoryModule() {
                                                     const brandTotalValue = brandProds.reduce((sum, p) => sum + (p.currentStock * (p.cost_per_unit || 0)), 0);
 
                                                     return (
-                                                        <div key={brandName} className="border border-slate-850/60 rounded-lg overflow-hidden bg-slate-900/5">
+                                                        <div key={brandName} className="border border-border rounded-lg overflow-hidden bg-card">
                                                             {/* Brand Header */}
                                                             <button
                                                                 onClick={() => toggleGroup(brandKey)}
-                                                                className="w-full flex items-center justify-between bg-slate-900/30 px-4 py-3 border-none text-left cursor-pointer transition-all hover:bg-slate-900/50"
+                                                                className="w-full flex items-center justify-between bg-muted/20 px-4 py-3 border-none text-left cursor-pointer transition-all hover:bg-muted/40"
                                                             >
                                                                 <div className="flex items-center gap-2">
                                                                     {brandExpanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
                                                                     <Tag className="h-4 w-4 text-primary" />
                                                                     <span className="text-xs font-bold text-foreground">{brandName}</span>
-                                                                    <span className="text-[10px] text-muted-foreground bg-slate-800/80 px-2 py-0.5 rounded-full ml-2 font-semibold">
+                                                                    <span className="text-[10px] text-muted-foreground bg-muted px-2 py-0.5 rounded-full ml-2 font-semibold">
                                                                         {brandProds.length} SKUs
                                                                     </span>
                                                                 </div>
@@ -929,10 +935,10 @@ export default function InventoryModule() {
 
                                                             {/* Products list table */}
                                                             {brandExpanded && (
-                                                                <div className="overflow-x-auto border-t border-slate-850">
+                                                                <div className="overflow-x-auto border-t border-border">
                                                                     <table className="w-full border-collapse text-left text-[11px]">
                                                                         <thead>
-                                                                            <tr className="border-b border-slate-850 bg-slate-950/20 text-muted-foreground font-extrabold">
+                                                                            <tr className="border-b border-border bg-muted/20 text-muted-foreground font-extrabold">
                                                                                 <th className="py-2.5 px-4">Product details</th>
                                                                                 <th className="py-2.5 px-4 text-right hidden sm:table-cell">Standard Cost</th>
                                                                                 <th className="py-2.5 px-4 text-right">Stock Balance</th>
@@ -948,7 +954,7 @@ export default function InventoryModule() {
                                                                                 const isExpanded = !!expandedProducts[Number(prod.product_id)];
 
                                                                                 const flash = flashStates[Number(prod.product_id)];
-                                                                                const trClass = `border-b border-slate-850/30 last:border-b-0 hover:bg-slate-950/10 cursor-pointer select-none transition-all duration-300 ${
+                                                                                const trClass = `border-b border-border/40 last:border-b-0 hover:bg-muted/20 cursor-pointer select-none transition-all duration-300 ${
                                                                                     flash === "up" ? "animate-flash-up" : flash === "down" ? "animate-flash-down" : ""
                                                                                 }`;
 
@@ -995,7 +1001,7 @@ export default function InventoryModule() {
                                                                                             </td>
                                                                                         </tr>
                                                                                         {isExpanded && (
-                                                                                            <tr className="bg-slate-950/15 border-b border-slate-850/30">
+                                                                                            <tr className="bg-muted/10 border-b border-border/30">
                                                                                                 <td colSpan={5} className="p-4">
                                                                                                     <div className="border-l-2 border-primary/45 pl-4 py-1.5 space-y-2">
                                                                                                         <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Stock Breakdown by Branch</div>
@@ -1005,7 +1011,7 @@ export default function InventoryModule() {
                                                                                                                     const branchObj = data?.branches?.find(br => Number(br.id) === Number(bId));
                                                                                                                     const branchName = branchObj ? branchObj.branch_name : `Branch #${bId}`;
                                                                                                                     return (
-                                                                                                                        <div key={bId} className="flex items-center justify-between p-2 rounded-lg bg-slate-900/40 border border-slate-850">
+                                                                                                                        <div key={bId} className="flex items-center justify-between p-2 rounded-lg bg-muted/30 border border-border">
                                                                                                                             <span className="text-[10px] font-medium text-muted-foreground">{branchName}</span>
                                                                                                                             <span className={`text-[11px] font-bold ${(qty as number) < 0 ? "text-red-400" : "text-foreground"}`}>
                                                                                                                                 {(qty as number).toLocaleString()} {uom}
@@ -1287,9 +1293,9 @@ export default function InventoryModule() {
 
             {/* Stock Adjustment Modal */}
             {isAdjustmentModalOpen && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-in fade-in duration-300">
-                    <div className="bg-card border border-slate-800 w-full max-w-md rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-                        <div className="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950/20">
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-background/80 backdrop-blur-xs animate-in fade-in duration-300">
+                    <div className="bg-card border border-border w-full max-w-md rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+                        <div className="p-5 border-b border-border flex items-center justify-between bg-muted/20">
                             <div>
                                 <h3 className="text-sm font-bold text-foreground flex items-center gap-1.5">
                                     <Sliders className="h-4.5 w-4.5 text-primary" />
@@ -1299,7 +1305,7 @@ export default function InventoryModule() {
                             </div>
                             <button
                                 onClick={() => setIsAdjustmentModalOpen(false)}
-                                className="p-1.5 hover:bg-slate-800 rounded-lg text-muted-foreground hover:text-foreground border-none bg-transparent cursor-pointer transition-colors"
+                                className="p-1.5 hover:bg-muted rounded-lg text-muted-foreground hover:text-foreground border-none bg-transparent cursor-pointer transition-colors"
                             >
                                 <X className="h-4 w-4" />
                             </button>
@@ -1312,7 +1318,7 @@ export default function InventoryModule() {
                                 <select
                                     value={adjProductId}
                                     onChange={e => setAdjProductId(e.target.value)}
-                                    className="w-full bg-background border border-slate-800 rounded-lg px-3 py-2 text-xs text-foreground focus:ring-1 focus:ring-primary focus:border-primary outline-none"
+                                    className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs text-foreground focus:ring-1 focus:ring-primary focus:border-primary outline-none"
                                     required
                                 >
                                     <option value="">Select product to adjust...</option>
@@ -1331,7 +1337,7 @@ export default function InventoryModule() {
                                     <select
                                         value={adjBranchId}
                                         onChange={e => setAdjBranchId(e.target.value)}
-                                        className="w-full bg-background border border-slate-800 rounded-lg px-3 py-2 text-xs text-foreground focus:ring-1 focus:ring-primary focus:border-primary outline-none"
+                                        className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs text-foreground focus:ring-1 focus:ring-primary focus:border-primary outline-none"
                                     >
                                         {data?.branches && data.branches.length > 0 ? (
                                             data.branches.map(br => (
@@ -1357,7 +1363,7 @@ export default function InventoryModule() {
                                         placeholder="e.g. -50 or 120"
                                         value={adjQty}
                                         onChange={e => setAdjQty(e.target.value)}
-                                        className="w-full bg-background border border-slate-800 rounded-lg px-3 py-2 text-xs text-foreground focus:ring-1 focus:ring-primary focus:border-primary outline-none"
+                                        className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs text-foreground focus:ring-1 focus:ring-primary focus:border-primary outline-none"
                                         required
                                     />
                                     <span className="text-[9px] text-muted-foreground block mt-0.5">Use negative numbers to deduct</span>
@@ -1371,7 +1377,7 @@ export default function InventoryModule() {
                                     <select
                                         value={adjType}
                                         onChange={e => setAdjType(e.target.value)}
-                                        className="w-full bg-background border border-slate-850 rounded-lg px-3 py-2 text-xs text-foreground focus:ring-1 focus:ring-primary focus:border-primary outline-none"
+                                        className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs text-foreground focus:ring-1 focus:ring-primary focus:border-primary outline-none"
                                     >
                                         <option value="Stock Take Reconciliation">Stock Reconciliation</option>
                                         <option value="Loss / Damage Adjustment">Spill/Loss/Damage</option>
@@ -1387,7 +1393,7 @@ export default function InventoryModule() {
                                         type="date"
                                         value={adjDate}
                                         onChange={e => setAdjDate(e.target.value)}
-                                        className="w-full bg-background border border-slate-850 rounded-lg px-3 py-2 text-xs text-foreground focus:ring-1 focus:ring-primary focus:border-primary outline-none"
+                                        className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs text-foreground focus:ring-1 focus:ring-primary focus:border-primary outline-none"
                                         required
                                     />
                                 </div>
@@ -1401,17 +1407,17 @@ export default function InventoryModule() {
                                     placeholder="Enter reasoning (e.g., Damaged during forklift operation, reconciliation after annual audit)..."
                                     value={adjRemarks}
                                     onChange={e => setAdjRemarks(e.target.value)}
-                                    className="w-full bg-background border border-slate-850 rounded-lg px-3 py-2 text-xs text-foreground focus:ring-1 focus:ring-primary focus:border-primary outline-none resize-none"
+                                    className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs text-foreground focus:ring-1 focus:ring-primary focus:border-primary outline-none resize-none"
                                     required
                                 />
                             </div>
 
                             {/* Action buttons */}
-                            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
+                            <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
                                 <button
                                     type="button"
                                     onClick={() => setIsAdjustmentModalOpen(false)}
-                                    className="bg-slate-850 hover:bg-slate-800 text-foreground border border-slate-700 text-xs font-bold px-4 py-2 rounded-lg cursor-pointer transition-all"
+                                    className="bg-muted hover:bg-muted/80 text-foreground border border-border text-xs font-bold px-4 py-2 rounded-lg cursor-pointer transition-all"
                                 >
                                     Cancel
                                 </button>

@@ -16,12 +16,15 @@ import {
     ChevronLeft,
     ChevronDown,
     Image as ImageIcon,
-    Package
+    Package,
+    Shield,
+    Settings
 } from "lucide-react";
 import { toast } from "sonner";
 import { ProductDetailsTab } from "./components/ProductDetailsTab";
-import { BOMRecipeTab } from "./components/BOMRecipeTab";
-import { RoutingsTab } from "./components/RoutingsTab";
+import { RoutesBOMTab } from "./components/RoutesBOMTab";
+import { QATemplatesTab } from "./components/QATemplatesTab";
+import { WorkCentersTab } from "./components/WorkCentersTab";
 import { CostRollupTab } from "./components/CostRollupTab";
 import { ImportationTab } from "./components/ImportationTab";
 import { useFinishedGoods } from "./hooks/useFinishedGoods";
@@ -51,6 +54,8 @@ export default function FinishedGoodsModule() {
         classes,
         segments,
         sections,
+        workCenters,
+        qaTemplates,
         loadingProducts,
         loadingBOM,
         savingBOM,
@@ -64,6 +69,12 @@ export default function FinishedGoodsModule() {
         versionCosts,
         selectedVersionId,
         setSelectedVersionId,
+        editedRoutes,
+        setEditedRoutes,
+        isVersionModalOpen,
+        setIsVersionModalOpen,
+        versionForm,
+        setVersionForm,
         isRegisterModalOpen,
         setIsRegisterModalOpen,
         registerForm,
@@ -86,8 +97,49 @@ export default function FinishedGoodsModule() {
         handleRegisterProduct,
         handleRegisterNewVersion,
         handleSave,
-        handleActivateVersion
+        handleActivateVersion,
+        handleAddWorkCenter,
+        handleSaveWorkCenter,
+        handleAddQATemplate,
+        handleSaveQATemplate
     } = useFinishedGoods(searchParams.get("tab") || "details");
+
+    // Synchronize new editedRoutes state to legacy editedBOM and editedRoutings for costing simulation
+    useEffect(() => {
+        const ingredients: BOMItem[] = [];
+        const routings: RoutingStep[] = [];
+        
+        editedRoutes.forEach(r => {
+            routings.push({
+                id: String(r.route_id),
+                sequence: r.sequence_order,
+                name: `Step ${r.sequence_order}`,
+                operationId: r.operation_id || undefined,
+                laborFlatRate: r.estimated_labor_cost,
+                machineHourlyRate: 0,
+                durationHours: r.run_time_hours,
+                requiresQA: !!r.qa_template_id
+            });
+            
+            if (r.bom_items) {
+                r.bom_items.forEach(b => {
+                    ingredients.push({
+                        id: String(b.id),
+                        productId: b.product_id,
+                        name: b.product_name || `Component #${b.product_id}`,
+                        type: "raw_material",
+                        quantity: b.quantity_required,
+                        uom: String(b.unit_of_measurement || "pc"),
+                        wastagePercent: b.wastage_factor_percentage,
+                        landedCost: b.cost_per_unit || 0
+                    });
+                });
+            }
+        });
+        
+        setEditedBOM(ingredients);
+        setEditedRoutings(routings);
+    }, [editedRoutes, setEditedBOM, setEditedRoutings]);
 
     // Local Simulation States
     const [simulationYield, setSimulationYield] = useState<number>(100);
@@ -112,7 +164,7 @@ export default function FinishedGoodsModule() {
     // Sync tab param on load
     useEffect(() => {
         const tab = searchParams.get("tab");
-        if (tab && ["details", "bom", "routings", "costing", "importation", "quotes"].includes(tab)) {
+        if (tab && ["details", "routes_bom", "costing", "qa_templates", "work_centers", "importation"].includes(tab)) {
             setActiveTab(tab);
         }
     }, [searchParams, setActiveTab]);
@@ -120,6 +172,26 @@ export default function FinishedGoodsModule() {
     const handleTabChange = (tab: string) => {
         setActiveTab(tab);
         router.replace(`/mm/finished-goods?tab=${tab}`);
+    };
+
+    const handleOpenVersionModal = () => {
+        let matchedUomId = 0;
+        if (selectedProduct && units.length > 0) {
+            const matchedUnit = units.find(u => u.unit_shortcut === selectedProduct.baseUom);
+            matchedUomId = matchedUnit ? matchedUnit.unit_id : units[0].unit_id;
+        }
+
+        const defaultVersionName = `v${versions.length + 1}.0`;
+        const activeVerId = selectedVersionId ? String(selectedVersionId) : "";
+
+        setVersionForm({
+            versionName: defaultVersionName,
+            baseQuantity: 1,
+            uomId: matchedUomId,
+            expectedYield: selectedProduct ? Number(selectedProduct.expectedYieldPercent) || 100 : 100,
+            baseVersionId: activeVerId
+        });
+        setIsVersionModalOpen(true);
     };
 
     // Sync simulation defaults when active details or ingredients load
@@ -818,7 +890,7 @@ export default function FinishedGoodsModule() {
                                             )}
 
                                             <button
-                                                onClick={handleRegisterNewVersion}
+                                                onClick={handleOpenVersionModal}
                                                 className="inline-flex items-center gap-1 rounded bg-muted border px-2 py-1 text-xs font-semibold hover:bg-accent transition-colors text-foreground"
                                                 title="Register New Version"
                                             >
@@ -839,9 +911,10 @@ export default function FinishedGoodsModule() {
                     <div className="flex border-b px-4 bg-muted/10 shrink-0">
                         {[
                             { id: "details", label: "Product Details", icon: FileText },
-                            { id: "bom", label: "Bill of Materials (BOM)", icon: Layers },
-                            { id: "routings", label: "Manufacturing Routings", icon: Activity },
+                            { id: "routes_bom", label: "Routes & BOM", icon: Layers },
                             { id: "costing", label: "Live Costing & Simulator", icon: Sliders },
+                            { id: "qa_templates", label: "QA Checklist Templates", icon: Shield },
+                            { id: "work_centers", label: "Work Stations / Centers", icon: Settings },
                             { id: "importation", label: "Importation & Landed Cost", icon: Briefcase }
                         ].map((t) => {
                             const Icon = t.icon;
@@ -894,7 +967,7 @@ export default function FinishedGoodsModule() {
                                             To start configuring the Bill of Materials (BOM) and manufacturing routings for <strong>{selectedProduct.title}</strong>, please register an initial version.
                                         </p>
                                         <button
-                                            onClick={handleRegisterNewVersion}
+                                            onClick={handleOpenVersionModal}
                                             className="inline-flex items-center gap-2 bg-primary hover:bg-primary/95 text-primary-foreground font-semibold px-4 py-2.5 rounded-lg shadow-sm transition-all text-xs"
                                         >
                                             <Plus className="h-4 w-4" /> Register Initial Version
@@ -902,29 +975,32 @@ export default function FinishedGoodsModule() {
                                     </div>
                                 ) : (
                                     <>
-                                        {activeTab === "bom" && (
-                                            <BOMRecipeTab
-                                                editedBOM={editedBOM}
-                                                handleBOMChange={handleBOMChange}
-                                                addBOMItem={addBOMItem}
-                                                deleteBOMItem={deleteBOMItem}
+                                        {activeTab === "routes_bom" && (
+                                            <RoutesBOMTab
+                                                editedRoutes={editedRoutes}
+                                                setEditedRoutes={setEditedRoutes}
+                                                operationTypes={operationTypes}
+                                                workCenters={workCenters}
+                                                qaTemplates={qaTemplates}
                                                 units={units}
-                                                baseMaterialCost={baseMaterialCost}
+                                                setHasUnsavedChanges={setHasUnsavedChanges}
                                             />
                                         )}
 
-                                        {activeTab === "routings" && (
-                                            <RoutingsTab
-                                                editedRoutings={editedRoutings}
-                                                handleRoutingChange={handleRoutingChange}
-                                                addRoutingStep={addRoutingStep}
-                                                deleteRoutingStep={deleteRoutingStep}
-                                                baseRoutingCost={baseRoutingCost}
-                                                editedOverheads={editedOverheads}
-                                                setEditedOverheads={setEditedOverheads}
-                                                overheadTypes={overheadTypes}
-                                                operationTypes={operationTypes}
-                                                setOperationTypes={setOperationTypes}
+                                        {activeTab === "qa_templates" && (
+                                            <QATemplatesTab
+                                                qaTemplates={qaTemplates}
+                                                units={units}
+                                                handleAddQATemplate={handleAddQATemplate}
+                                                handleSaveQATemplate={handleSaveQATemplate}
+                                            />
+                                        )}
+
+                                        {activeTab === "work_centers" && (
+                                            <WorkCentersTab
+                                                workCenters={workCenters}
+                                                handleAddWorkCenter={handleAddWorkCenter}
+                                                handleSaveWorkCenter={handleSaveWorkCenter}
                                             />
                                         )}
 
@@ -1022,6 +1098,130 @@ export default function FinishedGoodsModule() {
                     </div>
                 </div>
             </div>
+
+            {/* Version Registration Modal */}
+            {isVersionModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md animate-in fade-in duration-200">
+                    <div className="bg-card border border-border/80 rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
+                        {/* Header */}
+                        <div className="flex items-center justify-between px-6 py-4 border-b shrink-0 bg-muted/20">
+                            <div className="flex items-center gap-2">
+                                <Plus className="h-5 w-5 text-primary" />
+                                <div>
+                                    <h3 className="text-base font-bold text-foreground">Register New BOM Version</h3>
+                                    <p className="text-xs text-muted-foreground">Add a new version for manufacturing specifications.</p>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setIsVersionModalOpen(false)}
+                                className="text-muted-foreground hover:text-foreground text-sm font-semibold transition-colors px-3 py-1.5 hover:bg-muted rounded-lg"
+                            >
+                                Close
+                            </button>
+                        </div>
+
+                        {/* Form */}
+                        <form 
+                            onSubmit={(e) => {
+                                e.preventDefault();
+                                handleRegisterNewVersion(versionForm);
+                            }} 
+                            className="p-6 space-y-4 text-xs"
+                        >
+                            {/* Version Name */}
+                            <div className="space-y-1">
+                                <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Version Name <span className="text-red-500">*</span></label>
+                                <input
+                                    type="text"
+                                    required
+                                    placeholder="e.g. OIL 2ND VERSION EASY MIX"
+                                    value={versionForm.versionName}
+                                    onChange={e => setVersionForm(prev => ({ ...prev, versionName: e.target.value }))}
+                                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
+                                />
+                            </div>
+
+                            {/* Base Qty & Base UOM */}
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-1">
+                                    <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Base Quantity</label>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        required
+                                        value={versionForm.baseQuantity}
+                                        onChange={e => setVersionForm(prev => ({ ...prev, baseQuantity: parseInt(e.target.value) || 1 }))}
+                                        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Base UOM</label>
+                                    <select
+                                        value={versionForm.uomId}
+                                        onChange={e => setVersionForm(prev => ({ ...prev, uomId: parseInt(e.target.value) || 0 }))}
+                                        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
+                                    >
+                                        {units.map(u => (
+                                            <option key={u.unit_id} value={u.unit_id}>{u.unit_name} ({u.unit_shortcut})</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+
+                            {/* Expected Yield & Clone Source */}
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-1">
+                                    <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Expected Yield (%)</label>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        max="100"
+                                        required
+                                        value={versionForm.expectedYield}
+                                        onChange={e => setVersionForm(prev => ({ ...prev, expectedYield: parseInt(e.target.value) || 100 }))}
+                                        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Clone Source</label>
+                                    <select
+                                        value={versionForm.baseVersionId}
+                                        onChange={e => setVersionForm(prev => ({ ...prev, baseVersionId: e.target.value }))}
+                                        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
+                                    >
+                                        <option value="">Start Blank (No Clone)</option>
+                                        {versions.map(v => (
+                                            <option key={v.id} value={String(v.id)}>{v.version_name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+
+                            {/* Footer Buttons */}
+                            <div className="flex justify-end gap-3 pt-3 border-t shrink-0">
+                                <button
+                                    type="button"
+                                    onClick={() => setIsVersionModalOpen(false)}
+                                    className="px-4 py-2 border border-border rounded-lg text-xs font-semibold hover:bg-muted transition-colors text-muted-foreground"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={savingBOM}
+                                    className="px-4 py-2 bg-primary hover:bg-primary/95 text-primary-foreground font-semibold rounded-lg text-xs transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md shadow-primary/20 flex items-center gap-1.5"
+                                >
+                                    {savingBOM && (
+                                        <div className="h-3 w-3 animate-spin border border-current border-t-transparent rounded-full" />
+                                    )}
+                                    {savingBOM ? "Registering..." : "Register Version"}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
 
             {/* Product Registration Modal Popup */}
             {isRegisterModalOpen && (

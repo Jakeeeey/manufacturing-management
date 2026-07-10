@@ -1,14 +1,5 @@
 import { NextResponse } from "next/server";
-
 import { DIRECTUS_URL, headers } from "@/app/api/manufacturing/directus-api";
-
-// Types
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-interface DirectusProductVersion {
-    id: number;
-    product_id: number;
-    version_name: string;
-}
 
 export async function GET(request: Request) {
     try {
@@ -22,16 +13,23 @@ export async function GET(request: Request) {
             return NextResponse.json({ error: "Invalid productId" }, { status: 400 });
         }
 
-        const url = `${DIRECTUS_URL}/items/manufacturing_boms?filter[product_id][_eq]=${productId}&fields=*,version.*&limit=-1`;
+        const url = `${DIRECTUS_URL}/items/product_manufacturing_version?filter[product_id][_eq]=${productId}&limit=-1`;
         const res = await fetch(url, { headers, cache: "no-store" });
         if (!res.ok) throw new Error(`Directus failed to fetch versions: ${res.status}`);
         const json = await res.json();
         
-        const versionsList = (json.data || []).map((b: Record<string, unknown> & { bom_id: number; bom_name?: string; is_active?: unknown; version?: { version_name?: string } | null }) => ({
-            id: b.bom_id,
+        const versionsList = (json.data || []).map((v: Record<string, unknown> & { version_id: number; version_name?: string; status?: string; expected_yield_percentage?: number; base_quantity?: number; uom_id?: number | null; valid_from?: string | null; valid_to?: string | null }) => ({
+            version_id: v.version_id,
+            id: v.version_id, // compatibility
             product_id: productId,
-            version_name: b.version?.version_name || b.bom_name || `BOM #${b.bom_id}`,
-            is_active: !!b.is_active
+            version_name: v.version_name || `Version #${v.version_id}`,
+            base_quantity: v.base_quantity || 1,
+            uom_id: v.uom_id || null,
+            expected_yield_percentage: v.expected_yield_percentage || 100,
+            status: v.status || "For Approval",
+            valid_from: v.valid_from || null,
+            valid_to: v.valid_to || null,
+            is_active: v.status === "Active" // compatibility
         }));
 
         return NextResponse.json(versionsList);
@@ -44,7 +42,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
     try {
         const body = await request.json();
-        const { productId, baseBomId, expectedYield, bomName, versionName } = body;
+        const { productId, baseVersionId, expectedYield, versionName, baseQuantity, uomId } = body;
 
         if (!productId || !versionName) {
             return NextResponse.json({ error: "Missing required fields (productId, versionName)" }, { status: 400 });
@@ -52,170 +50,115 @@ export async function POST(request: Request) {
 
         const numericProductId = parseInt(productId);
         const yieldPercent = Number(expectedYield) || 100;
-        const bName = bomName || `BOM for product ${productId}`;
+        const bQty = Number(baseQuantity) || 1;
+        const uId = uomId ? Number(uomId) : null;
+        const today = new Date().toISOString().split("T")[0];
 
-        if (baseBomId) {
-            // Clone and register version
-            let createdVersionId: number | null = null;
-            let createdBomId: number | null = null;
-            const createdComponents: number[] = [];
-            const createdRoutings: number[] = [];
-            const oldBomId = parseInt(baseBomId);
+        let createdVersionId: number | null = null;
+        const createdRoutes: number[] = [];
+        const createdBOMItems: number[] = [];
 
-            try {
-                // 1. Create product version
-                const verRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_product_version`, {
-                    method: "POST",
-                    headers,
-                    body: JSON.stringify({
-                        product_id: numericProductId,
-                        version_name: versionName,
-                        created_at: new Date().toISOString()
-                    })
-                });
-                if (!verRes.ok) throw new Error(`Directus failed to create product version: ${verRes.status}`);
-                const verJson = await verRes.json();
-                createdVersionId = verJson.data?.id;
-
-                const today = new Date().toISOString().split("T")[0];
-
-                // 2. Deactivate old BOM
-                await fetch(`${DIRECTUS_URL}/items/manufacturing_boms/${oldBomId}`, {
-                    method: "PATCH",
-                    headers,
-                    body: JSON.stringify({ is_active: false, valid_to: today })
-                });
-
-                // 3. Create new BOM
-                const resNew = await fetch(`${DIRECTUS_URL}/items/manufacturing_boms`, {
-                    method: "POST",
-                    headers,
-                    body: JSON.stringify({
-                        product_id: numericProductId,
-                        bom_name: bName,
-                        base_quantity: 1,
-                        expected_yield_percentage: yieldPercent,
-                        is_active: true,
-                        version: createdVersionId,
-                        valid_from: today
-                    })
-                });
-                if (!resNew.ok) throw new Error(`Failed to create new active BOM version: ${resNew.status}`);
-                const newBomJson = await resNew.json();
-                const newBOM = newBomJson.data;
-                createdBomId = newBOM.bom_id;
-
-                // 4. Fetch components of old BOM
-                const compFilter = encodeURIComponent(JSON.stringify({ bom_id: { _eq: oldBomId } }));
-                const resComp = await fetch(`${DIRECTUS_URL}/items/manufacturing_bom_components?filter=${compFilter}&limit=-1`, { headers, cache: "no-store" });
-                if (resComp.ok) {
-                    const compJson = await resComp.json();
-                    const oldComponents = compJson.data || [];
-                    for (const item of oldComponents) {
-                        const resItem = await fetch(`${DIRECTUS_URL}/items/manufacturing_bom_components`, {
-                            method: "POST",
-                            headers,
-                            body: JSON.stringify({
-                                bom_id: createdBomId,
-                                component_product_id: item.component_product_id,
-                                quantity_required: item.quantity_required,
-                                unit_of_measurement: item.unit_of_measurement || null,
-                                wastage_factor_percentage: item.wastage_factor_percentage
-                            })
-                        });
-                        if (resItem.ok) {
-                            const itemData = await resItem.json();
-                            createdComponents.push(itemData.data.component_id);
-                        }
-                    }
-                }
-
-                // 5. Fetch routing steps of old BOM
-                const routFilter = encodeURIComponent(JSON.stringify({ bom_id: { _eq: oldBomId } }));
-                const resRout = await fetch(`${DIRECTUS_URL}/items/manufacturing_routings?filter=${routFilter}&limit=-1`, { headers, cache: "no-store" });
-                if (resRout.ok) {
-                    const routJson = await resRout.json();
-                    const oldRoutings = routJson.data || [];
-                    for (const step of oldRoutings) {
-                        const resStep = await fetch(`${DIRECTUS_URL}/items/manufacturing_routings`, {
-                            method: "POST",
-                            headers,
-                            body: JSON.stringify({
-                                bom_id: createdBomId,
-                                version: createdVersionId,
-                                sequence_order: step.sequence_order,
-                                operation_name: step.operation_name,
-                                estimated_labor_cost: step.estimated_labor_cost,
-                                estimated_overhead_cost: step.estimated_overhead_cost,
-                                duration_hours: step.duration_hours
-                            })
-                        });
-                        if (resStep.ok) {
-                            const stepData = await resStep.json();
-                            createdRoutings.push(stepData.data.routing_id);
-                        }
-                    }
-                }
-
-                return NextResponse.json({ success: true, bom: newBOM });
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-            } catch (err: any) {
-                console.error("Error cloning BOM, rolling back...", err);
-                for (const id of createdRoutings) {
-                    await fetch(`${DIRECTUS_URL}/items/manufacturing_routings/${id}`, { method: "DELETE", headers }).catch(() => {});
-                }
-                for (const id of createdComponents) {
-                    await fetch(`${DIRECTUS_URL}/items/manufacturing_bom_components/${id}`, { method: "DELETE", headers }).catch(() => {});
-                }
-                if (createdBomId) {
-                    await fetch(`${DIRECTUS_URL}/items/manufacturing_boms/${createdBomId}`, { method: "DELETE", headers }).catch(() => {});
-                }
-                if (createdVersionId) {
-                    await fetch(`${DIRECTUS_URL}/items/manufacturing_product_version/${createdVersionId}`, { method: "DELETE", headers }).catch(() => {});
-                }
-                // Re-activate old BOM
-                await fetch(`${DIRECTUS_URL}/items/manufacturing_boms/${oldBomId}`, {
-                    method: "PATCH",
-                    headers,
-                    body: JSON.stringify({ is_active: true, valid_to: null })
-                }).catch(() => {});
-                throw err;
-            }
-        } else {
-            // Register initial version
-            // 1. Create product version
-            const verRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_product_version`, {
+        try {
+            // 1. Create product manufacturing version
+            const verRes = await fetch(`${DIRECTUS_URL}/items/product_manufacturing_version`, {
                 method: "POST",
                 headers,
                 body: JSON.stringify({
                     product_id: numericProductId,
                     version_name: versionName,
-                    created_at: new Date().toISOString()
+                    base_quantity: bQty,
+                    uom_id: uId,
+                    expected_yield_percentage: yieldPercent,
+                    status: "For Approval", // New version starts as For Approval
+                    valid_from: today
                 })
             });
             if (!verRes.ok) throw new Error(`Directus failed to create product version: ${verRes.status}`);
             const verJson = await verRes.json();
-            const versionId = verJson.data?.id;
+            createdVersionId = verJson.data?.version_id;
 
-            // 2. Create BOM
-            const bomRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_boms`, {
-                method: "POST",
-                headers,
-                body: JSON.stringify({
-                    product_id: numericProductId,
-                    bom_name: bName,
-                    base_quantity: 1,
-                    expected_yield_percentage: yieldPercent,
-                    is_active: true,
-                    version: versionId
-                })
-            });
-            if (!bomRes.ok) {
-                await fetch(`${DIRECTUS_URL}/items/manufacturing_product_version/${versionId}`, { method: "DELETE", headers }).catch(() => {});
-                throw new Error(`Directus failed to create BOM: ${bomRes.status}`);
+            // 2. Clone from base version if baseVersionId is provided
+            if (baseVersionId) {
+                const oldVersionId = parseInt(baseVersionId);
+
+                // Fetch routes of old version
+                const routesUrl = `${DIRECTUS_URL}/items/manufacturing_routes?filter[version_id][_eq]=${oldVersionId}&limit=-1`;
+                const resRoutes = await fetch(routesUrl, { headers, cache: "no-store" });
+                if (resRoutes.ok) {
+                    const routesJson = await resRoutes.json();
+                    const oldRoutes = routesJson.data || [];
+
+                    for (const step of oldRoutes) {
+                        // Create route step
+                        const routePayload = {
+                            version_id: createdVersionId,
+                            work_center_id: step.work_center_id || null,
+                            operation_id: step.operation_id || null,
+                            sequence_order: step.sequence_order,
+                            setup_time_hours: step.setup_time_hours || 0,
+                            run_time_hours: step.run_time_hours || 0,
+                            estimated_labor_cost: step.estimated_labor_cost || 0,
+                            qa_template_id: step.qa_template_id || null
+                        };
+
+                        const resStep = await fetch(`${DIRECTUS_URL}/items/manufacturing_routes`, {
+                            method: "POST",
+                            headers,
+                            body: JSON.stringify(routePayload)
+                        });
+
+                        if (resStep.ok) {
+                            const stepData = await resStep.json();
+                            const newRouteId = stepData.data.route_id;
+                            createdRoutes.push(newRouteId);
+
+                            // Fetch BOM items of the old route step
+                            const bomUrl = `${DIRECTUS_URL}/items/manufacturing_routes_bom?filter[route_id][_eq]=${step.route_id}&limit=-1`;
+                            const resBom = await fetch(bomUrl, { headers, cache: "no-store" });
+                            if (resBom.ok) {
+                                const bomJson = await resBom.json();
+                                const oldBomItems = bomJson.data || [];
+
+                                for (const item of oldBomItems) {
+                                    const bomPayload = {
+                                        route_id: newRouteId,
+                                        product_id: item.product_id,
+                                        quantity_required: item.quantity_required,
+                                        unit_of_measurement: item.unit_of_measurement || null,
+                                        wastage_factor_percentage: item.wastage_factor_percentage || 0
+                                    };
+
+                                    const resItem = await fetch(`${DIRECTUS_URL}/items/manufacturing_routes_bom`, {
+                                        method: "POST",
+                                        headers,
+                                        body: JSON.stringify(bomPayload)
+                                    });
+
+                                    if (resItem.ok) {
+                                        const itemData = await resItem.json();
+                                        createdBOMItems.push(itemData.data.id);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
-            const bomJson = await bomRes.json();
-            return NextResponse.json({ success: true, bom: bomJson.data });
+
+            return NextResponse.json({ success: true, version: verJson.data });
+        } catch (err) {
+            console.error("Error cloning version, rolling back...", err);
+            // Rollback newly created items
+            for (const id of createdBOMItems) {
+                await fetch(`${DIRECTUS_URL}/items/manufacturing_routes_bom/${id}`, { method: "DELETE", headers }).catch(() => {});
+            }
+            for (const id of createdRoutes) {
+                await fetch(`${DIRECTUS_URL}/items/manufacturing_routes/${id}`, { method: "DELETE", headers }).catch(() => {});
+            }
+            if (createdVersionId) {
+                await fetch(`${DIRECTUS_URL}/items/product_manufacturing_version/${createdVersionId}`, { method: "DELETE", headers }).catch(() => {});
+            }
+            throw err;
         }
     } catch (e) {
         console.error("API Error registering version:", e);
@@ -226,7 +169,7 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
     try {
         const body = await request.json();
-        const { productId, bomId, deactivateAll } = body;
+        const { productId, versionId, deactivateAll } = body;
 
         if (!productId) {
             return NextResponse.json({ error: "Missing required field (productId)" }, { status: 400 });
@@ -235,48 +178,48 @@ export async function PATCH(request: Request) {
         const numericProductId = parseInt(productId);
         const today = new Date().toISOString().split("T")[0];
 
-        // Fetch all BOMs for this product
-        const getBomsUrl = `${DIRECTUS_URL}/items/manufacturing_boms?filter[product_id][_eq]=${numericProductId}&limit=-1&fields=bom_id`;
-        const bomsRes = await fetch(getBomsUrl, { headers, cache: "no-store" });
-        if (!bomsRes.ok) throw new Error("Failed to fetch product BOMs for deactivation");
-        const bomsJson = await bomsRes.json();
-        const boms = bomsJson.data || [];
+        // Fetch all versions for this product
+        const getVersionsUrl = `${DIRECTUS_URL}/items/product_manufacturing_version?filter[product_id][_eq]=${numericProductId}&limit=-1&fields=version_id`;
+        const versionsRes = await fetch(getVersionsUrl, { headers, cache: "no-store" });
+        if (!versionsRes.ok) throw new Error("Failed to fetch product versions for deactivation");
+        const versionsJson = await versionsRes.json();
+        const versions = versionsJson.data || [];
 
         if (deactivateAll) {
-            // Deactivate all BOMs
-            for (const b of boms) {
-                await fetch(`${DIRECTUS_URL}/items/manufacturing_boms/${b.bom_id}`, {
+            // Deactivate all versions
+            for (const v of versions) {
+                await fetch(`${DIRECTUS_URL}/items/product_manufacturing_version/${v.version_id}`, {
                     method: "PATCH",
                     headers,
-                    body: JSON.stringify({ is_active: false, valid_to: today })
+                    body: JSON.stringify({ status: "Inactive", valid_to: today })
                 });
             }
             return NextResponse.json({ success: true });
         }
 
-        if (!bomId) {
-            return NextResponse.json({ error: "Missing required field (bomId)" }, { status: 400 });
+        if (!versionId) {
+            return NextResponse.json({ error: "Missing required field (versionId)" }, { status: 400 });
         }
-        const numericBomId = parseInt(bomId);
+        const numericVersionId = parseInt(versionId);
 
-        // Deactivate all other BOMs
-        for (const b of boms) {
-            if (b.bom_id !== numericBomId) {
-                await fetch(`${DIRECTUS_URL}/items/manufacturing_boms/${b.bom_id}`, {
+        // Deactivate all other versions
+        for (const v of versions) {
+            if (v.version_id !== numericVersionId) {
+                await fetch(`${DIRECTUS_URL}/items/product_manufacturing_version/${v.version_id}`, {
                     method: "PATCH",
                     headers,
-                    body: JSON.stringify({ is_active: false, valid_to: today })
+                    body: JSON.stringify({ status: "Inactive", valid_to: today })
                 });
             }
         }
 
-        // Activate the selected BOM
-        const actRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_boms/${numericBomId}`, {
+        // Activate the selected version
+        const actRes = await fetch(`${DIRECTUS_URL}/items/product_manufacturing_version/${numericVersionId}`, {
             method: "PATCH",
             headers,
-            body: JSON.stringify({ is_active: true, valid_from: today, valid_to: null })
+            body: JSON.stringify({ status: "Active", valid_from: today, valid_to: null })
         });
-        if (!actRes.ok) throw new Error("Failed to activate selected BOM version");
+        if (!actRes.ok) throw new Error("Failed to activate selected version");
 
         return NextResponse.json({ success: true });
     } catch (e) {
@@ -284,5 +227,3 @@ export async function PATCH(request: Request) {
         return NextResponse.json({ error: (e as { message?: string }).message || "Failed to activate version" }, { status: 500 });
     }
 }
-
-

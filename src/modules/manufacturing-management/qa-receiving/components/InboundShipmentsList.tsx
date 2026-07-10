@@ -8,6 +8,14 @@ interface InboundShipmentsListProps {
     showReceived: boolean;
     setShowReceived: (show: boolean) => void;
     onSelectShipment: (s: Shipment) => void;
+    searchPO: string;
+    setSearchPO: (val: string) => void;
+    searchStatus: string;
+    setSearchStatus: (val: string) => void;
+    startDate: string;
+    setStartDate: (val: string) => void;
+    endDate: string;
+    setEndDate: (val: string) => void;
 }
 
 export default function InboundShipmentsList({
@@ -16,10 +24,19 @@ export default function InboundShipmentsList({
     selectedShipment,
     showReceived,
     setShowReceived,
-    onSelectShipment
+    onSelectShipment,
+    searchPO,
+    setSearchPO,
+    searchStatus,
+    setSearchStatus,
+    startDate,
+    setStartDate,
+    endDate,
+    setEndDate
 }: InboundShipmentsListProps) {
     return (
         <div className="md:col-span-1 border rounded-xl bg-card overflow-hidden flex flex-col max-h-[75dvh]">
+            {/* Header */}
             <div className="p-4 border-b bg-muted/20 flex items-center justify-between">
                 <h3 className="text-xs font-bold text-foreground">Pending Inspection Logs</h3>
                 <label className="flex items-center gap-1.5 cursor-pointer text-[10px] text-muted-foreground select-none font-bold">
@@ -32,11 +49,66 @@ export default function InboundShipmentsList({
                     Show Received
                 </label>
             </div>
+
+            {/* Filter Section */}
+            <div className="p-3 border-b bg-muted/5 space-y-2.5">
+                <div className="grid grid-cols-2 gap-2">
+                    {/* PO# / Ref search */}
+                    <div className="space-y-1">
+                        <label className="text-[8px] font-bold text-muted-foreground uppercase tracking-wider block">PO# / Ref</label>
+                        <input
+                            type="text"
+                            placeholder="Search PO..."
+                            value={searchPO}
+                            onChange={e => setSearchPO(e.target.value)}
+                            className="w-full bg-background border border-border rounded-lg px-2 py-1 text-[11px] font-semibold text-foreground outline-none focus:ring-1 focus:ring-primary"
+                        />
+                    </div>
+                    {/* Status filter */}
+                    <div className="space-y-1">
+                        <label className="text-[8px] font-bold text-muted-foreground uppercase tracking-wider block">Status</label>
+                        <select
+                            value={searchStatus}
+                            onChange={e => setSearchStatus(e.target.value)}
+                            className="w-full h-7 rounded-lg border border-border bg-background text-foreground text-[11px] font-semibold px-2 py-0.5 outline-none focus:ring-1 focus:ring-primary cursor-pointer"
+                        >
+                            <option value="">All Statuses</option>
+                            <option value="Ordered">Ordered</option>
+                            <option value="Approved">Approved</option>
+                            <option value="En Route">En Route</option>
+                            <option value="Receiving (QA)">Receiving (QA)</option>
+                            <option value="Received">Received</option>
+                            <option value="Rejected">Rejected</option>
+                        </select>
+                    </div>
+                </div>
+
+                {/* Date range inputs */}
+                <div className="space-y-1">
+                    <label className="text-[8px] font-bold text-muted-foreground uppercase tracking-wider block">Date Range</label>
+                    <div className="grid grid-cols-2 gap-2">
+                        <input
+                            type="date"
+                            value={startDate}
+                            onChange={e => setStartDate(e.target.value)}
+                            className="w-full bg-background border border-border rounded-lg px-2 py-1 text-[10px] font-semibold text-foreground outline-none focus:ring-1 focus:ring-primary"
+                        />
+                        <input
+                            type="date"
+                            value={endDate}
+                            onChange={e => setEndDate(e.target.value)}
+                            className="w-full bg-background border border-border rounded-lg px-2 py-1 text-[10px] font-semibold text-foreground outline-none focus:ring-1 focus:ring-primary"
+                        />
+                    </div>
+                </div>
+            </div>
+
+            {/* List */}
             <div className="p-3 overflow-y-auto space-y-2.5 flex-1">
                 {loadingShipments ? (
                     <div className="p-8 text-center text-xs text-muted-foreground">Loading shipments...</div>
                 ) : filteredShipments.length === 0 ? (
-                    <div className="p-8 text-center text-xs text-muted-foreground italic">No pending shipments found</div>
+                    <div className="p-8 text-center text-xs text-muted-foreground italic">No matching shipments found</div>
                 ) : (
                     filteredShipments.map(s => (
                         <div

@@ -32,7 +32,7 @@ export interface ShipmentFormState {
     exchange_rate: string;
     total_foreign_currency: string;
     total_php_value: string;
-    status: "Ordered" | "Approved" | "En Route" | "Receiving (QA)" | "Received";
+    status: "Ordered" | "Approved" | "En Route" | "Receiving (QA)" | "Received" | "Rejected";
     date_received: string;
     branch_id: number;
     payment_type: number;
@@ -55,7 +55,8 @@ interface IncomingShipmentsProps {
     setLinesForm: React.Dispatch<React.SetStateAction<ManifestLineFormItem[]>>;
     onCreateShipment: (e: React.FormEvent) => void;
     onTriggerAllocation: (s: IncomingShipment) => void;
-    onUpdateShipmentStatus: (shipmentId: number, status: "Ordered" | "Approved" | "En Route" | "Receiving (QA)" | "Received") => void;
+    onEditShipment: (shipmentId: number, shipmentData: ShipmentFormState, lineItems: ManifestLineFormItem[]) => void;
+    onUpdateShipmentStatus: (shipmentId: number, status: "Ordered" | "Approved" | "En Route" | "Receiving (QA)" | "Received" | "Rejected") => void;
     loading?: boolean;
 }
 
@@ -271,7 +272,8 @@ function RawProductSelector({
                     uom_options: sel.groupOptions.map((x: RawMaterial) => ({
                         product_id: x.product_id,
                         unit_shortcut: x.unit_of_measurement?.unit_shortcut || "PCS",
-                        cost_per_unit: x.cost_per_unit || x.estimated_unit_cost || 0
+                        cost_per_unit: x.cost_per_unit || x.estimated_unit_cost || 0,
+                        unit_of_measurement_count: x.unit_of_measurement_count || 1
                     }))
                 });
                 setIsOpen(false);
@@ -348,7 +350,8 @@ function RawProductSelector({
                                                             uom_options: group.options.map((x: RawMaterial) => ({
                                                                 product_id: x.product_id,
                                                                 unit_shortcut: x.unit_of_measurement?.unit_shortcut || "PCS",
-                                                                cost_per_unit: x.cost_per_unit || x.estimated_unit_cost || 0
+                                                                cost_per_unit: x.cost_per_unit || x.estimated_unit_cost || 0,
+                                                                unit_of_measurement_count: x.unit_of_measurement_count || 1
                                                             }))
                                                         });
                                                         setIsOpen(false);
@@ -396,11 +399,105 @@ export default function IncomingShipments({
     linesForm,
     setLinesForm,
     onCreateShipment,
+    onEditShipment,
     onUpdateShipmentStatus,
     loading = false
 }: IncomingShipmentsProps) {
+    const [editingShipmentId, setEditingShipmentId] = useState<number | null>(null);
     const [search, setSearch] = useState("");
     const [isOverridden, setIsOverridden] = useState(false);
+    const [statusFilter, setStatusFilter] = useState("All");
+    const [currentPage, setCurrentPage] = useState(1);
+    const [itemsPerPage, setItemsPerPage] = useState(5);
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [search, statusFilter, itemsPerPage]);
+
+    const handleStartEdit = async () => {
+        if (!activeShipment) return;
+
+        setShipmentForm({
+            reference_number: activeShipment.reference_number,
+            supplier_id: String(typeof activeShipment.supplier_id === "object" ? activeShipment.supplier_id.id : activeShipment.supplier_id),
+            date_received: activeShipment.date_received || new Date().toISOString().split("T")[0],
+            total_foreign_currency: String(activeShipment.total_foreign_currency),
+            exchange_rate: String(activeShipment.exchange_rate),
+            total_php_value: String(activeShipment.total_php_value),
+            status: "Ordered",
+            branch_id: activeShipment.branch_id || 182,
+            payment_type: activeShipment.payment_type || 1,
+            price_type: activeShipment.price_type || "Internal"
+        });
+
+        // Always re-fetch lines fresh to guarantee quantity_ordered is populated
+        let freshLines: ShipmentLineItem[] = [];
+        try {
+            const res = await fetch(`/api/manufacturing/procurement/shipments?shipmentId=${activeShipment.shipment_id}`);
+            if (res.ok) {
+                const data = await res.json();
+                freshLines = Array.isArray(data) ? data : (data.lines || []);
+            }
+        } catch (e) {
+            console.error("Failed to fetch fresh lines for edit:", e);
+        }
+
+        // Fallback to prop if fetch returned nothing
+        if (freshLines.length === 0) freshLines = lines;
+
+        console.debug("[EditPO] lines prop:", lines);
+        console.debug("[EditPO] freshLines from API:", freshLines);
+
+        setLinesForm(freshLines.map((l: ShipmentLineItem) => ({
+            product_id: String(typeof l.product_id === "object" ? l.product_id.product_id : l.product_id),
+            product_name: typeof l.product_id === "object" ? l.product_id.product_name : "",
+            product_code: typeof l.product_id === "object" ? l.product_id.product_code || "" : "",
+            quantity_ordered: String(l.quantity_ordered || 0),
+            base_unit_cost_php: String(l.base_unit_cost_php),
+            parent_product_id: "",
+            selected_uom: l.product_id && typeof l.product_id === "object" && l.product_id.unit_of_measurement ? l.product_id.unit_of_measurement.unit_shortcut : "PCS",
+            uom_options: []
+        })));
+
+        setEditingShipmentId(activeShipment.shipment_id);
+        setIsModalOpen(true);
+    };
+
+    const handleCloseModal = () => {
+        setIsModalOpen(false);
+        setEditingShipmentId(null);
+        setShipmentForm({
+            reference_number: "",
+            supplier_id: "",
+            date_received: new Date().toISOString().split("T")[0],
+            total_foreign_currency: "",
+            exchange_rate: "58.00",
+            total_php_value: "",
+            status: "Ordered",
+            branch_id: 182,
+            payment_type: 1,
+            price_type: "Internal"
+        });
+        setLinesForm([]);
+    };
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        
+        const hasBlankProduct = linesForm.some(l => !l.product_id || l.product_id.trim() === "");
+        if (hasBlankProduct) {
+            toast.error("Please select a valid Raw Product Name for all rows in the cargo manifest.");
+            return;
+        }
+
+        if (editingShipmentId) {
+            await onEditShipment(editingShipmentId, shipmentForm, linesForm);
+            setEditingShipmentId(null);
+            setIsModalOpen(false);
+        } else {
+            onCreateShipment(e);
+        }
+    };
 
     const [priceTypes, setPriceTypes] = useState<Array<{ price_type_id: number; name: string }>>([]);
     const [priceTypeRatesMap, setPriceTypeRatesMap] = useState<Record<number, number>>({});
@@ -519,13 +616,20 @@ export default function IncomingShipments({
     }, [isModalOpen, setIsModalOpen]);
 
     const filteredShipments = shipments.filter(s => {
+        const poNo = s.purchase_order_no || "";
         const matchesSearch = s.reference_number.toLowerCase().includes(search.toLowerCase()) ||
+            poNo.toLowerCase().includes(search.toLowerCase()) ||
             (s.supplier_id && typeof s.supplier_id === "object" && s.supplier_id.supplier_name.toLowerCase().includes(search.toLowerCase()));
+        const matchesStatus = statusFilter === "All" || s.status === statusFilter;
         
-        return matchesSearch;
+        return matchesSearch && matchesStatus;
     });
 
-    const activeShipment = selectedShipment || filteredShipments[0] || null;
+    const totalItems = filteredShipments.length;
+    const totalPages = Math.ceil(totalItems / itemsPerPage) || 1;
+    const paginatedShipments = filteredShipments.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+    const activeShipment = selectedShipment || null;
 
     const supplierRawMaterials = React.useMemo(() => {
         if (!shipmentForm.supplier_id) return [];
@@ -599,6 +703,8 @@ export default function IncomingShipments({
                 return <span className="bg-purple-500/10 text-purple-600 border border-purple-500/20 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase">Receiving (QA)</span>;
             case "Received":
                 return <span className="bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase">Received</span>;
+            case "Rejected":
+                return <span className="bg-red-500/10 text-red-600 border border-red-500/20 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase">Rejected</span>;
             default:
                 return <span className="bg-muted text-muted-foreground border px-2 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase">{status}</span>;
         }
@@ -621,35 +727,49 @@ export default function IncomingShipments({
                         >
                             <Plus className="h-3.5 w-3.5" /> Log Cargo
                         </button>
-                    </div>
-                    <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                        <input
-                            type="text"
-                            placeholder="Search BL/Reference, Supplier..."
-                            value={search}
-                            onChange={e => setSearch(e.target.value)}
-                            className="w-full pl-9 pr-8 py-2 border rounded-lg text-xs bg-background outline-none focus:ring-1 focus:ring-primary font-medium"
-                        />
-                        {search && (
-                            <button
-                                onClick={() => setSearch("")}
-                                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-1 transition-colors hover:bg-muted rounded"
-                                title="Clear Search"
-                            >
-                                <X className="h-3 w-3" />
-                            </button>
-                        )}
+                    </div>                    <div className="flex gap-2">
+                        <div className="relative flex-1">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                            <input
+                                type="text"
+                                placeholder="Search BL/Reference, Supplier..."
+                                value={search}
+                                onChange={e => setSearch(e.target.value)}
+                                className="w-full pl-9 pr-8 py-2 border rounded-lg text-xs bg-background outline-none focus:ring-1 focus:ring-primary font-medium h-9"
+                            />
+                            {search && (
+                                <button
+                                    onClick={() => setSearch("")}
+                                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-1 transition-colors hover:bg-muted rounded"
+                                    title="Clear Search"
+                                >
+                                    <X className="h-3 w-3" />
+                                </button>
+                            )}
+                        </div>
+                        <select
+                            value={statusFilter}
+                            onChange={e => setStatusFilter(e.target.value)}
+                            className="rounded-lg border bg-background px-2.5 py-1.5 text-xs outline-none focus:ring-1 focus:ring-primary font-semibold text-foreground h-9 w-32"
+                        >
+                            <option value="All">All Statuses</option>
+                            <option value="Ordered">Ordered</option>
+                            <option value="Approved">Approved</option>
+                            <option value="En Route">En Route</option>
+                            <option value="Receiving (QA)">Receiving (QA)</option>
+                            <option value="Received">Received</option>
+                            <option value="Rejected">Rejected</option>
+                        </select>
                     </div>
                 </div>
 
                 <div className="flex-1 overflow-y-auto divide-y">
-                    {filteredShipments.length === 0 ? (
+                    {paginatedShipments.length === 0 ? (
                         <div className="p-8 text-center text-xs text-muted-foreground">
                             No shipments logged. Click &quot;Log Cargo&quot; to add one.
                         </div>
                     ) : (
-                        filteredShipments.map(s => {
+                        paginatedShipments.map(s => {
                             const matchedSupplier = typeof s.supplier_id !== "object"
                                 ? suppliers.find(sup => sup.id === Number(s.supplier_id))
                                 : s.supplier_id;
@@ -683,10 +803,57 @@ export default function IncomingShipments({
                         })
                     )}
                 </div>
+
+                {/* Pagination Controls */}
+                {totalItems > 0 && (
+                    <div className="p-3 border-t bg-muted/10 flex items-center justify-between gap-2 shrink-0">
+                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-semibold">
+                            <span>Show</span>
+                            <select
+                                value={itemsPerPage}
+                                onChange={e => setItemsPerPage(Number(e.target.value))}
+                                className="rounded border bg-background px-1.5 py-0.5 outline-none font-semibold text-foreground focus:ring-1 focus:ring-primary text-[11px]"
+                            >
+                                <option value={5}>5</option>
+                                <option value={10}>10</option>
+                                <option value={20}>20</option>
+                                <option value={50}>50</option>
+                            </select>
+                        </div>
+                        {totalPages > 1 && (
+                            <div className="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    disabled={currentPage === 1}
+                                    onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                                    className="px-2 py-1 border rounded text-xs font-semibold hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                                >
+                                    Prev
+                                </button>
+                                <span className="text-[11px] text-muted-foreground font-semibold">
+                                    Page {currentPage} / {totalPages}
+                                </span>
+                                <button
+                                    type="button"
+                                    disabled={currentPage === totalPages}
+                                    onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                                    className="px-2 py-1 border rounded text-xs font-semibold hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                                >
+                                    Next
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
 
             {/* Right Column: Detailed shipment & cargo view */}
-            <div className="flex-1 border rounded-xl bg-card overflow-y-auto p-6 shadow-sm flex flex-col gap-6">
+            <div className="flex-1 border rounded-xl bg-card overflow-y-auto p-6 shadow-sm flex flex-col gap-6 relative min-h-[300px]">
+                {loading && (
+                    <div className="absolute inset-0 bg-background/40 backdrop-blur-[2px] z-50 flex items-center justify-center rounded-xl">
+                        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                    </div>
+                )}
                 {activeShipment ? (
                     <>
                         {/* Header Details */}
@@ -797,6 +964,16 @@ export default function IncomingShipments({
                                         </button>
                                     )}
 
+                                    {(activeShipment.status === "Ordered" || activeShipment.status === "Rejected") && (
+                                        <button
+                                            type="button"
+                                            onClick={handleStartEdit}
+                                            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-3 rounded-lg text-xs transition-all shadow-sm cursor-pointer mt-3"
+                                        >
+                                            {activeShipment.status === "Ordered" ? "Edit Purchase Order" : "Edit & Resubmit Purchase Order"}
+                                        </button>
+                                    )}
+
                                     {activeShipment.status === "En Route" && (
                                         <button
                                             type="button"
@@ -844,6 +1021,13 @@ export default function IncomingShipments({
                                 </span>
                             </div>
                         </div>
+
+                        {activeShipment.remark && activeShipment.remark.startsWith("REJECTED:") && (
+                            <div className="bg-red-500/5 border border-red-500/10 p-3.5 rounded-xl text-left space-y-1">
+                                <span className="text-[10px] text-red-500 font-bold uppercase tracking-wider block">Rejection Reason / Remarks</span>
+                                <span className="text-xs font-semibold text-red-700 leading-relaxed block whitespace-pre-wrap">{activeShipment.remark.replace("REJECTED:", "").trim()}</span>
+                            </div>
+                        )}
 
                         {/* Shipment Cargo Lines List */}
                         <div className="space-y-3">
@@ -923,7 +1107,7 @@ export default function IncomingShipments({
                 ) : (
                     <div className="flex flex-col items-center justify-center p-20 text-center text-muted-foreground h-full">
                         <Anchor className="h-16 w-16 mb-4 text-muted-foreground/30" />
-                        No incoming shipments logged.
+                        {filteredShipments.length > 0 ? "Select a shipment from the list to view details." : "No incoming shipments logged."}
                     </div>
                 )}
             </div>
@@ -935,18 +1119,19 @@ export default function IncomingShipments({
                         <div className="flex items-center justify-between border-b pb-3 shrink-0">
                             <h3 className="font-bold text-sm flex items-center gap-2">
                                 <Anchor className="h-4.5 w-4.5 text-primary" />
-                                Log Incoming Cargo & PO Line Items
+                                {editingShipmentId ? "Edit & Resubmit Purchase Order" : "Log Incoming Cargo & PO Line Items"}
                             </h3>
                             <button
-                                onClick={() => { setIsOverridden(false); setIsModalOpen(false); }}
+                                onClick={handleCloseModal}
                                 className="text-muted-foreground hover:text-foreground text-xs font-bold"
                             >
                                 Close
                             </button>
                         </div>
 
-                        <form onSubmit={onCreateShipment} className="flex flex-col flex-1 min-h-0">
-                            <div className="space-y-4 overflow-y-auto pr-1 flex-1 pb-6">
+                        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
+                            {/* Set overflow-y-auto but add generous bottom padding so that dropdowns at the bottom have room to display without being cut off */}
+                            <div className="space-y-4 overflow-y-auto pr-1 flex-1 pb-44">
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-1.5">
                                     <label className="text-[11px] font-semibold text-muted-foreground">PO / Bill of Lading Number *</label>
@@ -1011,7 +1196,7 @@ export default function IncomingShipments({
                                 <div className="space-y-1.5 flex flex-col">
                                     <label className="text-[11px] font-semibold text-muted-foreground">Destination Branch *</label>
                                     <select
-                                        value={Number(shipmentForm.branch_id)}
+                                        value={shipmentForm.branch_id ? String(shipmentForm.branch_id) : "183"}
                                         onChange={e => setShipmentForm({...shipmentForm, branch_id: parseInt(e.target.value)})}
                                         className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary font-semibold text-foreground h-9"
                                     >
@@ -1180,7 +1365,7 @@ export default function IncomingShipments({
                                                     </div>
                                                 )}
 
-                                                <div className="w-24 space-y-1.5 shrink-0">
+                                                <div className="w-24 space-y-1.5 shrink-0 relative">
                                                     <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">
                                                         Qty Ordered {line.selected_uom ? `(${line.selected_uom})` : ""}
                                                     </label>
@@ -1208,6 +1393,24 @@ export default function IncomingShipments({
                                                         }}
                                                         className="w-full rounded-lg border bg-background px-2.5 py-1.5 text-xs outline-none h-9 font-semibold"
                                                     />
+                                                    {(() => {
+                                                        const selectedOpt = line.uom_options?.find((o: any) => String(o.product_id) === String(line.product_id));
+                                                        const convFactor = Number(selectedOpt?.unit_of_measurement_count || 1);
+                                                        
+                                                        const parentProduct = rawMaterials.find(rm => String(rm.product_id) === String(line.parent_product_id || line.product_id));
+                                                        const baseUomShortcut = parentProduct?.unit_of_measurement?.unit_shortcut || "pcs";
+                                                        
+                                                        const equivQty = Number(line.quantity_ordered || 0) * convFactor;
+                                                        
+                                                        if (equivQty > 0 && convFactor !== 1) {
+                                                            return (
+                                                                <span className="absolute right-0 top-full pt-0.5 text-[9px] text-primary font-bold whitespace-nowrap bg-primary/5 px-1 py-0.5 rounded border border-primary/10 select-none">
+                                                                    = {equivQty.toLocaleString()} {baseUomShortcut}
+                                                                </span>
+                                                            );
+                                                        }
+                                                        return null;
+                                                    })()}
                                                 </div>
 
                                                 <div className="w-28 space-y-1.5 shrink-0">
@@ -1278,7 +1481,7 @@ export default function IncomingShipments({
                             {/* Sticky Footer */}
                             <div className="border-t pt-3 flex justify-end gap-2 shrink-0 bg-card mt-auto">
                                 <button
-                                    onClick={() => { setIsOverridden(false); setIsModalOpen(false); }}
+                                    onClick={handleCloseModal}
                                     type="button"
                                     className="px-4 py-2 border rounded-lg text-xs font-semibold hover:bg-muted text-foreground"
                                 >
@@ -1293,9 +1496,9 @@ export default function IncomingShipments({
                                     {loading ? (
                                         <>
                                             <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                            Registering Shipment...
+                                            {editingShipmentId ? "Saving Changes..." : "Registering Shipment..."}
                                         </>
-                                    ) : "Register Shipment"}
+                                    ) : (editingShipmentId ? "Save & Resubmit PO" : "Register Shipment")}
                                 </button>
                             </div>
                         </form>
