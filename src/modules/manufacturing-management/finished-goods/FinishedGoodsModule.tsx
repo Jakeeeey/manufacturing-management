@@ -849,18 +849,18 @@ export default function FinishedGoodsModule() {
                                                 className="rounded border px-2 py-1 bg-background text-xs font-semibold text-foreground outline-none focus:ring-1 focus:ring-primary"
                                             >
                                                 {versions.map((v, idx) => {
-                                                    const cost = versionCosts[v.id];
+                                                    const cost = versionCosts[v.version_id];
                                                     const costStr = cost !== undefined && cost > 0 ? ` (Est: ₱${cost.toFixed(2)})` : "";
                                                     const activeStr = v.is_active ? " [ACTIVE]" : "";
                                                     return (
-                                                        <option key={`${v.id}-${idx}`} value={v.id}>
+                                                        <option key={`${v.version_id}-${idx}`} value={v.version_id}>
                                                             {v.version_name}{activeStr}{costStr}
                                                         </option>
                                                     );
                                                 })}
                                             </select>
                                             
-                                            {selectedVersionId && !versions.find(v => v.id === selectedVersionId)?.is_active && (
+                                            {selectedVersionId && !versions.find(v => v.version_id === selectedVersionId)?.is_active && (
                                                 <button
                                                     onClick={() => handleActivateVersion(selectedVersionId)}
                                                     className="inline-flex items-center gap-1 rounded bg-emerald-600 hover:bg-emerald-700 border-none px-2 py-1 text-xs font-bold text-white transition-all cursor-pointer shadow-sm shadow-emerald-950/20"
@@ -870,7 +870,7 @@ export default function FinishedGoodsModule() {
                                                 </button>
                                             )}
                                             
-                                            {selectedVersionId && versions.find(v => v.id === selectedVersionId)?.is_active && (
+                                            {selectedVersionId && versions.find(v => v.version_id === selectedVersionId)?.is_active && (
                                                 <div className="flex items-center gap-1.5">
                                                     <span className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 rounded px-2 py-1 text-[10px] font-bold uppercase tracking-wider">
                                                         Active

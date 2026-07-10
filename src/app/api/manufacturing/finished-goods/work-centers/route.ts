@@ -16,6 +16,7 @@ export async function GET() {
                 ...wc,
                 asset_id: asset ? asset.id : wc.asset_id,
                 department_id: department ? department.department_id : wc.department_id,
+                is_active: wc.is_active === undefined || wc.is_active === null ? true : Boolean(Number(wc.is_active)),
                 asset,
                 department
             };
@@ -58,7 +59,9 @@ export async function POST(request: Request) {
         }
         
         const json = await res.json();
-        return NextResponse.json({ success: true, workCenter: json.data });
+        const newWc = json.data;
+        if (newWc && newWc.is_active !== undefined) newWc.is_active = Boolean(Number(newWc.is_active));
+        return NextResponse.json({ success: true, workCenter: newWc });
     } catch (e) {
         console.error("API Error creating work center:", e);
         return NextResponse.json({ error: (e as { message?: string }).message || "Failed to create work center" }, { status: 500 });

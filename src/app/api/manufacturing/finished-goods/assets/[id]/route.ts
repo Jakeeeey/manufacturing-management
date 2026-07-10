@@ -50,7 +50,12 @@ export async function PATCH(
         }
 
         const json = await res.json();
-        return NextResponse.json({ success: true, asset: json.data });
+        const updatedAsset = json.data;
+        if (updatedAsset) {
+            if (updatedAsset.is_active_warning !== undefined) updatedAsset.is_active_warning = Boolean(Number(updatedAsset.is_active_warning));
+            if (updatedAsset.is_active !== undefined) updatedAsset.is_active = Boolean(Number(updatedAsset.is_active));
+        }
+        return NextResponse.json({ success: true, asset: updatedAsset });
     } catch (e) {
         console.error("API Error updating asset:", e);
         return NextResponse.json({ error: (e as { message?: string }).message || "Failed to update asset" }, { status: 500 });

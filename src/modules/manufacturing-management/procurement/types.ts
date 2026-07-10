@@ -124,6 +124,25 @@ export interface PSGCItem {
     name: string;
 }
 
+<<<<<<< Updated upstream
+=======
+export interface RegisterRawMaterialPayload {
+    product_name: string;
+    product_code: string;
+    description?: string;
+    barcode?: string;
+    cost_per_unit?: number;
+    density_factor?: number;
+    unit_of_measurement?: number;
+    price_per_unit?: number;
+    product_brand?: number | null;
+    product_category?: number | null;
+    product_type?: number | null;
+    parent_id?: number | null;
+    unit_of_measurement_count?: number | null;
+}
+
+>>>>>>> Stashed changes
 // ─── Directus API-layer types (used by API route helpers) ───────────────────
 
 export interface DirectusSupplier {
@@ -186,4 +205,67 @@ export interface DirectusProductPerSupplier {
         production_capacity_per_hour?: number | null;
         has_versions?: boolean;
     };
+}
+
+export interface PackagingVariant {
+    product_name?: string;
+    product_code?: string;
+    unit_of_measurement?: number;
+    unit_of_measurement_count?: number;
+    density_factor?: number;
+    product_brand?: number | null;
+    product_category?: number | null;
+    product_type?: number | null;
+    parent_id?: number | null;
+    uomId?: number | "";
+    count?: string | number;
+    codeSuffix?: string;
+}
+
+export interface ShipmentData {
+    reference_number: string;
+    supplier_id: string;
+    exchange_rate: string;
+    total_foreign_currency: string;
+    total_php_value: string;
+    status: "Ordered" | "Approved" | "En Route" | "Receiving (QA)" | "Received" | "Rejected";
+    date_received: string;
+    branch_id: number;
+    payment_type: number;
+    price_type: string;
+}
+
+export interface LineItem {
+    product_id: string;
+    quantity_ordered: string;
+    base_unit_cost_php: string;
+    parent_product_id: string;
+    product_name?: string;
+    product_code?: string;
+    selected_uom?: string;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    uom_options?: any[];
+}
+
+export interface BFFCatalogProduct {
+    product_id: number;
+    parent_id?: number | { product_id: number } | null;
+    product_code?: string;
+    product_name: string;
+    description?: string;
+    barcode?: string;
+    unit_of_measurement?: {
+        unit_id: number;
+        unit_shortcut: string;
+        unit_name?: string;
+    } | null;
+    unit_of_measurement_count?: number | string | null;
+    cost_per_unit?: number | string;
+    estimated_unit_cost?: number | string;
+    density_factor?: number | string;
+    product_category?: number | { category_id?: number; id?: number } | null;
+    product_brand?: number | { brand_id?: number; id?: number } | null;
+    product_type?: number | string | null;
+    date_added?: string;
+    last_updated?: string;
 }

@@ -35,7 +35,9 @@ export async function PATCH(
         }
         
         const json = await res.json();
-        return NextResponse.json({ success: true, workCenter: json.data });
+        const updatedWc = json.data;
+        if (updatedWc && updatedWc.is_active !== undefined) updatedWc.is_active = Boolean(Number(updatedWc.is_active));
+        return NextResponse.json({ success: true, workCenter: updatedWc });
     } catch (e) {
         console.error("API Error updating work center:", e);
         return NextResponse.json({ error: (e as { message?: string }).message || "Failed to update work center" }, { status: 500 });

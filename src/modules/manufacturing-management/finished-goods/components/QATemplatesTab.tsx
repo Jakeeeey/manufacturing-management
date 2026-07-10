@@ -140,7 +140,7 @@ export const QATemplatesTab: React.FC<QATemplatesTabProps> = ({
                     target_value: p.target_value,
                     uom_id: p.uom_id || null,
                     is_critical: !!p.is_critical
-                }))
+                })) as any
             };
 
             if (isCreatingNew) {

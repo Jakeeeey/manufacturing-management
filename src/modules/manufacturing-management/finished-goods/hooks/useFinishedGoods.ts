@@ -277,7 +277,7 @@ export function useFinishedGoods(initialTab: string = "details") {
                 setVersions(list);
                 if (list && list.length > 0) {
                     const activeVer = list.find((v: any) => v.is_active || v.status === "Active");
-                    setSelectedVersionId(activeVer ? (activeVer.version_id || activeVer.id) : (list[0].version_id || list[0].id));
+                    setSelectedVersionId(activeVer ? activeVer.version_id : list[0].version_id);
                 } else {
                     setSelectedVersionId(null);
                 }
@@ -301,7 +301,7 @@ export function useFinishedGoods(initialTab: string = "details") {
             const costs: Record<number, number> = {};
             Promise.all(versions.map(async (v) => {
                 try {
-                    const vId = v.version_id || v.id;
+                    const vId = v.version_id;
                     const res = await fetch(`/api/manufacturing/finished-goods/bom-cost?productId=${numericId}&versionId=${vId}&forexRate=${debouncedForexRate}`);
                     if (res.ok) {
                         const costData = await res.json();
@@ -310,7 +310,7 @@ export function useFinishedGoods(initialTab: string = "details") {
                         costs[vId] = 0;
                     }
                 } catch {
-                    costs[v.version_id || v.id] = 0;
+                    costs[v.version_id] = 0;
                 }
             })).then(() => {
                 setVersionCosts(prev => ({ ...prev, ...costs }));
@@ -608,7 +608,7 @@ export function useFinishedGoods(initialTab: string = "details") {
                 setVersions(vList);
                 if (vList && vList.length > 0) {
                     const activeVer = vList.find((v: any) => v.is_active);
-                    setSelectedVersionId(activeVer ? activeVer.id : vList[0].id);
+                    setSelectedVersionId(activeVer ? activeVer.version_id : vList[0].version_id);
                 }
 
                 // Switch tab straight to BOM
@@ -637,7 +637,7 @@ export function useFinishedGoods(initialTab: string = "details") {
 
         setSavingBOM(true);
         try {
-            const baseVerId = form.baseVersionId ? Number(form.baseVersionId) : undefined;
+            const baseVerId = form.baseVersionId ? Number(form.baseVersionId) : null;
             const res = await registerNewVersion(
                 numericId,
                 baseVerId,

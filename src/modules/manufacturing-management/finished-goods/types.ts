@@ -201,6 +201,7 @@ export interface RouteBOMItem {
     product_name?: string;
     product_code?: string;
     cost_per_unit?: number;
+    is_foreign?: boolean;
 }
 
 
