@@ -1,77 +1,104 @@
 import { DIRECTUS_URL, headers } from "@/app/api/manufacturing/directus-api";
-import { 
-    DirectusBOM, 
-    DirectusBOMComponent, 
-    DirectusRouting 
-} from "@/modules/manufacturing-management/finished-goods/types";
+import { ProductVersion, RouteStep, RouteBOMItem } from "@/modules/manufacturing-management/finished-goods/types";
 
-export async function getActiveBOMForProduct(productId: number): Promise<{
-    bom: DirectusBOM | null;
-    components: DirectusBOMComponent[];
-    routings: DirectusRouting[];
+export async function getBOMDetailsForVersion(productId: number, versionId: number): Promise<{
+    version: ProductVersion | null;
+    routes: RouteStep[];
 }> {
     try {
         const filter = encodeURIComponent(JSON.stringify({
-            product_id: { _eq: productId }
+            _and: [
+                { product_id: { _eq: productId } },
+                { version_id: { _eq: versionId } }
+            ]
         }));
         
-        const resBOM = await fetch(`${DIRECTUS_URL}/items/manufacturing_boms?filter=${filter}&fields=*,version.*&limit=-1`, { headers, cache: "no-store" });
-        if (!resBOM.ok) return { bom: null, components: [], routings: [] };
+        const resVer = await fetch(`${DIRECTUS_URL}/items/product_manufacturing_version?filter=${filter}&limit=1`, { headers, cache: "no-store" });
+        if (!resVer.ok) return { version: null, routes: [] };
         
-        const bomData = await resBOM.json();
-        const boms: DirectusBOM[] = bomData.data || [];
+        const verData = await resVer.json();
+        const version: ProductVersion = verData.data?.[0];
         
-        if (boms.length === 0) return { bom: null, components: [], routings: [] };
+        if (!version) return { version: null, routes: [] };
         
-        const sortedBoms = [...boms].sort((a, b) => {
-            const versionA = a.version && typeof a.version === "object" ? a.version : null;
-            const versionB = b.version && typeof b.version === "object" ? b.version : null;
-            const timeA = versionA?.created_at ? new Date(versionA.created_at).getTime() : 0;
-            const timeB = versionB?.created_at ? new Date(versionB.created_at).getTime() : 0;
-            
-            if (timeA !== timeB) return timeB - timeA;
-            
-            const idA = versionA ? versionA.id : 0;
-            const idB = versionB ? versionB.id : 0;
-            if (idA !== idB) return idB - idA;
-            
-            return b.bom_id - a.bom_id;
+        const routesFilter = encodeURIComponent(JSON.stringify({ version_id: { _eq: version.version_id } }));
+        const resRoutes = await fetch(`${DIRECTUS_URL}/items/manufacturing_routes?filter=${routesFilter}&sort=sequence_order&limit=-1`, { headers, cache: "no-store" });
+        const routesJson = await resRoutes.json();
+        const routes: RouteStep[] = routesJson.data || [];
+        
+        if (routes.length === 0) {
+            version.routes = [];
+            return { version, routes: [] };
+        }
+        
+        const routeIds = routes.map(r => r.route_id);
+        const bomFilter = encodeURIComponent(JSON.stringify({ route_id: { _in: routeIds } }));
+        const resBom = await fetch(`${DIRECTUS_URL}/items/manufacturing_routes_bom?filter=${bomFilter}&limit=-1`, { headers, cache: "no-store" });
+        const bomJson = await resBom.json();
+        const bomItems: RouteBOMItem[] = bomJson.data || [];
+        
+        routes.forEach(r => {
+            r.bom_items = bomItems.filter(b => b.route_id === r.route_id);
         });
         
-        const activeBOM = sortedBoms[0];
-        
-        const compFilter = encodeURIComponent(JSON.stringify({ bom_id: { _eq: activeBOM.bom_id } }));
-        const resComp = await fetch(`${DIRECTUS_URL}/items/manufacturing_bom_components?filter=${compFilter}&limit=-1`, { headers, cache: "no-store" });
-        const compJson = await resComp.json();
-        const components: DirectusBOMComponent[] = compJson.data || [];
-        
-        const routFilter = encodeURIComponent(JSON.stringify({ bom_id: { _eq: activeBOM.bom_id } }));
-        const resRout = await fetch(`${DIRECTUS_URL}/items/manufacturing_routings?filter=${routFilter}&sort=sequence_order&limit=-1`, { headers, cache: "no-store" });
-        const routJson = await resRout.json();
-        const routings: DirectusRouting[] = routJson.data || [];
-        
-        return { bom: activeBOM, components, routings };
+        version.routes = routes;
+        return { version, routes };
     } catch (e) {
-        console.error(`[Manufacturing Directus API] Error fetching active BOM for product ID ${productId}:`, e);
-        return { bom: null, components: [], routings: [] };
+        console.error(`[Versions Helper] Error fetching version details for version ID ${versionId}:`, e);
+        return { version: null, routes: [] };
     }
 }
 
-export async function createProductVersion(productId: number, versionName: string): Promise<number | null> {
+export async function getActiveVersionForProduct(productId: number): Promise<{
+    version: ProductVersion | null;
+    routes: RouteStep[];
+}> {
     try {
-        const url = `${DIRECTUS_URL}/items/manufacturing_product_version`;
+        // 1. Fetch active version
+        const filter = encodeURIComponent(JSON.stringify({
+            product_id: { _eq: productId },
+            status: { _eq: "Active" }
+        }));
+        const resVer = await fetch(`${DIRECTUS_URL}/items/product_manufacturing_version?filter=${filter}&limit=1`, { headers, cache: "no-store" });
+        if (!resVer.ok) return { version: null, routes: [] };
+        
+        const verJson = await resVer.json();
+        const version: ProductVersion = verJson.data?.[0];
+        if (!version) return { version: null, routes: [] };
+
+        return getBOMDetailsForVersion(productId, version.version_id);
+    } catch (e) {
+        console.error(`[Versions Helper] Error fetching active version for product ID ${productId}:`, e);
+        return { version: null, routes: [] };
+    }
+}
+
+export async function createProductVersion(
+    productId: number, 
+    versionName: string, 
+    expectedYield: number = 100, 
+    baseQuantity: number = 1, 
+    uomId?: number | null
+): Promise<number | null> {
+    try {
+        const url = `${DIRECTUS_URL}/items/product_manufacturing_version`;
+        const payload = {
+            product_id: productId,
+            version_name: versionName,
+            expected_yield_percentage: expectedYield,
+            base_quantity: baseQuantity,
+            uom_id: uomId || null,
+            status: "For Approval",
+            valid_from: new Date().toISOString().split("T")[0]
+        };
         const res = await fetch(url, {
             method: "POST",
             headers,
-            body: JSON.stringify({
-                product_id: productId,
-                version_name: versionName,
-                created_at: new Date().toISOString()
-            })
+            body: JSON.stringify(payload)
         });
-        if (!res.ok) throw new Error("Failed to create product version");
+        if (!res.ok) throw new Error(`Failed to create product version: ${res.status}`);
         const json = await res.json();
-        return json.data?.id || null;
+        return json.data?.version_id || null;
     } catch (e) {
         console.error("[Manufacturing Directus API] Failed product version registration:", e);
         return null;
@@ -92,5 +119,3 @@ export async function updateProductStandardCost(productId: number, standardCost:
         return false;
     }
 }
-
-

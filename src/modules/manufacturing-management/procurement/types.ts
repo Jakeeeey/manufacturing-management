@@ -35,13 +35,15 @@ export interface Supplier {
 export interface IncomingShipment {
     shipment_id: number;
     reference_number: string;
+    purchase_order_no?: string;
     supplier_id: number | Supplier;
     date_received: string | null;
     lead_time_receiving?: string | null;
     total_foreign_currency: number;
     exchange_rate: number;
     total_php_value: number;
-    status: "Ordered" | "Approved" | "En Route" | "Receiving (QA)" | "Received";
+    status: "Ordered" | "Approved" | "En Route" | "Receiving (QA)" | "Received" | "Rejected";
+    remark?: string;
     created_at?: string;
     branch_id?: number | null;
     payment_type?: number | null;
@@ -80,6 +82,7 @@ export interface ShipmentExpense {
 export interface RawMaterial {
     product_id: number;
     parent_id?: number | null;
+    parent_name?: string | null;
     product_code?: string;
     product_name: string;
     description?: string;
@@ -89,11 +92,13 @@ export interface RawMaterial {
         unit_shortcut: string;
         unit_name: string;
     };
+    unit_of_measurement_count?: number | null;
     cost_per_unit: number;
     estimated_unit_cost: number;
     density_factor: number;
     product_category?: number | null;
-    product_type?: number;
+    product_brand?: number | null;
+    product_type?: number | null;
     date_added?: string;
     last_updated?: string;
 }

@@ -76,14 +76,22 @@ export async function GET(request: Request) {
             }
 
             const poMap: Record<string, DirectusPurchaseOrderMin> = {};
+            const branchMap: Record<number, any> = {};
             if (rawLogs.length > 0) {
-                const poRes = await fetch(`${DIRECTUS_URL}/items/purchase_order?limit=-1&fields=purchase_order_id,purchase_order_no,reference,date_received,date_encoded,datetime`, { headers });
+                const [poRes, branchRes] = await Promise.all([
+                    fetch(`${DIRECTUS_URL}/items/purchase_order?limit=-1&fields=purchase_order_id,purchase_order_no,reference,date_received,date_encoded,datetime`, { headers }),
+                    fetch(`${DIRECTUS_URL}/items/branches?limit=-1`, { headers })
+                ]);
                 const poList = (poRes.ok ? (await poRes.json()).data || [] : []) as DirectusPurchaseOrderMin[];
                 poList.forEach((po) => {
                     poMap[String(po.purchase_order_id)] = po;
                     if (po.purchase_order_no) {
                         poMap[String(po.purchase_order_no)] = po;
                     }
+                });
+                const branchList = branchRes.ok ? (await branchRes.json()).data || [] : [];
+                branchList.forEach((b: any) => {
+                    branchMap[Number(b.id)] = b;
                 });
             }
 
@@ -114,7 +122,7 @@ export async function GET(request: Request) {
                     quantity_received: Number(r.quantity || 0),
                     lot_number: r.lot_number || "LOT-N/A",
                     expiration_date: r.expiry_date,
-                    branch_id: r.branch_id,
+                    branch_id: branchMap[Number(r.branch_id)] || { branch_name: `Branch ID ${r.branch_id}`, branch_code: `BR-${r.branch_id}` },
                     rejection_reason: "",
                     qa_status: r.qa_status || "Passed",
                     base_unit_cost_php: Number(r.unit_cost || 0),
@@ -215,9 +223,66 @@ export async function POST(request: Request) {
 
         const branchIdNum = parseInt(branchId);
 
+        // Resolve the bad branch that belongs to the SAME family as the receiving branch.
+        // Branch code convention: "BHN" (good) → "BHN-BAD" (bad), "MAIN" → "MAIN-BAD", etc.
+        // Fallback chain:
+        //   1. Match by branch_code: receivingCode + "-BAD"
+        //   2. Match by name: receiving branch name prefix + "Bad" keyword
+        //   3. Any branch with a bad-order keyword in the name
+        //   4. Hardcoded ID 182 (Bihon Bad Branch)
+        let badOrderBranchId = 182;
+        try {
+            const branchesRes = await fetch(
+                `${DIRECTUS_URL}/items/branches?limit=200&fields=id,branch_name,branch_code`,
+                { headers, cache: "no-store" }
+            );
+            if (branchesRes.ok) {
+                const allBranches: { id: number; branch_name: string; branch_code: string }[] =
+                    (await branchesRes.json())?.data || [];
+
+                const BAD_KEYWORDS = ["bad", "quarantine", "holding", "damaged"];
+                const isBadBranch = (name: string, code: string) =>
+                    BAD_KEYWORDS.some(k => name.toLowerCase().includes(k) || code.toLowerCase().includes(k));
+
+                const receivingBranch = allBranches.find(b => Number(b.id) === branchIdNum);
+                const receivingCode = (receivingBranch?.branch_code || "").toUpperCase();
+                const receivingName = (receivingBranch?.branch_name || "").toLowerCase();
+
+                const badBranches = allBranches.filter(b => isBadBranch(b.branch_name, b.branch_code));
+
+                // Priority 1: exact code match — e.g. "BHN" → "BHN-BAD"
+                const codeMatch = receivingCode
+                    ? badBranches.find(b => b.branch_code.toUpperCase() === `${receivingCode}-BAD`)
+                    : null;
+
+                // Priority 2: name prefix match — e.g. "Bihon Branch" → "Bihon Bad Branch"
+                // Take everything before the word "Branch" / "Hub" / etc. from the receiving name
+                const namePrefix = receivingName.replace(/\b(branch|hub|warehouse|plant|store)\b.*/i, "").trim();
+                const nameMatch = namePrefix
+                    ? badBranches.find(b => b.branch_name.toLowerCase().startsWith(namePrefix))
+                    : null;
+
+                // Priority 3: any bad branch
+                const anyBad = badBranches[0] ?? null;
+
+                const resolved = codeMatch ?? nameMatch ?? anyBad;
+                if (resolved) {
+                    badOrderBranchId = Number(resolved.id);
+                    console.log(`[QA Receiving] Bad branch resolved for "${receivingBranch?.branch_name}" → "${resolved.branch_name}" (ID ${resolved.id})`);
+                }
+            }
+        } catch (err) {
+            console.error("Error resolving co-located bad order branch, using fallback 182:", err);
+        }
+
         // 1. Loop and apply line item updates & ledger entries
         for (const item of lineItemUpdates) {
-            const qtyReceived = Number(item.quantity_received || 0);
+            // qtyAccepted is the authoritative quantity to log as good stock.
+            // It can exceed qtyReceived in over-acceptance scenarios (e.g., loose units
+            // found during inspection that were not counted in the initial physical receive).
+            const qtyAccepted = Number(item.quantity_accepted || 0);
+            // BO qty is always the shortfall (non-negative) — guaranteed by the frontend.
+            const qtyRejected = Number(item.quantity_rejected || 0);
 
             // Fetch PO product details first to get product ID and PO ID
             const popRes = await fetch(`${DIRECTUS_URL}/items/purchase_order_products/${item.line_id}`, { headers });
@@ -226,60 +291,59 @@ export async function POST(request: Request) {
             const pId = pop.product_id;
             const poId = pop.purchase_order_id;
 
-            // Check if receiving record already exists in inventory_lots
-            const filterQuery = encodeURIComponent(JSON.stringify({
-                _and: [
-                    { source_type: { _eq: "procurement" } },
-                    { source_reference: { _eq: String(poId) } },
-                    { product_id: { _eq: pId } }
-                ]
-            }));
-            const porRes = await fetch(`${DIRECTUS_URL}/items/inventory_lots?filter=${filterQuery}&limit=1`, { headers });
-            const porList = porRes.ok ? (await porRes.json()).data || [] : [];
+            const saveInventoryLot = async (bId: number, qty: number, status: string, notes: string | null) => {
+                const filterQuery = encodeURIComponent(JSON.stringify({
+                    _and: [
+                        { source_type: { _eq: "procurement" } },
+                        { source_reference: { _eq: String(poId) } },
+                        { product_id: { _eq: pId } },
+                        { branch_id: { _eq: bId } }
+                    ]
+                }));
+                const porRes = await fetch(`${DIRECTUS_URL}/items/inventory_lots?filter=${filterQuery}&limit=1`, { headers });
+                const porList = porRes.ok ? (await porRes.json()).data || [] : [];
 
-            const payload = {
-                source_type: "procurement",
-                source_reference: String(poId),
-                product_id: pId,
-                lot_number: item.lot_number || "LOT-N/A",
-                expiry_date: item.expiration_date || null,
-                quantity: qtyReceived,
-                unit_cost: Number(item.final_landed_unit_cost || item.base_unit_cost_php || pop.unit_price || 0),
-                branch_id: branchIdNum,
-                created_on: new Date().toISOString(),
-                qa_status: item.qa_status || "Passed"
+                const payload = {
+                    source_type: "procurement",
+                    source_reference: String(poId),
+                    product_id: pId,
+                    lot_number: item.lot_number || "LOT-N/A",
+                    expiry_date: item.expiration_date || null,
+                    quantity: qty,
+                    unit_cost: Number(item.final_landed_unit_cost || item.base_unit_cost_php || pop.unit_price || 0),
+                    branch_id: bId,
+                    created_on: new Date().toISOString(),
+                    qa_status: status,
+                    rejection_reason: notes
+                };
+
+                if (porList.length > 0) {
+                    const recId = porList[0].id;
+                    const updateRes = await fetch(`${DIRECTUS_URL}/items/inventory_lots/${recId}`, {
+                        method: "PATCH",
+                        headers,
+                        body: JSON.stringify(payload)
+                    });
+                    if (!updateRes.ok) throw new Error(`Failed to update inventory lot ${recId}: ${updateRes.status} - ${await updateRes.text()}`);
+                } else {
+                    const insertRes = await fetch(`${DIRECTUS_URL}/items/inventory_lots`, {
+                        method: "POST",
+                        headers,
+                        body: JSON.stringify(payload)
+                    });
+                    if (!insertRes.ok) throw new Error(`Failed to insert inventory lot: ${insertRes.status} - ${await insertRes.text()}`);
+                }
             };
 
-            if (porList.length > 0) {
-                const recId = porList[0].id;
-                const updateRes = await fetch(`${DIRECTUS_URL}/items/inventory_lots/${recId}`, {
-                    method: "PATCH",
-                    headers,
-                    body: JSON.stringify(payload)
-                });
-                if (!updateRes.ok) throw new Error(`Failed to update inventory lot ${recId}: ${updateRes.status} - ${await updateRes.text()}`);
-            } else {
-                const insertRes = await fetch(`${DIRECTUS_URL}/items/inventory_lots`, {
-                    method: "POST",
-                    headers,
-                    body: JSON.stringify(payload)
-                });
-                if (!insertRes.ok) throw new Error(`Failed to insert inventory lot: ${insertRes.status} - ${await insertRes.text()}`);
-            }
+            // Save accepted stock to selected branch
+            if (qtyAccepted > 0) {
+                await saveInventoryLot(branchIdNum, qtyAccepted, item.qa_status || "Passed", null);
 
-            // Mark PO product as received
-            await fetch(`${DIRECTUS_URL}/items/purchase_order_products/${item.line_id}`, {
-                method: "PATCH",
-                headers,
-                body: JSON.stringify({ received: 1 })
-            }).catch(err => console.error("Failed to update PO product received status:", err));
-
-            // Insert into product_ledger if quantity_received > 0
-            if (qtyReceived > 0) {
+                // Insert into product_ledger for Good Stock
                 const ledgerPayload = {
                     branchId: branchIdNum,
                     productId: pId,
-                    quantity: qtyReceived,
+                    quantity: qtyAccepted,
                     documentType: "QA Receive",
                     documentNo: referenceNumber || "N/A",
                     documentDescription: `QA Inspection Batch: ${item.lot_number || "N/A"} (${item.qa_status})`,
@@ -291,13 +355,42 @@ export async function POST(request: Request) {
                     headers,
                     body: JSON.stringify(ledgerPayload)
                 });
-
                 if (!ledgerRes.ok) {
-                    const errorText = await ledgerRes.text();
-                    console.error(`Ledger record failed for product ID ${pId}:`, errorText);
-                    throw new Error(`Failed to log product ${pId} into ledger: ${errorText}`);
+                    console.error(`Ledger record failed for product ID ${pId}:`, await ledgerRes.text());
                 }
             }
+
+            // Save bad order stock to Bad Order branch
+            if (qtyRejected > 0) {
+                await saveInventoryLot(badOrderBranchId, qtyRejected, "Rejected", item.rejection_reason || null);
+
+                // Insert into product_ledger for Bad Order Stock
+                const ledgerPayload = {
+                    branchId: badOrderBranchId,
+                    productId: pId,
+                    quantity: qtyRejected,
+                    documentType: "QA Reject (BO)",
+                    documentNo: referenceNumber || "N/A",
+                    documentDescription: `QA Bad Order Batch: ${item.lot_number || "N/A"} (Remarks: ${item.rejection_reason || "None"})`,
+                    documentDate: new Date().toISOString().split('T')[0]
+                };
+
+                const ledgerRes = await fetch(`${DIRECTUS_URL}/items/product_ledger`, {
+                    method: "POST",
+                    headers,
+                    body: JSON.stringify(ledgerPayload)
+                });
+                if (!ledgerRes.ok) {
+                    console.error(`Ledger record failed for bad order product ID ${pId}:`, await ledgerRes.text());
+                }
+            }
+
+            // Mark PO product as received
+            await fetch(`${DIRECTUS_URL}/items/purchase_order_products/${item.line_id}`, {
+                method: "PATCH",
+                headers,
+                body: JSON.stringify({ received: 1 })
+            }).catch(err => console.error("Failed to update PO product received status:", err));
         }
 
         // 2. Transition PO status to Received

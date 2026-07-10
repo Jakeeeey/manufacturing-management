@@ -42,3 +42,5 @@ next-env.d.ts
 
 # agent config
 .gemini/
+/scratch/check_bff_product_25527.js
+/scratch/check_po_columns.js

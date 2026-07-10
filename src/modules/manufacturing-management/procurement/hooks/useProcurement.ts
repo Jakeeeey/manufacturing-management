@@ -2,17 +2,18 @@ import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { Supplier, SupplierRepresentative, IncomingShipment, ShipmentLineItem, ShipmentExpense, RawMaterial, LinkedProduct, RegisterRawMaterialPayload } from "../types";
 import type { ShipmentFormState, ManifestLineFormItem } from "../components/IncomingShipments";
-import { 
-    fetchSuppliers, 
-    createSupplier, 
-    fetchShipments, 
-    fetchShipmentLineItems, 
-    createShipment, 
-    fetchShipmentExpenses, 
-    saveAndAllocateExpenses, 
+import {
+    fetchSuppliers,
+    createSupplier,
+    fetchShipments,
+    fetchShipmentLineItems,
+    createShipment,
+    fetchShipmentExpenses,
+    saveAndAllocateExpenses,
     fetchRawMaterials,
     updateShipmentStatus,
     registerRawMaterial,
+    updateRawMaterial,
     updateSupplier,
     fetchLinkedProducts
 } from "../services/procurement-api";
@@ -106,7 +107,7 @@ export function useProcurement(defaultTab: string = "suppliers") {
         if (isShipmentModalOpen) {
             const year = new Date().getFullYear();
             const randomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-            
+
             let activeRate = "58.00";
             if (typeof window !== "undefined") {
                 const useLive = localStorage.getItem("vos_use_live_forex") === "true";
@@ -119,7 +120,7 @@ export function useProcurement(defaultTab: string = "suppliers") {
                                 activeRate = String(history[0].rate || "58.00");
                             }
                         }
-                    } catch {}
+                    } catch { }
                 } else {
                     const locked = localStorage.getItem("vos_locked_forex_rate");
                     if (locked) {
@@ -174,11 +175,11 @@ export function useProcurement(defaultTab: string = "suppliers") {
         if (selectedShipmentExpenses && selectedShipmentExpenses.length > 0) {
             setExpenseAllocationForm({
                 allocation_method: selectedShipmentExpenses[0].allocation_method === "By Weight" ? "Weight" :
-                                   selectedShipmentExpenses[0].allocation_method === "By Volume" ? "Volume" : "Value",
+                    selectedShipmentExpenses[0].allocation_method === "By Volume" ? "Volume" : "Value",
                 expenses: selectedShipmentExpenses.map(x => ({
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     overhead_id: x.overhead_id ? String(typeof x.overhead_id === "object" ? (x.overhead_id as any).id : x.overhead_id) : "",
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     expense_type: x.expense_type || (x.overhead_id && typeof x.overhead_id === "object" ? (x.overhead_id as any).overhead_name : ""),
                     amount_php: String(x.amount_php || "")
                 }))
@@ -313,7 +314,7 @@ export function useProcurement(defaultTab: string = "suppliers") {
         }
 
         // Check for duplicates
-        const isDuplicateName = suppliers.some(s => 
+        const isDuplicateName = suppliers.some(s =>
             s.id !== editingSupplierId &&
             s.supplier_name.trim().toLowerCase() === supplierForm.supplier_name.trim().toLowerCase()
         );
@@ -323,7 +324,7 @@ export function useProcurement(defaultTab: string = "suppliers") {
             return;
         }
 
-        const isDuplicateCode = suppliers.some(s => 
+        const isDuplicateCode = suppliers.some(s =>
             s.id !== editingSupplierId &&
             s.supplier_shortcut?.trim().toLowerCase() === supplierForm.supplier_shortcut.trim().toLowerCase()
         );
@@ -339,7 +340,7 @@ export function useProcurement(defaultTab: string = "suppliers") {
             const notes = restOfSupplier.notes_or_comments || "";
             const currencyTag = `[Currency: ${currency || "PHP"}]`;
             const finalNotes = notes.trim() ? `${notes.trim()}\n\n${currencyTag}` : currencyTag;
-            
+
             const payload = {
                 ...restOfSupplier,
                 notes_or_comments: finalNotes
@@ -426,6 +427,12 @@ export function useProcurement(defaultTab: string = "suppliers") {
             return;
         }
 
+        const hasBlankProduct = shipmentLinesForm.some(l => !l.product_id);
+        if (hasBlankProduct) {
+            toast.error("Please fill out the product selection field for all rows in the cargo manifest.");
+            return;
+        }
+
         const validLines = shipmentLinesForm.filter(l => l.product_id && l.quantity_ordered && l.base_unit_cost_php);
         if (validLines.length === 0) {
             toast.error("At least one product item is required");
@@ -480,7 +487,7 @@ export function useProcurement(defaultTab: string = "suppliers") {
             });
             setShipmentLinesForm([{ parent_product_id: "", product_id: "", quantity_ordered: "", base_unit_cost_php: "" }]);
             loadShipments();
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
             console.error(e);
             toast.error(e.message || "Failed to save incoming shipment");
@@ -490,16 +497,16 @@ export function useProcurement(defaultTab: string = "suppliers") {
     };
 
     const handleAllocateExpenses = async (
-        e: React.FormEvent, 
-        shipmentId: number, 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+        e: React.FormEvent,
+        shipmentId: number,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         targetStatus: any,
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         lineItemUpdates?: any[]
     ) => {
         e.preventDefault();
         const validExps = expenseAllocationForm.expenses.filter(x => x.overhead_id && x.amount_php);
-        
+
         try {
             const expsPayload = validExps.map(x => ({
                 overhead_id: parseInt(x.overhead_id),
@@ -508,9 +515,9 @@ export function useProcurement(defaultTab: string = "suppliers") {
             }));
 
             // Map UI allocation method to DB ENUM values ('By Value', 'By Weight', 'By Volume')
-            const dbAllocationMethod = 
+            const dbAllocationMethod =
                 expenseAllocationForm.allocation_method === "Weight" ? "By Weight" :
-                expenseAllocationForm.allocation_method === "Volume" ? "By Volume" : "By Value";
+                    expenseAllocationForm.allocation_method === "Volume" ? "By Volume" : "By Value";
 
             await saveAndAllocateExpenses(
                 shipmentId,
@@ -521,7 +528,7 @@ export function useProcurement(defaultTab: string = "suppliers") {
             );
             toast.success("Landed costs calculated and updated successfully");
             setIsExpenseModalOpen(false);
-            
+
             // Reload active selections
             const freshShipments = await loadShipments();
             await loadRawMaterials();
@@ -534,23 +541,23 @@ export function useProcurement(defaultTab: string = "suppliers") {
                     setSelectedShipment(null);
                 }
             }
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
             console.error(e);
             toast.error(e.message || "Failed to allocate expenses");
         }
     };
 
-    const handleUpdateShipmentStatus = async (shipmentId: number, status: "Ordered" | "Approved" | "En Route" | "Receiving (QA)" | "Received") => {
+    const handleUpdateShipmentStatus = async (shipmentId: number, status: "Ordered" | "Approved" | "En Route" | "Receiving (QA)" | "Received" | "Rejected") => {
         setLoading(true);
         try {
             await updateShipmentStatus(shipmentId, status);
             toast.success(`Shipment status updated to ${status}`);
             await Promise.all([loadShipments(), loadRawMaterials()]);
             if (selectedShipment && selectedShipment.shipment_id === shipmentId) {
-                setSelectedShipment(prev => prev ? { ...prev, status } : null);
+                setSelectedShipment(null);
             }
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
             console.error(e);
             toast.error(e.message || "Failed to update shipment status");
@@ -560,19 +567,67 @@ export function useProcurement(defaultTab: string = "suppliers") {
     };
 
     const handleRegisterRawMaterial = async (
-        productDetails: RegisterRawMaterialPayload,
-        supplierIds?: number[]
+        productDetails: {
+            product_name: string;
+            product_code: string;
+            description?: string;
+            barcode?: string;
+            cost_per_unit?: number;
+            density_factor?: number;
+            unit_of_measurement?: number;
+            price_per_unit?: number;
+            parent_id?: number | null;
+            unit_of_measurement_count?: number | null;
+            product_brand?: number | null;
+            product_category?: number | null;
+            product_type?: number | null;
+        },
+        supplierIds?: number[],
+        packagingVariants?: any[]
     ): Promise<boolean> => {
         setLoading(true);
         try {
-            await registerRawMaterial(productDetails, supplierIds);
+            await registerRawMaterial(productDetails, supplierIds, packagingVariants);
             toast.success(`Successfully registered raw material "${productDetails.product_name}"`);
             await loadRawMaterials();
             return true;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
             console.error(e);
             toast.error(e.message || "Failed to register raw material");
+            return false;
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleUpdateRawMaterial = async (
+        productId: number,
+        productDetails: {
+            product_name: string;
+            product_code: string;
+            description?: string;
+            barcode?: string;
+            density_factor?: number;
+            unit_of_measurement?: number;
+            unit_of_measurement_count?: number | null;
+            parent_id?: number | null;
+            product_brand?: number | null;
+            product_category?: number | null;
+            product_type?: number | null;
+        },
+        supplierIds?: number[],
+        packagingVariants?: any[]
+    ): Promise<boolean> => {
+        setLoading(true);
+        try {
+            await updateRawMaterial(productId, productDetails, supplierIds, packagingVariants);
+            toast.success(`Successfully updated raw material "${productDetails.product_name}"`);
+            await loadRawMaterials();
+            return true;
+        } catch (e: any) {
+            console.error(e);
+            toast.error(e.message || "Failed to update raw material");
             return false;
         } finally {
             setLoading(false);
@@ -594,7 +649,41 @@ export function useProcurement(defaultTab: string = "suppliers") {
         }
     };
 
+    const handleEditShipment = async (
+        shipmentId: number,
+        shipmentData: any,
+        lineItems: any[]
+    ) => {
+        setLoading(true);
+        try {
+            const res = await fetch(`/api/manufacturing/procurement/shipments`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    shipmentId,
+                    shipmentData,
+                    lineItems
+                })
+            });
+
+            if (!res.ok) {
+                const errJson = await res.json();
+                throw new Error(errJson.error || "Failed to update shipment");
+            }
+
+            toast.success("Purchase Order updated and resubmitted successfully.");
+            setSelectedShipment(null);
+            await loadShipments();
+        } catch (e: any) {
+            console.error(e);
+            toast.error(e.message || "Failed to update Purchase Order");
+        } finally {
+            setLoading(false);
+        }
+    };
+
     return {
+        handleEditShipment,
         activeTab,
         setActiveTab,
         loading,
@@ -630,6 +719,7 @@ export function useProcurement(defaultTab: string = "suppliers") {
         handleAllocateExpenses,
         handleUpdateShipmentStatus,
         handleRegisterRawMaterial,
+        handleUpdateRawMaterial,
         handleToggleSupplierActive
     };
 }

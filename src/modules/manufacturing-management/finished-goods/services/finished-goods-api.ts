@@ -10,7 +10,14 @@ import {
     BFFCatalogProduct,
     ProductClass,
     ProductSegment,
-    ProductSection
+    ProductSection,
+    WorkCenter,
+    QATemplate,
+    QAParameter,
+    RouteStep,
+    RouteBOMItem,
+    AssetRecord,
+    DepartmentRecord
 } from "../types";
 
 /**
@@ -104,16 +111,7 @@ export async function fetchVersions(productId: number): Promise<ProductVersion[]
     return res.json();
 }
 
-export async function fetchBOMDetails(productId: number, versionId: number, forexRate?: number): Promise<{
-    bomId: number;
-    expectedYieldPercent: number;
-    version: string;
-    versionId: number;
-    ingredients: BOMItem[];
-    routings: RoutingStep[];
-    customOverhead?: number;
-    overheads?: ProductOverhead[];
-} | null> {
+export async function fetchBOMDetails(productId: number, versionId: number, forexRate?: number): Promise<ProductVersion | null> {
     const query = new URLSearchParams({
         productId: String(productId),
         versionId: String(versionId)
@@ -126,21 +124,25 @@ export async function fetchBOMDetails(productId: number, versionId: number, fore
     return res.json();
 }
 
-
 export async function saveBOMDetails(
     productId: number,
-    bomId: number | null,
+    versionId: number | null,
     details: {
-        title: string;
-        sku: string;
-        barcode: string;
-        baseUom: string;
-        expectedYieldPercent: number;
-        targetSellingPrice: number;
-        densityFactor: number;
+        version_name: string;
+        base_quantity: number;
+        uom_id?: number | null;
+        expected_yield_percentage: number;
+        status: 'For Approval' | 'Active' | 'Inactive';
+        valid_from?: string | null;
+        valid_to?: string | null;
+        title?: string;
+        sku?: string;
+        barcode?: string;
+        baseUom?: string;
+        targetSellingPrice?: number;
+        densityFactor?: number;
         productBrand?: number;
         productCategory?: number;
-        customOverhead?: number;
         description?: string;
         costPerUnit?: number;
         unitOfMeasurementCount?: number;
@@ -152,14 +154,12 @@ export async function saveBOMDetails(
         parent_id?: number | null;
         productionCapacityPerHour?: number;
     },
-    ingredients: BOMItem[],
-    routings: RoutingStep[],
-    overheads?: ProductOverhead[]
+    routes: RouteStep[]
 ): Promise<{ success: boolean; rollup?: unknown }> {
     const res = await fetch("/api/manufacturing/finished-goods/bom-details", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productId, bomId, details, ingredients, routings, overheads })
+        body: JSON.stringify({ productId, versionId, details, routes })
     });
     if (!res.ok) {
         let msg = "Failed to save BOM details via BFF";
@@ -195,12 +195,14 @@ export async function registerProduct(
     },
     versionName: string,
     supplierIds?: number[],
-    expectedYield?: number
-): Promise<{ success: boolean; productId: number; bom: unknown }> {
+    expectedYield?: number,
+    baseQuantity?: number,
+    uomId?: number
+): Promise<{ success: boolean; productId: number; version: ProductVersion }> {
     const res = await fetch("/api/manufacturing/finished-goods/products", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productDetails, versionName, supplierIds, expectedYield })
+        body: JSON.stringify({ productDetails, versionName, supplierIds, expectedYield, baseQuantity, uomId })
     });
     if (!res.ok) {
         let msg = "Failed to register product via BFF";
@@ -215,15 +217,16 @@ export async function registerProduct(
 
 export async function registerNewVersion(
     productId: number,
-    baseBomId: number | null,
+    baseVersionId: number | null,
     expectedYield: number,
-    bomName: string,
-    versionName: string
-): Promise<{ success: boolean; bom: unknown }> {
+    versionName: string,
+    baseQuantity?: number,
+    uomId?: number
+): Promise<{ success: boolean; version: ProductVersion }> {
     const res = await fetch("/api/manufacturing/finished-goods/versions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productId, baseBomId, expectedYield, bomName, versionName })
+        body: JSON.stringify({ productId, baseVersionId, expectedYield, versionName, baseQuantity, uomId })
     });
     if (!res.ok) throw new Error("Failed to register version via BFF");
     return res.json();
@@ -279,11 +282,11 @@ export async function createSection(sectionName: string): Promise<{ success: boo
     return res.json();
 }
 
-export async function activateVersion(productId: number, bomId?: number, deactivateAll?: boolean): Promise<{ success: boolean }> {
+export async function activateVersion(productId: number, versionId?: number, deactivateAll?: boolean): Promise<{ success: boolean }> {
     const res = await fetch("/api/manufacturing/finished-goods/versions", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productId, bomId, deactivateAll })
+        body: JSON.stringify({ productId, versionId, deactivateAll })
     });
     if (!res.ok) {
         let msg = "Failed to update version status via BFF";
@@ -295,3 +298,153 @@ export async function activateVersion(productId: number, bomId?: number, deactiv
     }
     return res.json();
 }
+
+// ─── Work Centers API Helpers ────────────────────────────────────────────────
+export async function fetchWorkCenters(): Promise<WorkCenter[]> {
+    const res = await fetch("/api/manufacturing/finished-goods/work-centers");
+    if (!res.ok) throw new Error("Failed to fetch work centers from BFF");
+    return res.json();
+}
+
+export async function createWorkCenter(workCenter: Omit<WorkCenter, "work_center_id">): Promise<{ success: boolean; workCenter: WorkCenter }> {
+    const res = await fetch("/api/manufacturing/finished-goods/work-centers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(workCenter)
+    });
+    if (!res.ok) throw new Error("Failed to create work center via BFF");
+    return res.json();
+}
+
+export async function saveWorkCenter(workCenterId: number, workCenter: Partial<WorkCenter>): Promise<{ success: boolean; workCenter: WorkCenter }> {
+    const res = await fetch(`/api/manufacturing/finished-goods/work-centers/${workCenterId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(workCenter)
+    });
+    if (!res.ok) throw new Error("Failed to update work center via BFF");
+    return res.json();
+}
+
+// ─── QA Templates API Helpers ────────────────────────────────────────────────
+export async function fetchQATemplates(): Promise<QATemplate[]> {
+    const res = await fetch("/api/manufacturing/finished-goods/qa-templates");
+    if (!res.ok) throw new Error("Failed to fetch QA templates from BFF");
+    return res.json();
+}
+
+export async function createQATemplate(template: Omit<QATemplate, "template_id">): Promise<{ success: boolean; template: QATemplate }> {
+    const res = await fetch("/api/manufacturing/finished-goods/qa-templates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(template)
+    });
+    if (!res.ok) throw new Error("Failed to create QA template via BFF");
+    return res.json();
+}
+
+export async function saveQATemplate(templateId: number, template: Partial<QATemplate>): Promise<{ success: boolean; template: QATemplate }> {
+    const res = await fetch(`/api/manufacturing/finished-goods/qa-templates/${templateId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(template)
+    });
+    if (!res.ok) throw new Error("Failed to update QA template via BFF");
+    return res.json();
+}
+
+export async function fetchAssets(): Promise<AssetRecord[]> {
+    const res = await fetch("/api/manufacturing/finished-goods/assets");
+    if (!res.ok) throw new Error("Failed to fetch assets from BFF");
+    return res.json();
+}
+
+export async function fetchDepartments(): Promise<DepartmentRecord[]> {
+    const res = await fetch("/api/manufacturing/finished-goods/departments");
+    if (!res.ok) throw new Error("Failed to fetch departments from BFF");
+    return res.json();
+}
+
+export async function createAsset(asset: Omit<AssetRecord, "id">): Promise<{ success: boolean; asset: AssetRecord }> {
+    const res = await fetch("/api/manufacturing/finished-goods/assets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(asset)
+    });
+    if (!res.ok) throw new Error("Failed to create asset via BFF");
+    return res.json();
+}
+
+export async function saveAsset(assetId: number, asset: Partial<AssetRecord>): Promise<{ success: boolean; asset: AssetRecord }> {
+    const res = await fetch(`/api/manufacturing/finished-goods/assets/${assetId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(asset)
+    });
+    if (!res.ok) throw new Error("Failed to update asset via BFF");
+    return res.json();
+}
+
+export async function deleteAsset(assetId: number): Promise<{ success: boolean }> {
+    const res = await fetch(`/api/manufacturing/finished-goods/assets/${assetId}`, {
+        method: "DELETE"
+    });
+    if (!res.ok) throw new Error("Failed to delete asset via BFF");
+    return res.json();
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function fetchItems(): Promise<any[]> {
+    const res = await fetch("/api/manufacturing/finished-goods/items");
+    if (!res.ok) throw new Error("Failed to fetch items from BFF");
+    return res.json();
+}
+
+export async function createItem(item: { item_name: string; item_type?: number; item_classification?: number }): Promise<{ success: boolean; item: any }> {
+    const res = await fetch("/api/manufacturing/finished-goods/items", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(item)
+    });
+    if (!res.ok) throw new Error("Failed to create catalog item via BFF");
+    return res.json();
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function fetchItemTypes(): Promise<any[]> {
+    const res = await fetch("/api/manufacturing/finished-goods/item-types");
+    if (!res.ok) throw new Error("Failed to fetch item types from BFF");
+    return res.json();
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function fetchItemClassifications(): Promise<any[]> {
+    const res = await fetch("/api/manufacturing/finished-goods/item-classifications");
+    if (!res.ok) throw new Error("Failed to fetch item classifications from BFF");
+    return res.json();
+}
+
+export async function createItemType(name: string): Promise<{ success: boolean; type: any }> {
+    const res = await fetch("/api/manufacturing/finished-goods/item-types", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name })
+    });
+    if (!res.ok) throw new Error("Failed to create item type via BFF");
+    return res.json();
+}
+
+export async function createItemClassification(name: string): Promise<{ success: boolean; classification: any }> {
+    const res = await fetch("/api/manufacturing/finished-goods/item-classifications", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name })
+    });
+    if (!res.ok) throw new Error("Failed to create item classification via BFF");
+    return res.json();
+}
+
+
+
+
+

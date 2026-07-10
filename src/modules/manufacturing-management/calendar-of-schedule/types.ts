@@ -30,6 +30,7 @@ export interface JobOrder {
 export interface IncomingShipment {
     shipment_id: number;
     reference_number: string;
+    purchase_order_no?: string;
     shipper: string;
     carrier: string;
     estimated_delivery_date: string;

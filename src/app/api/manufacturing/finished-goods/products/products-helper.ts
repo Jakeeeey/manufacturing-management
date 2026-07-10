@@ -5,7 +5,7 @@ import {
     CostRollupResult,
     CostNode
 } from "@/modules/manufacturing-management/finished-goods/types";
-import { getActiveBOMForProduct } from "../versions/versions-helper";
+import { getActiveVersionForProduct, getBOMDetailsForVersion } from "../versions/versions-helper";
 
 /**
  * Fetches the latest landed unit cost for a raw ingredient based on recent shipment logs.
@@ -75,7 +75,7 @@ export async function getLatestLandedCost(
  */
 export async function fetchAllProducts(search?: string, limit: number = -1): Promise<DirectusProduct[]> {
     try {
-        const explicitFields = "product_id,product_name,product_code,description,isActive,cost_per_unit,price_per_unit,product_brand,parent_id.product_id,parent_id.product_name,product_category.category_name,unit_of_measurement.unit_shortcut,unit_of_measurement.unit_name,unit_of_measurement_count,product_image,density_factor,production_capacity_per_hour,product_type";
+        const explicitFields = "product_id,product_name,product_code,description,isActive,cost_per_unit,price_per_unit,product_brand,parent_id,parent_id.product_id,parent_id.product_name,product_category.category_name,unit_of_measurement.unit_id,unit_of_measurement.unit_shortcut,unit_of_measurement.unit_name,unit_of_measurement_count,product_image,density_factor,production_capacity_per_hour,product_type";
         let url = `${DIRECTUS_URL}/items/products?limit=${limit}&fields=${explicitFields}`;
         if (search && search.trim()) {
             url += `&search=${encodeURIComponent(search.trim())}`;
@@ -83,7 +83,7 @@ export async function fetchAllProducts(search?: string, limit: number = -1): Pro
         
         const [prodRes, versionsRes, profilesRes] = await Promise.all([
             fetch(url, { headers, cache: "no-store" }),
-            fetch(`${DIRECTUS_URL}/items/manufacturing_product_version?limit=-1&fields=product_id`, { headers, cache: "no-store" }),
+            fetch(`${DIRECTUS_URL}/items/product_manufacturing_version?limit=-1&fields=product_id`, { headers, cache: "no-store" }),
             fetch(`${DIRECTUS_URL}/items/product_currency_profiles?limit=-1`, { headers, cache: "no-store" })
         ]);
 
@@ -127,14 +127,15 @@ export async function fetchAllProducts(search?: string, limit: number = -1): Pro
 }
 
 /**
- * Calculates rollup costing standards recursively.
+ * Calculates rollup costing standards recursively using route-level BOM.
  */
 export async function calculateRollupCost(
     productId: number,
     visited: Set<number> = new Set(),
     productsMap?: Map<number, DirectusProduct>,
     forexRate: number = 58.00,
-    profilesMap?: Map<number, DirectusProductCurrencyProfile>
+    profilesMap?: Map<number, DirectusProductCurrencyProfile>,
+    versionId?: number
 ): Promise<CostRollupResult> {
     const defaultResult = (pName = "Unknown Product", sku = ""): CostRollupResult => ({
         productId,
@@ -173,8 +174,10 @@ export async function calculateRollupCost(
     }
 
     const currentProduct = productsMap.get(productId)!;
-    const { bom, components, routings } = await getActiveBOMForProduct(productId);
-    if (!bom) {
+    const { version, routes } = versionId 
+        ? await getBOMDetailsForVersion(productId, versionId)
+        : await getActiveVersionForProduct(productId);
+    if (!version) {
         const landedCost = await getLatestLandedCost(productId, forexRate, profilesMap, productsMap);
         return {
             ...defaultResult(currentProduct.product_name, currentProduct.product_code),
@@ -193,69 +196,103 @@ export async function calculateRollupCost(
         };
     }
 
+    // Load Work Centers for overhead rate
+    const resWC = await fetch(`${DIRECTUS_URL}/items/manufacturing_work_centers?limit=-1`, { headers, cache: "no-store" });
+    const workCenters = resWC.ok ? (await resWC.json()).data || [] : [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const workCentersMap = new Map<number, any>(workCenters.map((wc: any) => [wc.work_center_id, wc]));
+
+    // Load Operations for names
+    const resOps = await fetch(`${DIRECTUS_URL}/items/operations?limit=-1`, { headers, cache: "no-store" });
+    const operationsList = resOps.ok ? (await resOps.json()).data || [] : [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const operationsMap = new Map<number, string>(operationsList.map((op: any) => [op.id, op.operation_name]));
+
+    // Load Units for UOM shortcut
+    const resUnits = await fetch(`${DIRECTUS_URL}/items/units?limit=-1`, { headers, cache: "no-store" });
+    const unitsList = resUnits.ok ? (await resUnits.json()).data || [] : [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const unitsMap = new Map<number, string>(unitsList.map((u: any) => [u.unit_id, u.unit_shortcut]));
+
     let materialsSubtotal = 0;
+    let routingsSubtotal = 0;
     const costTreeNodes: CostNode[] = [];
 
-    for (const comp of components) {
-        let compUnitCost = 0;
-        let childrenNodes: CostNode[] | undefined;
-
-        if (comp.landed_cost && Number(comp.landed_cost) > 0) {
-            compUnitCost = Number(comp.landed_cost);
-        } else if (comp.component_type === "sub_assembly") {
-            const subResult = await calculateRollupCost(comp.component_product_id, new Set(visited), productsMap, forexRate, profilesMap);
-            compUnitCost = subResult.totalBaseCost;
-            childrenNodes = subResult.costTree;
-        } else {
-            compUnitCost = await getLatestLandedCost(comp.component_product_id, forexRate, profilesMap, productsMap);
-        }
-
-        const wastageFactor = 1 - (comp.wastage_factor_percentage / 100);
-        let lineCost = (comp.quantity_required * compUnitCost) / (wastageFactor > 0 ? wastageFactor : 1);
-
-        if (comp.component_type === "by_product") {
-            lineCost = -Math.abs(lineCost);
-        } else {
-            materialsSubtotal += lineCost;
-        }
-
-        const compProduct = productsMap.get(comp.component_product_id);
-        const ingName = compProduct ? compProduct.product_name : `Component #${comp.component_product_id}`;
-
-        costTreeNodes.push({
-            id: `comp-${comp.component_id}`,
-            name: ingName,
-            type: comp.component_type === "by_product" ? "by_product" : comp.component_type === "sub_assembly" ? "sub_assembly" : "ingredient",
-            quantity: comp.quantity_required,
-            uom: comp.unit_of_measurement?.unit_shortcut || "pc",
-            unitCost: compUnitCost,
-            wastagePercent: comp.wastage_factor_percentage,
-            totalCost: lineCost,
-            children: childrenNodes
-        });
-    }
-
-    let routingsSubtotal = 0;
-    for (const r of routings) {
+    // Process each route step
+    for (const r of routes) {
+        const workCenter = r.work_center_id ? workCentersMap.get(r.work_center_id) : null;
+        const opName = r.operation_id ? (operationsMap.get(r.operation_id) || `Operation #${r.operation_id}`) : `Operation Step`;
+        
+        // Routing Step Cost
         const laborCost = Number(r.estimated_labor_cost || 0);
-        const overheadCost = Number(r.estimated_overhead_cost || 0);
-        const hours = Number(r.duration_hours || 0);
-        const stepCost = laborCost + (overheadCost * hours);
+        const wcOverheadRate = workCenter ? Number(workCenter.overhead_cost_per_hour || 0) : 0;
+        const totalHours = Number(r.setup_time_hours || 0) + Number(r.run_time_hours || 0);
+        const overheadCost = wcOverheadRate * totalHours;
+        const stepCost = laborCost + overheadCost;
+        
         routingsSubtotal += stepCost;
 
+        const childrenNodes: CostNode[] = [];
+
+        // Route BOM Items
+        if (r.bom_items && r.bom_items.length > 0) {
+            for (const bomItem of r.bom_items) {
+                let compUnitCost = 0;
+                let subChildren: CostNode[] | undefined;
+
+                // Check if sub-assembly (meaning the product has active versions)
+                const compProduct = productsMap.get(bomItem.product_id);
+                const hasVersions = compProduct ? compProduct.has_versions : false;
+
+                if (hasVersions) {
+                    const subResult = await calculateRollupCost(bomItem.product_id, new Set(visited), productsMap, forexRate, profilesMap);
+                    compUnitCost = subResult.totalBaseCost;
+                    subChildren = subResult.costTree;
+                } else {
+                    compUnitCost = await getLatestLandedCost(bomItem.product_id, forexRate, profilesMap, productsMap);
+                }
+
+                const wastageFactor = 1 - (Number(bomItem.wastage_factor_percentage || 0) / 100);
+                const lineCost = (bomItem.quantity_required * compUnitCost) / (wastageFactor > 0 ? wastageFactor : 1);
+                
+                materialsSubtotal += lineCost;
+
+                const ingName = compProduct ? compProduct.product_name : `Component #${bomItem.product_id}`;
+                const uomName = bomItem.unit_of_measurement
+                    ? (typeof bomItem.unit_of_measurement === "number"
+                        ? (unitsMap.get(bomItem.unit_of_measurement) || "pc")
+                        : String(bomItem.unit_of_measurement))
+                    : "pc";
+
+                childrenNodes.push({
+                    id: `bom-${bomItem.id}`,
+                    name: ingName,
+                    type: hasVersions ? "sub_assembly" : "ingredient",
+                    quantity: bomItem.quantity_required,
+                    uom: uomName,
+                    unitCost: compUnitCost,
+                    wastagePercent: Number(bomItem.wastage_factor_percentage || 0),
+                    totalCost: lineCost,
+                    children: subChildren
+                });
+            }
+        }
+
+        // Add Routing node to main tree
         costTreeNodes.push({
-            id: `route-${r.routing_id}`,
-            name: r.operation_name,
+            id: `route-${r.route_id}`,
+            name: `${opName} (${workCenter ? workCenter.work_center_name : "No Work Center"})`,
             type: "routing",
-            quantity: hours,
+            quantity: totalHours,
             uom: "hrs",
-            unitCost: overheadCost,
+            unitCost: wcOverheadRate,
             wastagePercent: 0,
-            totalCost: stepCost
+            totalCost: stepCost,
+            children: childrenNodes.length > 0 ? childrenNodes : undefined
         });
     }
 
-    const yieldFactor = bom.expected_yield_percentage / 100;
+    const yieldFactor = (version.expected_yield_percentage || 100) / 100;
     const rolledCost = (materialsSubtotal + routingsSubtotal) / (yieldFactor > 0 ? yieldFactor : 1);
     
     const targetPrice = currentProduct.price_per_unit || 0;
@@ -266,11 +303,11 @@ export async function calculateRollupCost(
         productId,
         productName: currentProduct.product_name,
         sku: currentProduct.product_code,
-        bomId: bom.bom_id,
-        bomVersion: (bom.version && typeof bom.version === "object") ? bom.version.version_name : (bom.version || "V1"),
+        bomId: version.version_id, // map version_id as bomId
+        bomVersion: version.version_name,
         materialsCost: materialsSubtotal,
         routingsCost: routingsSubtotal,
-        yieldPercentage: bom.expected_yield_percentage,
+        yieldPercentage: version.expected_yield_percentage || 100,
         totalBaseCost: rolledCost,
         targetSellingPrice: targetPrice,
         grossMarginPercent: marginPercent,
@@ -388,4 +425,17 @@ export async function syncProductOverheads(
     }
 }
 
-
+export async function updateProductStandardCost(productId: number, standardCost: number): Promise<boolean> {
+    try {
+        const url = `${DIRECTUS_URL}/items/products/${productId}`;
+        const res = await fetch(url, {
+            method: "PATCH",
+            headers,
+            body: JSON.stringify({ cost_per_unit: standardCost })
+        });
+        return res.ok;
+    } catch (e) {
+        console.error("[Manufacturing Directus API] Failed standard cost update:", e);
+        return false;
+    }
+}

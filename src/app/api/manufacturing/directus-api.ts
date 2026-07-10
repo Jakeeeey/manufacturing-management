@@ -1303,7 +1303,7 @@ export interface DirectusShipmentExpense {
  */
 export async function fetchShipmentExpenses(shipmentId: number): Promise<unknown[]> {
     try {
-        const url = `${DIRECTUS_URL}/items/shipment_expenses?filter[shipment_id][_eq]=${shipmentId}&fields=*,overhead_id.*&limit=-1`;
+        const url = `${DIRECTUS_URL}/items/purchase_order_expenses?filter[purchase_order_id][_eq]=${shipmentId}&fields=*,overhead_id.*&limit=-1`;
         const res = await fetch(url, { headers, cache: "no-store" });
         if (!res.ok) return [];
         return (await res.json()).data || [];
@@ -1327,30 +1327,48 @@ export async function processShipmentLandedCosts(
         // 0. Process any QA received quantity updates first
         if (lineItemUpdates && lineItemUpdates.length > 0) {
             for (const upd of lineItemUpdates) {
-                await fetch(`${DIRECTUS_URL}/items/shipment_line_items/${upd.line_id}`, {
-                    method: "PATCH",
-                    headers,
-                    body: JSON.stringify({ quantity_received: upd.quantity_received })
-                }).catch(err => console.error("Error updating line item received qty:", err));
+                const popRes = await fetch(`${DIRECTUS_URL}/items/purchase_order_products/${upd.line_id}`, { headers });
+                if (popRes.ok) {
+                    const pop = (await popRes.json()).data;
+                    const pId = pop.product_id;
+                    const poId = pop.purchase_order_id;
+                    const filterQuery = encodeURIComponent(JSON.stringify({
+                        _and: [
+                            { source_type: { _eq: "procurement" } },
+                            { source_reference: { _eq: String(poId) } },
+                            { product_id: { _eq: pId } }
+                        ]
+                    }));
+                    const porRes = await fetch(`${DIRECTUS_URL}/items/inventory_lots?filter=${filterQuery}&limit=1`, { headers });
+                    const porList = porRes.ok ? (await porRes.json()).data || [] : [];
+                    if (porList.length > 0) {
+                        const recId = porList[0].id;
+                        await fetch(`${DIRECTUS_URL}/items/inventory_lots/${recId}`, {
+                            method: "PATCH",
+                            headers,
+                            body: JSON.stringify({ quantity: upd.quantity_received })
+                        }).catch(err => console.error("Error updating inventory lot quantity:", err));
+                    }
+                }
             }
         }
 
         // 1. Delete existing expenses for this shipment
-        const oldExpensesRes = await fetch(`${DIRECTUS_URL}/items/shipment_expenses?filter[shipment_id][_eq]=${shipmentId}&limit=-1`, { headers });
+        const oldExpensesRes = await fetch(`${DIRECTUS_URL}/items/purchase_order_expenses?filter[purchase_order_id][_eq]=${shipmentId}&limit=-1`, { headers });
         if (oldExpensesRes.ok) {
             const oldExpenses = (await oldExpensesRes.json()).data || [];
             for (const exp of oldExpenses) {
-                await fetch(`${DIRECTUS_URL}/items/shipment_expenses/${exp.expense_id}`, { method: "DELETE", headers }).catch(() => {});
+                await fetch(`${DIRECTUS_URL}/items/purchase_order_expenses/${exp.expense_id}`, { method: "DELETE", headers }).catch(() => {});
             }
         }
 
         // 2. Save new expenses and sum up PHP total
         let totalExpensesPhp = 0;
         for (const exp of expenses) {
-            const resExp = await fetch(`${DIRECTUS_URL}/items/shipment_expenses`, {
+            const resExp = await fetch(`${DIRECTUS_URL}/items/purchase_order_expenses`, {
                 method: "POST",
                 headers,
-                body: JSON.stringify({ ...exp, shipment_id: shipmentId, allocation_method: allocationMethod })
+                body: JSON.stringify({ ...exp, purchase_order_id: shipmentId, allocation_method: allocationMethod })
             });
             if (resExp.ok) {
                 const data = (await resExp.json()).data;
