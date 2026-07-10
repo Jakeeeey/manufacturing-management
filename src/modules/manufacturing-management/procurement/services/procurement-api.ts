@@ -1,4 +1,4 @@
-import { Supplier, IncomingShipment, ShipmentLineItem, ShipmentExpense, RawMaterial, LinkedProduct, PSGCItem } from "../types";
+import { Supplier, IncomingShipment, ShipmentLineItem, ShipmentExpense, RawMaterial, LinkedProduct, PSGCItem, RegisterRawMaterialPayload } from "../types";
 
 async function handleResponse(res: Response, fallbackMessage: string) {
     if (!res.ok) {
@@ -91,22 +91,14 @@ export async function fetchRawMaterials(): Promise<RawMaterial[]> {
         estimated_unit_cost: Number(p.estimated_unit_cost || 0),
         density_factor: Number(p.density_factor || 1.0),
         product_category: p.product_category ? (typeof p.product_category === "object" ? Number(p.product_category.category_id || p.product_category.id) : Number(p.product_category)) : null,
+        product_type: p.product_type ? Number(p.product_type) : undefined,
         date_added: p.date_added,
         last_updated: p.last_updated
     }));
 }
 
 export async function registerRawMaterial(
-    productDetails: {
-        product_name: string;
-        product_code: string;
-        description?: string;
-        barcode?: string;
-        cost_per_unit?: number;
-        density_factor?: number;
-        unit_of_measurement?: number;
-        price_per_unit?: number;
-    },
+    productDetails: RegisterRawMaterialPayload,
     supplierIds?: number[]
 ): Promise<{ success: boolean; productId: number }> {
     const res = await fetch("/api/manufacturing/procurement/raw-materials", {

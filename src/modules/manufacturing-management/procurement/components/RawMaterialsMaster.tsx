@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { RawMaterial, Supplier } from "../types";
+import { RawMaterial, Supplier, RegisterRawMaterialPayload } from "../types";
 import { Search, Layers, ChevronDown, ChevronUp, MapPin, Bookmark, AlertTriangle, Plus, X, Loader2, Info } from "lucide-react";
 import { toast } from "sonner";
 import { CreatableSelect } from "../../finished-goods/components/CreatableSelect";
@@ -7,8 +7,7 @@ import { CreatableSelect } from "../../finished-goods/components/CreatableSelect
 interface RawMaterialsMasterProps {
     rawMaterials: RawMaterial[];
     suppliers: Supplier[];
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-    onRegisterRawMaterial: (productDetails: any, supplierIds: number[]) => Promise<boolean>;
+    onRegisterRawMaterial: (productDetails: RegisterRawMaterialPayload, supplierIds: number[]) => Promise<boolean>;
 }
 
 interface UnitOption {
@@ -517,7 +516,7 @@ export default function RawMaterialsMaster({ rawMaterials, suppliers, onRegister
                         <form onSubmit={handleFormSubmit} className="flex-1 overflow-y-auto p-5 space-y-4">
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="col-span-2 space-y-1.5">
-                                    <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Material Name</label>
+                                    <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Material Name <span className="text-destructive">*</span></label>
                                     <input
                                         type="text"
                                         required
@@ -539,7 +538,7 @@ export default function RawMaterialsMaster({ rawMaterials, suppliers, onRegister
                                 </div>
 
                                 <div className="space-y-1.5">
-                                    <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">SKU / Product Code</label>
+                                    <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">SKU / Product Code <span className="text-destructive">*</span></label>
                                     <input
                                         type="text"
                                         required
@@ -551,7 +550,7 @@ export default function RawMaterialsMaster({ rawMaterials, suppliers, onRegister
                                 </div>
 
                                 <div className="space-y-1.5">
-                                    <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Item Classification *</label>
+                                    <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Item Classification <span className="text-destructive">*</span></label>
                                     <select
                                         required
                                         value={formProductType}
@@ -564,7 +563,7 @@ export default function RawMaterialsMaster({ rawMaterials, suppliers, onRegister
                                 </div>
 
                                 <div className="space-y-1.5">
-                                    <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Base UOM</label>
+                                    <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Base UOM <span className="text-destructive">*</span></label>
                                     {loadingUnits ? (
                                         <div className="h-9 flex items-center justify-center border rounded-lg bg-background">
                                             <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
@@ -598,7 +597,7 @@ export default function RawMaterialsMaster({ rawMaterials, suppliers, onRegister
                                 </div>
 
                                 <div className="space-y-1.5">
-                                    <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Category (Required)</label>
+                                    <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Category <span className="text-destructive">*</span></label>
                                     <CreatableSelect
                                         options={categoriesList}
                                         value={formCategory}
@@ -609,7 +608,7 @@ export default function RawMaterialsMaster({ rawMaterials, suppliers, onRegister
                                 </div>
 
                                 <div className="space-y-1.5">
-                                    <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Standard Landed Unit Cost (PHP)</label>
+                                    <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Standard Landed Unit Cost (PHP) <span className="text-destructive">*</span></label>
                                     <input
                                         type="number"
                                         required
@@ -622,7 +621,7 @@ export default function RawMaterialsMaster({ rawMaterials, suppliers, onRegister
                                 </div>
 
                                 <div className="space-y-1.5">
-                                    <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Density Factor (g/mL)</label>
+                                    <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Density Factor (g/mL) <span className="text-destructive">*</span></label>
                                     <input
                                         type="number"
                                         required

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
-import { Supplier, SupplierRepresentative, IncomingShipment, ShipmentLineItem, ShipmentExpense, RawMaterial, LinkedProduct } from "../types";
+import { Supplier, SupplierRepresentative, IncomingShipment, ShipmentLineItem, ShipmentExpense, RawMaterial, LinkedProduct, RegisterRawMaterialPayload } from "../types";
 import type { ShipmentFormState, ManifestLineFormItem } from "../components/IncomingShipments";
 import { 
     fetchSuppliers, 
@@ -560,16 +560,7 @@ export function useProcurement(defaultTab: string = "suppliers") {
     };
 
     const handleRegisterRawMaterial = async (
-        productDetails: {
-            product_name: string;
-            product_code: string;
-            description?: string;
-            barcode?: string;
-            cost_per_unit?: number;
-            density_factor?: number;
-            unit_of_measurement?: number;
-            price_per_unit?: number;
-        },
+        productDetails: RegisterRawMaterialPayload,
         supplierIds?: number[]
     ): Promise<boolean> => {
         setLoading(true);

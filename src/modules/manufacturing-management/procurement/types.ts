@@ -119,6 +119,20 @@ export interface PSGCItem {
     name: string;
 }
 
+export interface RegisterRawMaterialPayload {
+    product_name: string;
+    product_code: string;
+    description?: string;
+    barcode?: string;
+    cost_per_unit?: number;
+    density_factor?: number;
+    unit_of_measurement?: number;
+    price_per_unit?: number;
+    product_brand?: number;
+    product_category?: number;
+    product_type?: number;
+}
+
 // ─── Directus API-layer types (used by API route helpers) ───────────────────
 
 export interface DirectusSupplier {
