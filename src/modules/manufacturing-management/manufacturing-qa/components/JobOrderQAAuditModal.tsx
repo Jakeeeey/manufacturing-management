@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { X, CheckCircle2, ShieldAlert, Package, Calendar, Tag, Trash2, Camera, AlertCircle, FileText } from "lucide-react";
+import { X, CheckCircle2, ShieldAlert, Package, Calendar, Tag, Trash2, Camera, AlertCircle, FileText, Loader2 } from "lucide-react";
 import { JobOrder, JobOrderRoutingTask, QALogEntry } from "../types";
 
 interface JobOrderQAAuditModalProps {
@@ -252,24 +252,27 @@ export function JobOrderQAAuditModal({
                                                 {!isLocked && task.status !== "Completed" && (
                                                     task.status === "Pending" ? (
                                                         <button
+                                                            disabled={submittingAudit}
                                                             onClick={() => handleStartRoutingTask(task.id)}
-                                                            className="px-2.5 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-600 text-white text-[10px] font-bold transition-all shadow-xs"
+                                                            className="px-2.5 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-600 disabled:opacity-60 disabled:cursor-wait text-white text-[10px] font-bold transition-all shadow-xs inline-flex items-center gap-1"
                                                         >
-                                                            Start Stage
+                                                            {submittingAudit ? <><Loader2 className="h-3 w-3 animate-spin" /> Starting...</> : "Start Stage"}
                                                         </button>
                                                     ) : task.requires_qa ? (
                                                         <button
+                                                            disabled={submittingAudit}
                                                             onClick={() => handleSelectTaskForAudit(task)}
-                                                            className="px-2.5 py-1.5 rounded-lg bg-primary text-primary-foreground text-[10px] font-bold hover:bg-primary/95 transition-all shadow-xs"
+                                                            className="px-2.5 py-1.5 rounded-lg bg-primary text-primary-foreground text-[10px] font-bold hover:bg-primary/95 disabled:opacity-60 transition-all shadow-xs"
                                                         >
                                                             Record Audit
                                                         </button>
                                                     ) : (
                                                         <button
+                                                            disabled={submittingAudit}
                                                             onClick={() => handleCompleteNonQATask(task)}
-                                                            className="px-2.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-[10px] font-bold transition-all shadow-xs"
+                                                            className="px-2.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 disabled:opacity-60 disabled:cursor-wait text-white text-[10px] font-bold transition-all shadow-xs inline-flex items-center gap-1"
                                                         >
-                                                            Complete Stage
+                                                            {submittingAudit ? <><Loader2 className="h-3 w-3 animate-spin" /> Completing...</> : "Complete Stage"}
                                                         </button>
                                                     )
                                                 )}

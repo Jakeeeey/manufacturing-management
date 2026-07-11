@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Supplier, RawMaterial, PSGCItem } from "../types";
-import { Search, Plus, MapPin, Phone, Mail, Award, FileText, CheckCircle2, AlertCircle, Globe, Building2, UserSquare2, Trash2, Link, X } from "lucide-react";
+import { Search, Plus, MapPin, Phone, Mail, Award, FileText, CheckCircle2, AlertCircle, Globe, Building2, UserSquare2, Trash2, Link, X, Loader2 } from "lucide-react";
 import { fetchLinkedProducts, linkProductToSupplier, unlinkProductFromSupplier, fetchPHProvinces, fetchPHCities, fetchPHBarangays } from "../services/procurement-api";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
@@ -238,6 +238,7 @@ export default function SuppliersDirectory({
     const [isLinkingOpen, setIsLinkingOpen] = useState(false);
     const [selectedProductIdsToLink, setSelectedProductIdsToLink] = useState<string[]>([]);
     const [linkProductSearch, setLinkProductSearch] = useState("");
+    const [linkingLoading, setLinkingLoading] = useState(false);
 
     const loadLinkedProducts = async (supplierId: number) => {
         setLoadingLinkedProducts(true);
@@ -264,6 +265,7 @@ export default function SuppliersDirectory({
 
     const handleLinkMultipleProducts = async () => {
         if (selectedProductIdsToLink.length === 0 || !activeSupplier) return;
+        setLinkingLoading(true);
         try {
             await Promise.all(
                 selectedProductIdsToLink.map(id => linkProductToSupplier(activeSupplier!.id, Number(id)))
@@ -276,6 +278,8 @@ export default function SuppliersDirectory({
         } catch (e) {
             console.error(e);
             toast.error("Failed to link one or more products");
+        } finally {
+            setLinkingLoading(false);
         }
     };
 
@@ -659,10 +663,10 @@ export default function SuppliersDirectory({
                                         </button>
                                         <button
                                             onClick={handleLinkMultipleProducts}
-                                            disabled={selectedProductIdsToLink.length === 0}
-                                            className="bg-primary text-primary-foreground px-4 py-1.5 rounded-lg text-xs font-semibold hover:bg-primary/95 disabled:opacity-50 transition-all cursor-pointer shadow-sm"
+                                            disabled={selectedProductIdsToLink.length === 0 || linkingLoading}
+                                            className="bg-primary text-primary-foreground px-4 py-1.5 rounded-lg text-xs font-semibold hover:bg-primary/95 disabled:opacity-50 transition-all cursor-pointer shadow-sm inline-flex items-center gap-1.5"
                                         >
-                                            Link Selected ({selectedProductIdsToLink.length})
+                                            {linkingLoading ? <><Loader2 className="h-3 w-3 animate-spin" /> Linking...</> : `Link Selected (${selectedProductIdsToLink.length})`}
                                         </button>
                                     </div>
                                 </div>

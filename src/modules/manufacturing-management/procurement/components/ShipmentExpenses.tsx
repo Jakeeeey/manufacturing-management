@@ -3,7 +3,7 @@ import { IncomingShipment, ShipmentLineItem, ShipmentExpense } from "../types";
 import { CreatableSelect } from "../../finished-goods/components/CreatableSelect";
 import { toast } from "sonner";
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-import { Landmark, Plus, Scale, DollarSign, Layers, Anchor, AlertCircle, Info, Calculator, Check, ArrowRight } from "lucide-react";
+import { Landmark, Plus, Scale, DollarSign, Layers, Anchor, AlertCircle, Info, Calculator, Check, ArrowRight, Loader2 } from "lucide-react";
 
 interface ShipmentExpensesProps {
     shipment: IncomingShipment;
@@ -17,6 +17,7 @@ interface ShipmentExpensesProps {
     setAllocationForm: React.Dispatch<React.SetStateAction<any>>;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
     onAllocate: (e: React.FormEvent, shipmentId: number, status: string, lineItemUpdates?: any[]) => void;
+    submitting?: boolean;
 }
 
 export default function ShipmentExpenses({
@@ -27,7 +28,8 @@ export default function ShipmentExpenses({
     setIsModalOpen,
     allocationForm,
     setAllocationForm,
-    onAllocate
+    onAllocate,
+    submitting = false
 }: ShipmentExpensesProps) {
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const [receivedQuantities, setReceivedQuantities] = useState<Record<number, number>>({});
@@ -281,15 +283,19 @@ export default function ShipmentExpenses({
                                 </div>
 
                                 <div className="space-y-2">
-{/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                                    {allocationForm.expenses.map((exp: any, idx: number) => (
+                                    <div className="flex gap-3 text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">
+                                        <div className="flex-1">Expense Type <span className="text-red-500">*</span></div>
+                                        <div className="w-1/3">Amount (PHP) <span className="text-red-500">*</span></div>
+                                        {allocationForm.expenses.length > 1 && <div className="w-[48px]" />}
+                                    </div>
+                                    {allocationForm.expenses.map((exp: { overhead_id?: number | string; amount_php?: string | number }, idx: number) => (
                                         <div key={idx} className="flex gap-3 items-center">
                                             <div className="flex-1">
                                                 <CreatableSelect
                                                     options={overheadTypes
                                                         .filter((ot) => {
                                                             // Filter out already selected expense types on other rows
-                                                            return !allocationForm.expenses.some((e: any, i: number) => i !== idx && String(e.overhead_id) === String(ot.id));
+                                                            return !allocationForm.expenses.some((e: { overhead_id?: number | string }, i: number) => i !== idx && String(e.overhead_id) === String(ot.id));
                                                         })
                                                         .map((ot) => ({
                                                             value: String(ot.id),
@@ -328,12 +334,21 @@ export default function ShipmentExpenses({
                                 </div>
                             </div>
 
-                            <button
-                                type="submit"
-                                className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 py-3 text-xs font-bold text-white transition-all shadow-md shrink-0 mt-4"
-                            >
-                                <Check className="h-4.5 w-4.5" /> Commit Landed Costs & Close Cargo
-                            </button>
+                             <button
+                                 type="submit"
+                                 disabled={submitting}
+                                 className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-wait py-3 text-xs font-bold text-white transition-all shadow-md shrink-0 mt-4"
+                             >
+                                 {submitting ? (
+                                     <>
+                                         <Loader2 className="h-4 w-4 animate-spin" /> Processing...
+                                     </>
+                                 ) : (
+                                     <>
+                                         <Check className="h-4.5 w-4.5" /> Commit Landed Costs & Close Cargo
+                                     </>
+                                 )}
+                             </button>
                         </form>
                     </div>
                 </div>

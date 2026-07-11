@@ -111,10 +111,11 @@ export default function InboundShipmentsList({
                     <div className="p-8 text-center text-xs text-muted-foreground italic">No matching shipments found</div>
                 ) : (
                     filteredShipments.map(s => (
-                        <div
+                        <button
                             key={s.shipment_id}
+                            type="button"
                             onClick={() => onSelectShipment(s)}
-                            className={`p-3.5 rounded-xl border transition-all cursor-pointer select-none space-y-2.5 ${
+                            className={`w-full text-left p-3.5 rounded-xl border transition-all cursor-pointer select-none space-y-2.5 ${
                                 selectedShipment?.shipment_id === s.shipment_id
                                     ? "bg-primary/5 border-primary shadow-sm"
                                     : "bg-background border-border hover:bg-muted/10"
@@ -136,7 +137,7 @@ export default function InboundShipmentsList({
                                 <span>Value: ₱{Number(s.total_php_value || 0).toLocaleString()}</span>
                                 <span>Date: {s.date_received || s.created_at?.split('T')[0] || "N/A"}</span>
                             </div>
-                        </div>
+                        </button>
                     ))
                 )}
             </div>

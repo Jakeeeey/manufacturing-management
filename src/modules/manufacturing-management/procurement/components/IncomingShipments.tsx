@@ -6,6 +6,7 @@ interface UOMOption {
     product_id: number;
     unit_shortcut: string;
     cost_per_unit: number;
+    unit_of_measurement_count?: number;
 }
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { Search, Plus, Calendar, ShieldCheck, Truck, Layers, Anchor, AlertCircle, Info, Landmark, Edit, RefreshCw, Loader2, Trash2, CheckCircle2, CheckSquare, X } from "lucide-react";
@@ -34,9 +35,9 @@ export interface ShipmentFormState {
     total_php_value: string;
     status: "Ordered" | "Approved" | "En Route" | "Receiving (QA)" | "Received" | "Rejected";
     date_received: string;
-    branch_id: number;
-    payment_type: number;
-    price_type: string;
+    branch_id: number | null;
+    payment_type: number | null;
+    price_type: string | null;
 }
 
 interface IncomingShipmentsProps {
@@ -91,6 +92,27 @@ function RawProductSelector({
     productName,
     onSelect
 }: RawProductSelectorProps) {
+    const getTypeBadge = (typeId?: number | null, isShort = false) => {
+        if (typeId === 389) {
+            return (
+                <span className="bg-blue-500/10 text-blue-600 border border-blue-500/20 px-1 py-0.5 rounded text-[8px] font-extrabold uppercase tracking-wider">
+                    {isShort ? "RM" : "Raw Material"}
+                </span>
+            );
+        }
+        if (typeId === 390) {
+            return (
+                <span className="bg-amber-500/10 text-amber-600 border border-amber-500/20 px-1 py-0.5 rounded text-[8px] font-extrabold uppercase tracking-wider">
+                    {isShort ? "PKG" : "Packaging"}
+                </span>
+            );
+        }
+        return (
+            <span className="bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 px-1 py-0.5 rounded text-[8px] font-extrabold uppercase tracking-wider">
+                {isShort ? "FG" : "Finished Good"}
+            </span>
+        );
+    };
     const [isOpen, setIsOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
     const [highlightedIndex, setHighlightedIndex] = useState(0);
@@ -292,6 +314,7 @@ function RawProductSelector({
                     id={id}
                     ref={inputRef}
                     type="text"
+                    autoComplete="off"
                     placeholder="Type to search product..."
                     value={displayValue}
                     onChange={e => { setSearchQuery(e.target.value); setHighlightedIndex(0); }}
@@ -319,13 +342,38 @@ function RawProductSelector({
                             return (
                                 <div 
                                     key={group.parent.product_id} 
-                                    className={`p-3 transition-all flex flex-col gap-1.5 text-xs text-left ${
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        const firstOpt = group.options[0];
+                                        if (firstOpt) {
+                                            const cost = Number(firstOpt.cost_per_unit || firstOpt.estimated_unit_cost || 0);
+                                            onSelect({
+                                                parent_product_id: String(group.parent.product_id),
+                                                product_id: String(firstOpt.product_id),
+                                                product_name: group.parent.product_name,
+                                                product_code: firstOpt.product_code || "",
+                                                selected_uom: firstOpt.unit_of_measurement?.unit_shortcut || "PCS",
+                                                base_unit_cost_php: String(cost),
+                                                uom_options: group.options.map((x: RawMaterial) => ({
+                                                    product_id: x.product_id,
+                                                    unit_shortcut: x.unit_of_measurement?.unit_shortcut || "PCS",
+                                                    cost_per_unit: x.cost_per_unit || x.estimated_unit_cost || 0,
+                                                    unit_of_measurement_count: x.unit_of_measurement_count || 1
+                                                }))
+                                            });
+                                            setIsOpen(false);
+                                        }
+                                    }}
+                                    className={`p-3 transition-all flex flex-col gap-1.5 text-xs text-left cursor-pointer ${
                                         hasHighlightedOption ? "bg-primary/[0.02] border-l-2 border-l-primary" : "hover:bg-muted/5"
                                     }`}
                                 >
                                     <div>
-                                        <div className="font-extrabold text-foreground">{group.parent.product_name}</div>
-                                        <div className="text-[9px] text-muted-foreground font-mono">Base SKU: {group.parent.product_code || `ID-${group.parent.product_id}`}</div>
+                                        <div className="flex items-center gap-1">
+                                            <div className="font-extrabold text-foreground">{group.parent.product_name}</div>
+                                            {getTypeBadge(group.parent.product_type)}
+                                        </div>
+                                        <div className="text-[9px] text-muted-foreground font-mono mt-0.5">Base SKU: {group.parent.product_code || `ID-${group.parent.product_id}`}</div>
                                     </div>
                                     <div className="flex flex-wrap gap-1.5 mt-0.5">
                                         {group.options.map((opt: RawMaterial) => {
@@ -363,6 +411,7 @@ function RawProductSelector({
                                                     }`}
                                                 >
                                                     <span>{opt.unit_of_measurement?.unit_shortcut || "PCS"}</span>
+                                                    {getTypeBadge(opt.product_type, true)}
                                                     <span className="opacity-50">|</span>
                                                     <span>₱{cost.toFixed(2)}</span>
                                                 </button>
@@ -404,6 +453,7 @@ export default function IncomingShipments({
     loading = false
 }: IncomingShipmentsProps) {
     const [editingShipmentId, setEditingShipmentId] = useState<number | null>(null);
+    const [statusLoading, setStatusLoading] = useState<"en-route" | "arrived" | null>(null);
     const [search, setSearch] = useState("");
     const [isOverridden, setIsOverridden] = useState(false);
     const [statusFilter, setStatusFilter] = useState("All");
@@ -471,12 +521,12 @@ export default function IncomingShipments({
             supplier_id: "",
             date_received: new Date().toISOString().split("T")[0],
             total_foreign_currency: "",
-            exchange_rate: "58.00",
+            exchange_rate: "",
             total_php_value: "",
             status: "Ordered",
-            branch_id: 182,
-            payment_type: 1,
-            price_type: "Internal"
+            branch_id: null,
+            payment_type: null,
+            price_type: ""
         });
         setLinesForm([]);
     };
@@ -520,7 +570,7 @@ export default function IncomingShipments({
             return () => { active = false; };
         }
 
-        const match = priceTypes.find(pt => pt.name?.toLowerCase() === shipmentForm.price_type.toLowerCase());
+        const match = priceTypes.find(pt => pt.name?.toLowerCase() === shipmentForm.price_type?.toLowerCase());
         if (!match) {
             setTimeout(() => {
                 if (active) setPriceTypeRatesMap({});
@@ -667,7 +717,8 @@ export default function IncomingShipments({
     }, [linesForm]);
 
     const totalUsdValue = React.useMemo(() => {
-        const rate = parseFloat(String(shipmentForm.exchange_rate)) || 58.00;
+        const rate = parseFloat(String(shipmentForm.exchange_rate));
+        if (isNaN(rate) || rate <= 0) return 0;
         return totalPhpValue / rate;
     }, [totalPhpValue, shipmentForm.exchange_rate]);
 
@@ -957,10 +1008,15 @@ export default function IncomingShipments({
                                     {activeShipment.status === "Approved" && (
                                         <button
                                             type="button"
-                                            onClick={() => onUpdateShipmentStatus(activeShipment.shipment_id, "En Route")}
-                                            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded-lg text-xs transition-all shadow-sm cursor-pointer mt-3"
+                                            disabled={statusLoading !== null}
+                                            onClick={() => {
+                                                setStatusLoading("en-route");
+                                                onUpdateShipmentStatus(activeShipment.shipment_id, "En Route");
+                                                setTimeout(() => setStatusLoading(null), 3000);
+                                            }}
+                                            className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-60 disabled:cursor-wait text-white font-bold py-2 px-3 rounded-lg text-xs transition-all shadow-sm cursor-pointer mt-3 inline-flex items-center justify-center gap-1.5"
                                         >
-                                            Mark Cargo as En Route (Departed)
+                                            {statusLoading === "en-route" ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Processing...</> : "Mark Cargo as En Route (Departed)"}
                                         </button>
                                     )}
 
@@ -968,7 +1024,7 @@ export default function IncomingShipments({
                                         <button
                                             type="button"
                                             onClick={handleStartEdit}
-                                            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-3 rounded-lg text-xs transition-all shadow-sm cursor-pointer mt-3"
+                                            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-3 rounded-lg text-xs transition-all shadow-sm cursor-pointer mt-3 inline-flex items-center justify-center gap-1.5"
                                         >
                                             {activeShipment.status === "Ordered" ? "Edit Purchase Order" : "Edit & Resubmit Purchase Order"}
                                         </button>
@@ -977,10 +1033,15 @@ export default function IncomingShipments({
                                     {activeShipment.status === "En Route" && (
                                         <button
                                             type="button"
-                                            onClick={() => onUpdateShipmentStatus(activeShipment.shipment_id, "Receiving (QA)")}
-                                            className="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-2 px-3 rounded-lg text-xs transition-all shadow-sm cursor-pointer mt-3"
+                                            disabled={statusLoading !== null}
+                                            onClick={() => {
+                                                setStatusLoading("arrived");
+                                                onUpdateShipmentStatus(activeShipment.shipment_id, "Receiving (QA)");
+                                                setTimeout(() => setStatusLoading(null), 3000);
+                                            }}
+                                            className="w-full bg-amber-600 hover:bg-amber-700 disabled:opacity-60 disabled:cursor-wait text-white font-bold py-2 px-3 rounded-lg text-xs transition-all shadow-sm cursor-pointer mt-3 inline-flex items-center justify-center gap-1.5"
                                         >
-                                            Mark Cargo as Arrived (Proceed to QA Checklist)
+                                            {statusLoading === "arrived" ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Processing...</> : "Mark Cargo as Arrived (Proceed to QA Checklist)"}
                                         </button>
                                     )}
                                 </div>
@@ -1196,10 +1257,11 @@ export default function IncomingShipments({
                                 <div className="space-y-1.5 flex flex-col">
                                     <label className="text-[11px] font-semibold text-muted-foreground">Destination Branch *</label>
                                     <select
-                                        value={shipmentForm.branch_id ? String(shipmentForm.branch_id) : "183"}
-                                        onChange={e => setShipmentForm({...shipmentForm, branch_id: parseInt(e.target.value)})}
+                                        value={shipmentForm.branch_id ? String(shipmentForm.branch_id) : ""}
+                                        onChange={e => setShipmentForm({...shipmentForm, branch_id: e.target.value ? parseInt(e.target.value) : null})}
                                         className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary font-semibold text-foreground h-9"
                                     >
+                                        <option value="" disabled hidden>Select Destination Branch...</option>
                                         <option value={183}>Main Branch</option>
                                         <option value={163}>Urdaneta Branch</option>
                                         <option value={181}>Bihon Branch</option>
@@ -1210,10 +1272,11 @@ export default function IncomingShipments({
                                 <div className="space-y-1.5 flex flex-col">
                                     <label className="text-[11px] font-semibold text-muted-foreground">Payment Type *</label>
                                     <select
-                                        value={Number(shipmentForm.payment_type)}
-                                        onChange={e => setShipmentForm({...shipmentForm, payment_type: parseInt(e.target.value)})}
+                                        value={shipmentForm.payment_type !== null ? String(shipmentForm.payment_type) : ""}
+                                        onChange={e => setShipmentForm({...shipmentForm, payment_type: e.target.value ? parseInt(e.target.value) : null})}
                                         className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary font-semibold text-foreground h-9"
                                     >
+                                        <option value="" disabled hidden>Select Payment Type...</option>
                                         <option value={3}>Full Payment</option>
                                         <option value={1}>Advance Payment</option>
                                         <option value={2}>Partial Payment</option>
@@ -1225,10 +1288,11 @@ export default function IncomingShipments({
                                 <div className="space-y-1.5 flex flex-col">
                                     <label className="text-[11px] font-semibold text-muted-foreground">Price Type *</label>
                                     <select
-                                        value={String(shipmentForm.price_type)}
-                                        onChange={e => setShipmentForm({...shipmentForm, price_type: e.target.value})}
+                                        value={shipmentForm.price_type || ""}
+                                        onChange={e => setShipmentForm({...shipmentForm, price_type: e.target.value || null})}
                                         className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary font-semibold text-foreground h-9"
                                     >
+                                        <option value="" disabled hidden>Select Price Type...</option>
                                         <option value="Internal">Internal</option>
                                         <option value="SRP">SRP</option>
                                         <option value="Government">Government</option>
@@ -1276,7 +1340,7 @@ export default function IncomingShipments({
                                         {linesForm.map((line, idx) => (
                                             <div key={idx} className="flex gap-3 items-end bg-muted/10 border p-3 pr-10 rounded-lg relative flex-wrap sm:flex-nowrap">
                                                 <div className="flex-[3] space-y-1.5 min-w-[200px] flex flex-col relative">
-                                                    <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Raw Product Name</label>
+                                                    <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Raw Product Name <span className="text-red-500">*</span></label>
                                                     <RawProductSelector
                                                         id={`search-input-${idx}`}
                                                         autoFocus={idx === linesForm.length - 1 && linesForm.length > 1}
@@ -1367,7 +1431,7 @@ export default function IncomingShipments({
 
                                                 <div className="w-24 space-y-1.5 shrink-0 relative">
                                                     <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">
-                                                        Qty Ordered {line.selected_uom ? `(${line.selected_uom})` : ""}
+                                                        Qty Ordered {line.selected_uom ? `(${line.selected_uom})` : ""} <span className="text-red-500">*</span>
                                                     </label>
                                                     <input
                                                         id={`qty-input-${idx}`}
@@ -1394,7 +1458,7 @@ export default function IncomingShipments({
                                                         className="w-full rounded-lg border bg-background px-2.5 py-1.5 text-xs outline-none h-9 font-semibold"
                                                     />
                                                     {(() => {
-                                                        const selectedOpt = line.uom_options?.find((o: any) => String(o.product_id) === String(line.product_id));
+                                                        const selectedOpt = line.uom_options?.find((o: UOMOption) => String(o.product_id) === String(line.product_id));
                                                         const convFactor = Number(selectedOpt?.unit_of_measurement_count || 1);
                                                         
                                                         const parentProduct = rawMaterials.find(rm => String(rm.product_id) === String(line.parent_product_id || line.product_id));
@@ -1414,7 +1478,7 @@ export default function IncomingShipments({
                                                 </div>
 
                                                 <div className="w-28 space-y-1.5 shrink-0">
-                                                    <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">FOB Unit Cost (PHP)</label>
+                                                    <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">FOB Unit Cost (PHP) <span className="text-red-500">*</span></label>
                                                     <input
                                                         id={`cost-input-${idx}`}
                                                         type="number"
@@ -1468,7 +1532,7 @@ export default function IncomingShipments({
                                         </span>
                                     </div>
                                     <div className="flex justify-between text-xs font-bold text-muted-foreground border-t pt-1.5">
-                                        <span>Total Cargo Value (USD @ {parseFloat(shipmentForm.exchange_rate) || 58.00})</span>
+                                        <span>Total Cargo Value (USD @ {parseFloat(shipmentForm.exchange_rate) || "N/A"})</span>
                                         <span className="font-mono text-foreground text-sm font-extrabold">
                                             ${totalUsdValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                         </span>

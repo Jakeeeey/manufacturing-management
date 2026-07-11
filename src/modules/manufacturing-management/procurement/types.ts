@@ -123,9 +123,6 @@ export interface PSGCItem {
     code: string;
     name: string;
 }
-
-<<<<<<< Updated upstream
-=======
 export interface RegisterRawMaterialPayload {
     product_name: string;
     product_code: string;
@@ -142,7 +139,6 @@ export interface RegisterRawMaterialPayload {
     unit_of_measurement_count?: number | null;
 }
 
->>>>>>> Stashed changes
 // ─── Directus API-layer types (used by API route helpers) ───────────────────
 
 export interface DirectusSupplier {
@@ -230,9 +226,9 @@ export interface ShipmentData {
     total_php_value: string;
     status: "Ordered" | "Approved" | "En Route" | "Receiving (QA)" | "Received" | "Rejected";
     date_received: string;
-    branch_id: number;
-    payment_type: number;
-    price_type: string;
+    branch_id: number | null;
+    payment_type: number | null;
+    price_type: string | null;
 }
 
 export interface LineItem {

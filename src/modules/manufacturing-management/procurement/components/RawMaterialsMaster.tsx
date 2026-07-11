@@ -566,14 +566,16 @@ export default function RawMaterialsMaster({
                                     <React.Fragment key={m.product_id}>
                                         <tr 
                                             onClick={() => handleToggleExpand(m.product_id)}
-                                            className={`${
+                                            className={`group ${
                                                 isChild 
                                                     ? "bg-muted/20 hover:bg-muted/40 border-l-4 border-l-primary/30" 
                                                     : "bg-card hover:bg-muted/10 border-l-2 border-l-transparent hover:border-l-primary"
                                             } cursor-pointer transition-all border-b`}
                                         >
                                             <td className="p-3 text-center">
-                                                {isExpanded ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                                                <span className={`inline-flex items-center justify-center h-7 w-7 rounded-full transition-all ${isExpanded ? "bg-primary/10 text-primary" : "bg-muted/40 text-muted-foreground group-hover:bg-primary/10 group-hover:text-primary"}`}>
+                                                    {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                                                </span>
                                             </td>
                                             <td className="p-3">
                                                 <div className="flex items-center gap-2">

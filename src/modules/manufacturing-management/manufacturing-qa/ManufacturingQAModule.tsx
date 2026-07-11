@@ -112,8 +112,9 @@ export default function ManufacturingQAModule({ userId }: { userId?: number }) {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b pb-3">
                 <div className="flex bg-muted/10 shrink-0 rounded-xl overflow-hidden border max-w-lg">
                     <button
+                        disabled={loading}
                         onClick={() => setActiveTab("pending")}
-                        className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 text-xs font-bold border-b-2 transition-all -mb-[1px] ${
+                        className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 text-xs font-bold border-b-2 transition-all -mb-[1px] disabled:opacity-50 disabled:cursor-wait ${
                             activeTab === "pending"
                                 ? "border-primary text-primary bg-background shadow-xs"
                                 : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/30"
@@ -122,8 +123,9 @@ export default function ManufacturingQAModule({ userId }: { userId?: number }) {
                         <ShieldCheck className="h-4 w-4" /> Active QA Queue
                     </button>
                     <button
+                        disabled={loading}
                         onClick={() => setActiveTab("history")}
-                        className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 text-xs font-bold border-b-2 transition-all -mb-[1px] ${
+                        className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 text-xs font-bold border-b-2 transition-all -mb-[1px] disabled:opacity-50 disabled:cursor-wait ${
                             activeTab === "history"
                                 ? "border-primary text-primary bg-background shadow-xs"
                                 : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/30"
@@ -132,8 +134,9 @@ export default function ManufacturingQAModule({ userId }: { userId?: number }) {
                         <History className="h-4 w-4" /> Checklist Logs
                     </button>
                     <button
+                        disabled={loading}
                         onClick={() => setActiveTab("released")}
-                        className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 text-xs font-bold border-b-2 transition-all -mb-[1px] ${
+                        className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 text-xs font-bold border-b-2 transition-all -mb-[1px] disabled:opacity-50 disabled:cursor-wait ${
                             activeTab === "released"
                                 ? "border-primary text-primary bg-background shadow-xs"
                                 : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/30"
