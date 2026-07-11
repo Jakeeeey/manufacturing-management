@@ -42,7 +42,7 @@ export default function WorkStationsModule() {
 
     // Formats Asset label to display in UI (hiding raw database IDs)
     const getAssetLabel = (asset: AssetRecord): string => {
-        const name = asset.item_id?.item_name || "";
+        const name = typeof asset.item_id === 'object' ? asset.item_id?.item_name || "" : "";
         const serial = asset.serial || "";
         const condition = asset.condition || "";
 
@@ -86,7 +86,8 @@ export default function WorkStationsModule() {
         return workCenters.filter(wc => {
             const query = searchQuery.toLowerCase();
             const matchesName = wc.work_center_name.toLowerCase().includes(query);
-            const matchesAsset = wc.asset?.item_id?.item_name?.toLowerCase().includes(query) ||
+            const assetName = typeof wc.asset?.item_id === 'object' ? wc.asset?.item_id?.item_name || "" : "";
+            const matchesAsset = assetName.toLowerCase().includes(query) ||
                                  wc.asset?.serial?.toLowerCase().includes(query) || 
                                  wc.asset?.barcode?.toLowerCase().includes(query);
             const matchesDept = wc.department?.department_name?.toLowerCase().includes(query);
@@ -114,7 +115,7 @@ export default function WorkStationsModule() {
         setCapacity(wc.capacity_per_hour !== null ? String(wc.capacity_per_hour) : "0");
         setSelectedAssetId(wc.asset_id || null);
         setSelectedDeptId(wc.department_id || null);
-        setIsActive(wc.is_active !== false);
+        setIsActive(Boolean(wc.is_active));
 
         // Prepopulate searches (without prepending raw ID)
         const matchedAsset = assets.find(a => a.id === wc.asset_id);
@@ -127,15 +128,26 @@ export default function WorkStationsModule() {
 
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!wcName.trim()) {
+        const trimmedName = wcName.trim();
+        if (!trimmedName) {
             toast.error("Work station name is required.");
+            return;
+        }
+
+        const isDuplicate = workCenters.some(wc => 
+            wc.work_center_name?.trim().toLowerCase() === trimmedName.toLowerCase() &&
+            wc.work_center_id !== editingWorkCenter?.work_center_id
+        );
+
+        if (isDuplicate) {
+            toast.error("Work station name already exists. Please choose a unique name.");
             return;
         }
 
         setSaving(true);
         try {
             const payload = {
-                work_center_name: wcName.trim(),
+                work_center_name: trimmedName,
                 asset_id: selectedAssetId,
                 department_id: selectedDeptId,
                 overhead_cost_per_hour: parseFloat(overheadCost) || 0,
@@ -170,11 +182,12 @@ export default function WorkStationsModule() {
     const filteredAssets = useMemo(() => {
         if (!assetSearch.trim()) return assets;
         const search = assetSearch.toLowerCase();
-        return assets.filter(a => 
-            (a.item_id?.item_name || "").toLowerCase().includes(search) ||
-            (a.serial || "").toLowerCase().includes(search) ||
-            (a.barcode || "").toLowerCase().includes(search)
-        );
+        return assets.filter(a => {
+            const assetName = typeof a.item_id === 'object' ? a.item_id?.item_name || "" : "";
+            return assetName.toLowerCase().includes(search) ||
+                (a.serial || "").toLowerCase().includes(search) ||
+                (a.barcode || "").toLowerCase().includes(search);
+        });
     }, [assets, assetSearch]);
 
     // Auto-filter dept matches
@@ -187,7 +200,7 @@ export default function WorkStationsModule() {
     }, [departments, deptSearch]);
 
     return (
-        <div className="flex flex-col gap-6 p-4 max-w-6xl mx-auto">
+        <div className="flex flex-col gap-6 w-full">
             {/* Header section */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
@@ -261,31 +274,34 @@ export default function WorkStationsModule() {
                                         {(wc.capacity_per_hour || 0).toLocaleString("en-US")} units
                                     </td>
                                     <td className="p-4 align-middle text-muted-foreground">
-                                        {wc.asset ? (
-                                            <div className="flex items-center gap-3">
-                                                {wc.asset.item_image ? (
-                                                    // eslint-disable-next-line @next/next/no-img-element
-                                                    <img 
-                                                        src={wc.asset.item_image} 
-                                                        alt={wc.asset.item_id?.item_name || "Asset"} 
-                                                        className="w-10 h-10 object-cover rounded border border-border shrink-0"
-                                                    />
-                                                ) : (
-                                                    <div className="w-10 h-10 bg-muted/20 border border-dashed rounded flex items-center justify-center text-muted-foreground/30 shrink-0">
-                                                        <ImageIcon className="h-4.5 w-4.5" />
-                                                    </div>
-                                                )}
-                                                <div className="flex flex-col">
-                                                    <span className="font-semibold text-foreground">
-                                                        {wc.asset.item_id?.item_name || wc.asset.serial || wc.asset.barcode || "Asset"}
-                                                    </span>
-                                                    {wc.asset.item_id?.item_name && wc.asset.serial && (
-                                                        <span className="text-[10px] text-muted-foreground">Serial: {wc.asset.serial}</span>
+                                        {wc.asset ? (() => {
+                                            const assetName = typeof wc.asset.item_id === 'object' ? wc.asset.item_id?.item_name || "" : "";
+                                            return (
+                                                <div className="flex items-center gap-3">
+                                                    {wc.asset.item_image ? (
+                                                        // eslint-disable-next-line @next/next/no-img-element
+                                                        <img 
+                                                            src={wc.asset.item_image} 
+                                                            alt={assetName || "Asset"} 
+                                                            className="w-10 h-10 object-cover rounded border border-border shrink-0"
+                                                        />
+                                                    ) : (
+                                                        <div className="w-10 h-10 bg-muted/20 border border-dashed rounded flex items-center justify-center text-muted-foreground/30 shrink-0">
+                                                            <ImageIcon className="h-4.5 w-4.5" />
+                                                        </div>
                                                     )}
-                                                    <span className="text-[10px] text-muted-foreground">Cond: {wc.asset.condition || "Good"}</span>
+                                                    <div className="flex flex-col">
+                                                        <span className="font-semibold text-foreground">
+                                                            {assetName || wc.asset.serial || wc.asset.barcode || "Asset"}
+                                                        </span>
+                                                        {assetName && wc.asset.serial && (
+                                                            <span className="text-[10px] text-muted-foreground">Serial: {wc.asset.serial}</span>
+                                                        )}
+                                                        <span className="text-[10px] text-muted-foreground">Cond: {wc.asset.condition || "Good"}</span>
+                                                    </div>
                                                 </div>
-                                            </div>
-                                        ) : (
+                                            );
+                                        })() : (
                                             <span className="text-muted-foreground/50 italic">None linked</span>
                                         )}
                                     </td>
@@ -300,11 +316,11 @@ export default function WorkStationsModule() {
                                     </td>
                                     <td className="p-4 align-middle">
                                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase ${
-                                            wc.is_active !== false 
+                                            Boolean(wc.is_active) 
                                                 ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20" 
                                                 : "bg-destructive/10 text-destructive border border-destructive/20"
                                         }`}>
-                                            {wc.is_active !== false ? "Active" : "Inactive"}
+                                            {Boolean(wc.is_active) ? "Active" : "Inactive"}
                                         </span>
                                     </td>
                                     <td className="p-4 align-middle text-center">

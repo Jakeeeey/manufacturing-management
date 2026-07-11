@@ -35,7 +35,14 @@ export async function GET() {
         );
         if (!res.ok) throw new Error(`Directus failed to fetch assets: ${res.status}`);
         const json = await res.json();
-        return NextResponse.json(json.data || []);
+        const assets = json.data || [];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const mappedAssets = assets.map((a: any) => ({
+            ...a,
+            is_active_warning: a.is_active_warning === undefined || a.is_active_warning === null ? false : Boolean(Number(a.is_active_warning)),
+            is_active: a.is_active === undefined || a.is_active === null ? true : Boolean(Number(a.is_active))
+        }));
+        return NextResponse.json(mappedAssets);
     } catch (e) {
         console.error("API Error fetching assets:", e);
         return NextResponse.json({ error: (e as { message?: string }).message || "Failed to fetch assets" }, { status: 500 });
@@ -77,7 +84,12 @@ export async function POST(request: Request) {
         }
 
         const json = await res.json();
-        return NextResponse.json({ success: true, asset: json.data });
+        const newAsset = json.data;
+        if (newAsset) {
+            if (newAsset.is_active_warning !== undefined) newAsset.is_active_warning = Boolean(Number(newAsset.is_active_warning));
+            if (newAsset.is_active !== undefined) newAsset.is_active = Boolean(Number(newAsset.is_active));
+        }
+        return NextResponse.json({ success: true, asset: newAsset });
     } catch (e) {
         console.error("API Error creating asset:", e);
         return NextResponse.json({ error: (e as { message?: string }).message || "Failed to create asset" }, { status: 500 });

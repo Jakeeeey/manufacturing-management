@@ -1,15 +1,15 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
-import { Plus, Search, Edit, Trash2, DollarSign, Activity, Settings, Check, LayoutGrid, Image as ImageIcon } from "lucide-react";
+import { Plus, Search, Edit, Trash2, Settings, Check, LayoutGrid, Image as ImageIcon } from "lucide-react";
 import { toast } from "sonner";
 import { AssetRecord, DepartmentRecord } from "@/modules/manufacturing-management/finished-goods/types";
-import { 
-    fetchAssets, 
-    createAsset, 
-    saveAsset, 
-    deleteAsset, 
-    fetchDepartments, 
+import {
+    fetchAssets,
+    createAsset,
+    saveAsset,
+    deleteAsset,
+    fetchDepartments,
     fetchItems,
     createItem,
     fetchItemTypes,
@@ -20,10 +20,26 @@ import {
 import { Button } from "@/components/ui/button";
 import { CreatableSelect } from "../finished-goods/components/CreatableSelect";
 
+// Added specific types to replace `any`
+export interface CatalogItem {
+    id: number;
+    item_name: string;
+    item_code?: string;
+}
+
+export interface ItemType {
+    id: number;
+    type_name: string;
+}
+
+export interface ItemClassification {
+    id: number;
+    classification_name: string;
+}
+
 export default function AssetsModule() {
     const [assets, setAssets] = useState<AssetRecord[]>([]);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const [items, setItems] = useState<any[]>([]);
+    const [items, setItems] = useState<CatalogItem[]>([]);
     const [departments, setDepartments] = useState<DepartmentRecord[]>([]);
 
     const [loading, setLoading] = useState(true);
@@ -60,8 +76,8 @@ export default function AssetsModule() {
     const [newItemName, setNewItemName] = useState("");
     const [selectedItemTypeId, setSelectedItemTypeId] = useState("");
     const [selectedItemClassId, setSelectedItemClassId] = useState("");
-    const [itemTypes, setItemTypes] = useState<any[]>([]);
-    const [itemClassifications, setItemClassifications] = useState<any[]>([]);
+    const [itemTypes, setItemTypes] = useState<ItemType[]>([]);
+    const [itemClassifications, setItemClassifications] = useState<ItemClassification[]>([]);
 
     const loadData = async () => {
         setLoading(true);
@@ -94,12 +110,11 @@ export default function AssetsModule() {
     const filteredAssets = useMemo(() => {
         return assets.filter(asset => {
             const query = searchQuery.toLowerCase();
-            
+
             // Resolve item name with strict type cast
             let itemName = "";
             if (asset.item_id && typeof asset.item_id === "object") {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                itemName = (asset.item_id as any).item_name || "";
+                itemName = (asset.item_id as unknown as CatalogItem).item_name || "";
             } else {
                 const found = items.find(i => i.id === asset.item_id);
                 itemName = found ? found.item_name : "";
@@ -108,8 +123,7 @@ export default function AssetsModule() {
             // Resolve department name with strict type cast
             let deptName = "";
             if (asset.department && typeof asset.department === "object") {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                deptName = (asset.department as any).department_name || "";
+                deptName = (asset.department as unknown as DepartmentRecord).department_name || "";
             } else {
                 const found = departments.find(d => d.department_id === asset.department);
                 deptName = found ? found.department_name : "";
@@ -150,26 +164,24 @@ export default function AssetsModule() {
     const handleOpenEditModal = (asset: AssetRecord) => {
         setEditingAsset(asset);
         setItemImage(asset.item_image || "");
-        
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const itemId = asset.item_id && typeof asset.item_id === "object" ? (asset.item_id as any).id : (asset.item_id || null);
+
+        const itemId = asset.item_id && typeof asset.item_id === "object" ? (asset.item_id as unknown as CatalogItem).id : (typeof asset.item_id === 'number' ? asset.item_id : null);
         setSelectedItemId(itemId);
-        
+
         setQuantity(asset.quantity !== null && asset.quantity !== undefined ? String(asset.quantity) : "1");
         setRfidCode(asset.rfid_code || "");
         setBarcode(asset.barcode || "");
         setSerial(asset.serial || "");
-        
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const deptId = asset.department && typeof asset.department === "object" ? (asset.department as any).department_id : (asset.department || null);
+
+        const deptId = asset.department && typeof asset.department === "object" ? (asset.department as unknown as DepartmentRecord).department_id : (typeof asset.department === 'number' ? asset.department : null);
         setSelectedDeptId(deptId);
-        
+
         setCostPerItem(asset.cost_per_item !== null && asset.cost_per_item !== undefined ? String(asset.cost_per_item) : "0");
         setCondition(asset.condition || "Good");
         setLifeSpan(asset.life_span !== null && asset.life_span !== undefined ? String(asset.life_span) : "");
-        setIsActiveWarning(!!asset.is_active_warning);
-        setIsActive(asset.is_active !== false);
-        
+        setIsActiveWarning(Boolean(asset.is_active_warning));
+        setIsActive(Boolean(asset.is_active));
+
         if (asset.date_acquired) {
             setDateAcquired(asset.date_acquired.substring(0, 10));
         } else {
@@ -179,7 +191,7 @@ export default function AssetsModule() {
         // Search text setups
         const matchedItem = items.find(i => i.id === itemId);
         setItemSearch(matchedItem ? matchedItem.item_name : "");
-        
+
         const matchedDept = departments.find(d => d.department_id === deptId);
         setDeptSearch(matchedDept ? matchedDept.department_name : "");
 
@@ -257,20 +269,30 @@ export default function AssetsModule() {
 
     const handleCreateItemSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!newItemName.trim()) {
+        const trimmedItemName = newItemName.trim();
+        if (!trimmedItemName) {
             toast.error("Item name is required.");
+            return;
+        }
+
+        const isDuplicateItem = items.some(item =>
+            item.item_name?.trim().toLowerCase() === trimmedItemName.toLowerCase()
+        );
+
+        if (isDuplicateItem) {
+            toast.error("Item name already exists. Please choose a unique name.");
             return;
         }
 
         try {
             const res = await createItem({
-                item_name: newItemName.trim(),
+                item_name: trimmedItemName,
                 item_type: selectedItemTypeId ? Number(selectedItemTypeId) : undefined,
                 item_classification: selectedItemClassId ? Number(selectedItemClassId) : undefined
             });
 
             if (res.success && res.item) {
-                toast.success(`Successfully registered item "${newItemName.trim()}"!`);
+                toast.success(`Successfully registered item "${trimmedItemName}"!`);
                 setItems(prev => [res.item, ...prev]);
                 setSelectedItemId(res.item.id);
                 setItemSearch(res.item.item_name);
@@ -322,7 +344,7 @@ export default function AssetsModule() {
     const filteredItems = useMemo(() => {
         if (!itemSearch.trim()) return items;
         const search = itemSearch.toLowerCase();
-        return items.filter(i => 
+        return items.filter(i =>
             (i.item_name || "").toLowerCase().includes(search) ||
             (i.item_code || "").toLowerCase().includes(search)
         );
@@ -332,7 +354,7 @@ export default function AssetsModule() {
     const filteredDepts = useMemo(() => {
         if (!deptSearch.trim()) return departments;
         const search = deptSearch.toLowerCase();
-        return departments.filter(d => 
+        return departments.filter(d =>
             d.department_name.toLowerCase().includes(search)
         );
     }, [departments, deptSearch]);
@@ -341,7 +363,7 @@ export default function AssetsModule() {
     const classificationOptions = useMemo(() => itemClassifications.map(c => ({ value: String(c.id), label: c.classification_name })), [itemClassifications]);
 
     return (
-        <div className="flex flex-col gap-6 p-4 max-w-6xl mx-auto">
+        <div className="flex flex-col gap-6 w-full">
             {/* Header section */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
@@ -350,7 +372,7 @@ export default function AssetsModule() {
                     </h2>
                     <p className="text-xs text-muted-foreground mt-1 font-medium">Track operational factory floor machinery, costs, lifespans, and physical conditions.</p>
                 </div>
-                <Button 
+                <Button
                     onClick={handleOpenCreateModal}
                     className="inline-flex items-center gap-1.5 text-xs font-semibold px-4 py-2.5 rounded-lg shadow-md shadow-primary/20"
                 >
@@ -406,8 +428,7 @@ export default function AssetsModule() {
                                 // Get item name
                                 let itemName = "Unknown Item";
                                 if (asset.item_id && typeof asset.item_id === "object") {
-                                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                                    itemName = (asset.item_id as any).item_name || "Unknown Item";
+                                    itemName = (asset.item_id as unknown as CatalogItem).item_name || "Unknown Item";
                                 } else {
                                     const found = items.find(i => i.id === asset.item_id);
                                     itemName = found ? found.item_name : "Unknown Item";
@@ -416,8 +437,7 @@ export default function AssetsModule() {
                                 // Get department name
                                 let deptName = "";
                                 if (asset.department && typeof asset.department === "object") {
-                                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                                    deptName = (asset.department as any).department_name || "";
+                                    deptName = (asset.department as unknown as DepartmentRecord).department_name || "";
                                 } else {
                                     const found = departments.find(d => d.department_id === asset.department);
                                     deptName = found ? found.department_name : "";
@@ -428,9 +448,9 @@ export default function AssetsModule() {
                                         <td className="p-4 pl-6 align-middle">
                                             {asset.item_image ? (
                                                 // eslint-disable-next-line @next/next/no-img-element
-                                                <img 
-                                                    src={asset.item_image} 
-                                                    alt={itemName} 
+                                                <img
+                                                    src={asset.item_image}
+                                                    alt={itemName}
                                                     className="w-10 h-10 object-cover rounded-md border border-border"
                                                 />
                                             ) : (
@@ -469,22 +489,20 @@ export default function AssetsModule() {
                                             )}
                                         </td>
                                         <td className="p-4 align-middle">
-                                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                                                asset.condition === "Good" ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20" :
-                                                asset.condition === "Bad" ? "bg-destructive/10 text-destructive border border-destructive/20" :
-                                                asset.condition === "Under Maintenance" ? "bg-amber-500/10 text-amber-500 border border-amber-500/20" :
-                                                "bg-muted text-muted-foreground border"
-                                            }`}>
+                                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${asset.condition === "Good" ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20" :
+                                                    asset.condition === "Bad" ? "bg-destructive/10 text-destructive border border-destructive/20" :
+                                                        asset.condition === "Under Maintenance" ? "bg-amber-500/10 text-amber-500 border border-amber-500/20" :
+                                                            "bg-muted text-muted-foreground border"
+                                                }`}>
                                                 {asset.condition || "Good"}
                                             </span>
                                         </td>
                                         <td className="p-4 align-middle">
-                                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase ${
-                                                asset.is_active !== false 
-                                                    ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20" 
+                                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase ${Boolean(asset.is_active)
+                                                    ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20"
                                                     : "bg-destructive/10 text-destructive border border-destructive/20"
-                                            }`}>
-                                                {asset.is_active !== false ? "Active" : "Inactive"}
+                                                }`}>
+                                                {Boolean(asset.is_active) ? "Active" : "Inactive"}
                                             </span>
                                         </td>
                                         <td className="p-4 align-middle text-center">
@@ -709,7 +727,7 @@ export default function AssetsModule() {
                                     <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Physical Condition</label>
                                     <select
                                         value={condition || "Good"}
-                                        onChange={e => setCondition(e.target.value as any)}
+                                        onChange={e => setCondition(e.target.value as AssetRecord["condition"])}
                                         className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
                                     >
                                         <option value="Good">Good</option>
@@ -836,7 +854,7 @@ export default function AssetsModule() {
             {/* Sub-modal: Register New Item */}
             {isNewItemModalOpen && (
                 <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in duration-150">
-                    <div className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-sm overflow-hidden flex flex-col animate-in zoom-in-95 duration-150">
+                    <div className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-sm overflow-visible flex flex-col animate-in zoom-in-95 duration-150">
                         {/* Header */}
                         <div className="flex items-center justify-between px-5 py-3.5 border-b bg-muted/10 shrink-0">
                             <h4 className="text-sm font-bold text-foreground">Register New Catalog Item</h4>
@@ -870,6 +888,7 @@ export default function AssetsModule() {
                                     onValueChange={setSelectedItemTypeId}
                                     placeholder="Select or type to create Item Type"
                                     onCreateOption={handleCreateItemType}
+                                    popoverClassName="z-[70]"
                                 />
                             </div>
 
@@ -881,6 +900,7 @@ export default function AssetsModule() {
                                     onValueChange={setSelectedItemClassId}
                                     placeholder="Select or type to create Item Classification"
                                     onCreateOption={handleCreateItemClassification}
+                                    popoverClassName="z-[70]"
                                 />
                             </div>
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { RawMaterial, Supplier } from "../types";
+import { RawMaterial, Supplier, RegisterRawMaterialPayload, PackagingVariant } from "../types";
 import { Search, Layers, ChevronDown, ChevronUp, MapPin, Bookmark, AlertTriangle, Plus, X, Loader2, Info, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { CreatableSelect } from "../../finished-goods/components/CreatableSelect";
@@ -7,8 +7,8 @@ import { CreatableSelect } from "../../finished-goods/components/CreatableSelect
 interface RawMaterialsMasterProps {
     rawMaterials: RawMaterial[];
     suppliers: Supplier[];
-    onRegisterRawMaterial: (productDetails: any, supplierIds: number[], packagingVariants?: any[]) => Promise<boolean>;
-    onUpdateRawMaterial: (productId: number, productDetails: any, supplierIds: number[], packagingVariants?: any[]) => Promise<boolean>;
+    onRegisterRawMaterial: (productDetails: RegisterRawMaterialPayload, supplierIds: number[], packagingVariants?: PackagingVariant[]) => Promise<boolean>;
+    onUpdateRawMaterial: (productId: number, productDetails: RegisterRawMaterialPayload, supplierIds: number[], packagingVariants?: PackagingVariant[]) => Promise<boolean>;
 }
 
 interface UnitOption {
