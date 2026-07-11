@@ -1,8 +1,4 @@
-<<<<<<< Updated upstream
-import { Supplier, IncomingShipment, ShipmentLineItem, ShipmentExpense, RawMaterial, LinkedProduct, PSGCItem } from "../types";
-=======
 import { Supplier, IncomingShipment, ShipmentLineItem, ShipmentExpense, RawMaterial, LinkedProduct, PSGCItem, RegisterRawMaterialPayload, PackagingVariant, BFFCatalogProduct } from "../types";
->>>>>>> Stashed changes
 
 async function handleResponse(res: Response, fallbackMessage: string) {
     if (!res.ok) {
@@ -72,18 +68,6 @@ export async function saveAndAllocateExpenses(
 export async function fetchRawMaterials(): Promise<RawMaterial[]> {
     const res = await fetch("/api/manufacturing/finished-goods/products?limit=250");
     if (!res.ok) throw new Error("Failed to fetch raw materials");
-<<<<<<< Updated upstream
-    const products = await res.json();
-
-    // Filter to exclude finished goods (include only raw materials and packaging items)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const rawItems = products.filter((p: any) => Number(p.product_type) === 389 || Number(p.product_type) === 390);
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return rawItems.map((p: any) => {
-        const parentIdValue = p.parent_id ? (typeof p.parent_id === "object" ? p.parent_id.product_id : p.parent_id) : null;
-        const parentItem = parentIdValue ? products.find((x: any) => Number(x.product_id) === Number(parentIdValue)) : null;
-=======
     const products: BFFCatalogProduct[] = await res.json();
 
     // Filter to exclude finished goods (include only raw materials and packaging items)
@@ -92,31 +76,11 @@ export async function fetchRawMaterials(): Promise<RawMaterial[]> {
     return rawItems.map((p: BFFCatalogProduct) => {
         const parentIdValue = p.parent_id ? (typeof p.parent_id === "object" ? (p.parent_id as { product_id: number }).product_id : p.parent_id) : null;
         const parentItem = parentIdValue ? products.find((x: BFFCatalogProduct) => Number(x.product_id) === Number(parentIdValue)) : null;
->>>>>>> Stashed changes
         return {
             product_id: p.product_id,
             parent_id: parentIdValue ? Number(parentIdValue) : null,
             parent_name: parentItem ? parentItem.product_name : null,
             product_code: p.product_code || `SKU-${p.product_id}`,
-<<<<<<< Updated upstream
-            product_name: p.product_name,
-            description: p.description || "",
-            barcode: p.barcode || "",
-            unit_of_measurement: p.unit_of_measurement ? {
-                unit_id: p.unit_of_measurement.unit_id,
-                unit_shortcut: p.unit_of_measurement.unit_shortcut,
-                unit_name: p.unit_of_measurement.unit_name || p.unit_of_measurement.unit_shortcut
-            } : undefined,
-            unit_of_measurement_count: p.unit_of_measurement_count ? Number(p.unit_of_measurement_count) : null,
-            cost_per_unit: Number(p.cost_per_unit || 0),
-            estimated_unit_cost: Number(p.estimated_unit_cost || 0),
-            density_factor: Number(p.density_factor || 1.0),
-            product_category: p.product_category ? (typeof p.product_category === "object" ? Number(p.product_category.category_id || p.product_category.id) : Number(p.product_category)) : null,
-            product_brand: p.product_brand ? (typeof p.product_brand === "object" ? Number(p.product_brand.brand_id || p.product_brand.id) : Number(p.product_brand)) : null,
-            product_type: p.product_type ? Number(p.product_type) : null,
-            date_added: p.date_added,
-            last_updated: p.last_updated
-=======
             product_name: p.product_name,
             description: p.description || "",
             barcode: p.barcode || "",
@@ -134,7 +98,6 @@ export async function fetchRawMaterials(): Promise<RawMaterial[]> {
             product_type: p.product_type ? Number(p.product_type) : null,
             date_added: p.date_added,
             last_updated: p.last_updated
->>>>>>> Stashed changes
         };
     });
 }

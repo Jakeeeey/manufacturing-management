@@ -124,8 +124,6 @@ export interface PSGCItem {
     name: string;
 }
 
-<<<<<<< Updated upstream
-=======
 export interface RegisterRawMaterialPayload {
     product_name: string;
     product_code: string;
@@ -142,7 +140,6 @@ export interface RegisterRawMaterialPayload {
     unit_of_measurement_count?: number | null;
 }
 
->>>>>>> Stashed changes
 // ─── Directus API-layer types (used by API route helpers) ───────────────────
 
 export interface DirectusSupplier {
