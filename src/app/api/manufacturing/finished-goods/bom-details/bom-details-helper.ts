@@ -35,7 +35,40 @@ export async function saveActiveBOMDetails(versionId: number, expectedYield: num
     }
 }
 
-export async function syncRoutesAndBOM(versionId: number, routes: any[]): Promise<boolean> {
+export interface SyncBOMItem {
+    id?: number | string;
+    product_id?: number;
+    productId?: number;
+    quantity_required?: number;
+    quantity?: number;
+    unit_of_measurement?: string | number | null;
+    uomId?: number | null;
+    uom?: string | null;
+    wastage_factor_percentage?: number;
+    wastagePercent?: number;
+    cost_per_unit?: number;
+    is_foreign?: boolean;
+}
+
+export interface SyncRouteStep {
+    route_id?: number | string;
+    id?: number | string;
+    work_center_id?: number | null;
+    operation_id?: number | null;
+    operationId?: number | null;
+    sequence_order?: number;
+    sequence?: number;
+    setup_time_hours?: number;
+    run_time_hours?: number;
+    durationHours?: number;
+    estimated_labor_cost?: number;
+    laborFlatRate?: number;
+    qa_template_id?: number | null;
+    bom_items?: SyncBOMItem[];
+    ingredients?: SyncBOMItem[];
+}
+
+export async function syncRoutesAndBOM(versionId: number, routes: SyncRouteStep[]): Promise<boolean> {
     try {
         // 1. Fetch existing routes in DB for this version
         const getUrl = `${DIRECTUS_URL}/items/manufacturing_routes?filter[version_id][_eq]=${versionId}&limit=-1`;
@@ -104,7 +137,7 @@ export async function syncRoutesAndBOM(versionId: number, routes: any[]): Promis
             const resBomGet = await fetch(bomsGetUrl, { headers, cache: "no-store" });
             const existingBoms: { id: number }[] = resBomGet.ok ? (await resBomGet.json()).data || [] : [];
 
-            const uiBomIds = new Set(uiBomItems.map((b: any) => String(b.id || "")).filter(Boolean));
+            const uiBomIds = new Set(uiBomItems.map((b: SyncBOMItem) => String(b.id || "")).filter(Boolean));
             const bomsToDelete = existingBoms.filter(b => !uiBomIds.has(String(b.id)));
 
             // Delete removed BOM items

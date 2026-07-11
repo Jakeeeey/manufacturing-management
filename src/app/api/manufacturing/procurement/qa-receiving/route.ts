@@ -75,8 +75,13 @@ export async function GET(request: Request) {
                 }
             }
 
+            interface DirectusBranch {
+                id: number;
+                branch_name: string;
+                branch_code?: string;
+            }
             const poMap: Record<string, DirectusPurchaseOrderMin> = {};
-            const branchMap: Record<number, any> = {};
+            const branchMap: Record<number, DirectusBranch> = {};
             if (rawLogs.length > 0) {
                 const [poRes, branchRes] = await Promise.all([
                     fetch(`${DIRECTUS_URL}/items/purchase_order?limit=-1&fields=purchase_order_id,purchase_order_no,reference,date_received,date_encoded,datetime`, { headers }),
@@ -89,8 +94,8 @@ export async function GET(request: Request) {
                         poMap[String(po.purchase_order_no)] = po;
                     }
                 });
-                const branchList = branchRes.ok ? (await branchRes.json()).data || [] : [];
-                branchList.forEach((b: any) => {
+                const branchList = (branchRes.ok ? (await branchRes.json()).data || [] : []) as DirectusBranch[];
+                branchList.forEach((b: DirectusBranch) => {
                     branchMap[Number(b.id)] = b;
                 });
             }

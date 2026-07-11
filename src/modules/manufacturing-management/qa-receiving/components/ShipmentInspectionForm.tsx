@@ -216,6 +216,7 @@ export default function ShipmentInspectionForm({
                                     {/* Directus Product Image */}
                                     <div className="h-16 w-16 rounded-xl bg-background border flex items-center justify-center shrink-0 overflow-hidden shadow-xs">
                                         {prod.product_image ? (
+                                            // eslint-disable-next-line @next/next/no-img-element
                                             <img
                                                 src={`${process.env.NEXT_PUBLIC_DIRECTUS_URL || "http://vtc:8074"}/assets/${prod.product_image}`}
                                                 alt={prod.product_name}
@@ -252,7 +253,7 @@ export default function ShipmentInspectionForm({
                                      const childUom = line.product_id?.unit_of_measurement?.unit_shortcut || "PCS";
                                      const parentObj = line.product_id?.parent_id;
                                      const parentUom = parentObj && typeof parentObj === "object" 
-                                         ? (parentObj as any).unit_of_measurement?.unit_shortcut 
+                                         ? parentObj.unit_of_measurement?.unit_shortcut 
                                          : null;
                                      const baseUom = parentUom || childUom;
 

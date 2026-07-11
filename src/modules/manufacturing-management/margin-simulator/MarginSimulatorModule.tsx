@@ -4,6 +4,7 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
 import { Sliders, RefreshCw, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { fetchProducts, fetchVersions, fetchBOMDetails } from "@/modules/manufacturing-management/finished-goods/services/finished-goods-api";
+import { RouteStep, RouteBOMItem } from "@/modules/manufacturing-management/finished-goods/types";
 
 // Re-using mock product model internally
 interface BOMItem {
@@ -292,41 +293,54 @@ export default function MarginSimulatorModule() {
                 }
                 // Fetch details for the first version (latest/active version)
                 const activeVersion = versions[0];
-                const details = await fetchBOMDetails(Number(currentProd!.id), activeVersion.id);
+                const details = await fetchBOMDetails(Number(currentProd!.id), activeVersion.version_id);
                 if (details) {
-                    const mappedBom: BOMItem[] = details.ingredients.map(ing => ({
-                        id: ing.id,
-                        productId: ing.productId,
-                        name: ing.name,
-                        type: ing.type,
-                        quantity: ing.quantity,
-                        uom: ing.uom,
-                        uomId: ing.uomId,
-                        wastagePercent: ing.wastagePercent,
-                        landedCost: ing.landedCost,
-                        foreignSourced: ing.isForeign || false,
-                        isForeign: ing.isForeign
+                    const ingredients = details.routes?.flatMap((r: RouteStep) => r.bom_items || []) || [];
+                    const mappedBom: BOMItem[] = ingredients.map((ing: RouteBOMItem) => ({
+                        id: String(ing.id),
+                        productId: ing.product_id,
+                        name: ing.product_name || "Unknown",
+                        type: "raw_material",
+                        quantity: ing.quantity_required,
+                        uom: String(ing.unit_of_measurement || ""),
+                        uomId: ing.uom_id || undefined,
+                        wastagePercent: ing.wastage_factor_percentage,
+                        landedCost: ing.cost_per_unit || 0,
+                        foreignSourced: ing.is_foreign || false,
+                        isForeign: ing.is_foreign
                     }));
-                    const calculatedRoutingCost = details.routings.reduce((sum, r) => {
+
+                    const mappedRoutings = details.routes?.map((r: RouteStep) => ({
+                        id: String(r.route_id),
+                        sequence: r.sequence_order,
+                        name: `Step ${r.sequence_order}`,
+                        operationId: r.operation_id || undefined,
+                        laborFlatRate: r.estimated_labor_cost,
+                        machineHourlyRate: 0,
+                        durationHours: r.run_time_hours,
+                        requiresQA: !!r.qa_template_id
+                    })) || [];
+
+                    const calculatedRoutingCost = mappedRoutings.reduce((sum, r) => {
                         return sum + (Number(r.laborFlatRate || 0) + (Number(r.machineHourlyRate || 0) * Number(r.durationHours || 0)));
                     }, 0);
 
                     // Update the product's details in the products list state
                     setProducts(prev => prev.map(p => p.id === currentProd!.id ? {
                         ...p,
-                        expectedYieldPercent: Number(details.expectedYieldPercent) || 100,
+                        expectedYieldPercent: Number(details.expected_yield_percentage) || 100,
                         bom: mappedBom,
                         routingCost: calculatedRoutingCost,
-                        bomId: details.bomId,
-                        versionId: details.versionId,
-                        versionName: details.version,
-                        routings: details.routings,
-                        overheads: details.overheads || []
+                        bomId: details.version_id,
+                        versionId: details.version_id,
+                        versionName: details.version_name,
+                        routings: mappedRoutings,
+                        overheads: []
                     } : p));
 
                     applySandboxState(
                         mappedBom,
-                        Number(details.expectedYieldPercent) || 100,
+                        Number(details.expected_yield_percentage) || 100,
                         currentProd!.targetSellingPrice
                     );
                 } else {

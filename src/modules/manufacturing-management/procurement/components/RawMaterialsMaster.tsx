@@ -64,7 +64,7 @@ export default function RawMaterialsMaster({
         setPackagingVariants([...packagingVariants, { uomId: formUom || "", count: "1", codeSuffix: "" }]);
     };
 
-    const handleUpdateVariant = (index: number, field: string, value: any) => {
+    const handleUpdateVariant = (index: number, field: string, value: string | number) => {
         const copy = [...packagingVariants];
         copy[index] = { ...copy[index], [field]: value };
         setPackagingVariants(copy);

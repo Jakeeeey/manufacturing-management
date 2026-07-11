@@ -200,7 +200,7 @@ export async function PATCH(request: Request) {
             // 1. Get all child products of this parent
             const childrenRes = await fetch(`${DIRECTUS_URL}/items/products?filter[parent_id][_eq]=${productId}&fields=product_id&limit=-1`, { headers });
             const children = childrenRes.ok ? (await childrenRes.json()).data || [] : [];
-            const allProductIdsToSync = [Number(productId), ...children.map((c: any) => Number(c.product_id))];
+            const allProductIdsToSync = [Number(productId), ...children.map((c: { product_id: number | string }) => Number(c.product_id))];
 
             // 2. Delete old links
             for (const pid of allProductIdsToSync) {

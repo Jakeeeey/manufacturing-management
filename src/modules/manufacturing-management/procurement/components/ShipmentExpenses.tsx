@@ -281,15 +281,14 @@ export default function ShipmentExpenses({
                                 </div>
 
                                 <div className="space-y-2">
-{/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                                    {allocationForm.expenses.map((exp: any, idx: number) => (
+                                    {allocationForm.expenses.map((exp: Partial<ShipmentExpense>, idx: number) => (
                                         <div key={idx} className="flex gap-3 items-center">
                                             <div className="flex-1">
                                                 <CreatableSelect
                                                     options={overheadTypes
                                                         .filter((ot) => {
                                                             // Filter out already selected expense types on other rows
-                                                            return !allocationForm.expenses.some((e: any, i: number) => i !== idx && String(e.overhead_id) === String(ot.id));
+                                                            return !allocationForm.expenses.some((e: Partial<ShipmentExpense>, i: number) => i !== idx && String(e.overhead_id) === String(ot.id));
                                                         })
                                                         .map((ot) => ({
                                                             value: String(ot.id),

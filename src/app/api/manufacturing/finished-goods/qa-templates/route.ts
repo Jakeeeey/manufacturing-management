@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { DIRECTUS_URL, headers } from "@/app/api/manufacturing/directus-api";
+import { QATemplate, QAParameter } from "@/modules/manufacturing-management/finished-goods/types";
 
 export async function GET() {
     try {
@@ -14,15 +15,14 @@ export async function GET() {
         const templatesJson = await templatesRes.json();
         const parametersJson = await parametersRes.json();
 
-        const templates = templatesJson.data || [];
-        const parameters = parametersJson.data || [];
+        const templates = (templatesJson.data || []) as QATemplate[];
+        const parameters = (parametersJson.data || []) as QAParameter[];
 
         // Group parameters by template_id
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const templatesWithParams = templates.map((tpl: any) => {
+        const templatesWithParams = templates.map((tpl) => {
             return {
                 ...tpl,
-                parameters: parameters.filter((param: any) => param.template_id === tpl.template_id)
+                parameters: parameters.filter((param) => param.template_id === tpl.template_id)
             };
         });
 

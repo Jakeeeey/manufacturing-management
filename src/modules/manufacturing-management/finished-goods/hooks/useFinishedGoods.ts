@@ -212,7 +212,7 @@ export function useFinishedGoods(initialTab: string = "details") {
                 const finishedGoods = data.filter((p: BFFCatalogProduct) => Number(p.product_type) === 388);
                 const mapped: Product[] = finishedGoods.map((p: BFFCatalogProduct) => {
                     const parentId = p.parent_id && typeof p.parent_id === "object"
-                        ? Number((p.parent_id as any).product_id)
+                        ? Number(p.parent_id.product_id)
                         : (p.parent_id ? Number(p.parent_id) : null);
                     return {
                         id: String(p.product_id),
@@ -276,7 +276,7 @@ export function useFinishedGoods(initialTab: string = "details") {
                 const list = await fetchVersions(numericId);
                 setVersions(list);
                 if (list && list.length > 0) {
-                    const activeVer = list.find((v: any) => v.is_active || v.status === "Active");
+                    const activeVer = list.find((v) => v.is_active || v.status === "Active");
                     setSelectedVersionId(activeVer ? activeVer.version_id : list[0].version_id);
                 } else {
                     setSelectedVersionId(null);
@@ -384,7 +384,7 @@ export function useFinishedGoods(initialTab: string = "details") {
                     setEditedDetails({
                         ...baseDetails,
                         expectedYieldPercent: versionObj.expected_yield_percentage,
-                        customOverhead: (versionObj as any).custom_overhead || 0
+                        customOverhead: versionObj.custom_overhead || 0
                     });
 
                     // Format routes as ingredients and routings for older tabs
@@ -571,7 +571,7 @@ export function useFinishedGoods(initialTab: string = "details") {
                 setAllCatalogProducts(dataList);
                 const list: Product[] = dataList.map((p: BFFCatalogProduct) => {
                      const parentId = p.parent_id && typeof p.parent_id === "object"
-                         ? Number((p.parent_id as any).product_id)
+                         ? Number(p.parent_id.product_id)
                          : (p.parent_id ? Number(p.parent_id) : null);
                      return {
                         id: String(p.product_id),
@@ -607,7 +607,7 @@ export function useFinishedGoods(initialTab: string = "details") {
                 const vList = await fetchVersions(res.productId);
                 setVersions(vList);
                 if (vList && vList.length > 0) {
-                    const activeVer = vList.find((v: any) => v.is_active);
+                    const activeVer = vList.find((v) => v.is_active);
                     setSelectedVersionId(activeVer ? activeVer.version_id : vList[0].version_id);
                 }
 

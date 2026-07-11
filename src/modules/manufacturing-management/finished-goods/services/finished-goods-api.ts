@@ -4,18 +4,13 @@ import {
     Category, 
     Unit, 
     ProductVersion, 
-    BOMItem, 
-    RoutingStep,
-    ProductOverhead,
     BFFCatalogProduct,
     ProductClass,
     ProductSegment,
     ProductSection,
     WorkCenter,
     QATemplate,
-    QAParameter,
     RouteStep,
-    RouteBOMItem,
     AssetRecord,
     DepartmentRecord
 } from "../types";
@@ -400,6 +395,7 @@ export async function fetchItems(): Promise<any[]> {
     return res.json();
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function createItem(item: { item_name: string; item_type?: number; item_classification?: number }): Promise<{ success: boolean; item: any }> {
     const res = await fetch("/api/manufacturing/finished-goods/items", {
         method: "POST",
@@ -424,6 +420,7 @@ export async function fetchItemClassifications(): Promise<any[]> {
     return res.json();
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function createItemType(name: string): Promise<{ success: boolean; type: any }> {
     const res = await fetch("/api/manufacturing/finished-goods/item-types", {
         method: "POST",
@@ -434,6 +431,7 @@ export async function createItemType(name: string): Promise<{ success: boolean; 
     return res.json();
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function createItemClassification(name: string): Promise<{ success: boolean; classification: any }> {
     const res = await fetch("/api/manufacturing/finished-goods/item-classifications", {
         method: "POST",

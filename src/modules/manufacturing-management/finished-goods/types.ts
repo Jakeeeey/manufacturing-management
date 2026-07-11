@@ -172,6 +172,7 @@ export interface ProductVersion {
     valid_to?: string | null;
     is_active?: boolean; // legacy/compatibility
     routes?: RouteStep[];
+    custom_overhead?: number | null;
 }
 
 export interface RouteStep {
@@ -202,6 +203,8 @@ export interface RouteBOMItem {
     product_code?: string;
     cost_per_unit?: number;
     is_foreign?: boolean;
+    uom_id?: number | null;
+    type?: "raw_material" | "packaging" | "sub_assembly" | "by_product" | "finished_good";
 }
 
 
@@ -225,7 +228,7 @@ export interface BFFCatalogProduct {
     density_factor?: number | string | null;
     price_per_unit?: number | string | null;
     cost_per_unit?: number | string | null;
-    parent_id?: number | null;
+    parent_id?: number | { product_id: number | string } | null;
     product_brand?: number | null;
     product_category?: number | null;
     product_class?: number | null;

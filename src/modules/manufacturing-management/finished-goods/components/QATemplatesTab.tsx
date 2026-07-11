@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
-import { Plus, Trash2, Search, Check, Shield, AlertCircle, Save } from "lucide-react";
+import { Plus, Trash2, Search, Shield, AlertCircle, Save } from "lucide-react";
 import { QATemplate, QAParameter, Unit } from "../types";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -140,7 +140,7 @@ export const QATemplatesTab: React.FC<QATemplatesTabProps> = ({
                     target_value: p.target_value,
                     uom_id: p.uom_id || null,
                     is_critical: !!p.is_critical
-                })) as any
+                })) as unknown as QAParameter[]
             };
 
             if (isCreatingNew) {

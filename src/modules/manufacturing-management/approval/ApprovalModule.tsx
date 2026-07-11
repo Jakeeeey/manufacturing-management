@@ -106,8 +106,9 @@ export default function ApprovalModule() {
             }
             toast.success("Purchase Order rejected successfully.");
             window.location.reload();
-        } catch (e: any) {
-            toast.error(e.message || "Failed to reject Purchase Order.");
+        } catch (e) {
+            const err = e instanceof Error ? e : new Error(String(e));
+            toast.error(err.message || "Failed to reject Purchase Order.");
         } finally {
             setIsRejecting(false);
         }

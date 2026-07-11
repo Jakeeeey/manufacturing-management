@@ -11,6 +11,7 @@ import ShipmentExpenses from "./components/ShipmentExpenses";
 import RawMaterialsMaster from "./components/RawMaterialsMaster";
 import { useProcurement } from "./hooks/useProcurement";
 import { CreatableSelect } from "../finished-goods/components/CreatableSelect";
+import { IncomingShipment } from "./types";
 
 interface ProcurementModuleProps {
     initialTab?: string;
@@ -114,8 +115,8 @@ export default function ProcurementModule({ initialTab = "suppliers" }: Procurem
                                 <div className="space-y-1.5 max-w-md flex flex-col shrink-0">
                                     <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block">Active Cargo Shipment</label>
                                     <CreatableSelect
-                                        options={shipments.map(s => {
-                                            const poNo = (s as any).purchase_order_no ? ` / ${(s as any).purchase_order_no}` : "";
+                                        options={shipments.map((s: IncomingShipment) => {
+                                            const poNo = s.purchase_order_no ? ` / ${s.purchase_order_no}` : "";
                                             return {
                                                 value: String(s.shipment_id),
                                                 label: `BL/PO: ${s.reference_number}${poNo} (${s.status})`

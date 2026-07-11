@@ -7,7 +7,6 @@ import {
     Plus, 
     Save, 
     Layers, 
-    Activity, 
     FileText, 
     Sliders,
     AlertCircle,
@@ -86,12 +85,9 @@ export default function FinishedGoodsModule() {
         editedRoutings,
         setEditedRoutings,
         editedOverheads,
-        setEditedOverheads,
         hasUnsavedChanges,
         setHasUnsavedChanges,
-        overheadTypes,
         operationTypes,
-        setOperationTypes,
         simulatedForexRate,
         setSimulatedForexRate,
         handleRegisterProduct,
@@ -218,20 +214,6 @@ export default function FinishedGoodsModule() {
     const handleDetailChange = (field: keyof Product, value: unknown) => {
         setHasUnsavedChanges(true);
         setEditedDetails(prev => ({ ...prev, [field]: value }));
-    };
-
-    const handleBOMChange = <K extends keyof BOMItem>(itemId: string, field: K, value: BOMItem[K]) => {
-        setHasUnsavedChanges(true);
-        setEditedBOM(prev => prev.map(item => 
-            item.id === itemId ? { ...item, [field]: value } : item
-        ));
-    };
-
-    const handleRoutingChange = <K extends keyof RoutingStep>(stepId: string, field: K, value: RoutingStep[K]) => {
-        setHasUnsavedChanges(true);
-        setEditedRoutings(prev => prev.map(step => 
-            step.id === stepId ? { ...step, [field]: value } : step
-        ));
     };
 
     // Importation Derived Calculations
@@ -382,51 +364,6 @@ export default function FinishedGoodsModule() {
     const simulatedNetMarginPercent = useMemo(() => {
         return simulationTargetPrice > 0 ? (simulatedNetProfit / simulationTargetPrice) * 100 : 0;
     }, [simulationTargetPrice, simulatedNetProfit]);
-
-    const addBOMItem = () => {
-        const newItem: BOMItem = {
-            id: `bom-new-${Date.now()}`,
-            productId: undefined,
-            name: "Select Material",
-            type: "raw_material",
-            quantity: 0,
-            uom: "",
-            uomId: undefined,
-            wastagePercent: 0,
-            landedCost: 0,
-            densityFactor: 1.0
-        };
-        setHasUnsavedChanges(true);
-        setEditedBOM(prev => [...prev, newItem]);
-        setSimulationPriceOverrides(prev => ({ ...prev, [newItem.id]: newItem.landedCost }));
-        toast.success("New raw material slot added to recipe");
-    };
-
-    const deleteBOMItem = (id: string) => {
-        setHasUnsavedChanges(true);
-        setEditedBOM(prev => prev.filter(item => item.id !== id));
-        toast.info("Material slot removed");
-    };
-
-    const addRoutingStep = () => {
-        const newStep: RoutingStep = {
-            id: `rt-new-${Date.now()}`,
-            sequence: "" as unknown as number,
-            name: "",
-            laborFlatRate: 0.0,
-            machineHourlyRate: 0.0,
-            durationHours: 0.0
-        };
-        setHasUnsavedChanges(true);
-        setEditedRoutings(prev => [...prev, newStep]);
-        toast.success("New manufacturing routing step added");
-    };
-
-    const deleteRoutingStep = (id: string) => {
-        setHasUnsavedChanges(true);
-        setEditedRoutings(prev => prev.filter(step => step.id !== id));
-        toast.info("Routing step removed");
-    };
 
     const treeProducts = useMemo(() => {
         const childrenMap = new Map<string, Product[]>();

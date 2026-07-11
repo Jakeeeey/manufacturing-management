@@ -26,7 +26,7 @@ export interface Product {
         unit_name: string;
     } | null;
     unit_of_measurement_count?: number | null;
-    parent_id?: number | null;
+    parent_id?: number | { unit_of_measurement?: { unit_shortcut: string } | null } | null;
     product_image?: string | null;
 }
 

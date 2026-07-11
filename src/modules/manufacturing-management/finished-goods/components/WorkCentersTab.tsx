@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Plus, Check, X, Edit, Settings, Clock, Activity, DollarSign } from "lucide-react";
+import { Plus, Check, X, Edit, Activity, DollarSign } from "lucide-react";
 import { WorkCenter } from "../types";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
