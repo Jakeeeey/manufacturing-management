@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
-import { Plus, Search, Edit, Trash2, Settings, Check, LayoutGrid, Image as ImageIcon } from "lucide-react";
+import { Plus, Search, Edit, Trash2, Settings, Check, LayoutGrid, Image as ImageIcon, Upload, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { AssetRecord, DepartmentRecord } from "@/modules/manufacturing-management/finished-goods/types";
 import {
@@ -19,6 +19,7 @@ import {
 } from "@/modules/manufacturing-management/finished-goods/services/finished-goods-api";
 import { Button } from "@/components/ui/button";
 import { CreatableSelect } from "../finished-goods/components/CreatableSelect";
+import { uploadFile } from "@/modules/manufacturing-management/production-workflow/services/production-api";
 
 // Added specific types to replace `any`
 export interface CatalogItem {
@@ -78,6 +79,8 @@ export default function AssetsModule() {
     const [selectedItemClassId, setSelectedItemClassId] = useState("");
     const [itemTypes, setItemTypes] = useState<ItemType[]>([]);
     const [itemClassifications, setItemClassifications] = useState<ItemClassification[]>([]);
+    const [uploadingImage, setUploadingImage] = useState(false);
+    const [imageFilename, setImageFilename] = useState("");
 
     const loadData = async () => {
         setLoading(true);
@@ -143,6 +146,7 @@ export default function AssetsModule() {
     const handleOpenCreateModal = () => {
         setEditingAsset(null);
         setItemImage("");
+        setImageFilename("");
         setSelectedItemId(null);
         setQuantity("1");
         setRfidCode("");
@@ -164,6 +168,7 @@ export default function AssetsModule() {
     const handleOpenEditModal = (asset: AssetRecord) => {
         setEditingAsset(asset);
         setItemImage(asset.item_image || "");
+        setImageFilename("");
 
         const itemId = asset.item_id && typeof asset.item_id === "object" ? (asset.item_id as unknown as CatalogItem).id : (typeof asset.item_id === 'number' ? asset.item_id : null);
         setSelectedItemId(itemId);
@@ -275,6 +280,16 @@ export default function AssetsModule() {
             return;
         }
 
+        if (!selectedItemTypeId) {
+            toast.error("Item Type is required.");
+            return;
+        }
+
+        if (!selectedItemClassId) {
+            toast.error("Item Classification is required.");
+            return;
+        }
+
         const isDuplicateItem = items.some(item =>
             item.item_name?.trim().toLowerCase() === trimmedItemName.toLowerCase()
         );
@@ -330,6 +345,30 @@ export default function AssetsModule() {
         } catch (err) {
             console.error("Failed to create item classification:", err);
             toast.error("Failed to create item classification");
+        }
+    };
+
+    const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setUploadingImage(true);
+        try {
+            const formData = new FormData();
+            formData.append("file", file);
+            const fileData = await uploadFile(formData);
+            const fileId = fileData?.data?.id || fileData?.id;
+            if (fileId) {
+                const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "";
+                setItemImage(`${baseUrl}/assets/${fileId}`);
+                setImageFilename(file.name);
+                toast.success("Image uploaded successfully");
+            }
+        } catch (err) {
+            console.error("Failed to upload image:", err);
+            toast.error("Failed to upload image");
+        } finally {
+            setUploadingImage(false);
+            e.target.value = "";
         }
     };
 
@@ -490,17 +529,17 @@ export default function AssetsModule() {
                                         </td>
                                         <td className="p-4 align-middle">
                                             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${asset.condition === "Good" ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20" :
-                                                    asset.condition === "Bad" ? "bg-destructive/10 text-destructive border border-destructive/20" :
-                                                        asset.condition === "Under Maintenance" ? "bg-amber-500/10 text-amber-500 border border-amber-500/20" :
-                                                            "bg-muted text-muted-foreground border"
+                                                asset.condition === "Bad" ? "bg-destructive/10 text-destructive border border-destructive/20" :
+                                                    asset.condition === "Under Maintenance" ? "bg-amber-500/10 text-amber-500 border border-amber-500/20" :
+                                                        "bg-muted text-muted-foreground border"
                                                 }`}>
                                                 {asset.condition || "Good"}
                                             </span>
                                         </td>
                                         <td className="p-4 align-middle">
                                             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase ${Boolean(asset.is_active)
-                                                    ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20"
-                                                    : "bg-destructive/10 text-destructive border border-destructive/20"
+                                                ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20"
+                                                : "bg-destructive/10 text-destructive border border-destructive/20"
                                                 }`}>
                                                 {Boolean(asset.is_active) ? "Active" : "Inactive"}
                                             </span>
@@ -760,14 +799,17 @@ export default function AssetsModule() {
                                     />
                                 </div>
                                 <div className="space-y-1">
-                                    <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Image URL / Path</label>
-                                    <input
-                                        type="text"
-                                        placeholder="e.g. /images/soy-press.jpg"
-                                        value={itemImage}
-                                        onChange={e => setItemImage(e.target.value)}
-                                        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
-                                    />
+                                    <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Image Upload</label>
+                                    <label className={`w-full flex items-center h-[38px] rounded-lg border border-border bg-background overflow-hidden cursor-pointer focus-within:ring-1 focus-within:ring-primary transition-all ${uploadingImage ? "opacity-50 cursor-not-allowed" : ""}`}>
+                                        <div className="flex items-center justify-center gap-2 h-full px-3 bg-muted border-r border-border hover:bg-muted/80 transition-colors shrink-0">
+                                            {uploadingImage ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                                            <span className="text-xs font-semibold">{uploadingImage ? "Uploading..." : ""}</span>
+                                        </div>
+                                        <span className="text-sm text-muted-foreground truncate px-3 flex-1">
+                                            {imageFilename ? imageFilename : (itemImage ? "Image attached" : "No file chosen")}
+                                        </span>
+                                        <input type="file" accept="image/*" className="hidden" disabled={uploadingImage} onChange={handleImageUpload} />
+                                    </label>
                                 </div>
                             </div>
 
@@ -869,7 +911,7 @@ export default function AssetsModule() {
                         {/* Body Form */}
                         <form onSubmit={handleCreateItemSubmit} className="p-5 space-y-4 text-xs">
                             <div className="space-y-1">
-                                <label className="text-[10px] font-bold text-muted-foreground uppercase block mb-1">Item Name <span className="text-red-500">*</span></label>
+                                <label className="text-[10px] font-bold text-muted-foreground uppercase block mb-1">Item Name <span className="text-destructive">*</span></label>
                                 <input
                                     type="text"
                                     required
@@ -881,8 +923,9 @@ export default function AssetsModule() {
                             </div>
 
                             <div className="space-y-1">
-                                <label className="text-[10px] font-bold text-muted-foreground uppercase block mb-1">Item Type</label>
+                                <label className="text-[10px] font-bold text-muted-foreground uppercase block mb-1">Item Type <span className="text-destructive">*</span></label>
                                 <CreatableSelect
+                                    variant="inline"
                                     options={typeOptions}
                                     value={selectedItemTypeId}
                                     onValueChange={setSelectedItemTypeId}
@@ -893,8 +936,9 @@ export default function AssetsModule() {
                             </div>
 
                             <div className="space-y-1">
-                                <label className="text-[10px] font-bold text-muted-foreground uppercase block mb-1">Item Classification</label>
+                                <label className="text-[10px] font-bold text-muted-foreground uppercase block mb-1">Item Classification <span className="text-destructive">*</span></label>
                                 <CreatableSelect
+                                    variant="inline"
                                     options={classificationOptions}
                                     value={selectedItemClassId}
                                     onValueChange={setSelectedItemClassId}

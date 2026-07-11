@@ -1,0 +1,13 @@
+Fix: Workstation Management and Asset & Equipment Management
+
+1. Work Station Management
+	a. In the Table, Add comma to the amounts and only 2 decimal points must show.
+	b. In the Table, Add comma to the "Capacity/Hour" values and remove the decimal points
+	c. In the Table, the Department column, some workstation who have designated department are not showing in the table.
+	d. In the "Edit Work Station" modal, remove the decimal points in the "Overhead Cost/Hour" field if the value doesn't have them.
+	e. In the "Edit Work Station" modal, remove the decimal points in the "Capacity / Hours (Units)" field.
+    
+2. Asset & Equipment Management
+	a. In the "Register New Catalog Item" modal, the Search/typable should be in the "Item Type" and "Item Classification" field itself and not in the popover dropdown.
+	b. In the "Register Asset / Equipment" and "Edit Asset / Equipment", the "IMAGE URL / PATH" field is currently a typable field instead of a button that allows the user to upload an image.
+	c. In the "Register New Catalog Item" make sure that the "Item Type" and "Item Classification" is also required when creating an item. Also add a red asterisk to the labels.
