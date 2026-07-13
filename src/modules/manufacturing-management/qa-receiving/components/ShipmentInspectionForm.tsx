@@ -289,7 +289,11 @@ export default function ShipmentInspectionForm({
                                                          placeholder="Manually count"
                                                          value={row.receivedQty}
                                                          onChange={e => handleUpdateRow(line.line_id, "receivedQty", e.target.value === "" ? "" : Number(e.target.value))}
-                                                         className="w-full h-10 border bg-background text-center text-xs font-semibold text-foreground outline-none focus:ring-0"
+                                                         className={`w-full h-10 border text-center text-xs font-semibold text-foreground outline-none focus:ring-0 transition-all ${
+                                                             row.receivedQty !== "" && receivedVal > orderedVal
+                                                                 ? "border-red-500 bg-red-500/5 focus:bg-red-500/5"
+                                                                 : "border-border bg-background"
+                                                         }`}
                                                      />
                                                      <button
                                                          type="button"
@@ -299,6 +303,11 @@ export default function ShipmentInspectionForm({
                                                          <Plus className="h-3.5 w-3.5" />
                                                      </button>
                                                  </div>
+                                                 {row.receivedQty !== "" && receivedVal > orderedVal && (
+                                                     <span className="text-[9px] text-red-500 font-extrabold block mt-1 bg-red-500/5 px-2 py-0.5 rounded border border-red-500/10 w-fit select-none">
+                                                         Warning: Exceeds Ordered Qty ({orderedVal})
+                                                     </span>
+                                                 )}
                                                  {receivedEquiv > 0 && convFactor !== 1 && (
                                                      <span className="text-[9px] text-primary font-bold block mt-1 bg-primary/5 px-2 py-0.5 rounded border border-primary/10 w-fit select-none">
                                                          = {receivedEquiv.toLocaleString()} {baseUom}

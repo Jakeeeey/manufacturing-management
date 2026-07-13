@@ -42,7 +42,6 @@ export default function RawMaterialsMaster({
     const [units, setUnits] = useState<UnitOption[]>([]);
     const [loadingUnits, setLoadingUnits] = useState(false);
     const [brandsList, setBrandsList] = useState<SelectOption[]>([]);
-    const [categoriesList, setCategoriesList] = useState<SelectOption[]>([]);
     const [showValidationErrors, setShowValidationErrors] = useState(false);
 
     // Form fields
@@ -52,7 +51,6 @@ export default function RawMaterialsMaster({
     const [formUom, setFormUom] = useState<number | "">("");
     const [formDensity, setFormDensity] = useState("1.000");
     const [formBrand, setFormBrand] = useState("");
-    const [formCategory, setFormCategory] = useState("");
     const [formProductType, setFormProductType] = useState<number>(389);
     const [formParentId, setFormParentId] = useState<string>("");
     const [formUomCount, setFormUomCount] = useState<string>("1");
@@ -81,10 +79,9 @@ export default function RawMaterialsMaster({
         
         Promise.all([
             fetch("/api/manufacturing/finished-goods/units").then(res => res.json()),
-            fetch("/api/manufacturing/finished-goods/brands").then(res => res.json()),
-            fetch("/api/manufacturing/finished-goods/categories").then(res => res.json())
+            fetch("/api/manufacturing/finished-goods/brands").then(res => res.json())
         ])
-        .then(([unitsData, brandsData, categoriesData]) => {
+        .then(([unitsData, brandsData]) => {
             setUnits(unitsData || []);
             // Only auto-select UOM if in Register mode
             if (!editingItem && unitsData && unitsData.length > 0) {
@@ -92,8 +89,6 @@ export default function RawMaterialsMaster({
             }
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             setBrandsList((brandsData || []).map((b: any) => ({ value: String(b.brand_id), label: b.brand_name })));
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            setCategoriesList((categoriesData || []).map((c: any) => ({ value: String(c.category_id), label: c.category_name })));
         })
         .catch(err => {
             console.error("Failed to load raw material metadata:", err);
@@ -113,7 +108,6 @@ export default function RawMaterialsMaster({
             setFormDesc("");
             setFormDensity("1.000");
             setFormBrand("");
-            setFormCategory("");
             setFormProductType(389);
             setFormParentId("");
             setFormUomCount("1");
@@ -128,7 +122,6 @@ export default function RawMaterialsMaster({
             setFormUom(editingItem.unit_of_measurement?.unit_id || "");
             setFormDensity(String(editingItem.density_factor || "1.000"));
             setFormBrand(editingItem.product_brand ? String(editingItem.product_brand) : "");
-            setFormCategory(editingItem.product_category ? String(editingItem.product_category) : "");
             setFormProductType(editingItem.product_type || 389);
             setFormParentId(editingItem.parent_id ? String(editingItem.parent_id) : "");
             setFormUomCount(editingItem.unit_of_measurement_count ? String(editingItem.unit_of_measurement_count) : "1");
@@ -186,27 +179,7 @@ export default function RawMaterialsMaster({
         }
     };
 
-    const handleCreateCategoryOnTheFly = async (name: string) => {
-        try {
-            const res = await fetch("/api/manufacturing/finished-goods/categories", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ category_name: name })
-            });
-            if (!res.ok) throw new Error("Failed to create category");
-            const data = await res.json();
-            const newCat = data.category;
-            if (newCat) {
-                setCategoriesList(prev => [...prev, { value: String(newCat.category_id), label: newCat.category_name }]);
-                setFormCategory(String(newCat.category_id));
-                toast.success(`Category "${name}" created on the fly`);
-            }
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        } catch (e: any) {
-            console.error(e);
-            toast.error(e.message || "Failed to create category");
-        }
-    };
+
 
     const filtered = rawMaterials.filter(m => {
         const matchesSearch = m.product_name.toLowerCase().includes(search.toLowerCase()) ||
@@ -282,11 +255,10 @@ export default function RawMaterialsMaster({
         const isNameEmpty = !formName.trim();
         const isCodeEmpty = !formCode.trim();
         const isUomEmpty = !formUom;
-        const isCategoryEmpty = !formCategory;
         const isDensityInvalid = !formDensity || parseFloat(formDensity) <= 0;
         const isUomCountInvalid = !formUomCount || Number(formUomCount) <= 0;
 
-        if (isNameEmpty || isCodeEmpty || isUomEmpty || isCategoryEmpty || isDensityInvalid || isUomCountInvalid) {
+        if (isNameEmpty || isCodeEmpty || isUomEmpty || isDensityInvalid || isUomCountInvalid) {
             setShowValidationErrors(true);
             toast.error("Please fill out all mandatory fields correctly marked in red outline.");
             return;
@@ -345,7 +317,6 @@ export default function RawMaterialsMaster({
                 unit_of_measurement_count: parseFloat(v.count) || 1.0,
                 density_factor: parseFloat(formDensity) || 1.0,
                 product_brand: formBrand ? Number(formBrand) : undefined,
-                product_category: formCategory ? Number(formCategory) : undefined,
                 product_type: Number(formProductType),
             };
         });
@@ -367,7 +338,6 @@ export default function RawMaterialsMaster({
             unit_of_measurement: Number(formUom),
             density_factor: parseFloat(formDensity) || 1.0,
             product_brand: formBrand ? Number(formBrand) : undefined,
-            product_category: formCategory ? Number(formCategory) : undefined,
             product_type: formProductType,
             parent_id: formParentId ? Number(formParentId) : null,
             unit_of_measurement_count: parseFloat(formUomCount) || 1.0
@@ -805,20 +775,7 @@ export default function RawMaterialsMaster({
                                     )}
                                 </div>
 
-                                <div className="space-y-1.5">
-                                    <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">
-                                        Category <span className="text-red-500">*</span>
-                                    </label>
-                                    <div className={showValidationErrors && !formCategory ? "ring-2 ring-red-500/25 rounded-lg border border-red-500" : ""}>
-                                        <CreatableSelect
-                                            options={categoriesList}
-                                            value={formCategory}
-                                            onValueChange={setFormCategory}
-                                            placeholder="Select Category..."
-                                            onCreateOption={handleCreateCategoryOnTheFly}
-                                        />
-                                    </div>
-                                </div>
+
 
                                 <div className="space-y-1.5">
                                     <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Brand (Optional)</label>
