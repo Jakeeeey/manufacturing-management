@@ -461,6 +461,7 @@ export default function IncomingShipments({
     const [itemsPerPage, setItemsPerPage] = useState(5);
 
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setCurrentPage(1);
     }, [search, statusFilter, itemsPerPage]);
 
