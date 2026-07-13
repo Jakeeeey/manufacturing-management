@@ -36,6 +36,7 @@ export function CreateSalesOrderModal({
     const [suppliers, setSuppliers] = useState<any[]>([]);
 
     const [loadingLookups, setLoadingLookups] = useState(false);
+    const [lookupError, setLookupError] = useState("");
 
     // Form fields
     const [customerId, setCustomerId] = useState("");
@@ -117,29 +118,33 @@ export function CreateSalesOrderModal({
         // Fetch lookups
         const loadLookups = async () => {
             setLoadingLookups(true);
+            setLookupError("");
             try {
-                const [custRes, prodRes, branchRes, termsRes, salesRes, suppRes] = await Promise.all([
-                    fetch("/api/manufacturing/finished-goods/customers?all=true").then(r => r.ok ? r.json() : []),
-                    fetch("/api/manufacturing/finished-goods/products?limit=250").then(r => r.ok ? r.json() : []),
-                    fetch("/api/manufacturing/procurement/qa-receiving?action=branches").then(r => r.ok ? r.json() : []),
-                    fetch("/api/manufacturing/payment-terms").then(r => r.ok ? r.json() : []).catch(() => []),
-                    fetch("/api/manufacturing/salesman").then(r => r.ok ? r.json() : []).catch(() => []),
-                    fetch("/api/manufacturing/procurement/suppliers").then(r => r.ok ? r.json() : []).catch(() => [])
-                ]);
+                const response = await fetch("/api/manufacturing/sales-order?action=create-lookups");
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok) {
+                    throw new Error(data.error || "Failed to load sales-order setup directories.");
+                }
 
-                setCustomers(Array.isArray(custRes) ? custRes : (custRes.data || []));
-                // Only finished goods (type 388)
-                const allProds = Array.isArray(prodRes) ? prodRes : (prodRes.data || []);
-                // disabled-lint-next-line @typescript-eslint/no-explicit-any
-                setProducts(allProds.filter((p: any) => Number(p.product_type) === 388));
-                
-                setBranches(Array.isArray(branchRes) ? branchRes : (branchRes.data || []));
-                setPaymentTerms(Array.isArray(termsRes) ? termsRes : (termsRes.data || []));
-                setSalesmen(Array.isArray(salesRes) ? salesRes : (salesRes.data || []));
-                setSuppliers(Array.isArray(suppRes) ? suppRes : (suppRes.data || []));
+                const nextCustomers = Array.isArray(data.customers) ? data.customers : [];
+                const nextProducts = Array.isArray(data.products) ? data.products : [];
+                if (nextCustomers.length === 0 || nextProducts.length === 0) {
+                    throw new Error("Customer or finished-good product setup is unavailable.");
+                }
+
+                setCustomers(nextCustomers);
+                setProducts(nextProducts);
+                setBranches(Array.isArray(data.branches) ? data.branches : []);
+                setPaymentTerms(Array.isArray(data.paymentTerms) ? data.paymentTerms : []);
+                setSalesmen(Array.isArray(data.salesmen) ? data.salesmen : []);
+                setSuppliers(Array.isArray(data.suppliers) ? data.suppliers : []);
             } catch (err) {
                 console.error("Failed to load lookups:", err);
-                toast.error("Failed to load required setup directories.");
+                const message = err instanceof Error ? err.message : "Failed to load required setup directories.";
+                setCustomers([]);
+                setProducts([]);
+                setLookupError(message);
+                toast.error(message);
             } finally {
                 setLoadingLookups(false);
             }
@@ -193,6 +198,9 @@ export function CreateSalesOrderModal({
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (lookupError || customers.length === 0 || products.length === 0) {
+            return toast.error("Customer and product directories must load before creating a sales order.");
+        }
         if (!customerId) return toast.warning("Please select a customer.");
         if (!poNo.trim()) return toast.warning("Please input a PO number.");
         if (items.length === 0) return toast.warning("Please add at least one item.");
@@ -239,6 +247,7 @@ export function CreateSalesOrderModal({
 
     const subTotal = items.reduce((sum, it) => sum + (Number(it.unit_price || 0) * Number(it.quantity || 0)), 0);
     const grandTotal = Math.max(0, subTotal - discountAmount);
+    const lookupsReady = !lookupError && customers.length > 0 && products.length > 0;
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-xs animate-in fade-in duration-300">
@@ -269,6 +278,11 @@ export function CreateSalesOrderModal({
                         onKeyDown={handleFormKeyDown}
                         className="flex-1 overflow-y-auto p-6 space-y-6"
                     >
+                        {lookupError && (
+                            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
+                                {lookupError}
+                            </div>
+                        )}
                         {/* Keyboard navigation helper */}
                         <div className="text-[10px] text-muted-foreground bg-muted/30 border border-muted/50 rounded-lg p-2.5 flex items-center justify-between">
                             <span className="font-semibold">💡 Keyboard Shortcuts:</span>
@@ -302,6 +316,7 @@ export function CreateSalesOrderModal({
                                     onValueChange={val => setCustomerId(val)}
                                     placeholder="Select Customer..."
                                     className="h-9 text-xs"
+                                    disabled={!lookupsReady}
                                 />
                             </div>
 
@@ -403,7 +418,8 @@ export function CreateSalesOrderModal({
                                 <button
                                     type="button"
                                     onClick={handleAddItem}
-                                    className="inline-flex items-center gap-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary border-none px-3 py-1.5 text-xs font-bold cursor-pointer transition-all"
+                                    disabled={!lookupsReady}
+                                    className="inline-flex items-center gap-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary border-none px-3 py-1.5 text-xs font-bold cursor-pointer transition-all disabled:cursor-not-allowed disabled:opacity-50"
                                 >
                                     <Plus className="h-3.5 w-3.5" /> Add Product SKU
                                 </button>
@@ -449,6 +465,7 @@ export function CreateSalesOrderModal({
                                                                 onValueChange={val => handleItemChange(index, "product_id", Number(val))}
                                                                 placeholder="Choose Product SKU..."
                                                                 className="h-8 text-xs font-semibold"
+                                                                disabled={!lookupsReady}
                                                             />
                                                             {Number(item.product_id) > 0 && (
                                                                 <div className="mt-1 flex items-center gap-1.5">
@@ -527,8 +544,8 @@ export function CreateSalesOrderModal({
                             </button>
                             <button
                                 type="submit"
-                                disabled={submitting}
-                                className="bg-primary hover:bg-primary/95 text-primary-foreground text-xs font-bold px-4 py-2 rounded-lg flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
+                                disabled={submitting || !lookupsReady}
+                                className="bg-primary hover:bg-primary/95 text-primary-foreground text-xs font-bold px-4 py-2 rounded-lg flex items-center gap-1.5 transition-all shadow-sm cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
                             >
                                 {submitting ? (
                                     <>

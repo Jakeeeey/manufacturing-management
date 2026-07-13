@@ -222,6 +222,8 @@ export function SalesOrderDetailPanel({
                             const brand = pId?.brand || "N/A";
                             const category = pId?.category || "N/A";
                             const uom = pId?.uom || "PCS";
+                            const bomVersionName = item.bom_version_name?.trim() || "No Version";
+                            const hasBomVersion = bomVersionName !== "No Version";
                             
                             const rawQty = editableQuantities[item.detail_id];
                             const currentQty = rawQty !== undefined ? rawQty : item.ordered_quantity;
@@ -243,13 +245,13 @@ export function SalesOrderDetailPanel({
                                                 <span className="text-[9px] font-mono bg-muted border px-1.5 py-0.2 rounded text-muted-foreground uppercase font-semibold">
                                                     {code}
                                                 </span>
-                                                {(item as any).version?.version_name ? (
+                                                {hasBomVersion ? (
                                                     <span className="text-[9px] bg-indigo-500/10 text-indigo-600 border border-indigo-500/20 px-1.5 py-0.2 rounded font-bold">
-                                                        v{(item as any).version.version_name.replace(/^[vV]/, "")}
+                                                        {bomVersionName}
                                                     </span>
                                                 ) : (
                                                     <span className="text-[9px] bg-slate-500/10 text-slate-500 border border-slate-500/20 px-1.5 py-0.2 rounded font-medium italic">
-                                                        Standard Active
+                                                        No Version
                                                     </span>
                                                 )}
                                                 {brand !== "N/A" && (
