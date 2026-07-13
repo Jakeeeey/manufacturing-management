@@ -1,4 +1,5 @@
 import React from "react";
+import Image from "next/image";
 import { ArrowLeft, MapPin, AlertTriangle, CheckCircle2, Search, ChevronDown, Image as ImageIcon, Plus, Minus, Loader2 } from "lucide-react";
 import { Shipment, ShipmentLineItem, Branch, InspectionRow } from "../types";
 
@@ -221,12 +222,14 @@ export default function ShipmentInspectionForm({
                                 {/* Header info with Product Image */}
                                 <div className="flex gap-4 border-b pb-3 items-center">
                                     {/* Directus Product Image */}
-                                    <div className="h-16 w-16 rounded-xl bg-background border flex items-center justify-center shrink-0 overflow-hidden shadow-xs">
+                                    <div className="h-16 w-16 rounded-xl bg-background border flex items-center justify-center shrink-0 overflow-hidden shadow-xs relative">
                                         {prod.product_image ? (
-                                            <img
+                                            <Image
                                                 src={`${process.env.NEXT_PUBLIC_DIRECTUS_URL || "http://vtc:8074"}/assets/${prod.product_image}`}
                                                 alt={prod.product_name}
-                                                className="h-full w-full object-cover"
+                                                fill
+                                                className="object-cover"
+                                                unoptimized
                                             />
                                         ) : (
                                             <ImageIcon className="h-6 w-6 text-muted-foreground/40" />
