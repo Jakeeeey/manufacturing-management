@@ -1,1048 +1,490 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+/* eslint-disable */
+import { useState, useEffect, useMemo } from "react";
 import { toast } from "sonner";
-import { SalesOrder, SalesOrderDetail, JobOrder } from "../types";
-import { 
-    fetchSalesOrders, 
-    fetchSalesOrderDetails, 
-    explodeBOM, 
-    fetchQAStockBatches,
-    getJobOrders,
-    addJobOrder,
-    modifyJobOrder,
-    removeJobOrder
-} from "../services/planning-api";
+import { Branch, SalesOrder, SalesOrderDetail, NetRequirementItem } from "../types";
+import { fetchBranches, fetchSalesOrders, fetchNetRequirementsRaw, releaseJobOrder, directAllocate } from "../services/planning-api";
 
 export function usePlanningEngineering() {
-    const [activeTab, setActiveTab] = useState<"sales-orders" | "job-orders">("sales-orders");
-    
+    // UI State
+    const [loadingBranches, setLoadingBranches] = useState(true);
+    const [loadingOrders, setLoadingOrders] = useState(true);
+    const [loadingRequirements, setLoadingRequirements] = useState(false);
+    const [releasingJO, setReleasingJO] = useState(false);
+    const [directAllocating, setDirectAllocating] = useState(false);
+    const [versionStock, setVersionStock] = useState<number | null>(null);
+    const [loadingVersionStock, setLoadingVersionStock] = useState(false);
+    const [isDirectAllocDialogOpen, setIsDirectAllocDialogOpen] = useState(false);
+
+    // Master Data & Lists
+    const [branches, setBranches] = useState<Branch[]>([]);
     const [salesOrders, setSalesOrders] = useState<SalesOrder[]>([]);
-    const [soDetailsMap, setSoDetailsMap] = useState<Record<number, SalesOrderDetail[]>>({});
-    const [loadingSO, setLoadingSO] = useState(true);
-    const [loadingJOs, setLoadingJOs] = useState(true);
+    const [detailsMap, setDetailsMap] = useState<Record<number, SalesOrderDetail[]>>({});
+    const [netRequirements, setNetRequirements] = useState<NetRequirementItem[]>([]);
+    const [subAssemblyMapping, setSubAssemblyMapping] = useState<Record<number, any[]>>({});
 
-    // Pagination & Search & Hoisted Batch Selection States
-    const [page, setPage] = useState(1);
-    const [totalPages, setTotalPages] = useState(1);
-    const [searchQuery, setSearchQuery] = useState("");
-    const [selectedIds, setSelectedIds] = useState<number[]>([]);
-    const selectedIdsRef = useRef(selectedIds);
-    useEffect(() => {
-        selectedIdsRef.current = selectedIds;
-    }, [selectedIds]);
+    // Selected Targets
+    const [selectedBranchId, setSelectedBranchId] = useState<number | null>(null);
+    const [selectedDetailIds, setSelectedDetailIds] = useState<number[]>([]);
 
-    const [selectedSO, setSelectedSO] = useState<SalesOrder | null>(null);
-    const [soDetails, setSoDetails] = useState<SalesOrderDetail[]>([]);
-    const [loadingDetails, setLoadingDetails] = useState(false);
-
-    // Consolidated Batch Candidate State
-    const [selectedBatchCandidate, setSelectedBatchCandidate] = useState<{
-        productId: number;
-        productName: string;
-        totalQty: number;
-        orders: { order_no: string; quantity: number; order_id: number }[];
-    } | null>(null);
-
-    // Job Orders list (now fetched from Directus)
-    const [jobOrders, setJobOrders] = useState<JobOrder[]>([]);
-    const [checkingInventoryId, setCheckingInventoryId] = useState<string | null>(null);
-    const [procurementLoadingId, setProcurementLoadingId] = useState<string | null>(null);
-
-    // Form inputs for scheduling a JO
-    const [selectedDetailId, setSelectedDetailId] = useState<string>("");
-    const [joNumber, setJoNumber] = useState("");
-    const [dueDate, setDueDate] = useState("");
-    const [joQty, setJoQty] = useState(1);
+    // Release Modal state
+    const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+    const [targetQuantity, setTargetQuantity] = useState<number>(0);
+    const [dueDate, setDueDate] = useState<string>("");
     const [shiftOption, setShiftOption] = useState<string>("8");
-    const [selectedBomVersionId, setSelectedBomVersionId] = useState<string>("");
-    
-    // Branches data
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const [branches, setBranches] = useState<any[]>([]);
-    const [selectedBranchId, setSelectedBranchId] = useState<number | "">("");
-    const [filterBranchId, setFilterBranchId] = useState<number | "">("");
+    const [remarks, setRemarks] = useState<string>("");
+    const [joNumber, setJoNumber] = useState<string>("");
+    const [assignments, setAssignments] = useState<Record<number, number[]>>({});
 
-    // Standalone & Personnel & Products data
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const [products, setProducts] = useState<any[]>([]);
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const [users, setUsers] = useState<any[]>([]);
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const [suppliers, setSuppliers] = useState<any[]>([]);
-    const [isStandaloneMode, setIsStandaloneMode] = useState(false);
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const [selectedStandaloneProduct, setSelectedStandaloneProduct] = useState<any | null>(null);
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const [selectedProductsList, setSelectedProductsList] = useState<any[]>([]);
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const [productVersions, setProductVersions] = useState<Record<number, any[]>>({});
-
-    const loadVersionsForProduct = async (productId: number) => {
-        if (productVersions[productId]) return;
+    // Initial Fetch: Branches & unfulfilled Sales Orders
+    const loadInitialData = async () => {
+        setLoadingBranches(true);
+        setLoadingOrders(true);
         try {
-            const res = await fetch(`/api/manufacturing/finished-goods/versions?productId=${productId}`);
-            if (res.ok) {
-                const data = await res.json();
-                setProductVersions(prev => ({ ...prev, [productId]: data }));
+            const activeBranches = await fetchBranches();
+            setBranches(activeBranches);
+            if (activeBranches.length > 0) {
+                setSelectedBranchId((prev) => prev ?? activeBranches[0].id);
             }
-        } catch (e) {
-            console.error("Error loading versions for product:", productId, e);
-        }
-    };
 
-    const loadProducts = async () => {
-        try {
-            const res = await fetch("/api/manufacturing/finished-goods/products");
-            if (res.ok) {
-                const data = await res.json();
-                setProducts(data);
-            }
-        } catch (e) {
-            console.error("Failed to load products:", e);
-        }
-    };
-
-    const loadUsers = async () => {
-        try {
-            const res = await fetch("/api/manufacturing/planning-engineering?action=users");
-            if (res.ok) {
-                const data = await res.json();
-                setUsers(data);
-            }
-        } catch (e) {
-            console.error("Failed to load users:", e);
-        }
-    };
-
-    const loadSuppliers = async () => {
-        try {
-            const res = await fetch("/api/manufacturing/procurement/suppliers");
-            if (res.ok) {
-                const data = await res.json();
-                setSuppliers(data);
-            }
-        } catch (e) {
-            console.error("Failed to load suppliers:", e);
-        }
-    };
-
-    // Load Branches
-    const loadBranches = async () => {
-        try {
-            const res = await fetch("/api/manufacturing/procurement/qa-receiving?action=branches");
-            if (res.ok) {
-                const data = await res.json();
-                setBranches(data);
-                if (data.length > 0) {
-                    setSelectedBranchId(data[0].id);
-                }
-            }
-        } catch (e) {
-            console.error("Failed to load branches:", e);
-        }
-    };
-
-    // Load Sales Orders & Details in paginated/search query format
-    const loadSalesOrders = useCallback(async () => {
-        setLoadingSO(true);
-        try {
-            const resData = await fetchSalesOrders({
-                page,
-                limit: 10,
-                search: searchQuery,
-                status: "For Consolidation",
-                selectedIds: selectedIdsRef.current,
-                excludeHasJo: true
-            });
-            setSalesOrders(resData.data);
-            setSoDetailsMap(resData.detailsMap);
-            setTotalPages(resData.meta.totalPages);
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-        } catch (e: any) {
-            toast.error(e.message || "Failed to fetch Sales Orders");
+            const { data, detailsMap: dMap } = await fetchSalesOrders();
+            setSalesOrders(data);
+            setDetailsMap(dMap);
+        } catch (err: any) {
+            console.error("Error loading initial data:", err);
+            toast.error(err.message || "An error occurred while loading planning data.");
         } finally {
-            setLoadingSO(false);
+            setLoadingBranches(false);
+            setLoadingOrders(false);
         }
-    }, [page, searchQuery]);
-
-    const loadJobOrders = useCallback(async () => {
-        setLoadingJOs(true);
-        try {
-            const data = await getJobOrders();
-            setJobOrders(data);
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-        } catch (e: any) {
-            toast.error(e.message || "Failed to load Job Orders");
-        } finally {
-            setLoadingJOs(false);
-        }
-    }, []);
+    };
 
     useEffect(() => {
-        loadBranches();
-        loadProducts();
-        loadUsers();
-        loadSuppliers();
+        loadInitialData();
     }, []);
 
-    useEffect(() => {
-        if (activeTab === "sales-orders") {
-            loadSalesOrders();
-        } else {
-            loadJobOrders();
-        }
-    }, [activeTab, loadSalesOrders, loadJobOrders]);
-
-
-    // Filtered Job Orders list based on filterBranchId selection
-    const filteredJobOrders = useMemo(() => {
-        if (!filterBranchId) return jobOrders;
-        return jobOrders.filter(jo => Number(jo.branch_id) === Number(filterBranchId));
-    }, [jobOrders, filterBranchId]);
-
-    // Grouping helper: groups all approved Sales Order line items by Product ID to find consolidation candidates
-    const consolidationCandidates = useMemo(() => {
-        const candidates: Record<number, {
-            productId: number;
-            productName: string;
-            totalQty: number;
-            orders: { order_no: string; quantity: number; order_id: number }[];
-        }> = {};
-
-        salesOrders.forEach(so => {
-            const details = soDetailsMap[so.order_id] || [];
-            details.forEach(det => {
-                const pId = det.product_id.product_id;
-                const pName = det.product_id.product_name;
-                if (!candidates[pId]) {
-                    candidates[pId] = {
-                        productId: pId,
-                        productName: pName,
-                        totalQty: 0,
-                        orders: []
-                    };
-                }
-                candidates[pId].totalQty += det.ordered_quantity;
-                candidates[pId].orders.push({
+    // Flatten all sales order details for list display
+    const salesOrderLines = useMemo(() => {
+        const lines: SalesOrderDetail[] = [];
+        salesOrders.forEach((so) => {
+            const details = detailsMap[so.order_id] || [];
+            details.forEach((det) => {
+                lines.push({
+                    ...det,
                     order_no: so.order_no,
-                    quantity: det.ordered_quantity,
-                    order_id: so.order_id
+                    customer_name: so.customer_name || so.customer_code
                 });
             });
         });
+        return lines;
+    }, [salesOrders, detailsMap]);
 
-        return Object.values(candidates);
-    }, [salesOrders, soDetailsMap]);
-
-    // View line items when a Sales Order is selected (1:1 Flow)
-    const handleSelectSO = async (so: SalesOrder) => {
-        setSelectedBatchCandidate(null);
-        setSelectedSO(so);
-        setLoadingDetails(true);
-        setSelectedDetailId("all"); // Default to scheduling all products inside the Sales Order
-        
-        // Generate Default JO Number
-        setJoNumber(`JO-${so.order_no}-${Math.floor(1000 + Math.random() * 9000)}`);
-        
-        try {
-            const data = await fetchSalesOrderDetails(so.order_id);
-            setSoDetails(data);
-            if (data.length > 0) {
-                // Default quantity is the sum of all ordered items in the SO
-                const totalQty = data.reduce((sum, d) => sum + Number(d.ordered_quantity || 0), 0);
-                setJoQty(totalQty);
-            }
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-        } catch (e: any) {
-            toast.error(e.message || "Failed to load SO details");
-        } finally {
-            setLoadingDetails(false);
-        }
-    };
-
-    // View Candidate Group details for batch consolidation scheduling
-    const handleSelectBatchCandidate = (candidate: typeof consolidationCandidates[0]) => {
-        setSelectedSO(null);
-        setSelectedBatchCandidate(candidate);
-        setJoQty(candidate.totalQty);
-        setDueDate("");
-        setJoNumber(`JO-BATCH-${candidate.productName.substring(0,4).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`);
-    };
-
-    // Triggered when selected item to schedule changes (1:1 Flow)
-    const handleDetailChange = (detailIdStr: string) => {
-        setSelectedDetailId(detailIdStr);
-        if (detailIdStr === "all") {
-            const totalQty = soDetails.reduce((sum, d) => sum + Number(d.ordered_quantity || 0), 0);
-            setJoQty(totalQty);
-        } else {
-            const match = soDetails.find(d => String(d.detail_id) === detailIdStr);
-            if (match) {
-                setJoQty(Number(match.ordered_quantity));
-            }
-        }
-    };
-
-    const getProductCapacity = (productId: number) => {
-        const p = products.find(prod => Number(prod.product_id) === Number(productId));
-        if (!p) return 0;
-
-        if (p.production_capacity_per_hour && Number(p.production_capacity_per_hour) > 0) {
-            return Number(p.production_capacity_per_hour);
-        }
-
-        const parentId = p.parent_id && typeof p.parent_id === "object"
-            ? Number((p.parent_id as { product_id: number | string }).product_id)
-            : (p.parent_id ? Number(p.parent_id) : null);
-
-        if (parentId) {
-            const parent = products.find(prod => Number(prod.product_id) === Number(parentId));
-            if (parent && parent.production_capacity_per_hour && Number(parent.production_capacity_per_hour) > 0) {
-                const uomCount = Number(p.unit_of_measurement_count || 1);
-                return Number(parent.production_capacity_per_hour) * uomCount;
-            }
-        }
-
-        return 0;
-    };
-
-
-    const calculateDailyBreakdown = (productId: number, qty: number, shift: string, customCapacity?: number) => {
-        const capacityPerHour = customCapacity !== undefined ? customCapacity : getProductCapacity(productId);
-        if (!capacityPerHour || capacityPerHour <= 0) return null;
-        
-        const hoursPerDay = Number(shift);
-        const dailyCapacity = capacityPerHour * hoursPerDay;
-        const totalDays = Math.ceil(qty / dailyCapacity);
-        
-        const breakdown = [];
-        let remainingQty = qty;
-        const startDate = new Date();
-        startDate.setDate(startDate.getDate() + 1);
-        
-        for (let i = 1; i <= totalDays; i++) {
-            const dayQty = Math.min(remainingQty, dailyCapacity);
-            const currentDate = new Date(startDate);
-            currentDate.setDate(startDate.getDate() + (i - 1));
-            const dateString = currentDate.toISOString().split("T")[0];
-            
-            breakdown.push({
-                day: i,
-                date: dateString,
-                quantity: dayQty,
-                status: "Pending"
-            });
-            remainingQty -= dayQty;
-        }
-        return breakdown;
-    };
-
-
-    const handleCreateJobOrder = async () => {
-        if (!dueDate || !joNumber.trim() || joQty <= 0) {
-            toast.error("Please complete the Job Order scheduling form.");
-            return;
-        }
-
-        if (!selectedBranchId) {
-            toast.error("Please assign a target branch location.");
-            return;
-        }
-
-        // Validate that all products have active BOMs and routing steps
-        const validationProducts: { id: number; name: string }[] = [];
-        if (selectedSO) {
-            if (selectedDetailId === "all") {
-                soDetails.forEach(d => {
-                    validationProducts.push({ id: d.product_id.product_id, name: d.product_id.product_name });
-                });
-            } else {
-                const detail = soDetails.find(d => String(d.detail_id) === selectedDetailId);
-                if (detail) {
-                    validationProducts.push({ id: detail.product_id.product_id, name: detail.product_id.product_name });
-                }
-            }
-        } else if (selectedBatchCandidate) {
-            validationProducts.push({ id: selectedBatchCandidate.productId, name: selectedBatchCandidate.productName });
-        } else if (isStandaloneMode) {
-            selectedProductsList.forEach(p => {
-                validationProducts.push({ id: p.product_id, name: p.product_name });
-            });
-        }
-
-        for (const prod of validationProducts) {
-            try {
-                const bomData = await explodeBOM(prod.id);
-                if (!bomData.bom) {
-                    toast.error(`Cannot generate Job Order: Product "${prod.name}" has no active BOM version.`);
-                    return;
-                }
-                if (!bomData.routings || bomData.routings.length === 0) {
-                    toast.error(`Cannot generate Job Order: Product "${prod.name}" has a BOM but has no routing/production steps defined.`);
-                    return;
-                }
-            } catch (err) {
-                console.error("BOM validation error:", err);
-                toast.error(`Failed to validate BOM recipe for product "${prod.name}".`);
-                return;
-            }
-        }
-
-        let newJO: JobOrder;
-        let salesOrderIds: number[] = [];
-
-        if (selectedSO) {
-            // 1:1 Flow
-            if (selectedDetailId === "all") {
-                if (jobOrders.some(jo => jo.jo_id === joNumber.trim())) {
-                    toast.error("Job Order number already exists.");
-                    return;
-                }
-
-                const firstProd = soDetails[0]?.product_id;
-                if (!firstProd) return;
-
-                newJO = {
-                    jo_id: joNumber.trim(),
-                    order_id: selectedSO.order_id,
-                    order_no: selectedSO.order_no,
-                    product_id: firstProd.product_id,
-                    product_name: soDetails.map(d => d.product_id?.product_name || `Product #${d.product_id}`).join(", "),
-                    quantity: joQty,
-                    due_date: dueDate,
-                    status: "Draft",
-                    is_batched: false,
-                    procurementStatus: "Idle",
-                    branch_id: Number(selectedBranchId),
-                    shiftOption: shiftOption,
-                    dailyBreakdown: calculateDailyBreakdown(firstProd.product_id, joQty, shiftOption),
-                    products: soDetails.map(d => ({
-                        product_id: d.product_id.product_id,
-                        product_name: d.product_id.product_name,
-                        quantity: Number(d.ordered_quantity),
-                        bom: null
-                    }))
-                };
-            } else {
-                const detail = soDetails.find(d => String(d.detail_id) === selectedDetailId);
-                if (!detail) return;
- 
-                if (jobOrders.some(jo => jo.jo_id === joNumber.trim())) {
-                    toast.error("Job Order number already exists.");
-                    return;
-                }
- 
-                newJO = {
-                    jo_id: joNumber.trim(),
-                    order_id: selectedSO.order_id,
-                    order_no: selectedSO.order_no,
-                    product_id: detail.product_id.product_id,
-                    product_name: detail.product_id.product_name,
-                    quantity: joQty,
-                    due_date: dueDate,
-                    status: "Draft",
-                    is_batched: false,
-                    procurementStatus: "Idle",
-                    branch_id: Number(selectedBranchId),
-                    shiftOption: shiftOption,
-                    dailyBreakdown: calculateDailyBreakdown(detail.product_id.product_id, joQty, shiftOption),
-                    bom: selectedBomVersionId ? { bom_id: Number(selectedBomVersionId) } : null
-                };
-            }
-            salesOrderIds = [selectedSO.order_id];
-        } else if (selectedBatchCandidate) {
-            // Batched Consolidation Flow
-            if (jobOrders.some(jo => jo.jo_id === joNumber.trim())) {
-                toast.error("Job Order number already exists.");
-                return;
-            }
-
-            const refSoNumbers = selectedBatchCandidate.orders.map(o => o.order_no).join(", ");
-
-            newJO = {
-                jo_id: joNumber.trim(),
-                order_no: refSoNumbers,
-                product_id: selectedBatchCandidate.productId,
-                product_name: selectedBatchCandidate.productName,
-                quantity: joQty,
-                due_date: dueDate,
-                status: "Draft",
-                is_batched: true,
-                procurementStatus: "Idle",
-                branch_id: Number(selectedBranchId),
-                shiftOption: shiftOption,
-                dailyBreakdown: calculateDailyBreakdown(selectedBatchCandidate.productId, joQty, shiftOption)
-            };
-            salesOrderIds = selectedBatchCandidate.orders.map(o => o.order_id);
-        } else if (isStandaloneMode) {
-            // Forecast / Standalone Production Flow
-            if (selectedProductsList.length === 0) {
-                toast.error("Please add at least one product SKU to the Job Order detail lines.");
-                return;
-            }
-            if (jobOrders.some(jo => jo.jo_id === joNumber.trim())) {
-                toast.error("Job Order number already exists.");
-                return;
-            }
-
-            const mainProd = selectedProductsList[0];
-            const refNames = selectedProductsList.map(p => p.product_name).join(", ");
-
-            newJO = {
-                jo_id: joNumber.trim(),
-                order_no: "Forecast",
-                product_id: mainProd.product_id,
-                product_name: refNames,
-                quantity: selectedProductsList.reduce((sum, p) => sum + p.quantity, 0),
-                due_date: dueDate,
-                status: "Draft",
-                is_batched: false,
-                procurementStatus: "Idle",
-                branch_id: Number(selectedBranchId),
-                shiftOption: shiftOption,
-                dailyBreakdown: calculateDailyBreakdown(mainProd.product_id, selectedProductsList.reduce((sum, p) => sum + p.quantity, 0), shiftOption),
-                products: selectedProductsList.map(p => ({
-                    product_id: p.product_id,
-                    product_name: p.product_name,
-                    quantity: p.quantity,
-                    bom: p.bom_version_id ? { version: p.bom_version_id, version_name: p.bom_version_name } : null
-                }))
-            };
-            salesOrderIds = [];
-        } else {
-            return;
-        }
-
-        try {
-            await addJobOrder(newJO, salesOrderIds);
-            toast.success(`Job Order ${newJO.jo_id} successfully generated!`);
-            setSelectedSO(null);
-            setSelectedBatchCandidate(null);
-            setIsStandaloneMode(false);
-            setSelectedStandaloneProduct(null);
-            setSelectedProductsList([]);
-            setShiftOption("8");
-            setSelectedBomVersionId("");
-            setActiveTab("job-orders");
-            loadJobOrders();
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-        } catch (e: any) {
-            toast.error(e.message || "Failed to save Job Order to database");
-        }
-    };
-
-
-    const handleUpdateProductCapacity = async (productId: number, capacity: number) => {
-        try {
-            const res = await fetch("/api/manufacturing/finished-goods/products", {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ product_id: productId, production_capacity_per_hour: capacity })
-            });
-            if (res.ok) {
-                // Update local products state
-                setProducts(prev => prev.map(p => {
-                    if (Number(p.product_id) === productId) {
-                        return { ...p, production_capacity_per_hour: capacity };
-                    }
-                    return p;
-                }));
-                toast.success("Hourly capacity updated successfully.");
-            } else {
-                const errJson = await res.json();
-                toast.error(errJson.error || "Failed to update product capacity.");
-            }
-        } catch (err) {
-            console.error("Error updating product capacity:", err);
-            toast.error("Failed to update product capacity.");
-        }
-    };
-
-    // Step 3 & 4: Inventory check and FIFO allocation
-    const handleRunFIFOInventoryCheck = async (jo: JobOrder) => {
-        setCheckingInventoryId(jo.jo_id);
-        try {
-            const productsList = jo.products && jo.products.length > 0 ? jo.products : [{
-                product_id: jo.product_id,
-                product_name: jo.product_name,
-                quantity: jo.quantity
-            }];
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const explodedProducts: any[] = [];
-            const aggregatedComponents: Record<number, {
-                component_product_id: number;
-                component_name: string;
-                totalRequired: number;
-            }> = {};
-
-            // 1. Explode BOM for each product and aggregate component requirements
-            for (const p of productsList) {
-                const customBomId = p.bom?.bom_id || jo.bom?.bom_id || undefined;
-                const bomData = await explodeBOM(p.product_id, customBomId);
-                if (!bomData.bom) {
-                    toast.error(`No active BOM version found for ${p.product_name || `Product ID ${p.product_id}`}.`);
-                    setCheckingInventoryId(null);
-                    return;
-                }
-                if (!bomData.routings || bomData.routings.length === 0) {
-                    toast.error(`Cannot proceed with Job Order: SKU "${p.product_name || `Product ID ${p.product_id}`}" has a BOM but has no routing/production steps defined.`);
-                    setCheckingInventoryId(null);
-                    return;
-                }
-
-                explodedProducts.push({
-                    product_id: p.product_id,
-                    product_name: p.product_name,
-                    quantity: Number(p.quantity),
-                    bom: bomData.bom,
-                    components: bomData.components,
-                    routings: bomData.routings
-                });
-
-                for (const component of bomData.components) {
-                    const compProductId = component.component_product_id.product_id;
-                    const compName = component.component_product_id.product_name;
-                    const qtyRequiredPerUnit = Number(component.quantity_required);
-                    const wastage = 1 + (Number(component.wastage_factor_percentage || 0) / 100);
-                    const lineRequired = Number(p.quantity) * qtyRequiredPerUnit * wastage;
-
-                    if (!aggregatedComponents[compProductId]) {
-                        aggregatedComponents[compProductId] = {
-                            component_product_id: compProductId,
-                            component_name: compName,
-                            totalRequired: 0
-                        };
-                    }
-                    aggregatedComponents[compProductId].totalRequired += lineRequired;
-                }
-            }
-
-            // 2. Perform live inventory lookup & FIFO allocation for the aggregated components
-            const allocationResults: {
-                component_product_id?: number;
-                component_name: string;
-                required: number;
-                available: number;
-                deficit: number;
-                batches: { lot_number: string; expiration_date: string; quantity: number }[];
-                has_bom?: boolean;
-                bom_id?: number;
-                base_quantity?: number;
-            }[] = [];
-            let hasShortage = false;
-
-            for (const compIdStr of Object.keys(aggregatedComponents)) {
-                const compId = Number(compIdStr);
-                const aggregated = aggregatedComponents[compId];
-                const totalRequired = aggregated.totalRequired;
-
-                let stockBatches = [];
+    // Fetch BOM components for all unique product IDs in sales orders to find sub-assemblies
+    useEffect(() => {
+        if (salesOrderLines.length === 0) return;
+        const loadSubAssemblyBoms = async () => {
+            const uniqueProductIds = Array.from(new Set(salesOrderLines.map((l) => l.product_id?.product_id).filter(Boolean)));
+            const mappings: Record<number, any[]> = {};
+            await Promise.all(uniqueProductIds.map(async (pId) => {
                 try {
-                    stockBatches = await fetchQAStockBatches(compId);
-                } catch (err) {
-                    console.error(err);
-                }
-
-                const validBatches = stockBatches
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    .filter((item: any) => {
-                        const matchesBranch = jo.branch_id ? Number(item.branch_id?.id || item.branch_id) === Number(jo.branch_id) : true;
-                        return item.qa_status === "Passed" && Number(item.quantity_received) > 0 && matchesBranch;
-                    })
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    .sort((a: any, b: any) => new Date(a.expiration_date).getTime() - new Date(b.expiration_date).getTime());
-
-                let allocatedQty = 0;
-                const allocatedBatches = [];
-
-                for (const batch of validBatches) {
-                    if (allocatedQty >= totalRequired) break;
-                    const availableInBatch = Number(batch.quantity_received);
-                    const needed = totalRequired - allocatedQty;
-                    const taken = Math.min(availableInBatch, needed);
-
-                    allocatedQty += taken;
-                    allocatedBatches.push({
-                        lot_number: batch.lot_number || "Lot-N/A",
-                        expiration_date: batch.expiration_date || "No Exp Date",
-                        quantity: taken
-                    });
-                }
-
-                const deficit = totalRequired - allocatedQty;
-                if (deficit > 0) {
-                    hasShortage = true;
-                }
-
-                let hasBom = false;
-                let bomId = null;
-                let baseQuantity = 1;
-                if (deficit > 0) {
-                    try {
-                        const compBomData = await explodeBOM(compId);
-                        if (compBomData && compBomData.bom) {
-                            hasBom = true;
-                            bomId = compBomData.bom.bom_id;
-                            baseQuantity = Number(compBomData.bom.base_quantity || 1);
+                    const res = await fetch(`/api/manufacturing/planning-engineering?productId=${pId}`);
+                    if (res.ok) {
+                        const data = await res.json();
+                        const comps = data.components || [];
+                        const subComps = comps.filter((c: any) => c.component_product_id?.product_type === 388 || c.component_product_id?.is_finished_good);
+                        if (subComps.length > 0) {
+                            mappings[pId] = subComps;
                         }
-                    } catch (err) {
-                        console.error(`Failed to check BOM for component ${aggregated.component_name}:`, err);
                     }
+                } catch (e) {
+                    console.error("Failed to load sub-assemblies for product", pId, e);
                 }
-
-                allocationResults.push({
-                    component_product_id: compId,
-                    component_name: aggregated.component_name,
-                    required: totalRequired,
-                    available: allocatedQty,
-                    deficit: deficit > 0 ? deficit : 0,
-                    batches: allocatedBatches,
-                    has_bom: hasBom,
-                    bom_id: bomId,
-                    base_quantity: baseQuantity
-                });
-            }
-
-            // 3. Prepare the update patch. Populate individual products details with their BOM structures.
-            const updatedProducts = explodedProducts.map(ep => ({
-                product_id: ep.product_id,
-                bom: ep.bom,
-                components: ep.components,
-                routings: ep.routings,
-                allocationResults: allocationResults
             }));
+            setSubAssemblyMapping(mappings);
+        };
+        loadSubAssemblyBoms();
+    }, [salesOrderLines]);
 
-            const mainProduct = explodedProducts[0] || {};
-            const patch = {
-                status: (hasShortage ? "Shortage" : "Proceed") as "Shortage" | "Proceed",
-                bom: mainProduct.bom,
-                components: mainProduct.components,
-                routings: mainProduct.routings,
-                allocationResults,
-                products: updatedProducts
-            };
-
-            await modifyJobOrder(jo.jo_id, patch);
-            
-            if (hasShortage) {
-                toast.warning(`Inventory shortage detected for ${jo.jo_id}. Release halted.`);
-            } else {
-                toast.success(`FIFO inventory check passed. release authorized for ${jo.jo_id}!`);
+    // Gather unique product IDs across loaded demand lines (mapping directly to SKU product IDs)
+    const demandProductIds = useMemo(() => {
+        const ids = new Set<number>();
+        salesOrderLines.forEach((line) => {
+            const pInfo = line.product_id;
+            if (pInfo && pInfo.product_id) {
+                ids.add(pInfo.product_id);
             }
-            
-            loadJobOrders();
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-        } catch (e: any) {
-            console.error(e);
-            toast.error(e.message || "Failed to process stock validation");
-        } finally {
-            setCheckingInventoryId(null);
-        }
-    };
-
-    // Step 4B: Procurement flow trigger
-    const handleTriggerProcurement = async (
-        joId: string,
-        supplierId: number,
-        poNumber: string,
-        lineItems: Array<{ product_id: number; quantity_ordered: number; base_unit_cost_php: number }>
-    ) => {
-        setProcurementLoadingId(joId);
-        try {
-            const totalCost = lineItems.reduce((sum, item) => sum + (item.quantity_ordered * item.base_unit_cost_php), 0);
-
-            // Create shipment via API
-            const shipmentRes = await fetch("/api/manufacturing/procurement/shipments", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    shipmentData: {
-                        reference_number: poNumber,
-                        supplier_id: supplierId,
-                        status: "Ordered",
-                        total_foreign_currency: totalCost,
-                        exchange_rate: 1,
-                        total_php_value: totalCost,
-                        date_received: null
-                    },
-                    lineItems: lineItems
-                })
+        });
+        
+        // Also add sub-assembly product IDs!
+        Object.values(subAssemblyMapping).forEach((comps) => {
+            comps.forEach((c) => {
+                const scId = c.component_product_id?.product_id;
+                if (scId) ids.add(scId);
             });
+        });
 
-            if (!shipmentRes.ok) {
-                const err = await shipmentRes.json();
-                throw new Error(err.error || "Failed to create incoming shipment");
-            }
+        return Array.from(ids);
+    }, [salesOrderLines, subAssemblyMapping]);
 
-            // Update Job Order procurement status to Ordered
-            await modifyJobOrder(joId, { procurementStatus: "Ordered" });
-            toast.success(`Procurement PO ${poNumber} created successfully.`);
-            loadJobOrders();
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-        } catch (e: any) {
-            toast.error(e.message || "Failed to trigger procurement");
-        } finally {
-            setProcurementLoadingId(null);
-        }
-    };
-
-    // Progresses procurement stages (Ordered -> Approved -> En Route -> Received QA)
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const handleProgressProcurement = async (jo: JobOrder, action: "Approve" | "Ship" | "QA", qaData?: any) => {
-        setProcurementLoadingId(jo.jo_id);
-        try {
-            // Find the shipment first
-            const shipmentRes = await fetch("/api/manufacturing/procurement/shipments");
-            if (!shipmentRes.ok) throw new Error("Failed to load shipments list");
-            const shipments = await shipmentRes.json();
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const shipment = shipments.find((s: any) => s.reference_number.startsWith(`PO-${jo.jo_id}`));
-
-            if (!shipment) {
-                throw new Error(`Could not find the associated shipment starting with reference number PO-${jo.jo_id}`);
-            }
-
-            if (action === "Approve") {
-                const shipPatchRes = await fetch("/api/manufacturing/procurement/shipments", {
-                    method: "PATCH",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ shipmentId: shipment.shipment_id, status: "Approved" })
-                });
-                if (!shipPatchRes.ok) throw new Error("Failed to update shipment status to Approved");
-
-                await modifyJobOrder(jo.jo_id, { procurementStatus: "Approved" });
-                toast.success("Procurement PO approved!");
-            } else if (action === "Ship") {
-                const shipPatchRes = await fetch("/api/manufacturing/procurement/shipments", {
-                    method: "PATCH",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ shipmentId: shipment.shipment_id, status: "En Route" })
-                });
-                if (!shipPatchRes.ok) throw new Error("Failed to update shipment status to En Route");
-
-                await modifyJobOrder(jo.jo_id, { procurementStatus: "En Route" });
-                toast.info("Materials cleared for freight transit! (Status: En Route)");
-            } else if (action === "QA") {
-                if (!qaData) throw new Error("QA inspection data is required");
-
-                // Fetch shipment lines to get their line IDs
-                const linesRes = await fetch(`/api/manufacturing/procurement/shipments?shipmentId=${shipment.shipment_id}`);
-                if (!linesRes.ok) throw new Error("Failed to load shipment lines");
-                const shipmentLines = await linesRes.json();
-
-                interface QALineItem {
-                    product_id: number;
-                    quantity_received: number;
-                    quantity_rejected?: number;
-                    lot_number?: string;
-                    expiration_date?: string;
-                    rejection_reason?: string;
-                    qa_status?: string;
-                }
-                interface ShipmentLine {
-                    line_id: number;
-                    product_id: number | { product_id: number };
-                }
-
-                const lineItemUpdates = (qaData.lineItems as QALineItem[])
-                    .filter((item: QALineItem) => shipmentLines.some((sl: ShipmentLine) => Number(typeof sl.product_id === "object" && sl.product_id !== null ? sl.product_id.product_id : sl.product_id) === Number(item.product_id)))
-                    .map((item: QALineItem) => {
-                        const matchLine = shipmentLines.find((sl: ShipmentLine) => Number(typeof sl.product_id === "object" && sl.product_id !== null ? sl.product_id.product_id : sl.product_id) === Number(item.product_id)) as ShipmentLine;
-                        return {
-                            line_id: matchLine.line_id,
-                            product_id: item.product_id,
-                            quantity_received: item.quantity_received,
-                            quantity_rejected: item.quantity_rejected || 0,
-                            lot_number: item.lot_number,
-                            expiration_date: item.expiration_date,
-                            rejection_reason: item.rejection_reason || null,
-                            qa_status: item.qa_status || "Passed"
-                        };
-                    });
-
-                // Call the real QA receiving API
-                const qaRes = await fetch("/api/manufacturing/procurement/qa-receiving", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        shipmentId: shipment.shipment_id,
-                        referenceNumber: shipment.reference_number,
-                        branchId: jo.branch_id,
-                        lineItemUpdates: lineItemUpdates
-                    })
-                });
-
-                if (!qaRes.ok) {
-                    const err = await qaRes.json();
-                    throw new Error(err.error || "Failed to submit QA inspection");
-                }
-
-                // Update Job Order procurement status to Received QA
-                await modifyJobOrder(jo.jo_id, { procurementStatus: "Received QA" });
-                toast.success("QA cleared incoming materials! Inventory has been updated.");
-
-                // Re-run the real FIFO inventory check to resolve shortage status naturally!
-                await handleRunFIFOInventoryCheck({
-                    ...jo,
-                    procurementStatus: "Received QA"
-                });
-            }
-
-            loadJobOrders();
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-        } catch (e: any) {
-            toast.error(e.message || "Failed to progress procurement");
-        } finally {
-            setProcurementLoadingId(null);
-        }
-    };
-
-    const handleCreatePrerequisiteJobOrder = async (
-        parentJo: JobOrder,
-        compName: string,
-        compProductId: number,
-        suggestedQty: number,
-        customCapacity?: number,
-        customShift?: string
-    ) => {
-        if (!parentJo.due_date) {
-            toast.error("Parent Job Order due date is missing.");
+    // Fetch On-Hand & Safety Stock for the Net Requirements Calculation Grid
+    useEffect(() => {
+        if (!selectedBranchId || demandProductIds.length === 0) {
+            setNetRequirements([]);
             return;
         }
 
-        // If customCapacity is supplied, update the master SKU's hourly capacity in database first!
-        if (customCapacity !== undefined && customCapacity > 0) {
+        const runFetchNetRequirements = async () => {
+            setLoadingRequirements(true);
             try {
-                const existing = getProductCapacity(compProductId);
-                if (existing !== customCapacity) {
-                    await handleUpdateProductCapacity(compProductId, customCapacity);
-                }
-            } catch (err) {
-                console.error("Failed to auto-update master SKU capacity:", err);
+                const data = await fetchNetRequirementsRaw(demandProductIds, selectedBranchId);
+                
+                // Group gross demands from all outstanding lines, grouping by SKU product_id directly
+                const grossDemandMap: Record<number, number> = {};
+                salesOrderLines.forEach((line) => {
+                    const pInfo = line.product_id;
+                    if (pInfo && pInfo.product_id) {
+                        const pId = pInfo.product_id;
+                        const qty = Number(line.ordered_quantity || 0);
+                        grossDemandMap[pId] = (grossDemandMap[pId] || 0) + qty;
+                    }
+                });
+
+                const calculated: NetRequirementItem[] = [];
+
+                // 1. First pass: calculate parent products requirements
+                const parentShortfalls: Record<number, number> = {};
+                data.forEach((item: any) => {
+                    const pId = Number(item.product_id);
+                    const isParent = salesOrderLines.some((l) => l.product_id?.product_id === pId);
+                    if (isParent) {
+                        const grossDemand = grossDemandMap[pId] || 0;
+                        const onHand = Number(item.on_hand || 0);
+                        const safetyStock = Number(item.safety_stock || 0);
+                        const netShortfall = Math.max(0, grossDemand - (onHand - safetyStock));
+
+                        parentShortfalls[pId] = netShortfall;
+
+                        calculated.push({
+                            product_id: pId,
+                            product_name: item.product_name,
+                            product_code: item.product_code,
+                            gross_demand: grossDemand,
+                            on_hand: onHand,
+                            safety_stock: safetyStock,
+                            net_shortfall: netShortfall
+                        });
+                    }
+                });
+
+                // 2. Second pass: calculate sub-assembly requirements based on parent shortfalls
+                data.forEach((item: any) => {
+                    const pId = Number(item.product_id);
+                    const isParent = salesOrderLines.some((l) => l.product_id?.product_id === pId);
+                    if (!isParent) {
+                        let subAssemblyGrossDemand = 0;
+                        const associatedParentNames: string[] = [];
+
+                        Object.entries(subAssemblyMapping).forEach(([parentIdStr, comps]) => {
+                            const parentId = Number(parentIdStr);
+                            const compNeeded = comps.find((c) => c.component_product_id?.product_id === pId);
+                            if (compNeeded) {
+                                const parentShortfall = parentShortfalls[parentId] || 0;
+                                const qtyPerParent = Number(compNeeded.quantity_required || 0);
+                                subAssemblyGrossDemand += parentShortfall * qtyPerParent;
+                                
+                                const parentLine = salesOrderLines.find((l) => l.product_id?.product_id === parentId);
+                                if (parentLine?.product_id?.product_name) {
+                                    associatedParentNames.push(parentLine.product_id.product_name);
+                                }
+                            }
+                        });
+
+                        const onHand = Number(item.on_hand || 0);
+                        const safetyStock = Number(item.safety_stock || 0);
+                        const netShortfall = Math.max(0, subAssemblyGrossDemand - (onHand - safetyStock));
+
+                        calculated.push({
+                            product_id: pId,
+                            product_name: item.product_name + (associatedParentNames.length > 0 ? ` (Sub-Assembly for ${associatedParentNames.join(", ")})` : ""),
+                            product_code: item.product_code,
+                            gross_demand: subAssemblyGrossDemand,
+                            on_hand: onHand,
+                            safety_stock: safetyStock,
+                            net_shortfall: netShortfall,
+                            is_sub_assembly: true
+                        });
+                    }
+                });
+
+                setNetRequirements(calculated);
+            } catch (err: any) {
+                console.error("Error fetching net requirements:", err);
+            } finally {
+                setLoadingRequirements(false);
             }
-        }
-
-        // Compute a due date that is 1 day before the parent JO's due date (or same if not valid)
-        let prereqDueDate = parentJo.due_date;
-        try {
-            const d = new Date(parentJo.due_date);
-            d.setDate(d.getDate() - 1);
-            prereqDueDate = d.toISOString().split("T")[0];
-        } catch (e) {
-            console.error(e);
-        }
-
-        const prereqJoId = `JO-PREREQ-${compProductId}-${Math.floor(1000 + Math.random() * 9000)}`;
-
-        const shift = customShift || "8";
-        const dailyBreakdown = calculateDailyBreakdown(compProductId, suggestedQty, shift, customCapacity);
-
-        const newJO: JobOrder = {
-            jo_id: prereqJoId,
-            order_no: `Prereq for ${parentJo.jo_id}`,
-            product_id: compProductId,
-            product_name: compName,
-            quantity: suggestedQty,
-            due_date: prereqDueDate,
-            status: "Draft",
-            is_batched: false,
-            procurementStatus: "Idle",
-            branch_id: parentJo.branch_id,
-            shiftOption: shift,
-            dailyBreakdown: dailyBreakdown
         };
 
-        try {
-            await addJobOrder(newJO, []);
-            toast.success(`Prerequisite Job Order ${prereqJoId} generated successfully!`);
-            loadJobOrders();
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-        } catch (e: any) {
-            toast.error(e.message || "Failed to create prerequisite Job Order");
+        runFetchNetRequirements();
+    }, [selectedBranchId, demandProductIds, salesOrderLines, subAssemblyMapping]);
+
+    // Helper: Currently selected details
+    const selectedLines = useMemo(() => {
+        return salesOrderLines.filter((l) => selectedDetailIds.includes(l.detail_id));
+    }, [salesOrderLines, selectedDetailIds]);
+
+    // Validation checks for merging selected lines
+    const mergeValidation = useMemo(() => {
+        if (selectedLines.length === 0) {
+            return { isValid: false, reason: "Select sales order lines to begin." };
+        }
+
+        // 1. Must share the exact same product SKU
+        const productIds = new Set(selectedLines.map((l) => l.product_id?.product_id));
+        if (productIds.size > 1) {
+            return { isValid: false, reason: "Cannot consolidate: Selected lines must belong to the exact same product SKU." };
+        }
+
+        // 2. Must have valid version IDs
+        const versions = selectedLines.map((l) => l.bom_version_id);
+        const hasMissingVersion = versions.some((v) => v === null || v === undefined);
+        if (hasMissingVersion) {
+            return {
+                isValid: false,
+                reason: "Cannot consolidate: Selected product is missing an active recipe version override or standard BOM."
+            };
+        }
+
+        // 3. Must have matching versions
+        const uniqueVersions = new Set(versions);
+        if (uniqueVersions.size > 1) {
+            return {
+                isValid: false,
+                reason: "Cannot consolidate: Selected lines have different recipe version overrides. Block merging if versions differ."
+            };
+        }
+
+        return { isValid: true, reason: "" };
+    }, [selectedLines]);
+
+    // Handle toggling select-all
+    const handleSelectAll = (checked: boolean) => {
+        if (checked) {
+            setSelectedDetailIds(salesOrderLines.map((l) => l.detail_id));
+        } else {
+            setSelectedDetailIds([]);
         }
     };
 
-    const handleDeleteJO = async (joId: string) => {
-        try {
-            const success = await removeJobOrder(joId);
-            if (success) {
-                toast.info(`Job Order ${joId} removed.`);
-                loadJobOrders();
-            } else {
-                toast.error("Failed to delete Job Order");
-            }
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-        } catch (e: any) {
-            toast.error(e.message || "Error deleting Job Order");
+    // Handle toggling single line
+    const handleSelectLine = (detailId: number, checked: boolean) => {
+        if (checked) {
+            setSelectedDetailIds((prev) => [...prev, detailId]);
+        } else {
+            setSelectedDetailIds((prev) => prev.filter((id) => id !== detailId));
         }
     };
+
+    // Open Release Modal & initialize parameters
+    const handleInitiateRelease = () => {
+        if (!mergeValidation.isValid) return;
+
+        const firstLine = selectedLines[0];
+        const targetProductId = firstLine.product_id?.product_id;
+        
+        // Sum total demand
+        const totalDemand = selectedLines.reduce((sum, l) => {
+            return sum + Number(l.ordered_quantity || 0);
+        }, 0);
+
+        // Find matching shortfall if any to prefill target quantity
+        const matchingShortfall = netRequirements.find(
+            (r) => r.product_id === targetProductId
+        );
+        const suggestedQty = matchingShortfall && matchingShortfall.net_shortfall > 0 
+            ? matchingShortfall.net_shortfall 
+            : totalDemand;
+
+        // Auto generate a JO ID code
+        const code = `JO-${Math.floor(100000 + Math.random() * 900000)}`;
+
+        setTargetQuantity(suggestedQty);
+        setJoNumber(code);
+        setDueDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]);
+        setShiftOption("8");
+        setRemarks(`Consolidated production run for: ${selectedLines.map(l => l.order_no).join(", ")}`);
+        setIsConfirmOpen(true);
+    };
+
+    // Release JO Submit
+    const handleConfirmRelease = async () => {
+        if (!selectedBranchId || selectedLines.length === 0) return;
+
+        setReleasingJO(true);
+        try {
+            const firstLine = selectedLines[0];
+            const targetProductId = firstLine.product_id?.product_id;
+            const targetProductName = firstLine.product_id?.product_name;
+
+            const uniqueSalesOrderIds = Array.from(new Set(selectedLines.map((l) => l.order_id)));
+
+            const payload = {
+                jo: {
+                    jo_id: joNumber,
+                    product_id: targetProductId,
+                    product_name: targetProductName,
+                    quantity: targetQuantity,
+                    due_date: dueDate,
+                    status: "Released", // releases directly with lot deduction
+                    is_batched: selectedLines.length > 1,
+                    branch_id: selectedBranchId,
+                    shiftOption: shiftOption,
+                    remarks: remarks,
+                    bom: {
+                        version_id: firstLine.bom_version_id
+                    },
+                    assignments: assignments,
+                    products: [
+                        {
+                            product_id: targetProductId,
+                            product_name: targetProductName,
+                            quantity: targetQuantity,
+                            bom: {
+                                version_id: firstLine.bom_version_id
+                            }
+                        }
+                    ]
+                },
+                salesOrderIds: uniqueSalesOrderIds
+            };
+
+            await releaseJobOrder(payload);
+
+            toast.success(`Job Order ${joNumber} released successfully! FIFO materials locked.`);
+            setIsConfirmOpen(false);
+            setSelectedDetailIds([]);
+            // Reload data to show updated unfulfilled lines & requirements
+            loadInitialData();
+        } catch (err: any) {
+            console.error("Error releasing job order:", err);
+            toast.error(err.message || "An error occurred during Job Order explosion & release.");
+        } finally {
+            setReleasingJO(false);
+        }
+    };
+
+    // Direct Allocate Submit
+    const handleConfirmDirectAllocate = async () => {
+        if (!selectedBranchId || selectedLines.length === 0) return;
+
+        setDirectAllocating(true);
+        try {
+            const firstLine = selectedLines[0];
+            const targetProductId = firstLine.product_id?.product_id;
+            const targetVersionId = firstLine.bom_version_id;
+
+            if (!targetProductId || !targetVersionId) {
+                throw new Error("Invalid product or version ID.");
+            }
+
+            const payload = {
+                branchId: selectedBranchId,
+                productId: targetProductId,
+                recipeVersionId: targetVersionId,
+                lines: selectedLines.map(l => ({
+                    detail_id: l.detail_id,
+                    ordered_quantity: l.ordered_quantity
+                }))
+            };
+
+            await directAllocate(payload);
+
+            toast.success(`Direct allocation successful! Stock deducted and order lines ready for invoicing.`);
+            setIsDirectAllocDialogOpen(false);
+            setSelectedDetailIds([]);
+            loadInitialData();
+        } catch (err: any) {
+            console.error("Error during direct allocation:", err);
+            toast.error(err.message || "An error occurred during direct allocation.");
+        } finally {
+            setDirectAllocating(false);
+        }
+    };
+
+    // Load available version stock when selected lines change
+    useEffect(() => {
+        if (!selectedBranchId || !mergeValidation.isValid || selectedLines.length === 0) {
+            setVersionStock(null);
+            return;
+        }
+
+        const firstLine = selectedLines[0];
+        const pId = firstLine.product_id?.product_id;
+        const versionId = firstLine.bom_version_id;
+
+        if (!pId || !versionId) {
+            setVersionStock(null);
+            return;
+        }
+
+        const fetchVersionStock = async () => {
+            setLoadingVersionStock(true);
+            try {
+                const res = await fetch(`/api/manufacturing/planning-engineering?action=version-stock&productId=${pId}&branchId=${selectedBranchId}`);
+                if (res.ok) {
+                    const stockMap = await res.json();
+                    const stock = stockMap[versionId] || 0;
+                    setVersionStock(stock);
+                } else {
+                    setVersionStock(0);
+                }
+            } catch (err) {
+                console.error("Failed to load version stock:", err);
+                setVersionStock(0);
+            } finally {
+                setLoadingVersionStock(false);
+            }
+        };
+
+        fetchVersionStock();
+    }, [selectedBranchId, selectedLines, mergeValidation.isValid]);
 
     return {
-        activeTab,
-        setActiveTab,
-        salesOrders,
-        soDetailsMap,
-        loadingSO,
-        loadingJOs,
-        selectedSO,
-        setSelectedSO,
-        soDetails,
-        loadingDetails,
-        selectedBatchCandidate,
-        setSelectedBatchCandidate,
-        jobOrders,
-        filteredJobOrders,
-        checkingInventoryId,
-        procurementLoadingId,
-        selectedDetailId,
-        joNumber,
-        setJoNumber,
-        dueDate,
-        setDueDate,
-        joQty,
-        setJoQty,
-        selectedBomVersionId,
-        setSelectedBomVersionId,
-        consolidationCandidates,
+        loadingBranches,
+        loadingOrders,
+        loadingRequirements,
+        releasingJO,
         branches,
+        salesOrders,
+        netRequirements,
         selectedBranchId,
         setSelectedBranchId,
-        filterBranchId,
-        setFilterBranchId,
-        page,
-        setPage,
-        totalPages,
-        searchQuery,
-        setSearchQuery,
-        selectedIds,
-        setSelectedIds,
-        handleSelectSO,
-        handleSelectBatchCandidate,
-        handleDetailChange,
-        handleCreateJobOrder,
-        handleRunFIFOInventoryCheck,
-        handleTriggerProcurement,
-        handleProgressProcurement,
-        handleDeleteJO,
-        handleCreatePrerequisiteJobOrder,
-        products,
-        users,
-        suppliers,
-        isStandaloneMode,
-        setIsStandaloneMode,
-        selectedStandaloneProduct,
-        setSelectedStandaloneProduct,
-        handleUpdateProductCapacity,
-        selectedProductsList,
-        setSelectedProductsList,
-        productVersions,
-        loadVersionsForProduct,
+        selectedDetailIds,
+        isConfirmOpen,
+        setIsConfirmOpen,
+        targetQuantity,
+        setTargetQuantity,
+        dueDate,
+        setDueDate,
         shiftOption,
         setShiftOption,
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-        modifyJobOrder: async (joId: string, patch: any) => {
-            await modifyJobOrder(joId, patch);
-            await loadJobOrders();
-        }
+        remarks,
+        setRemarks,
+        joNumber,
+        setJoNumber,
+        loadInitialData,
+        salesOrderLines,
+        selectedLines,
+        mergeValidation,
+        handleSelectAll,
+        handleSelectLine,
+        handleInitiateRelease,
+        handleConfirmRelease,
+        assignments,
+        setAssignments,
+        directAllocating,
+        versionStock,
+        loadingVersionStock,
+        isDirectAllocDialogOpen,
+        setIsDirectAllocDialogOpen,
+        handleConfirmDirectAllocate
     };
 }

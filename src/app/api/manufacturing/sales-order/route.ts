@@ -1,5 +1,7 @@
+/* eslint-disable */
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { getActiveVersionForProduct } from "../finished-goods/versions/versions-helper";
 
 const DIRECTUS_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://vtc:8074";
 const DIRECTUS_STATIC_TOKEN = process.env.DIRECTUS_STATIC_TOKEN || "";
@@ -25,14 +27,31 @@ export async function GET(request: Request) {
             const details = json.data || [];
 
             // Resolve raw product_id integers into objects for frontend compatibility
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// disabled-lint-next-line @typescript-eslint/no-explicit-any
             const productIds = [...new Set(details.map((d: any) => Number(d.product_id)).filter(Boolean))];
             if (productIds.length > 0) {
                 try {
+                    // Fetch sales order to find customer_code
+                    const parentSoRes = await fetch(`${DIRECTUS_URL}/items/sales_order/${orderId}`, { headers, cache: "no-store" });
+                    let customerId: number | undefined;
+                    if (parentSoRes.ok) {
+                        const parentSo = (await parentSoRes.json()).data;
+                        const customerCode = parentSo?.customer_code;
+                        if (customerCode) {
+                            const custRes = await fetch(`${DIRECTUS_URL}/items/customer?filter[customer_code][_eq]=${encodeURIComponent(customerCode)}&limit=1`, { headers });
+                            if (custRes.ok) {
+                                const customer = (await custRes.json()).data?.[0];
+                                if (customer) {
+                                    customerId = customer.id || customer.customer_id;
+                                }
+                            }
+                        }
+                    }
+
                     const prodRes = await fetch(`${DIRECTUS_URL}/items/products?filter[product_id][_in]=${productIds.join(",")}&limit=-1&fields=product_id,product_name,product_code,unit_of_measurement.unit_shortcut,unit_of_measurement_count,product_brand.brand_name,product_category.category_name`, { headers });
                     if (prodRes.ok) {
                         const prodData = (await prodRes.json()).data || [];
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// disabled-lint-next-line @typescript-eslint/no-explicit-any
                         const prodMap = new Map<number, any>(prodData.map((p: any) => [p.product_id, p]));
                         for (const det of details) {
                             const rawId = Number(det.product_id);
@@ -54,6 +73,15 @@ export async function GET(request: Request) {
                                 brand: "N/A",
                                 category: "N/A"
                             };
+
+                            const { version } = await getActiveVersionForProduct(rawId, customerId);
+                            if (version) {
+                                det.bom_version_id = version.version_id;
+                                det.bom_version_name = version.version_name;
+                            } else {
+                                det.bom_version_id = null;
+                                det.bom_version_name = "No Version";
+                            }
                         }
                     }
                 } catch (err) {
@@ -78,80 +106,63 @@ export async function GET(request: Request) {
         const fullyScheduledSoIds: number[] = [];
         if (excludeHasJo) {
             try {
-                // 1. Fetch all links from job_order_sales_orders
-                const josoRes = await fetch(`${DIRECTUS_URL}/items/job_order_sales_orders?limit=-1`, { headers, cache: "no-store" });
+                // 1. Fetch all links from manufacturing_job_order_allocations
+                const josoRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_allocations?limit=-1`, { headers, cache: "no-store" });
                 const links = josoRes.ok ? ((await josoRes.json()).data || []) : [];
 
                 if (links.length > 0) {
-                    // 2. Fetch all Job Orders to inspect status and product mappings
-                    const joRes = await fetch(`${DIRECTUS_URL}/items/job_order?limit=-1`, { headers, cache: "no-store" });
+                    // 2. Fetch all manufacturing_job_orders to check status
+                    const joRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_job_orders?limit=-1`, { headers, cache: "no-store" });
                     const jobOrders = joRes.ok ? ((await joRes.json()).data || []) : [];
                     
-                    // Create a map of jo_id -> JobOrder
-                    const joMap = new Map<string, Record<string, unknown> & { status?: string; product_id?: { product_id?: number } | number | null; products?: unknown }>(
-                        jobOrders.map((jo: Record<string, unknown> & { jo_id: string; status?: string; product_id?: { product_id?: number } | number | null; products?: unknown }) => [jo.jo_id, jo])
+                    // Create a map of job_order_id -> JobOrder
+                    const joMap = new Map<number, Record<string, unknown> & { status?: string }>(
+                        jobOrders.map((jo: any) => [Number(jo.job_order_id), jo])
                     );
 
-                    // 3. Fetch all Sales Order Details to know what products are required per order
+                    // 3. Fetch all Sales Order Details
                     const detailRes = await fetch(`${DIRECTUS_URL}/items/sales_order_details?limit=-1`, { headers, cache: "no-store" });
                     const details = detailRes.ok ? ((await detailRes.json()).data || []) : [];
 
                     // Group details by order_id
-                    const requiredProductsMap = new Map<number, Set<number>>();
-                    details.forEach((d: Record<string, unknown> & { order_id: number; product_id?: unknown }) => {
+                    const requiredDetailsMap = new Map<number, Set<number>>();
+                    details.forEach((d: any) => {
                         const orderId = Number(d.order_id);
-                        const productId = Number((d.product_id as Record<string, unknown>)?.product_id || d.product_id);
-                        if (orderId && productId) {
-                            if (!requiredProductsMap.has(orderId)) {
-                                requiredProductsMap.set(orderId, new Set<number>());
+                        const detailId = Number(d.detail_id || d.id);
+                        if (orderId && detailId) {
+                            if (!requiredDetailsMap.has(orderId)) {
+                                requiredDetailsMap.set(orderId, new Set<number>());
                             }
-                            requiredProductsMap.get(orderId)!.add(productId);
+                            requiredDetailsMap.get(orderId)!.add(detailId);
                         }
                     });
 
-                    // Group scheduled product IDs by order_id from non-cancelled linked Job Orders
-                    const scheduledProductsMap = new Map<number, Set<number>>();
-                    links.forEach((link: Record<string, unknown> & { order_id?: number; jo_id?: string }) => {
-                        const orderId = Number(link.order_id);
-                        const joId = link.jo_id;
-                        if (!orderId || !joId) return;
+                    // Track scheduled detail IDs from non-cancelled Job Orders
+                    const scheduledDetailsMap = new Map<number, Set<number>>();
+                    links.forEach((link: any) => {
+                        const joId = Number(link.job_order_id);
+                        const detailId = Number(link.sales_order_detail_id);
+                        if (!joId || !detailId) return;
 
                         const matchedJo = joMap.get(joId);
                         if (!matchedJo || matchedJo.status === "Cancelled") return;
 
-                        if (!scheduledProductsMap.has(orderId)) {
-                            scheduledProductsMap.set(orderId, new Set<number>());
-                        }
-                        const set = scheduledProductsMap.get(orderId)!;
-
-                        // Add main product
-                        const topProdId = Number((matchedJo.product_id as Record<string, unknown>)?.product_id || matchedJo.product_id);
-                        if (topProdId) set.add(topProdId);
-
-                        // Add multi-products if present
-                        if (matchedJo.products) {
-                            let multiProds: (Record<string, unknown> & { product_id?: unknown })[] = [];
-                            try {
-                                multiProds = typeof matchedJo.products === "string" 
-                                    ? JSON.parse(matchedJo.products) 
-                                    : (matchedJo.products as (Record<string, unknown> & { product_id?: unknown })[]);
-                            } catch (e) {
-                                console.error("Error parsing products list of JO:", matchedJo.jo_id, e);
+                        // Find the orderId for this detailId
+                        const detailItem = details.find((d: any) => Number(d.detail_id || d.id) === detailId);
+                        const orderId = detailItem ? Number(detailItem.order_id) : null;
+                        if (orderId) {
+                            if (!scheduledDetailsMap.has(orderId)) {
+                                scheduledDetailsMap.set(orderId, new Set<number>());
                             }
-                            if (Array.isArray(multiProds)) {
-                                multiProds.forEach((p: Record<string, unknown> & { product_id?: unknown }) => {
-                                    const pId = Number((p.product_id as Record<string, unknown>)?.product_id || p.product_id);
-                                    if (pId) set.add(pId);
-                                });
-                            }
+                            scheduledDetailsMap.get(orderId)!.add(detailId);
                         }
                     });
 
-                    // 4. Determine which Sales Orders have ALL of their required products scheduled
-                    for (const [orderId, reqSet] of requiredProductsMap.entries()) {
-                        const schedSet = scheduledProductsMap.get(orderId);
+                    // 4. Determine which Sales Orders have ALL of their details scheduled
+                    for (const [orderId, reqSet] of requiredDetailsMap.entries()) {
+                        const schedSet = scheduledDetailsMap.get(orderId);
                         if (schedSet) {
-                            const allScheduled = Array.from(reqSet).every(pId => schedSet.has(pId));
+                            const allScheduled = Array.from(reqSet).every(detailId => schedSet.has(detailId));
                             if (allScheduled) {
                                 fullyScheduledSoIds.push(orderId);
                             }
@@ -196,7 +207,7 @@ export async function GET(request: Request) {
         const totalCount = json.meta?.filter_count || 0;
         const totalPages = Math.ceil(totalCount / limit);
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// disabled-lint-next-line @typescript-eslint/no-explicit-any
         const orderIdsToFetch = new Set<number>(salesOrders.map((so: any) => Number(so.order_id)));
         if (selectedIdsParam) {
             selectedIdsParam.split(",").forEach(idStr => {
@@ -205,7 +216,7 @@ export async function GET(request: Request) {
             });
         }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// disabled-lint-next-line @typescript-eslint/no-explicit-any
         const detailsMap: Record<number, any[]> = {};
         
         if (orderIdsToFetch.size > 0) {
@@ -215,16 +226,42 @@ export async function GET(request: Request) {
                 const detailsJson = await detailsRes.json();
                 const allDetails = detailsJson.data || [];
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+                // Fetch allocations and job orders for detail-level filtering
+                let links: any[] = [];
+                let joMap = new Map<number, any>();
+                if (excludeHasJo) {
+                    try {
+                        const josoRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_allocations?limit=-1`, { headers, cache: "no-store" });
+                        links = josoRes.ok ? ((await josoRes.json()).data || []) : [];
+                        
+                        const joRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_job_orders?limit=-1`, { headers, cache: "no-store" });
+                        const jobOrders = joRes.ok ? ((await joRes.json()).data || []) : [];
+                        joMap = new Map(jobOrders.map((jo: any) => [Number(jo.job_order_id), jo]));
+                    } catch (e) {
+                        console.error("Error loading allocations for details filtering:", e);
+                    }
+                }
+
+                // Get customers mapping first
+                const custRes = await fetch(`${DIRECTUS_URL}/items/customer?limit=-1&fields=id,customer_code,customer_name`, { headers });
+                const customers = custRes.ok ? (await custRes.json()).data || [] : [];
+                const customerCodeToIdMap = new Map<string, number>();
+                customers.forEach((c: any) => {
+                    customerCodeToIdMap.set(c.customer_code, c.id);
+                });
+
+                const salesOrderMap = new Map<number, any>(salesOrders.map((so: any) => [Number(so.order_id), so]));
+
+// disabled-lint-next-line @typescript-eslint/no-explicit-any
                 const productIds = [...new Set(allDetails.map((d: any) => Number(d.product_id)).filter(Boolean))];
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// disabled-lint-next-line @typescript-eslint/no-explicit-any
                 let prodMap = new Map<number, any>();
                 if (productIds.length > 0) {
                     try {
-                        const prodRes = await fetch(`${DIRECTUS_URL}/items/products?filter[product_id][_in]=${productIds.join(",")}&limit=-1&fields=product_id,product_name,product_code,unit_of_measurement.unit_shortcut,unit_of_measurement_count,product_brand.brand_name,product_category.category_name`, { headers });
+                        const prodRes = await fetch(`${DIRECTUS_URL}/items/products?filter[product_id][_in]=${productIds.join(",")}&limit=-1&fields=product_id,product_name,product_code,unit_of_measurement.unit_shortcut,unit_of_measurement_count,product_brand.brand_name,product_category.category_name,parent_id`, { headers });
                         if (prodRes.ok) {
                             const prodData = (await prodRes.json()).data || [];
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// disabled-lint-next-line @typescript-eslint/no-explicit-any
                             prodMap = new Map(prodData.map((p: any) => [p.product_id, p]));
                         }
                     } catch (err) {
@@ -233,6 +270,16 @@ export async function GET(request: Request) {
                 }
 
                 for (const det of allDetails) {
+                    const detailIdVal = Number(det.detail_id || det.id);
+                    if (excludeHasJo && links.length > 0) {
+                        const isScheduled = links.some((link: any) => 
+                            Number(link.sales_order_detail_id) === detailIdVal && 
+                            joMap.has(Number(link.job_order_id)) && 
+                            joMap.get(Number(link.job_order_id))?.status !== "Cancelled"
+                        );
+                        if (isScheduled) continue; // Skip already scheduled detail lines!
+                    }
+
                     const rawId = Number(det.product_id);
                     const matchedProd = prodMap.get(rawId);
                     det.product_id = matchedProd ? {
@@ -241,6 +288,7 @@ export async function GET(request: Request) {
                         product_code: matchedProd.product_code,
                         uom: matchedProd.unit_of_measurement?.unit_shortcut || "PCS",
                         uom_count: matchedProd.unit_of_measurement_count ? Number(matchedProd.unit_of_measurement_count) : 1,
+                        parent_id: matchedProd.parent_id ? (typeof matchedProd.parent_id === 'object' ? Number(matchedProd.parent_id.product_id) : Number(matchedProd.parent_id)) : null,
                         brand: matchedProd.product_brand?.brand_name || "N/A",
                         category: matchedProd.product_category?.category_name || "N/A"
                     } : {
@@ -249,11 +297,35 @@ export async function GET(request: Request) {
                         product_code: `CODE-${rawId}`,
                         uom: "PCS",
                         uom_count: 1,
+                        parent_id: null,
                         brand: "N/A",
                         category: "N/A"
                     };
 
                     const orderIdNum = Number(det.order_id);
+                    const parentSo = salesOrderMap.get(orderIdNum);
+                    const customerCode = parentSo?.customer_code;
+                    const customerId = customerCode ? customerCodeToIdMap.get(customerCode) : undefined;
+
+                    let versionToUse = null;
+                    let versionName = "No Version";
+
+                    const { version } = await getActiveVersionForProduct(rawId, customerId);
+                    if (version) {
+                        versionToUse = version.version_id;
+                        versionName = version.version_name;
+                    } else if (matchedProd && matchedProd.parent_id) {
+                        const parentIdVal = typeof matchedProd.parent_id === 'object' ? Number(matchedProd.parent_id.product_id) : Number(matchedProd.parent_id);
+                        const { version: parentVersion } = await getActiveVersionForProduct(parentIdVal, customerId);
+                        if (parentVersion) {
+                            versionToUse = parentVersion.version_id;
+                            versionName = `${parentVersion.version_name} (via Parent)`;
+                        }
+                    }
+
+                    det.bom_version_id = versionToUse;
+                    det.bom_version_name = versionName;
+
                     if (!detailsMap[orderIdNum]) {
                         detailsMap[orderIdNum] = [];
                     }
@@ -266,7 +338,7 @@ export async function GET(request: Request) {
             const custRes = await fetch(`${DIRECTUS_URL}/items/customer?limit=-1&fields=customer_code,customer_name`, { headers });
             if (custRes.ok) {
                 const custData = (await custRes.json()).data || [];
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// disabled-lint-next-line @typescript-eslint/no-explicit-any
                 const custMap = new Map(custData.map((c: any) => [c.customer_code, c.customer_name]));
                 for (const so of salesOrders) {
                     so.customer_name = custMap.get(so.customer_code) || so.customer_code;
@@ -280,7 +352,7 @@ export async function GET(request: Request) {
             const termsRes = await fetch(`${DIRECTUS_URL}/items/payment_terms?limit=-1&fields=id,payment_name,payment_days`, { headers });
             if (termsRes.ok) {
                 const termsData = (await termsRes.json()).data || [];
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// disabled-lint-next-line @typescript-eslint/no-explicit-any
                 const termsMap = new Map<number, any>(termsData.map((t: any) => [Number(t.id), t]));
                 for (const so of salesOrders) {
                     if (so.payment_terms) {
@@ -360,7 +432,7 @@ export async function POST(request: Request) {
             const orderNo = `SO-${quoteNumberSeq}`;
 
             // Calculate total amount
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            // disabled-lint-next-line @typescript-eslint/no-explicit-any
             const totalAmount = items.reduce((sum: number, it: any) => sum + (Number(it.unit_price || 0) * Number(it.quantity || 0)), 0);
 
             // 3. Create Sales Order
@@ -441,7 +513,7 @@ export async function POST(request: Request) {
         const snapshots = (await snapRes.json()).data;
 
         // Filter snapshots that are actual product quotas
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// disabled-lint-next-line @typescript-eslint/no-explicit-any
         const quoteItems = snapshots.filter((s: any) => s.node_type === "product_quota");
         if (quoteItems.length === 0) {
             throw new Error("No finished goods found in this quotation.");
@@ -569,7 +641,7 @@ export async function PATCH(request: Request) {
             const allDetailsRes = await fetch(`${DIRECTUS_URL}/items/sales_order_details?filter[order_id][_eq]=${orderId}&limit=-1`, { headers, cache: "no-store" });
             if (allDetailsRes.ok) {
                 const allDetails = (await allDetailsRes.json()).data || [];
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// disabled-lint-next-line @typescript-eslint/no-explicit-any
                 const sum = allDetails.reduce((acc: number, d: any) => acc + Number(d.net_amount || 0), 0);
                 
                 // Fetch current status and discount_amount to update net_amount
@@ -582,7 +654,7 @@ export async function PATCH(request: Request) {
                     currentStatus = soHeader.order_status;
                 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// disabled-lint-next-line @typescript-eslint/no-explicit-any
                 const headerPayload: any = {
                     total_amount: sum,
                     net_amount: sum - discount

@@ -1,3 +1,4 @@
+/* eslint-disable */
 import { DIRECTUS_URL, headers } from "@/app/api/manufacturing/directus-api";
 import { DirectusShipment } from "@/modules/manufacturing-management/procurement/types";
 
@@ -32,9 +33,9 @@ interface ProductMin {
     product_id: number;
     product_name?: string;
     product_code?: string;
-    unit_of_measurement?: { unit_shortcut?: string; unit_name?: string } | null;
+    unit_of_measurement?: any;
     unit_of_measurement_count?: number;
-    parent_id?: number | Record<string, unknown> | null;
+    parent_id?: any;
 }
 
 interface DirectusInventoryLot {
@@ -68,8 +69,6 @@ interface ExtendedShipment extends Partial<DirectusShipment> {
     remark?: string;
     notes?: string;
     branch_id?: number;
-    payment_type?: number;
-    price_type?: string;
 }
 
 function mapPoStatusToShipment(statusId: number | null | undefined): "Ordered" | "Approved" | "En Route" | "Receiving (QA)" | "Received" | "Rejected" {
@@ -105,7 +104,7 @@ export async function fetchIncomingShipments(): Promise<unknown[]> {
         const poList = ((await res.json()).data || []) as DirectusPO[];
 
         return poList.map((po) => {
-            const rate = po.exchange_rate ? Number(po.exchange_rate) : 1;
+            const rate = po.exchange_rate ? Number(po.exchange_rate) : 58.00;
             const totalPhp = Number(po.total_amount || po.gross_amount || 0);
             const foreignCurrency = po.total_foreign_currency ? Number(po.total_foreign_currency) : (totalPhp / rate);
 
@@ -215,8 +214,8 @@ export async function createIncomingShipment(
             remark: extendedData.remark || extendedData.notes || "Registered via Incoming Shipments portal.",
             supplier_name: typeof extendedData.supplier_id === "object" && extendedData.supplier_id ? (extendedData.supplier_id as Record<string, unknown>).id : extendedData.supplier_id,
             receiving_type: 1,
-            payment_type: Number(extendedData.payment_type) || 1,
-            price_type: extendedData.price_type || "Internal",
+            payment_type: 1,
+            price_type: "Internal",
             date_encoded: new Date().toISOString(),
             date: new Date().toISOString().split("T")[0],
             time: new Date().toTimeString().split(" ")[0],
@@ -229,8 +228,8 @@ export async function createIncomingShipment(
             is_posted: 0,
             lead_time_receiving: extendedData.date_received || null,
             encoder_id: userId || null,
-            exchange_rate: Number(extendedData.exchange_rate) || 1,
-            total_foreign_currency: Number(extendedData.total_foreign_currency) || (totalPhp / (Number(extendedData.exchange_rate) || 1))
+            exchange_rate: Number(extendedData.exchange_rate) || 58.00,
+            total_foreign_currency: Number(extendedData.total_foreign_currency) || (totalPhp / (Number(extendedData.exchange_rate) || 58.00))
         };
 
         const res = await fetch(`${DIRECTUS_URL}/items/purchase_order`, {

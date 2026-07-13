@@ -75,7 +75,7 @@ export async function getLatestLandedCost(
  */
 export async function fetchAllProducts(search?: string, limit: number = -1): Promise<DirectusProduct[]> {
     try {
-        const explicitFields = "product_id,product_name,product_code,description,isActive,cost_per_unit,price_per_unit,product_brand,parent_id,parent_id.product_id,parent_id.product_name,product_category.category_name,unit_of_measurement.unit_id,unit_of_measurement.unit_shortcut,unit_of_measurement.unit_name,unit_of_measurement_count,product_image,density_factor,production_capacity_per_hour,product_type";
+        const explicitFields = "product_id,product_name,product_code,description,isActive,cost_per_unit,price_per_unit,product_brand,barcode,parent_id,parent_id.product_id,parent_id.product_name,product_category.category_name,unit_of_measurement.unit_id,unit_of_measurement.unit_shortcut,unit_of_measurement.unit_name,unit_of_measurement_count,product_image,density_factor,production_capacity_per_hour,product_type";
         let url = `${DIRECTUS_URL}/items/products?limit=${limit}&fields=${explicitFields}`;
         if (search && search.trim()) {
             url += `&search=${encodeURIComponent(search.trim())}`;
@@ -203,7 +203,7 @@ export async function calculateRollupCost(
     const workCentersMap = new Map<number, any>(workCenters.map((wc: any) => [wc.work_center_id, wc]));
 
     // Load Operations for names
-    const resOps = await fetch(`${DIRECTUS_URL}/items/operations?limit=-1`, { headers, cache: "no-store" });
+    const resOps = await fetch(`${DIRECTUS_URL}/items/manufacturing_operations?limit=-1`, { headers, cache: "no-store" });
     const operationsList = resOps.ok ? (await resOps.json()).data || [] : [];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const operationsMap = new Map<number, string>(operationsList.map((op: any) => [op.id, op.operation_name]));
@@ -223,10 +223,13 @@ export async function calculateRollupCost(
         const workCenter = r.work_center_id ? workCentersMap.get(r.work_center_id) : null;
         const opName = r.operation_id ? (operationsMap.get(r.operation_id) || `Operation #${r.operation_id}`) : `Operation Step`;
         
-        // Routing Step Cost
-        const laborCost = Number(r.estimated_labor_cost || 0);
+        // Routing Step Cost (Setup hours and flat labor are amortized by the version's base quantity)
+        const baseQty = Number(version?.base_quantity) || 1;
+        const laborCost = Number(r.estimated_labor_cost || 0) / baseQty;
         const wcOverheadRate = workCenter ? Number(workCenter.overhead_cost_per_hour || 0) : 0;
-        const totalHours = Number(r.setup_time_hours || 0) + Number(r.run_time_hours || 0);
+        const setupHoursPerUnit = Number(r.setup_time_hours || 0) / baseQty;
+        const runHoursPerUnit = Number(r.run_time_hours || 0);
+        const totalHours = setupHoursPerUnit + runHoursPerUnit;
         const overheadCost = wcOverheadRate * totalHours;
         const stepCost = laborCost + overheadCost;
         
@@ -411,7 +414,7 @@ export async function syncProductOverheads(
                 overhead_id: Number(item.overheadId),
                 amount: Number(item.amount) || 0
             };
-            const isNew = isNaN(Number(item.id));
+            const isNew = isNaN(Number(item.id)) || Number(item.id) < 0;
             if (isNew) {
                 await fetch(`${DIRECTUS_URL}/items/product_overheads`, { method: "POST", headers, body: JSON.stringify(payload) });
             } else {

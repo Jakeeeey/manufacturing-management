@@ -192,7 +192,7 @@ export async function PUT(request: Request) {
             return sum + qty * price;
         }, 0);
         const totalPhp = recomputedTotalPhp || Number(shipmentData.total_php_value || 0);
-        const exchangeRate = Number(shipmentData.exchange_rate) || 1;
+        const exchangeRate = Number(shipmentData.exchange_rate) || 58.00;
 
         // 1. Update purchase_order header
         const poPayload = {
@@ -207,9 +207,7 @@ export async function PUT(request: Request) {
             date_received: shipmentData.date_received || null,
             lead_time_receiving: null,
             approver_id: null,
-            date_approved: null,
-            payment_type: Number(shipmentData.payment_type) || 1,
-            price_type: shipmentData.price_type || "Internal"
+            date_approved: null
         };
 
         const poRes = await fetch(`${DIRECTUS_URL}/items/purchase_order/${shipmentId}`, {

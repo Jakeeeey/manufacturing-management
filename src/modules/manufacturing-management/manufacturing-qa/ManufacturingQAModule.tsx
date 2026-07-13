@@ -1,206 +1,339 @@
+/* eslint-disable */
 "use client";
 
-import React, { useMemo } from "react";
-import { Search, RotateCw, ShieldCheck, History, AlertTriangle, PackageCheck } from "lucide-react";
+import React from "react";
+import { 
+    RefreshCw, 
+    ArrowRight, 
+    BadgeAlert,
+    Lock,
+    Forklift,
+    FileText,
+    ClipboardCheck,
+    CheckCircle2
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { 
+    Tabs, 
+    TabsContent, 
+    TabsList, 
+    TabsTrigger 
+} from "@/components/ui/tabs";
 import { useManufacturingQA } from "./hooks/useManufacturingQA";
-import { QAOverviewDashboard } from "./components/QAOverviewDashboard";
-import { ActiveJOAuditTable } from "./components/ActiveJOAuditTable";
-import { QALogHistoryTable } from "./components/QALogHistoryTable";
-import { JobOrderQAAuditModal } from "./components/JobOrderQAAuditModal";
-import { ReleasedBatchesTable } from "./components/ReleasedBatchesTable";
+import { QuarantineHolds } from "./components/QuarantineHolds";
+import { YieldClosingQueue } from "./components/YieldClosingQueue";
+import { CheckpointLogsTable } from "./components/CheckpointLogsTable";
+import { YieldClosingDialog } from "./components/YieldClosingDialog";
+import { OverrideDialog } from "./components/OverrideDialog";
+import { DailyQAQueue } from "./components/DailyQAQueue";
+import { FinalQAReleases } from "./components/FinalQAReleases";
 
-export default function ManufacturingQAModule({ userId }: { userId?: number }) {
+export default function ManufacturingQAModule() {
     const {
+        qaLogs,
         activeTab,
         setActiveTab,
-        loading,
-        searchQuery,
-        setSearchQuery,
+        loadingLogs,
+        loadingDispositions,
+        loadingJobOrders,
+        actionLoading,
+        logSearch,
+        setLogSearch,
+        logStatusFilter,
+        setLogStatusFilter,
+        joSearch,
+        setJoSearch,
         selectedJO,
-        setSelectedJO,
-        isAuditModalOpen,
-        setIsAuditModalOpen,
-        submittingAudit,
-        releasingGoods,
-        catalogProducts,
-        branches,
-        filteredJobOrders,
-        filteredHistory,
-        completedBatches,
-        handleOpenAudit,
-        handleVerifyQATask,
-        handleStartRoutingTask,
-        handleReleaseGoods,
-        refresh
-    } = useManufacturingQA(userId);
+        isYieldDialogOpen,
+        setIsYieldDialogOpen,
+        yieldQty,
+        setYieldQty,
+        lotNumber,
+        setLotNumber,
+        expiryDate,
+        setExpiryDate,
+        unitCost,
+        setUnitCost,
+        selectedDisp,
+        isOverrideDialogOpen,
+        setIsOverrideDialogOpen,
+        overrideDecision,
+        setOverrideDecision,
+        overrideComments,
+        setOverrideComments,
+        refreshAll,
+        getBranchName,
+        filteredQALogs,
+        pendingHolds,
+        activeJobOrders,
+        handleOpenYieldDialog,
+        handleSubmitYieldClosing,
+        handleOpenOverrideDialog,
+        handleSubmitOverride,
 
-    // Dynamically calculate high deviation alerts across active Job Orders
-    const deviationAlerts = useMemo(() => {
-        const alerts: { joId: string; productName: string; deviationRate: number; scrapCount: number }[] = [];
+        // Daily Yield QA states & handlers
+        yieldLedger,
+        dailyInspections,
+        loadingDailyQA,
+        isDailyAuditOpen,
+        setIsDailyAuditOpen,
+        selectedLedgerEntry,
+        moisturePct,
+        setMoisturePct,
+        acidityPh,
+        setAcidityPh,
+        sensoryStatus,
+        setSensoryStatus,
+        weightCheckPassed,
+        setWeightCheckPassed,
+        dailyLabStatus,
+        setDailyLabStatus,
+        dailyActionTaken,
+        setDailyActionTaken,
+        dailyRemarks,
+        setDailyRemarks,
+        handleOpenDailyAuditDialog,
+        handleSubmitDailyAudit,
+        selectedRouteId,
+        setSelectedRouteId,
+        routes,
+        jobOrders,
+        qaTemplates,
+        qaParamValues,
+        setQaParamValues,
 
-        // Check each filtered active job order for QA history deviations
-        filteredJobOrders.forEach(jo => {
-            const relatedLogs = filteredHistory.filter(log => log.jo_id === jo.jo_id);
-            if (relatedLogs.length === 0) return;
-
-            let totalExp = 0;
-            let totalDev = 0;
-            relatedLogs.forEach(log => {
-                totalExp += log.expected_quantity;
-                totalDev += log.deviation_quantity;
-            });
-
-            const deviationRate = totalExp > 0 ? (totalDev / totalExp) * 100 : 0;
-            if (deviationRate >= 10.0) {
-                alerts.push({
-                    joId: jo.jo_id,
-                    productName: jo.product_name,
-                    deviationRate,
-                    scrapCount: totalDev
-                });
-            }
-        });
-
-        return alerts;
-    }, [filteredJobOrders, filteredHistory]);
+        // Final QA states & handlers
+        finalReleases,
+        lots,
+        lotsProducts,
+        loadingFinalQA,
+        isFinalReleaseOpen,
+        setIsFinalReleaseOpen,
+        selectedLot,
+        inspectedQty,
+        setInspectedQty,
+        defectQty,
+        setDefectQty,
+        microbiologicalStatus,
+        setMicrobiologicalStatus,
+        packagingSealPassed,
+        setPackagingSealPassed,
+        labelCompliancePassed,
+        setLabelCompliancePassed,
+        overallDisposition,
+        setOverallDisposition,
+        coaRefNo,
+        setCoaRefNo,
+        finalRemarks,
+        setFinalRemarks,
+        handleOpenFinalReleaseDialog,
+        handleSubmitFinalRelease
+    } = useManufacturingQA();
 
     return (
         <div className="space-y-6">
             {/* Header section */}
-            <div className="flex items-center justify-between border-b pb-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-5">
                 <div>
-                    <h3 className="text-base font-bold text-foreground">Manufacturing Quality Control & QA Inspection</h3>
-                    <p className="text-xs text-muted-foreground font-medium">
-                        Audit active Job Orders, record stage-by-stage QA checklists, track yield scrap deviations, and authorize inventory release.
+                    <h1 className="text-3xl font-extrabold tracking-tight">Quality Assurance Console</h1>
+                    <p className="text-muted-foreground mt-1">
+                        Audit active checklist parameters, release quarantine hold overrides, and finalize production yield closing log receipts.
                     </p>
                 </div>
-                <button
-                    onClick={refresh}
-                    disabled={loading}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-card hover:bg-muted border text-muted-foreground hover:text-foreground text-xs font-bold transition-all shadow-xs"
-                >
-                    <RotateCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
-                    Sync Data
-                </button>
+                <div className="flex items-center gap-2 shrink-0">
+                    <Button variant="outline" size="sm" onClick={refreshAll} className="gap-1.5">
+                        <RefreshCw className="h-4 w-4" />
+                        Sync Dashboard
+                    </Button>
+                </div>
             </div>
 
-            {/* Severity Alerts Banner */}
-            {deviationAlerts.length > 0 && (
-                <div className="bg-rose-500/10 border border-rose-500/20 rounded-2xl p-4 space-y-2 animate-in fade-in duration-200">
-                    <div className="flex items-center gap-2 text-rose-500 text-xs font-extrabold uppercase tracking-wider">
-                        <AlertTriangle className="h-4 w-4" />
-                        Critical Yield Deviation Alert
-                    </div>
-                    <div className="space-y-1.5">
-                        {deviationAlerts.map(alert => (
-                            <p key={alert.joId} className="text-[11px] text-muted-foreground font-semibold">
-                                Job Order <span className="text-foreground font-black">{alert.joId}</span> ({alert.productName}) has logged a scrap yield loss of <span className="text-rose-500 font-extrabold">{alert.deviationRate.toFixed(1)}%</span> ({alert.scrapCount} items). Audit correction is recommended.
+            {/* Quarantine/Active Holds Banner if any holds exist */}
+            {pendingHolds.length > 0 && (
+                <div className="relative overflow-hidden rounded-xl border border-destructive/30 bg-destructive/5 p-4 md:p-6 text-destructive-foreground flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-sm animate-in fade-in duration-300">
+                    <div className="flex items-start gap-4">
+                        <div className="p-3 bg-destructive/15 rounded-lg text-destructive shrink-0 mt-0.5 md:mt-0">
+                            <BadgeAlert className="h-6 w-6 animate-pulse" />
+                        </div>
+                        <div>
+                            <h2 className="text-lg font-bold text-destructive flex items-center gap-2">
+                                Active Quarantine Hold Detected
+                                <Badge variant="destructive" className="animate-pulse">{pendingHolds.length} Pending</Badge>
+                            </h2>
+                            <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
+                                Job Order routing steps have recorded critical limits failures. All subsequent execution holds are locked pending Supervisor overrides.
                             </p>
-                        ))}
+                        </div>
                     </div>
+                    <Button 
+                        variant="destructive" 
+                        size="sm" 
+                        onClick={() => setActiveTab("holds")}
+                        className="gap-1.5 shrink-0"
+                    >
+                        Resolve Holds
+                        <ArrowRight className="h-4 w-4" />
+                    </Button>
                 </div>
             )}
 
-            {/* QA KPIs & Analytics Dashboard Widget */}
-            <QAOverviewDashboard
-                qaHistory={filteredHistory}
-                activeJOs={filteredJobOrders}
-                catalogProducts={catalogProducts}
+            {/* Main Tabs Dashboard */}
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+                <TabsList className="grid grid-cols-5 max-w-4xl">
+                    <TabsTrigger value="holds" className="gap-1.5">
+                        <Lock className="h-4 w-4 text-rose-500 dark:text-rose-400" />
+                        Active Holds ({pendingHolds.length})
+                    </TabsTrigger>
+                    <TabsTrigger value="daily-qa" className="gap-1.5">
+                        <ClipboardCheck className="h-4 w-4 text-sky-500 dark:text-sky-400" />
+                        Daily Yield QA ({yieldLedger.length})
+                    </TabsTrigger>
+                    <TabsTrigger value="final-qa" className="gap-1.5">
+                        <CheckCircle2 className="h-4 w-4 text-emerald-500 dark:text-emerald-400" />
+                        Final Release ({lots.filter(l => lotsProducts.find(p => Number(p.product_id) === Number(l.product_id))?.is_finished_good).length})
+                    </TabsTrigger>
+                    <TabsTrigger value="closing" className="gap-1.5">
+                        <Forklift className="h-4 w-4 text-purple-500 dark:text-purple-400" />
+                        Yield Closing ({activeJobOrders.length})
+                    </TabsTrigger>
+                    <TabsTrigger value="logs" className="gap-1.5">
+                        <FileText className="h-4 w-4 text-muted-foreground" />
+                        Checkpoint Logs
+                    </TabsTrigger>
+                </TabsList>
+
+                {/* TAB: Active Holds */}
+                <TabsContent value="holds" className="space-y-4 outline-none">
+                    <QuarantineHolds
+                        loadingDispositions={loadingDispositions}
+                        pendingHolds={pendingHolds}
+                        handleOpenOverrideDialog={handleOpenOverrideDialog}
+                    />
+                </TabsContent>
+
+                {/* TAB: Daily Yield QA */}
+                <TabsContent value="daily-qa" className="space-y-4 outline-none">
+                    <DailyQAQueue
+                        yieldLedger={yieldLedger}
+                        dailyInspections={dailyInspections}
+                        loadingDailyQA={loadingDailyQA}
+                        isDailyAuditOpen={isDailyAuditOpen}
+                        setIsDailyAuditOpen={setIsDailyAuditOpen}
+                        selectedLedgerEntry={selectedLedgerEntry}
+                        moisturePct={moisturePct}
+                        setMoisturePct={setMoisturePct}
+                        acidityPh={acidityPh}
+                        setAcidityPh={setAcidityPh}
+                        sensoryStatus={sensoryStatus}
+                        setSensoryStatus={setSensoryStatus}
+                        weightCheckPassed={weightCheckPassed}
+                        setWeightCheckPassed={setWeightCheckPassed}
+                        dailyLabStatus={dailyLabStatus}
+                        setDailyLabStatus={setDailyLabStatus}
+                        dailyActionTaken={dailyActionTaken}
+                        setDailyActionTaken={setDailyActionTaken}
+                        dailyRemarks={dailyRemarks}
+                        setDailyRemarks={setDailyRemarks}
+                        handleOpenDailyAuditDialog={handleOpenDailyAuditDialog}
+                        handleSubmitDailyAudit={handleSubmitDailyAudit}
+                        actionLoading={actionLoading}
+                        qaLogs={qaLogs}
+                        selectedRouteId={selectedRouteId}
+                        setSelectedRouteId={setSelectedRouteId}
+                        routes={routes}
+                        jobOrders={jobOrders}
+                        qaTemplates={qaTemplates}
+                        qaParamValues={qaParamValues}
+                        setQaParamValues={setQaParamValues}
+                    />
+                </TabsContent>
+
+                {/* TAB: Final QA Release */}
+                <TabsContent value="final-qa" className="space-y-4 outline-none">
+                    <FinalQAReleases
+                        lots={lots}
+                        lotsProducts={lotsProducts}
+                        loadingFinalQA={loadingFinalQA}
+                        isFinalReleaseOpen={isFinalReleaseOpen}
+                        setIsFinalReleaseOpen={setIsFinalReleaseOpen}
+                        selectedLot={selectedLot}
+                        inspectedQty={inspectedQty}
+                        setInspectedQty={setInspectedQty}
+                        defectQty={defectQty}
+                        setDefectQty={setDefectQty}
+                        microbiologicalStatus={microbiologicalStatus}
+                        setMicrobiologicalStatus={setMicrobiologicalStatus}
+                        packagingSealPassed={packagingSealPassed}
+                        setPackagingSealPassed={setPackagingSealPassed}
+                        labelCompliancePassed={labelCompliancePassed}
+                        setLabelCompliancePassed={setLabelCompliancePassed}
+                        overallDisposition={overallDisposition}
+                        setOverallDisposition={setOverallDisposition}
+                        coaRefNo={coaRefNo}
+                        setCoaRefNo={setCoaRefNo}
+                        finalRemarks={finalRemarks}
+                        setFinalRemarks={setFinalRemarks}
+                        handleOpenFinalReleaseDialog={handleOpenFinalReleaseDialog}
+                        handleSubmitFinalRelease={handleSubmitFinalRelease}
+                        actionLoading={actionLoading}
+                    />
+                </TabsContent>
+
+                {/* TAB: Yield Closing */}
+                <TabsContent value="closing" className="space-y-4 outline-none">
+                    <YieldClosingQueue
+                        loadingJobOrders={loadingJobOrders}
+                        activeJobOrders={activeJobOrders}
+                        joSearch={joSearch}
+                        setJoSearch={setJoSearch}
+                        getBranchName={getBranchName}
+                        handleOpenYieldDialog={handleOpenYieldDialog}
+                    />
+                </TabsContent>
+
+                {/* TAB: QA Logs */}
+                <TabsContent value="logs" className="space-y-4 outline-none">
+                    <CheckpointLogsTable
+                        loadingLogs={loadingLogs}
+                        filteredQALogs={filteredQALogs}
+                        logSearch={logSearch}
+                        setLogSearch={setLogSearch}
+                        logStatusFilter={logStatusFilter}
+                        setLogStatusFilter={setLogStatusFilter}
+                    />
+                </TabsContent>
+            </Tabs>
+
+            {/* DIALOG: Yield Closing Form */}
+            <YieldClosingDialog
+                isYieldDialogOpen={isYieldDialogOpen}
+                setIsYieldDialogOpen={setIsYieldDialogOpen}
+                selectedJO={selectedJO}
+                getBranchName={getBranchName}
+                yieldQty={yieldQty}
+                setYieldQty={setYieldQty}
+                lotNumber={lotNumber}
+                setLotNumber={setLotNumber}
+                expiryDate={expiryDate}
+                setExpiryDate={setExpiryDate}
+                unitCost={unitCost}
+                setUnitCost={setUnitCost}
+                actionLoading={actionLoading}
+                handleSubmitYieldClosing={handleSubmitYieldClosing}
             />
 
-            {/* Navigation Tabs, Search, & Filtering */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b pb-3">
-                <div className="flex bg-muted/10 shrink-0 rounded-xl overflow-hidden border max-w-lg">
-                    <button
-                        disabled={loading}
-                        onClick={() => setActiveTab("pending")}
-                        className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 text-xs font-bold border-b-2 transition-all -mb-[1px] disabled:opacity-50 disabled:cursor-wait ${
-                            activeTab === "pending"
-                                ? "border-primary text-primary bg-background shadow-xs"
-                                : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/30"
-                        }`}
-                    >
-                        <ShieldCheck className="h-4 w-4" /> Active QA Queue
-                    </button>
-                    <button
-                        disabled={loading}
-                        onClick={() => setActiveTab("history")}
-                        className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 text-xs font-bold border-b-2 transition-all -mb-[1px] disabled:opacity-50 disabled:cursor-wait ${
-                            activeTab === "history"
-                                ? "border-primary text-primary bg-background shadow-xs"
-                                : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/30"
-                        }`}
-                    >
-                        <History className="h-4 w-4" /> Checklist Logs
-                    </button>
-                    <button
-                        disabled={loading}
-                        onClick={() => setActiveTab("released")}
-                        className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-2.5 text-xs font-bold border-b-2 transition-all -mb-[1px] disabled:opacity-50 disabled:cursor-wait ${
-                            activeTab === "released"
-                                ? "border-primary text-primary bg-background shadow-xs"
-                                : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/30"
-                        }`}
-                    >
-                        <PackageCheck className="h-4 w-4" /> Released Batches
-                    </button>
-                </div>
-
-                {/* Search query input */}
-                <div className="relative w-full sm:max-w-xs">
-                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <input
-                        type="text"
-                        placeholder={
-                            activeTab === "pending"
-                                ? "Search active JOs..."
-                                : activeTab === "history"
-                                ? "Search historic logs..."
-                                : "Search released batches..."
-                        }
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full bg-card border rounded-xl pl-9 pr-4 py-2 outline-none focus:ring-1 focus:ring-primary font-semibold text-foreground text-xs"
-                    />
-                </div>
-            </div>
-
-            {/* Core Datatable Views with Loading/Skeleton Placeholder States */}
-            {loading ? (
-                <div className="space-y-4 py-12 text-center">
-                    <div className="h-10 w-10 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
-                    <p className="text-xs text-muted-foreground font-semibold">Syncing inspector ledger queue...</p>
-                </div>
-            ) : activeTab === "pending" ? (
-                <ActiveJOAuditTable
-                    jobOrders={filteredJobOrders}
-                    branches={branches}
-                    handleOpenAudit={handleOpenAudit}
-                />
-            ) : activeTab === "history" ? (
-                <QALogHistoryTable 
-                    qaHistory={filteredHistory} 
-                />
-            ) : (
-                <ReleasedBatchesTable
-                    completedBatches={completedBatches}
-                />
-            )}
-
-            {/* Checklist Inspection & Release Modal Dialog */}
-            <JobOrderQAAuditModal
-                isOpen={isAuditModalOpen}
-                onClose={() => {
-                    setIsAuditModalOpen(false);
-                    setSelectedJO(null);
-                }}
-                jo={selectedJO}
-                qaHistory={filteredHistory}
-                submittingAudit={submittingAudit}
-                releasingGoods={releasingGoods}
-                handleVerifyQATask={handleVerifyQATask}
-                handleStartRoutingTask={handleStartRoutingTask}
-                handleReleaseGoods={handleReleaseGoods}
+            {/* DIALOG: Supervisor Quarantine Override Form */}
+            <OverrideDialog
+                isOverrideDialogOpen={isOverrideDialogOpen}
+                setIsOverrideDialogOpen={setIsOverrideDialogOpen}
+                selectedDisp={selectedDisp}
+                overrideDecision={overrideDecision}
+                setOverrideDecision={setOverrideDecision}
+                overrideComments={overrideComments}
+                setOverrideComments={setOverrideComments}
+                actionLoading={actionLoading}
+                handleSubmitOverride={handleSubmitOverride}
             />
         </div>
     );

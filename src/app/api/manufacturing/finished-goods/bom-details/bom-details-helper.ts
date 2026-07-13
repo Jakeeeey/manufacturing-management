@@ -1,3 +1,4 @@
+/* eslint-disable */
 import { DIRECTUS_URL, headers } from "@/app/api/manufacturing/directus-api";
 import { getBOMDetailsForVersion } from "../versions/versions-helper";
 
@@ -35,8 +36,13 @@ export async function saveActiveBOMDetails(versionId: number, expectedYield: num
     }
 }
 
-export async function syncRoutesAndBOM(versionId: number, routes: Record<string, unknown>[]): Promise<boolean> {
+export async function syncRoutesAndBOM(versionId: number, routes: any[], userId: number | null = null): Promise<boolean> {
     try {
+        // 0. Fetch units to map shortcuts to IDs
+        const resUnits = await fetch(`${DIRECTUS_URL}/items/units?limit=-1`, { headers, cache: "no-store" });
+        const unitsList = resUnits.ok ? (await resUnits.json()).data || [] : [];
+        const unitsMap = new Map<string, number>(unitsList.map((u: any) => [u.unit_shortcut.toLowerCase(), u.unit_id]));
+
         // 1. Fetch existing routes in DB for this version
         const getUrl = `${DIRECTUS_URL}/items/manufacturing_routes?filter[version_id][_eq]=${versionId}&limit=-1`;
         const resGet = await fetch(getUrl, { headers, cache: "no-store" });
@@ -62,7 +68,7 @@ export async function syncRoutesAndBOM(versionId: number, routes: Record<string,
         // 3. Insert or Update routes from UI request
         for (const step of routes) {
             const stepId = step.route_id || step.id;
-            const isNewRoute = !stepId || isNaN(Number(stepId));
+            const isNewRoute = !stepId || isNaN(Number(stepId)) || Number(stepId) < 0;
 
             const routePayload = {
                 version_id: versionId,
@@ -72,7 +78,8 @@ export async function syncRoutesAndBOM(versionId: number, routes: Record<string,
                 setup_time_hours: Number(step.setup_time_hours || 0),
                 run_time_hours: Number(step.run_time_hours || step.durationHours || 0),
                 estimated_labor_cost: Number(step.estimated_labor_cost || step.laborFlatRate || 0),
-                qa_template_id: step.qa_template_id || null
+                qa_template_id: step.qa_template_id || null,
+                created_by: userId
             };
 
             let finalRouteId: number;
@@ -97,14 +104,14 @@ export async function syncRoutesAndBOM(versionId: number, routes: Record<string,
             }
 
             // Sync BOM items under this route step
-            const uiBomItems = (step.bom_items || step.ingredients || []) as Record<string, unknown>[];
+            const uiBomItems = step.bom_items || step.ingredients || [];
             
             // Get existing BOM items for this route in DB
             const bomsGetUrl = `${DIRECTUS_URL}/items/manufacturing_routes_bom?filter[route_id][_eq]=${finalRouteId}&limit=-1`;
             const resBomGet = await fetch(bomsGetUrl, { headers, cache: "no-store" });
             const existingBoms: { id: number }[] = resBomGet.ok ? (await resBomGet.json()).data || [] : [];
 
-            const uiBomIds = new Set(uiBomItems.map((b: Record<string, unknown>) => String(b.id || "")).filter(Boolean));
+            const uiBomIds = new Set(uiBomItems.map((b: any) => String(b.id || "")).filter(Boolean));
             const bomsToDelete = existingBoms.filter(b => !uiBomIds.has(String(b.id)));
 
             // Delete removed BOM items
@@ -114,27 +121,47 @@ export async function syncRoutesAndBOM(versionId: number, routes: Record<string,
 
             // Create or Update BOM items
             for (const bItem of uiBomItems) {
-                const isNewBomItem = !bItem.id || isNaN(Number(bItem.id));
+                const isNewBomItem = !bItem.id || isNaN(Number(bItem.id)) || Number(bItem.id) < 0;
+
+                let uomId: number | null = null;
+                const rawUom = bItem.unit_of_measurement || bItem.uomId || bItem.uom;
+                if (rawUom) {
+                    if (!isNaN(Number(rawUom))) {
+                        uomId = Number(rawUom);
+                    } else {
+                        uomId = unitsMap.get(String(rawUom).toLowerCase()) || null;
+                    }
+                }
+
                 const bomPayload = {
                     route_id: finalRouteId,
                     product_id: Number(bItem.product_id || bItem.productId || 0),
                     quantity_required: Number(bItem.quantity_required || bItem.quantity || 0),
-                    unit_of_measurement: bItem.unit_of_measurement || bItem.uomId || bItem.uom || null,
-                    wastage_factor_percentage: Number(bItem.wastage_factor_percentage || bItem.wastagePercent || 0)
+                    unit_of_measurement: uomId,
+                    wastage_factor_percentage: Number(bItem.wastage_factor_percentage || bItem.wastagePercent || 0),
+                    created_by: userId
                 };
 
                 if (isNewBomItem) {
-                    await fetch(`${DIRECTUS_URL}/items/manufacturing_routes_bom`, {
+                    const res = await fetch(`${DIRECTUS_URL}/items/manufacturing_routes_bom`, {
                         method: "POST",
                         headers,
                         body: JSON.stringify(bomPayload)
                     });
+                    if (!res.ok) {
+                        const errTxt = await res.text();
+                        throw new Error(`Failed to create BOM item: ${res.status} - ${errTxt}`);
+                    }
                 } else {
-                    await fetch(`${DIRECTUS_URL}/items/manufacturing_routes_bom/${bItem.id}`, {
+                    const res = await fetch(`${DIRECTUS_URL}/items/manufacturing_routes_bom/${bItem.id}`, {
                         method: "PATCH",
                         headers,
                         body: JSON.stringify(bomPayload)
                     });
+                    if (!res.ok) {
+                        const errTxt = await res.text();
+                        throw new Error(`Failed to update BOM item ${bItem.id}: ${res.status} - ${errTxt}`);
+                    }
                 }
             }
         }

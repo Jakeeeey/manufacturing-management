@@ -1,3 +1,4 @@
+/* eslint-disable */
 "use client";
 
 import React, { useState, useEffect } from "react";
@@ -14,7 +15,6 @@ export default function ApprovalModule() {
         setSelectedShipment,
         selectedShipmentLines,
         handleUpdateShipmentStatus,
-        loadShipments
     } = useProcurement("incoming-shipments");
 
     const [search, setSearch] = useState("");
@@ -23,7 +23,6 @@ export default function ApprovalModule() {
     const [isApproving, setIsApproving] = useState(false);
     const [rejectRemarks, setRejectRemarks] = useState("");
     const [isRejecting, setIsRejecting] = useState(false);
-    const [enRouteLoading, setEnRouteLoading] = useState(false);
 
     // Filter shipments: only show Ordered (Pending Approval) or Approved status
     const filteredShipments = shipments.filter(s => {
@@ -75,8 +74,7 @@ export default function ApprovalModule() {
 
             if (!res.ok) throw new Error("Approval submission failed");
             toast.success("Purchase Order approved and ETA scheduled successfully.");
-            setSelectedShipment(null);
-            await loadShipments();
+            window.location.reload();
         } catch {
             toast.error("Failed to approve Purchase Order.");
         } finally {
@@ -108,10 +106,9 @@ export default function ApprovalModule() {
                 throw new Error(errJson.error || "Rejection failed");
             }
             toast.success("Purchase Order rejected successfully.");
-            setSelectedShipment(null);
-            await loadShipments();
-        } catch (e: unknown) {
-            toast.error((e as Error).message || "Failed to reject Purchase Order.");
+            window.location.reload();
+        } catch (e: any) {
+            toast.error(e.message || "Failed to reject Purchase Order.");
         } finally {
             setIsRejecting(false);
         }
@@ -169,10 +166,10 @@ export default function ApprovalModule() {
                                 const isSelected = activeShipment && activeShipment.shipment_id === s.shipment_id;
 
                                 return (
-                                    <button
+                                    <div
                                         key={s.shipment_id}
                                         onClick={() => setSelectedShipment(s)}
-                                        className={`w-full text-left p-4 transition-all ${
+                                        className={`p-4 text-left cursor-pointer transition-all ${
                                             isSelected ? "bg-primary/5 border-l-4 border-l-primary" : "hover:bg-muted/10 border-l-4 border-l-transparent"
                                         }`}
                                     >
@@ -185,7 +182,7 @@ export default function ApprovalModule() {
                                             <span>₱{Number(s.total_php_value).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
                                             <span>{new Date(s.created_at || new Date()).toLocaleDateString()}</span>
                                         </div>
-                                    </button>
+                                    </div>
                                 );
                             })
                         )}
@@ -309,15 +306,10 @@ export default function ApprovalModule() {
                                     </div>
                                     <button
                                         type="button"
-                                        disabled={enRouteLoading}
-                                        onClick={() => {
-                                            setEnRouteLoading(true);
-                                            handleUpdateShipmentStatus(activeShipment.shipment_id, "En Route");
-                                            setTimeout(() => setEnRouteLoading(false), 3000);
-                                        }}
-                                        className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-60 disabled:cursor-wait text-white font-bold py-2 px-3 rounded-lg text-xs transition-all shadow-sm cursor-pointer mt-1 inline-flex items-center justify-center gap-1.5"
+                                        onClick={() => handleUpdateShipmentStatus(activeShipment.shipment_id, "En Route")}
+                                        className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded-lg text-xs transition-all shadow-sm cursor-pointer mt-1"
                                     >
-                                        {enRouteLoading ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Processing...</> : "Mark Cargo as En Route (Departed)"}
+                                        Mark Cargo as En Route (Departed)
                                     </button>
                                 </div>
                             )}

@@ -294,25 +294,22 @@ export default function MarginSimulatorModule() {
                 const activeVersion = versions[0];
                 const details = await fetchBOMDetails(Number(currentProd!.id), activeVersion.version_id);
                 if (details) {
-                    const rawIngredients = details.routes?.flatMap(r => r.bom_items || []) || [];
-                    const mappedBom: BOMItem[] = rawIngredients.map(ing => ({
+                    const ingredients = details.routes?.flatMap(r => r.bom_items || []) || [];
+                    const mappedBom: BOMItem[] = ingredients.map(ing => ({
                         id: String(ing.id),
                         productId: ing.product_id,
                         name: ing.product_name || `Component #${ing.product_id}`,
-                        type: "raw_material",
+                        type: "raw_material" as const,
                         quantity: ing.quantity_required,
                         uom: String(ing.unit_of_measurement || "pc"),
-                        uomId: typeof ing.unit_of_measurement === "number" ? ing.unit_of_measurement : undefined,
-                        wastagePercent: ing.wastage_factor_percentage,
+                        uomId: typeof ing.unit_of_measurement === "number" ? ing.unit_of_measurement : 0,
+                        wastagePercent: ing.wastage_factor_percentage || 0,
                         landedCost: ing.cost_per_unit || 0,
-                        foreignSourced: ing.is_foreign || false,
-                        isForeign: ing.is_foreign
+                        foreignSourced: false,
+                        isForeign: ing.is_foreign || false
                     }));
                     const calculatedRoutingCost = details.routes?.reduce((sum, r) => {
-                        const labor = Number(r.estimated_labor_cost || 0);
-                        const machine = Number(r.work_center?.overhead_cost_per_hour || 0);
-                        const duration = Number(r.run_time_hours || 0);
-                        return sum + labor + (machine * duration);
+                        return sum + (Number(r.estimated_labor_cost || 0) + (Number(r.work_center?.overhead_cost_per_hour || 0) * Number(r.setup_time_hours + r.run_time_hours)));
                     }, 0) || 0;
 
                     // Update the product's details in the products list state
@@ -324,8 +321,8 @@ export default function MarginSimulatorModule() {
                         bomId: details.version_id,
                         versionId: details.version_id,
                         versionName: details.version_name,
-                        routings: details.routes,
-                        overheads: []
+                        routings: details.routes || [],
+                        overheads: (details as unknown as { overheads?: unknown[] }).overheads || []
                     } : p));
 
                     applySandboxState(
