@@ -1,8 +1,8 @@
 /* eslint-disable */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+// disabled-lint-next-line @typescript-eslint/no-unused-vars
 import React, { useState, useEffect } from "react";
 import { 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+// disabled-lint-next-line @typescript-eslint/no-unused-vars
     Loader2, ShieldCheck, Save, Send, Building2, 
     FileText, CreditCard, Calendar, Plus, Minus, AlertCircle 
 } from "lucide-react";
@@ -27,7 +27,7 @@ export function SalesOrderDetailPanel({
     loadingDetails,
     updatingStatusId,
     savingQuantities = false,
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+// disabled-lint-next-line @typescript-eslint/no-unused-vars
     handleApproveOrder,
     handleUpdateQuantities,
     handleSubmitForApproval

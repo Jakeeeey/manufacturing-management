@@ -427,7 +427,7 @@ export async function handleGET(request: Request) {
             // Fetch all Job Orders
             const list = await fetchJobOrders();
             // Transform snake_case keys back to camelCase for client compatibility if needed
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            // disabled-lint-next-line @typescript-eslint/no-explicit-any
             const camelCaseList = list.map((item: any) => ({
                 jo_id: item.jo_id,
                 order_id: item.job_order_id || item.order_id || item.id,

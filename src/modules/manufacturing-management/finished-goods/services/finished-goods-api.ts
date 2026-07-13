@@ -37,7 +37,7 @@ export async function fetchProducts(search?: string, limit: number = 100): Promi
     // Map Directus model to local Product interface
     return data.map((p: BFFCatalogProduct) => {
         const parentId = p.parent_id && typeof p.parent_id === "object"
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// disabled-lint-next-line @typescript-eslint/no-explicit-any
             ? Number((p.parent_id as any).product_id)
             : (p.parent_id ? Number(p.parent_id) : null);
             
@@ -394,7 +394,7 @@ export async function deleteAsset(assetId: number): Promise<{ success: boolean }
     return res.json();
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// disabled-lint-next-line @typescript-eslint/no-explicit-any
 export async function fetchItems(): Promise<any[]> {
     const res = await fetch("/api/manufacturing/finished-goods/items");
     if (!res.ok) throw new Error("Failed to fetch items from BFF");
@@ -411,14 +411,14 @@ export async function createItem(item: { item_name: string; item_type?: number; 
     return res.json();
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// disabled-lint-next-line @typescript-eslint/no-explicit-any
 export async function fetchItemTypes(): Promise<any[]> {
     const res = await fetch("/api/manufacturing/finished-goods/item-types");
     if (!res.ok) throw new Error("Failed to fetch item types from BFF");
     return res.json();
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// disabled-lint-next-line @typescript-eslint/no-explicit-any
 export async function fetchItemClassifications(): Promise<any[]> {
     const res = await fetch("/api/manufacturing/finished-goods/item-classifications");
     if (!res.ok) throw new Error("Failed to fetch item classifications from BFF");

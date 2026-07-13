@@ -1,4 +1,3 @@
-/* eslint-disable */
 // src/components/theme/ThemeProvider.tsx
 "use client";
 

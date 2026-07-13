@@ -33,7 +33,7 @@ export default function RawMaterialsMaster({
     const [typeFilter, setTypeFilter] = useState<"all" | "raw" | "pkg">("all");
     const [expandedProductId, setExpandedProductId] = useState<number | null>(null);
     const [loadingBatches, setLoadingBatches] = useState(false);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // disabled-lint-next-line @typescript-eslint/no-explicit-any
     const [productBatches, setProductBatches] = useState<any[]>([]);
 
     // Modal State & Mode
@@ -91,9 +91,9 @@ export default function RawMaterialsMaster({
             if (!editingItem && unitsData && unitsData.length > 0) {
                 setFormUom(unitsData[0].unit_id);
             }
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            // disabled-lint-next-line @typescript-eslint/no-explicit-any
             setBrandsList((brandsData || []).map((b: any) => ({ value: String(b.brand_id), label: b.brand_name })));
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            // disabled-lint-next-line @typescript-eslint/no-explicit-any
             setCategoriesList((categoriesData || []).map((c: any) => ({ value: String(c.category_id), label: c.category_name })));
         })
         .catch(err => {
@@ -180,7 +180,7 @@ export default function RawMaterialsMaster({
                 setFormBrand(String(newBrand.brand_id));
                 toast.success(`Brand "${name}" created on the fly`);
             }
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            // disabled-lint-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
             console.error(e);
             toast.error(e.message || "Failed to create brand");
@@ -202,7 +202,7 @@ export default function RawMaterialsMaster({
                 setFormCategory(String(newCat.category_id));
                 toast.success(`Category "${name}" created on the fly`);
             }
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            // disabled-lint-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
             console.error(e);
             toast.error(e.message || "Failed to create category");
@@ -392,12 +392,12 @@ export default function RawMaterialsMaster({
         const branchesMap: Record<string, {
             branchName: string;
             branchCode: string;
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            // disabled-lint-next-line @typescript-eslint/no-explicit-any
             batches: any[];
             totalQty: number;
         }> = {};
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        // disabled-lint-next-line @typescript-eslint/no-explicit-any
         productBatches.forEach((item: any) => {
             const branch = item.branch_id || { branch_name: "Unassigned Warehouse", branch_code: "N/A" };
             const branchName = branch.branch_name;

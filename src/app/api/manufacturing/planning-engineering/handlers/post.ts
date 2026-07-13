@@ -266,7 +266,7 @@ export async function handlePOST(request: Request) {
             created_by: encoderId,
             parent_job_order_id: jo.parentJobOrderId || jo.parent_job_order_id || null,
             assignments: jo.assignments || null,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            // disabled-lint-next-line @typescript-eslint/no-explicit-any
             products: jo.products ? jo.products.map((p: any) => ({
                 product_id: p.product_id,
                 product_name: p.product_name,

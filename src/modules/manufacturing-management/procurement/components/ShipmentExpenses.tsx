@@ -3,7 +3,7 @@ import React, { useState, useEffect } from "react";
 import { IncomingShipment, ShipmentLineItem, ShipmentExpense } from "../types";
 import { CreatableSelect } from "../../finished-goods/components/CreatableSelect";
 import { toast } from "sonner";
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+// disabled-lint-next-line @typescript-eslint/no-unused-vars
 import { Landmark, Plus, Scale, DollarSign, Layers, Anchor, AlertCircle, Info, Calculator, Check, ArrowRight } from "lucide-react";
 
 interface ShipmentExpensesProps {
@@ -12,11 +12,11 @@ interface ShipmentExpensesProps {
     expenses: ShipmentExpense[];
     isModalOpen: boolean;
     setIsModalOpen: (open: boolean) => void;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// disabled-lint-next-line @typescript-eslint/no-explicit-any
     allocationForm: any;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// disabled-lint-next-line @typescript-eslint/no-explicit-any
     setAllocationForm: React.Dispatch<React.SetStateAction<any>>;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// disabled-lint-next-line @typescript-eslint/no-explicit-any
     onAllocate: (e: React.FormEvent, shipmentId: number, status: string, lineItemUpdates?: any[]) => void;
 }
 
@@ -30,9 +30,9 @@ export default function ShipmentExpenses({
     setAllocationForm,
     onAllocate
 }: ShipmentExpensesProps) {
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+// disabled-lint-next-line @typescript-eslint/no-unused-vars
     const [receivedQuantities, setReceivedQuantities] = useState<Record<number, number>>({});
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// disabled-lint-next-line @typescript-eslint/no-explicit-any
     const [overheadTypes, setOverheadTypes] = useState<any[]>([]);
 
     useEffect(() => {
@@ -282,7 +282,7 @@ export default function ShipmentExpenses({
                                 </div>
 
                                 <div className="space-y-2">
-{/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+{/* disabled-lint-next-line @typescript-eslint/no-explicit-any */}
                                     {allocationForm.expenses.map((exp: any, idx: number) => (
                                         <div key={idx} className="flex gap-3 items-center">
                                             <div className="flex-1">

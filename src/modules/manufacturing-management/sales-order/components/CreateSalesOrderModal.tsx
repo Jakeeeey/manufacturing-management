@@ -9,7 +9,7 @@ import { CreatableSelect } from "../../finished-goods/components/CreatableSelect
 interface CreateSalesOrderModalProps {
     isOpen: boolean;
     onClose: () => void;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // disabled-lint-next-line @typescript-eslint/no-explicit-any
     onSubmit: (payload: any) => Promise<any>;
 }
 
@@ -22,17 +22,17 @@ export function CreateSalesOrderModal({
     const poInputRef = useRef<HTMLInputElement>(null);
 
     // Lookups
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // disabled-lint-next-line @typescript-eslint/no-explicit-any
     const [customers, setCustomers] = useState<any[]>([]);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // disabled-lint-next-line @typescript-eslint/no-explicit-any
     const [products, setProducts] = useState<any[]>([]);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // disabled-lint-next-line @typescript-eslint/no-explicit-any
     const [branches, setBranches] = useState<any[]>([]);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // disabled-lint-next-line @typescript-eslint/no-explicit-any
     const [paymentTerms, setPaymentTerms] = useState<any[]>([]);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // disabled-lint-next-line @typescript-eslint/no-explicit-any
     const [salesmen, setSalesmen] = useState<any[]>([]);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // disabled-lint-next-line @typescript-eslint/no-explicit-any
     const [suppliers, setSuppliers] = useState<any[]>([]);
 
     const [loadingLookups, setLoadingLookups] = useState(false);
@@ -130,7 +130,7 @@ export function CreateSalesOrderModal({
                 setCustomers(Array.isArray(custRes) ? custRes : (custRes.data || []));
                 // Only finished goods (type 388)
                 const allProds = Array.isArray(prodRes) ? prodRes : (prodRes.data || []);
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                // disabled-lint-next-line @typescript-eslint/no-explicit-any
                 setProducts(allProds.filter((p: any) => Number(p.product_type) === 388));
                 
                 setBranches(Array.isArray(branchRes) ? branchRes : (branchRes.data || []));
@@ -175,7 +175,7 @@ export function CreateSalesOrderModal({
         setItems(prev => prev.filter((_, idx) => idx !== index));
     };
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // disabled-lint-next-line @typescript-eslint/no-explicit-any
     const handleItemChange = (index: number, field: string, value: any) => {
         setItems(prev => prev.map((item, idx) => {
             if (idx === index) {

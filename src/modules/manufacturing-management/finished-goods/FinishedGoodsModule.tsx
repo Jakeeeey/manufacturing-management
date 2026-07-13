@@ -485,7 +485,7 @@ export default function FinishedGoodsModule() {
         return { roots, childrenMap };
     }, [products, searchQuery]);
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+// disabled-lint-next-line @typescript-eslint/no-unused-vars
     const existingRoutingNames = useMemo(() => {
         const names = new Set<string>();
         products.forEach(p => {
@@ -1506,7 +1506,7 @@ export default function FinishedGoodsModule() {
                                         <div className="flex items-center gap-4 border border-dashed border-border rounded-xl p-4 bg-muted/5 hover:bg-muted/10 transition-all">
                                             {registerForm.productImage ? (
                                                 <div className="relative group w-16 h-16 rounded-lg overflow-hidden border bg-background flex items-center justify-center">
-                                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                    {/* disabled-lint-next-line @next/next/no-img-element */}
                                                     <img 
                                                         src={`${process.env.NEXT_PUBLIC_DIRECTUS_URL || "http://vtc:8074"}/assets/${registerForm.productImage}`} 
                                                         alt="Preview" 

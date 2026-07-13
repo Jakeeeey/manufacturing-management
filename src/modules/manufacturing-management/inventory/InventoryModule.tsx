@@ -7,10 +7,10 @@ import {
     Boxes, 
     History, 
     AlertTriangle, 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+// disabled-lint-next-line @typescript-eslint/no-unused-vars
     CheckCircle, 
     Search, 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+// disabled-lint-next-line @typescript-eslint/no-unused-vars
     Filter, 
     TrendingDown, 
     Calendar, 
@@ -19,7 +19,7 @@ import {
     Layers, 
     Loader2,
     RefreshCw,
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+// disabled-lint-next-line @typescript-eslint/no-unused-vars
     ShieldAlert,
     ChevronDown,
     ChevronRight,
@@ -30,7 +30,7 @@ import {
     X,
     Bookmark
 } from "lucide-react";
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+// disabled-lint-next-line @typescript-eslint/no-unused-vars
 interface LedgerItem {
     id: number;
     product_id: number;
@@ -57,7 +57,7 @@ interface BatchItem {
 }
 
 export default function InventoryModule() {
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// disabled-lint-next-line @typescript-eslint/no-explicit-any
     const [data, setData] = useState<{ ledger: any[]; batches: any[]; products: any[]; branches: any[] } | null>(null);
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState<"stock" | "batches" | "ledger" | "picking" | "receiving">("stock");
@@ -276,7 +276,7 @@ export default function InventoryModule() {
             } else {
                 throw new Error("Failed to load inventory logs from server");
             }
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// disabled-lint-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
             toast.error(e.message || "Failed to load inventory.");
         } finally {
@@ -466,7 +466,7 @@ export default function InventoryModule() {
         
         // Compute new stock levels map
         const newStocks: Record<number, number> = {};
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        // disabled-lint-next-line @typescript-eslint/no-explicit-any
         ledger.forEach((entry: any) => {
             const pId = Number(entry.productId);
             const qty = Number(entry.quantity) || 0;
@@ -485,7 +485,7 @@ export default function InventoryModule() {
                 hasChanges = true;
                 
                 // Trigger toast notification
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                // disabled-lint-next-line @typescript-eslint/no-explicit-any
                 const prod = data.products.find((p: any) => Number(p.product_id) === pId);
                 const prodName = prod ? prod.product_name : `Product #${pId}`;
                 const diff = Math.abs(newQty - oldQty);
@@ -1029,7 +1029,7 @@ export default function InventoryModule() {
                             <span className="text-xs text-muted-foreground font-bold">Expiry Status:</span>
                             <select
                                 value={expiryFilter}
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// disabled-lint-next-line @typescript-eslint/no-explicit-any
                                 onChange={(e: any) => setExpiryFilter(e.target.value)}
                                 className="bg-background border border-border rounded-lg px-2 py-1 text-xs text-foreground font-semibold outline-none"
                             >

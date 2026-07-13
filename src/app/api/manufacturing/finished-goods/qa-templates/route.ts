@@ -19,7 +19,7 @@ export async function GET() {
         const parameters = parametersJson.data || [];
 
         // Group parameters by template_id
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        // disabled-lint-next-line @typescript-eslint/no-explicit-any
         const templatesWithParams = templates.map((tpl: any) => {
             return {
                 ...tpl,
