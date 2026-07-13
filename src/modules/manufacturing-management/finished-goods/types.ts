@@ -53,7 +53,10 @@ export interface Product {
     customOverhead?: number;
     has_versions?: boolean;
     production_capacity_per_hour?: number;
+    versions?: ProductVersion[];
+    selectedVersion?: ProductVersion;
 }
+
 
 export interface Supplier {
     id: number;
@@ -100,12 +103,107 @@ export interface Unit {
     unit_shortcut: string;
 }
 
-export interface ProductVersion {
+export interface AssetRecord {
     id: number;
+    item_image?: string | null;
+    item_id?: number | { id: number; item_name?: string | null } | null;
+    quantity?: number | null;
+    rfid_code?: string | null;
+    barcode?: string | null;
+    serial?: string | null;
+    department?: number | { department_id: number; department_name?: string | null } | null;
+    employee?: number | null;
+    cost_per_item?: number | null;
+    total?: number | null;
+    condition?: 'Good' | 'Bad' | 'Under Maintenance' | 'Discontinued' | null;
+    life_span?: number | null;
+    is_active_warning?: boolean;
+    is_active?: boolean;
+    date_acquired?: string | null;
+}
+
+export interface DepartmentRecord {
+    department_id: number;
+    department_name: string;
+}
+
+export interface WorkCenter {
+    work_center_id: number;
+    work_center_name: string;
+    asset_id?: number | null;
+    department_id?: number | null;
+    overhead_cost_per_hour?: number | null;
+    capacity_per_hour?: number | null;
+    is_active?: boolean;
+    asset?: AssetRecord | null;
+    department?: DepartmentRecord | null;
+}
+
+export interface QATemplate {
+    template_id: number;
+    template_name: string;
+    description?: string | null;
+    is_active?: boolean;
+    parameters?: QAParameter[];
+}
+
+export interface QAParameter {
+    parameter_id: number;
+    template_id: number;
+    test_name: string;
+    test_type: 'Numeric' | 'Pass/Fail' | 'Text';
+    min_value?: number | null;
+    max_value?: number | null;
+    target_value?: string | number | null;
+    uom_id?: number | null;
+    is_critical?: boolean;
+}
+
+export interface ProductVersion {
+    version_id: number;
+    id?: number; // legacy/compatibility
     product_id: number;
     version_name: string;
-    is_active?: boolean;
+    base_quantity: number;
+    uom_id?: number | null;
+    expected_yield_percentage: number;
+    status: 'For Approval' | 'Active' | 'Inactive';
+    valid_from?: string | null;
+    valid_to?: string | null;
+    is_active?: boolean; // legacy/compatibility
+    routes?: RouteStep[];
 }
+
+export interface RouteStep {
+    route_id: number;
+    version_id: number;
+    work_center_id?: number | null;
+    operation_id?: number | null;
+    sequence_order: number;
+    setup_time_hours: number;
+    run_time_hours: number;
+    estimated_labor_cost: number;
+    qa_template_id?: number | null;
+    bom_items?: RouteBOMItem[];
+    // Expandable relations for easy UI rendering
+    work_center?: WorkCenter | null;
+    qa_template?: QATemplate | null;
+}
+
+export interface RouteBOMItem {
+    id: number;
+    route_id: number;
+    product_id: number;
+    quantity_required: number;
+    unit_of_measurement?: number | string | null;
+    wastage_factor_percentage: number;
+    // Optional details populated by BFF for convenience
+    product_name?: string;
+    product_code?: string;
+    cost_per_unit?: number;
+    is_foreign?: boolean;
+}
+
 
 export interface ProductOverhead {
     id: string;

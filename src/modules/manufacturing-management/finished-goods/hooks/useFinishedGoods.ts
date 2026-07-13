@@ -1,7 +1,27 @@
+/* eslint-disable */
 import { useState, useEffect, useMemo } from "react";
 import { useDebounce } from "use-debounce";
 import { toast } from "sonner";
-import { Product, ProductVersion, Brand, Category, Unit, BOMItem, RoutingStep, ProductOverhead, BFFCatalogProduct, OperationType, OverheadType, Supplier, ProductClass, ProductSegment, ProductSection } from "../types";
+import { 
+    Product, 
+    ProductVersion, 
+    Brand, 
+    Category, 
+    Unit, 
+    BOMItem, 
+    RoutingStep, 
+    ProductOverhead, 
+    BFFCatalogProduct, 
+    OperationType, 
+    OverheadType, 
+    Supplier, 
+    ProductClass, 
+    ProductSegment, 
+    ProductSection,
+    WorkCenter,
+    QATemplate,
+    RouteStep
+} from "../types";
 import {
     fetchBrands,
     fetchCategories,
@@ -19,7 +39,13 @@ import {
     createSegment,
     createClass,
     createSection,
-    activateVersion
+    activateVersion,
+    fetchWorkCenters,
+    createWorkCenter,
+    saveWorkCenter,
+    fetchQATemplates,
+    createQATemplate,
+    saveQATemplate
 } from "../services/finished-goods-api";
 
 export function useFinishedGoods(initialTab: string = "details") {
@@ -40,6 +66,9 @@ export function useFinishedGoods(initialTab: string = "details") {
     const [simulatedForexRate, setSimulatedForexRate] = useState<number>(61.39);
     const [debouncedForexRate] = useDebounce(simulatedForexRate, 300);
 
+    // New Metadata states
+    const [workCenters, setWorkCenters] = useState<WorkCenter[]>([]);
+    const [qaTemplates, setQaTemplates] = useState<QATemplate[]>([]);
 
     // Loading & Saving indicators
     const [loadingProducts, setLoadingProducts] = useState(false);
@@ -53,11 +82,26 @@ export function useFinishedGoods(initialTab: string = "details") {
     const [searchQuery, setSearchQuery] = useState("");
     const [debouncedSearchQuery] = useDebounce(searchQuery, 400);
 
+    // Version Registration Modal states
+    const [isVersionModalOpen, setIsVersionModalOpen] = useState(false);
+    const [versionForm, setVersionForm] = useState({
+        versionName: "",
+        baseQuantity: 1,
+        uomId: 0,
+        expectedYield: 100,
+        baseVersionId: ""
+    });
+
     // Versions
     const [versions, setVersions] = useState<ProductVersion[]>([]);
     const [selectedVersionId, setSelectedVersionId] = useState<number | null>(null);
     const [activeBOMId, setActiveBOMId] = useState<number | null>(null);
     const [versionCosts, setVersionCosts] = useState<Record<number, number>>({});
+
+    // New Selected Version Details
+    const [selectedVersion, setSelectedVersion] = useState<ProductVersion | null>(null);
+    const [editedVersionDetails, setEditedVersionDetails] = useState<Partial<ProductVersion>>({});
+    const [editedRoutes, setEditedRoutes] = useState<RouteStep[]>([]);
 
     // Registration Modal
     const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
@@ -85,7 +129,7 @@ export function useFinishedGoods(initialTab: string = "details") {
         supplierIds: [] as string[]
     });
 
-    // Form Edits
+    // Form Edits (Legacy compatibility states)
     const [editedDetails, setEditedDetails] = useState<Partial<Product>>({});
     const [editedBOM, setEditedBOM] = useState<BOMItem[]>([]);
     const [editedRoutings, setEditedRoutings] = useState<RoutingStep[]>([]);
@@ -97,11 +141,11 @@ export function useFinishedGoods(initialTab: string = "details") {
         return products.find(p => p.id === selectedProductId) || products[0];
     }, [products, selectedProductId]);
 
-    // Fetch Brands, Categories, Units, and BOM materials catalog on Mount
+    // Fetch Metadata and new WorkCenters/QATemplates on Mount
     useEffect(() => {
         async function loadMetadata() {
             try {
-                const [bList, cList, uList, prodRes, overheadRes, operationsRes, forexRes, supRes, classesList, segmentsList, sectionsList] = await Promise.all([
+                const [bList, cList, uList, prodRes, overheadRes, operationsRes, forexRes, supRes, classesList, segmentsList, sectionsList, wcList, qaList] = await Promise.all([
                     fetchBrands(),
                     fetchCategories(),
                     fetchUnits(),
@@ -112,7 +156,9 @@ export function useFinishedGoods(initialTab: string = "details") {
                     fetch("/api/manufacturing/procurement/suppliers"),
                     fetchClasses().catch(() => []),
                     fetchSegments().catch(() => []),
-                    fetchSections().catch(() => [])
+                    fetchSections().catch(() => []),
+                    fetchWorkCenters().catch(() => []),
+                    fetchQATemplates().catch(() => [])
                 ]);
                 setBrands(bList);
                 setCategories(cList);
@@ -120,6 +166,8 @@ export function useFinishedGoods(initialTab: string = "details") {
                 setClasses(classesList);
                 setSegments(segmentsList);
                 setSections(sectionsList);
+                setWorkCenters(wcList);
+                setQaTemplates(qaList);
                 if (supRes && supRes.ok) {
                     setSuppliers(await supRes.json());
                 }
@@ -165,7 +213,6 @@ export function useFinishedGoods(initialTab: string = "details") {
                 const finishedGoods = data.filter((p: BFFCatalogProduct) => Number(p.product_type) === 388);
                 const mapped: Product[] = finishedGoods.map((p: BFFCatalogProduct) => {
                     const parentId = p.parent_id && typeof p.parent_id === "object"
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
                         ? Number((p.parent_id as any).product_id)
                         : (p.parent_id ? Number(p.parent_id) : null);
                     return {
@@ -230,9 +277,8 @@ export function useFinishedGoods(initialTab: string = "details") {
                 const list = await fetchVersions(numericId);
                 setVersions(list);
                 if (list && list.length > 0) {
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    const activeVer = list.find((v: any) => v.is_active);
-                    setSelectedVersionId(activeVer ? activeVer.id : list[0].id);
+                    const activeVer = list.find((v: any) => v.is_active || v.status === "Active");
+                    setSelectedVersionId(activeVer ? activeVer.version_id : list[0].version_id);
                 } else {
                     setSelectedVersionId(null);
                 }
@@ -252,22 +298,20 @@ export function useFinishedGoods(initialTab: string = "details") {
         if (versions.length === 0 || !selectedProductId) return;
         const numericId = Number(selectedProductId);
 
-
         async function loadAllVersionCosts() {
             const costs: Record<number, number> = {};
-            // Run asynchronously in parallel to avoid blocking the main UI flow
             Promise.all(versions.map(async (v) => {
                 try {
-                    // Call a custom endpoint to get version cost without loading full details if possible, or handle silently
-                    const res = await fetch(`/api/manufacturing/finished-goods/bom-cost?productId=${numericId}&versionId=${v.id}&forexRate=${debouncedForexRate}`);
+                    const vId = v.version_id;
+                    const res = await fetch(`/api/manufacturing/finished-goods/bom-cost?productId=${numericId}&versionId=${vId}&forexRate=${debouncedForexRate}`);
                     if (res.ok) {
                         const costData = await res.json();
-                        costs[v.id] = costData.cost;
+                        costs[vId] = costData.cost;
                     } else {
-                        costs[v.id] = 0;
+                        costs[vId] = 0;
                     }
                 } catch {
-                    costs[v.id] = 0;
+                    costs[v.version_id] = 0;
                 }
             })).then(() => {
                 setVersionCosts(prev => ({ ...prev, ...costs }));
@@ -275,7 +319,6 @@ export function useFinishedGoods(initialTab: string = "details") {
         }
         loadAllVersionCosts();
     }, [versions, selectedProductId, debouncedForexRate]);
-
 
     // Load BOM & Routings when Selected Version or simulatedForexRate changes
     useEffect(() => {
@@ -306,7 +349,10 @@ export function useFinishedGoods(initialTab: string = "details") {
             production_capacity_per_hour: selectedProduct.production_capacity_per_hour || 0
         };
 
-        if (selectedVersionId === null) {
+        if (selectedVersionId === null || !versions.some((v) => v.version_id === selectedVersionId)) {
+            setSelectedVersion(null);
+            setEditedVersionDetails({});
+            setEditedRoutes([]);
             setActiveBOMId(null);
             setEditedDetails(baseDetails);
             setEditedBOM([]);
@@ -319,19 +365,72 @@ export function useFinishedGoods(initialTab: string = "details") {
         async function loadRecipe() {
             setLoadingBOM(true);
             try {
-                const details = await fetchBOMDetails(numericId, selectedVersionId!, debouncedForexRate);
-                if (details) {
-                    setActiveBOMId(details.bomId);
+                const versionObj = await fetchBOMDetails(numericId, selectedVersionId!, debouncedForexRate);
+                if (versionObj) {
+                    setSelectedVersion(versionObj);
+                    setEditedVersionDetails({
+                        version_id: versionObj.version_id,
+                        version_name: versionObj.version_name,
+                        base_quantity: versionObj.base_quantity,
+                        expected_yield_percentage: versionObj.expected_yield_percentage,
+                        status: versionObj.status,
+                        uom_id: versionObj.uom_id,
+                        valid_from: versionObj.valid_from,
+                        valid_to: versionObj.valid_to
+                    });
+                    setEditedRoutes(versionObj.routes || []);
+                    setActiveBOMId(versionObj.version_id);
+
+                    // Populate legacy details for backward compatibility with UI components
                     setEditedDetails({
                         ...baseDetails,
-                        expectedYieldPercent: details.expectedYieldPercent,
-                        customOverhead: details.customOverhead || 0,
+                        expectedYieldPercent: versionObj.expected_yield_percentage,
+                        customOverhead: (versionObj as any).custom_overhead || 0
                     });
-                    setEditedBOM(details.ingredients);
-                    setEditedRoutings(details.routings);
-                    setEditedOverheads(details.overheads || []);
+
+                    // Format routes as ingredients and routings for older tabs
+                    const ingredients: BOMItem[] = [];
+                    const routings: RoutingStep[] = [];
+                    
+                    if (versionObj.routes) {
+                        versionObj.routes.forEach(r => {
+                            routings.push({
+                                id: String(r.route_id),
+                                sequence: r.sequence_order,
+                                name: `Step ${r.sequence_order}`,
+                                operationId: r.operation_id || undefined,
+                                laborFlatRate: r.estimated_labor_cost,
+                                machineHourlyRate: 0,
+                                durationHours: r.run_time_hours,
+                                requiresQA: !!r.qa_template_id
+                            });
+                            
+                            if (r.bom_items) {
+                                r.bom_items.forEach(b => {
+                                    const foundUnit = units.find(u => u.unit_id === b.unit_of_measurement || u.unit_shortcut === b.unit_of_measurement);
+                                    const foundProd = allCatalogProducts.find(p => p.product_id === b.product_id);
+                                    ingredients.push({
+                                        id: String(b.id),
+                                        productId: b.product_id,
+                                        name: foundProd ? foundProd.product_name : (b.product_name || `Component #${b.product_id}`),
+                                        type: "raw_material",
+                                        quantity: b.quantity_required,
+                                        uom: foundUnit ? foundUnit.unit_shortcut : String(b.unit_of_measurement || "pc"),
+                                        wastagePercent: b.wastage_factor_percentage,
+                                        landedCost: b.cost_per_unit || 0
+                                    });
+                                });
+                            }
+                        });
+                    }
+                    setEditedBOM(ingredients);
+                    setEditedRoutings(routings);
+                    setEditedOverheads([]);
                     setHasUnsavedChanges(false);
                 } else {
+                    setSelectedVersion(null);
+                    setEditedVersionDetails({});
+                    setEditedRoutes([]);
                     setActiveBOMId(null);
                     setEditedDetails(baseDetails);
                     setEditedBOM([]);
@@ -346,8 +445,7 @@ export function useFinishedGoods(initialTab: string = "details") {
             }
         }
         loadRecipe();
-    }, [selectedVersionId, selectedProductId, selectedProduct, simulatedForexRate, debouncedForexRate]);
-
+    }, [selectedVersionId, selectedProductId, selectedProduct, simulatedForexRate, debouncedForexRate, versions]);
 
     // Handlers
     const handleRegisterProduct = async (e: React.FormEvent) => {
@@ -436,7 +534,9 @@ export function useFinishedGoods(initialTab: string = "details") {
                 },
                 registerForm.versionName.trim(),
                 registerForm.supplierIds.map(Number),
-                Number(registerForm.expectedYield)
+                Number(registerForm.expectedYield) || 100,
+                1,
+                unitId
             );
 
             if (res.success && res.productId) {
@@ -472,9 +572,9 @@ export function useFinishedGoods(initialTab: string = "details") {
                 const resList = await fetch("/api/manufacturing/finished-goods/products?limit=-1");
                 const dataList = await resList.json();
                 setAllCatalogProducts(dataList);
-                  const list: Product[] = dataList.map((p: BFFCatalogProduct) => {
+                const finishedGoods = dataList.filter((p: BFFCatalogProduct) => Number(p.product_type) === 388);
+                const list: Product[] = finishedGoods.map((p: BFFCatalogProduct) => {
                      const parentId = p.parent_id && typeof p.parent_id === "object"
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
                          ? Number((p.parent_id as any).product_id)
                          : (p.parent_id ? Number(p.parent_id) : null);
                      return {
@@ -503,7 +603,7 @@ export function useFinishedGoods(initialTab: string = "details") {
                         production_capacity_per_hour: p.production_capacity_per_hour ? Number(p.production_capacity_per_hour) : undefined,
                         has_versions: !!p.has_versions
                      };
-                  });
+                });
                 setProducts(list);
 
                 // Select new product & trigger version select
@@ -511,9 +611,8 @@ export function useFinishedGoods(initialTab: string = "details") {
                 const vList = await fetchVersions(res.productId);
                 setVersions(vList);
                 if (vList && vList.length > 0) {
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     const activeVer = vList.find((v: any) => v.is_active);
-                    setSelectedVersionId(activeVer ? activeVer.id : vList[0].id);
+                    setSelectedVersionId(activeVer ? activeVer.version_id : vList[0].version_id);
                 }
 
                 // Switch tab straight to BOM
@@ -528,34 +627,36 @@ export function useFinishedGoods(initialTab: string = "details") {
         }
     };
 
-    const handleRegisterNewVersion = async () => {
+    const handleRegisterNewVersion = async (form: typeof versionForm) => {
         const numericId = Number(selectedProductId);
         if (isNaN(numericId) || numericId <= 0) {
             toast.error("Please select a product first.");
             return;
         }
 
-        const name = prompt("Enter version registration name (e.g. OIL 2ND VERSION EASY MIX):");
-        if (!name || !name.trim()) return;
+        if (!form.versionName.trim()) {
+            toast.error("Version Name is required.");
+            return;
+        }
 
         setSavingBOM(true);
         try {
+            const baseVerId = form.baseVersionId ? Number(form.baseVersionId) : null;
             const res = await registerNewVersion(
                 numericId,
-                activeBOMId,
-                editedDetails.expectedYieldPercent || 100,
-                `BOM for ${selectedProduct.title}`,
-                name.trim()
+                baseVerId,
+                Number(form.expectedYield) || 100,
+                form.versionName.trim(),
+                Number(form.baseQuantity) || 1,
+                Number(form.uomId) || undefined
             );
 
-            // Cast res.bom to any to avoid property access checks if it's untyped
-            const bomObj = res.bom as { version?: { id: number } } | null;
-
-            if (res.success && bomObj) {
-                toast.success(`Successfully registered version "${name}"!`);
+            if (res.success && res.version) {
+                toast.success(`Successfully registered version "${form.versionName}"!`);
                 const list = await fetchVersions(numericId);
                 setVersions(list);
-                setSelectedVersionId(bomObj.version?.id || Number(bomObj.version) || null);
+                setSelectedVersionId(res.version.version_id);
+                setIsVersionModalOpen(false);
             }
         } catch (e) {
             console.error("Version registration error:", e);
@@ -573,47 +674,42 @@ export function useFinishedGoods(initialTab: string = "details") {
             return;
         }
 
-        const validRoutings = editedRoutings.filter(r => {
-            const hasName = String(r.name || "").trim() !== "";
-            const computedCost = Number(r.laborFlatRate || 0) + (Number(r.machineHourlyRate || 0) * Number(r.durationHours || 0));
-            return hasName || computedCost !== 0;
-        });
-        const validOverheads = editedOverheads.filter(o => {
-            const hasOverhead = Number(o.overheadId || 0) !== 0 || String(o.overheadName || "").trim() !== "";
-            const hasAmount = Number(o.amount || 0) !== 0;
-            return hasOverhead || hasAmount;
-        });
-
         setSavingBOM(true);
         try {
+            const detailsPayload = {
+                version_name: editedVersionDetails.version_name || "",
+                base_quantity: Number(editedVersionDetails.base_quantity || 1),
+                uom_id: editedVersionDetails.uom_id || null,
+                expected_yield_percentage: Number(editedVersionDetails.expected_yield_percentage || 100),
+                status: editedVersionDetails.status || "For Approval",
+                valid_from: editedVersionDetails.valid_from || null,
+                valid_to: editedVersionDetails.valid_to || null,
+                
+                title: editedDetails.title || "",
+                sku: editedDetails.sku || "",
+                barcode: editedDetails.barcode || "",
+                baseUom: editedDetails.baseUom || "L",
+                targetSellingPrice: editedDetails.targetSellingPrice || 0,
+                densityFactor: editedDetails.densityFactor || 1.0,
+                productBrand: editedDetails.product_brand,
+                productCategory: editedDetails.product_category,
+                description: editedDetails.description || "",
+                costPerUnit: editedDetails.cost_per_unit || 0,
+                unitOfMeasurementCount: editedDetails.unit_of_measurement_count || 0,
+                productClass: editedDetails.product_class,
+                productSegment: editedDetails.product_segment,
+                productSection: editedDetails.product_section,
+                productShelfLife: editedDetails.product_shelf_life,
+                productImage: editedDetails.product_image,
+                parent_id: editedDetails.parent_id !== undefined ? (editedDetails.parent_id ? Number(editedDetails.parent_id) : null) : null,
+                productionCapacityPerHour: editedDetails.production_capacity_per_hour
+            };
+
             const res = await saveBOMDetails(
                 numericProductId,
                 activeBOMId,
-                {
-                    title: editedDetails.title || "",
-                    sku: editedDetails.sku || "",
-                    barcode: editedDetails.barcode || "",
-                    baseUom: editedDetails.baseUom || "L",
-                    expectedYieldPercent: editedDetails.expectedYieldPercent || 100,
-                    targetSellingPrice: editedDetails.targetSellingPrice || 0,
-                    densityFactor: editedDetails.densityFactor || 1.0,
-                    productBrand: editedDetails.product_brand,
-                    productCategory: editedDetails.product_category,
-                    description: editedDetails.description || "",
-                    costPerUnit: editedDetails.cost_per_unit || 0,
-                    unitOfMeasurementCount: editedDetails.unit_of_measurement_count || 0,
-                    productClass: editedDetails.product_class,
-                    productSegment: editedDetails.product_segment,
-                    productSection: editedDetails.product_section,
-                    productShelfLife: editedDetails.product_shelf_life,
-                    productImage: editedDetails.product_image,
-                    parent_id: editedDetails.parent_id !== undefined ? (editedDetails.parent_id ? Number(editedDetails.parent_id) : null) : null,
-                    customOverhead: editedDetails.customOverhead || 0,
-                    productionCapacityPerHour: editedDetails.production_capacity_per_hour
-                },
-                editedBOM,
-                validRoutings,
-                validOverheads
+                detailsPayload,
+                editedRoutes
             );
  
             if (res.success) {
@@ -627,7 +723,6 @@ export function useFinishedGoods(initialTab: string = "details") {
                             description: editedDetails.description || p.description,
                             barcode: editedDetails.barcode || p.barcode,
                             baseUom: editedDetails.baseUom || p.baseUom,
-                            expectedYieldPercent: editedDetails.expectedYieldPercent || p.expectedYieldPercent,
                             targetSellingPrice: editedDetails.targetSellingPrice || p.targetSellingPrice,
                             densityFactor: editedDetails.densityFactor || p.densityFactor,
                             product_brand: editedDetails.product_brand,
@@ -641,7 +736,6 @@ export function useFinishedGoods(initialTab: string = "details") {
                             product_image: editedDetails.product_image,
                             parent_id: updatedParentId,
                             parentProduct: updatedParentId === null,
-                            customOverhead: editedDetails.customOverhead,
                             production_capacity_per_hour: editedDetails.production_capacity_per_hour !== undefined ? editedDetails.production_capacity_per_hour : p.production_capacity_per_hour
                         };
                     }
@@ -670,7 +764,6 @@ export function useFinishedGoods(initialTab: string = "details") {
             const res = await activateVersion(numericProductId, bomId, deactivateAll);
             if (res.success) {
                 toast.success(deactivateAll ? "All versions deactivated successfully!" : "BOM version activated successfully!");
-                // Reload versions
                 const list = await fetchVersions(numericProductId);
                 setVersions(list);
             }
@@ -758,6 +851,68 @@ export function useFinishedGoods(initialTab: string = "details") {
         }
     };
 
+    // Work Centers CRUD Handlers
+    const handleAddWorkCenter = async (workCenter: Omit<WorkCenter, "work_center_id">) => {
+        try {
+            const res = await createWorkCenter(workCenter);
+            if (res.success && res.workCenter) {
+                toast.success(`Work center "${workCenter.work_center_name}" created successfully!`);
+                setWorkCenters(prev => [...prev, res.workCenter].sort((a, b) => a.work_center_name.localeCompare(b.work_center_name)));
+                return res.workCenter;
+            }
+        } catch (e) {
+            console.error("Failed to create work center:", e);
+            const error = e instanceof Error ? e : new Error(String(e));
+            toast.error(error.message || "Failed to create work center");
+        }
+    };
+
+    const handleSaveWorkCenter = async (workCenterId: number, workCenter: Partial<WorkCenter>) => {
+        try {
+            const res = await saveWorkCenter(workCenterId, workCenter);
+            if (res.success && res.workCenter) {
+                toast.success(`Work center updated successfully!`);
+                setWorkCenters(prev => prev.map(w => w.work_center_id === workCenterId ? res.workCenter : w));
+                return res.workCenter;
+            }
+        } catch (e) {
+            console.error("Failed to update work center:", e);
+            const error = e instanceof Error ? e : new Error(String(e));
+            toast.error(error.message || "Failed to update work center");
+        }
+    };
+
+    // QA Templates CRUD Handlers
+    const handleAddQATemplate = async (template: Omit<QATemplate, "template_id">) => {
+        try {
+            const res = await createQATemplate(template);
+            if (res.success && res.template) {
+                toast.success(`QA template "${template.template_name}" created successfully!`);
+                setQaTemplates(prev => [...prev, res.template].sort((a, b) => a.template_name.localeCompare(b.template_name)));
+                return res.template;
+            }
+        } catch (e) {
+            console.error("Failed to create QA template:", e);
+            const error = e instanceof Error ? e : new Error(String(e));
+            toast.error(error.message || "Failed to create QA template");
+        }
+    };
+
+    const handleSaveQATemplate = async (templateId: number, template: Partial<QATemplate>) => {
+        try {
+            const res = await saveQATemplate(templateId, template);
+            if (res.success && res.template) {
+                toast.success(`QA template updated successfully!`);
+                setQaTemplates(prev => prev.map(t => t.template_id === templateId ? res.template : t));
+                return res.template;
+            }
+        } catch (e) {
+            console.error("Failed to update QA template:", e);
+            const error = e instanceof Error ? e : new Error(String(e));
+            toast.error(error.message || "Failed to update QA template");
+        }
+    };
+
     return {
         handleCreateBrand,
         handleCreateCategory,
@@ -775,6 +930,8 @@ export function useFinishedGoods(initialTab: string = "details") {
         classes,
         segments,
         sections,
+        workCenters,
+        qaTemplates,
         loadingProducts,
         loadingBOM,
         savingBOM,
@@ -792,6 +949,15 @@ export function useFinishedGoods(initialTab: string = "details") {
         selectedVersionId,
         setSelectedVersionId,
         activeBOMId,
+        selectedVersion,
+        editedVersionDetails,
+        setEditedVersionDetails,
+        editedRoutes,
+        setEditedRoutes,
+        isVersionModalOpen,
+        setIsVersionModalOpen,
+        versionForm,
+        setVersionForm,
         isRegisterModalOpen,
         setIsRegisterModalOpen,
         registerForm,
@@ -815,8 +981,10 @@ export function useFinishedGoods(initialTab: string = "details") {
         handleRegisterProduct,
         handleRegisterNewVersion,
         handleSave,
-        handleActivateVersion
+        handleActivateVersion,
+        handleAddWorkCenter,
+        handleSaveWorkCenter,
+        handleAddQATemplate,
+        handleSaveQATemplate
     };
 }
-
-

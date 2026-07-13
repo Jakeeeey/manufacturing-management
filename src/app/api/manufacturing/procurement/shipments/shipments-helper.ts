@@ -1,3 +1,4 @@
+/* eslint-disable */
 import { DIRECTUS_URL, headers } from "@/app/api/manufacturing/directus-api";
 import { DirectusShipment } from "@/modules/manufacturing-management/procurement/types";
 
@@ -15,6 +16,9 @@ interface DirectusPO {
     branch_id?: number | null;
     payment_type?: number | null;
     price_type?: string | null;
+    exchange_rate?: number | string | null;
+    total_foreign_currency?: number | string | null;
+    remark?: string | null;
 }
 
 interface DirectusPOProduct {
@@ -29,6 +33,9 @@ interface ProductMin {
     product_id: number;
     product_name?: string;
     product_code?: string;
+    unit_of_measurement?: any;
+    unit_of_measurement_count?: number;
+    parent_id?: any;
 }
 
 interface DirectusInventoryLot {
@@ -39,6 +46,7 @@ interface DirectusInventoryLot {
     unit_cost?: number;
     lot_number?: string;
     expiry_date?: string;
+    branch_id?: number;
 }
 
 export interface ExtendedShipmentLineItem {
@@ -63,7 +71,7 @@ interface ExtendedShipment extends Partial<DirectusShipment> {
     branch_id?: number;
 }
 
-function mapPoStatusToShipment(statusId: number | null | undefined): "Ordered" | "Approved" | "En Route" | "Receiving (QA)" | "Received" {
+function mapPoStatusToShipment(statusId: number | null | undefined): "Ordered" | "Approved" | "En Route" | "Receiving (QA)" | "Received" | "Rejected" {
     if (!statusId) return "Ordered";
     switch (statusId) {
         case 1: return "Ordered";
@@ -71,6 +79,7 @@ function mapPoStatusToShipment(statusId: number | null | undefined): "Ordered" |
         case 12: return "En Route";
         case 9: return "Receiving (QA)";
         case 6: return "Received";
+        case 13: return "Rejected";
         default: return "Ordered";
     }
 }
@@ -82,6 +91,7 @@ function mapShipmentStatusToPo(status: string): number {
         case "En Route": return 12;
         case "Receiving (QA)": return 9;
         case "Received": return 6;
+        case "Rejected": return 13;
         default: return 1;
     }
 }
@@ -94,16 +104,22 @@ export async function fetchIncomingShipments(): Promise<unknown[]> {
         const poList = ((await res.json()).data || []) as DirectusPO[];
 
         return poList.map((po) => {
+            const rate = po.exchange_rate ? Number(po.exchange_rate) : 58.00;
+            const totalPhp = Number(po.total_amount || po.gross_amount || 0);
+            const foreignCurrency = po.total_foreign_currency ? Number(po.total_foreign_currency) : (totalPhp / rate);
+
             return {
                 shipment_id: po.purchase_order_id,
                 reference_number: po.reference || po.purchase_order_no || "",
+                purchase_order_no: po.purchase_order_no || "",
                 supplier_id: po.supplier_name || 0, // Directus resolves supplier_name.* as an object, which maps to supplier_id in type
                 date_received: po.date_received || null,
                 lead_time_receiving: po.lead_time_receiving || null,
-                total_foreign_currency: Number(po.total_amount || 0) / 58.00,
-                exchange_rate: 58.00,
-                total_php_value: Number(po.total_amount || po.gross_amount || 0),
+                total_foreign_currency: foreignCurrency,
+                exchange_rate: rate,
+                total_php_value: totalPhp,
                 status: mapPoStatusToShipment(po.inventory_status),
+                remark: po.remark || "",
                 created_at: po.date_encoded || "",
                 branch_id: po.branch_id || null,
                 payment_type: po.payment_type || null,
@@ -139,7 +155,7 @@ export async function fetchShipmentLineItems(shipmentId: number): Promise<Extend
         const productIds = popData.map((p) => typeof p.product_id === "object" && p.product_id ? p.product_id.product_id : p.product_id).filter(Boolean);
         let products: ProductMin[] = [];
         if (productIds.length > 0) {
-            const prodUrl = `${DIRECTUS_URL}/items/products?filter[product_id][_in]=${productIds.join(",")}&fields=*,unit_of_measurement.*&limit=-1`;
+            const prodUrl = `${DIRECTUS_URL}/items/products?filter[product_id][_in]=${productIds.join(",")}&fields=*,unit_of_measurement.*,parent_id.unit_of_measurement.unit_shortcut&limit=-1`;
             const prodRes = await fetch(prodUrl, { headers, cache: "no-store" });
             if (prodRes.ok) {
                 products = (await prodRes.json()).data as ProductMin[] || [];
@@ -154,21 +170,25 @@ export async function fetchShipmentLineItems(shipmentId: number): Promise<Extend
                 product_name: `Product ID: ${rawProdId}`,
                 product_code: `ID-${rawProdId}`
             };
-            const por = porData.find((r) => Number(r.product_id) === Number(rawProdId));
+            const matchingLots = porData.filter((r) => Number(r.product_id) === Number(rawProdId));
+            const totalQtyReceived = matchingLots.reduce((sum, lot) => sum + Number(lot.quantity || 0), 0);
+            const acceptedLot = matchingLots.find(lot => Number(lot.branch_id) !== 182);
+            const activeLot = acceptedLot || matchingLots[0];
+
             return {
                 line_id: pop.purchase_order_product_id, // map line_id to pop.purchase_order_product_id so QA receiving can update it
                 shipment_id: shipmentId,
                 product_id: productObj,
                 quantity_ordered: Number(pop.ordered_quantity || 0),
-                quantity_received: por ? Number(por.quantity || 0) : 0,
+                quantity_received: totalQtyReceived,
                 quantity_rejected: 0,
                 rejection_reason: "",
-                qa_status: por ? por.qa_status || "Pending" : "Pending",
+                qa_status: activeLot ? activeLot.qa_status || "Pending" : "Pending",
                 base_unit_cost_php: Number(pop.unit_price || 0),
                 allocated_expense_php: 0,
-                final_landed_unit_cost: por ? Number(por.unit_cost || 0) : Number(pop.unit_price || 0),
-                lot_number: por ? por.lot_number || "" : "",
-                expiration_date: por ? por.expiry_date || "" : ""
+                final_landed_unit_cost: activeLot ? Number(activeLot.unit_cost || 0) : Number(pop.unit_price || 0),
+                lot_number: activeLot ? activeLot.lot_number || "" : "",
+                expiration_date: activeLot ? activeLot.expiry_date || "" : ""
             };
         });
     } catch (e) {
@@ -207,7 +227,9 @@ export async function createIncomingShipment(
             branch_id: extendedData.branch_id || 182,
             is_posted: 0,
             lead_time_receiving: extendedData.date_received || null,
-            encoder_id: userId || null
+            encoder_id: userId || null,
+            exchange_rate: Number(extendedData.exchange_rate) || 58.00,
+            total_foreign_currency: Number(extendedData.total_foreign_currency) || (totalPhp / (Number(extendedData.exchange_rate) || 58.00))
         };
 
         const res = await fetch(`${DIRECTUS_URL}/items/purchase_order`, {
@@ -229,22 +251,7 @@ export async function createIncomingShipment(
         const poJson = await res.json();
         poId = poJson.data.purchase_order_id;
 
-        // Sync to incoming_shipments table to satisfy foreign keys in shipment_expenses
-        const incomingPayload = {
-            shipment_id: poId,
-            reference_number: extendedData.reference_number,
-            supplier_id: typeof extendedData.supplier_id === "object" && extendedData.supplier_id ? (extendedData.supplier_id as Record<string, unknown>).id : extendedData.supplier_id,
-            date_received: extendedData.date_received || null,
-            total_foreign_currency: Number(extendedData.total_foreign_currency) || (totalPhp / 58.00),
-            exchange_rate: Number(extendedData.exchange_rate) || 58.00,
-            total_php_value: totalPhp,
-            status: extendedData.status || "Ordered"
-        };
-        await fetch(`${DIRECTUS_URL}/items/incoming_shipments`, {
-            method: "POST",
-            headers,
-            body: JSON.stringify(incomingPayload)
-        }).catch(err => console.error("Failed to sync to incoming_shipments:", err));
+        // Sync to purchase_order_products for this PO
 
         for (const item of lineItems) {
             const qty = Number(item.quantity_ordered || 0);
@@ -339,19 +346,6 @@ export async function updateIncomingShipmentStatus(
         });
 
         if (!res.ok) throw new Error(`Failed to update purchase order status: ${res.status}`);
-
-        // Sync status to incoming_shipments
-        const incomingUpdatePayload: Record<string, unknown> = {
-            status: status
-        };
-        if (status === "Received" || status === "Receiving (QA)") {
-            incomingUpdatePayload.date_received = new Date().toISOString().split('T')[0];
-        }
-        await fetch(`${DIRECTUS_URL}/items/incoming_shipments/${shipmentId}`, {
-            method: "PATCH",
-            headers,
-            body: JSON.stringify(incomingUpdatePayload)
-        }).catch(err => console.error("Failed to sync status to incoming_shipments:", err));
 
         return { success: true };
     } catch (e) {

@@ -1,100 +1,146 @@
-import { FinishedGoodsReceiptPayload } from "../types";
-import { JobOrder, JobOrderQALog } from "../../planning-engineering/types";
+/* eslint-disable */
+import { JobOrder, User, RouteOperatorRecord } from "../types";
 
-async function handleResponse(res: Response, fallbackMessage: string) {
-    if (!res.ok) {
-        let errMsg = fallbackMessage;
-        try {
-            const data = await res.json();
-            if (data && data.error) errMsg = data.error;
-        } catch {}
-        throw new Error(errMsg);
-    }
+export async function fetchJobOrders(): Promise<JobOrder[]> {
+    const res = await fetch("/api/manufacturing/planning-engineering");
+    if (!res.ok) throw new Error("Failed to load job orders");
     return res.json();
 }
 
-export async function fetchJobOrders() {
-    const res = await fetch("/api/manufacturing/planning-engineering", { cache: "no-store" });
-    return handleResponse(res, "Failed to fetch job orders");
+export async function fetchUsersList(): Promise<User[]> {
+    const res = await fetch("/api/manufacturing/planning-engineering?action=users");
+    if (!res.ok) throw new Error("Failed to load operators list");
+    return res.json();
 }
 
-export async function fetchUsers() {
-    const res = await fetch("/api/manufacturing/planning-engineering?action=users", { cache: "no-store" });
-    return handleResponse(res, "Failed to fetch users");
+export interface RouteOperatorsResponse {
+    data: RouteOperatorRecord[];
+    summary: {
+        total_hours: number;
+        total_labor_cost: number;
+    };
 }
 
-export async function fetchBranches() {
-    const res = await fetch("/api/manufacturing/procurement/qa-receiving?action=branches", { cache: "no-store" });
-    return handleResponse(res, "Failed to fetch branches");
+export async function fetchRouteOperators(taskId: number): Promise<RouteOperatorsResponse> {
+    const res = await fetch(`/api/manufacturing/production/route-operators?taskId=${taskId}`);
+    if (!res.ok) throw new Error("Failed to load operators logs");
+    return res.json();
 }
 
-export async function fetchProducts() {
-    const res = await fetch("/api/manufacturing/finished-goods/products?limit=200", { cache: "no-store" });
-    return handleResponse(res, "Failed to fetch products");
+export interface RouteOperatorPayload {
+    action: string;
+    taskId: number;
+    userId: number;
+    joId?: string;
+    routingId?: number;
+    actualHours?: number;
+    hourlyRate?: number;
 }
 
-export async function updateJobOrder(joId: string, patch: Partial<JobOrder>) {
-    const res = await fetch("/api/manufacturing/planning-engineering", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ joId, patch })
-    });
-    return handleResponse(res, "Failed to update Job Order");
-}
-
-export async function updateTaskAssignments(taskId: number, assignments: { user_id: number; is_team_lead: boolean }[]) {
-    const res = await fetch("/api/manufacturing/planning-engineering", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ taskId, assignments })
-    });
-    return handleResponse(res, "Failed to update task assignments");
-}
-
-export async function updateTaskQA(taskId: number, productId: number, branchId: number, qaLog: Partial<JobOrderQALog>) {
-    const res = await fetch("/api/manufacturing/planning-engineering", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ taskId, productId, branchId, qaLog })
-    });
-    return handleResponse(res, "Failed to log QA step verification");
-}
-
-export async function updateTaskStatus(taskId: number, status: string, completedAt: string | null) {
-    const res = await fetch("/api/manufacturing/planning-engineering", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-            taskId,
-            taskPatch: {
-                status,
-                completed_at: completedAt
-            }
-        })
-    });
-    return handleResponse(res, "Failed to update task execution status");
-}
-
-export async function createFinishedGoodsReceipt(payload: FinishedGoodsReceiptPayload) {
-    const res = await fetch("/api/manufacturing/production/finished-goods", {
+export async function manageRouteOperator(payload: RouteOperatorPayload): Promise<any> {
+    const res = await fetch("/api/manufacturing/production/route-operators", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
     });
-    return handleResponse(res, "Failed to submit finished goods receipt");
+    if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || "Failed to manage operator.");
+    }
+    return res.json();
 }
 
-export async function uploadFile(formData: FormData) {
-    const res = await fetch("/api/manufacturing/files", {
+export interface PatchTaskPayload {
+    taskId: number;
+    taskPatch: {
+        status?: string;
+        completed_at?: string | null;
+        actual_labor_cost: number;
+        actual_run_hours: number;
+    };
+}
+
+export async function patchRoutingTask(payload: PatchTaskPayload): Promise<void> {
+    const res = await fetch("/api/manufacturing/planning-engineering", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error("Failed to update task.");
+}
+
+export async function fetchQATemplate(taskName: string, productId: number): Promise<any> {
+    const res = await fetch(
+        `/api/manufacturing/qa?action=matching-template&taskName=${encodeURIComponent(taskName)}&productId=${productId}`
+    );
+    if (!res.ok) throw new Error("Failed to load QA Checklist template.");
+    return res.json();
+}
+
+export interface QAVerificationPayload {
+    action: "verify";
+    joId: string;
+    taskId: number;
+    taskName: string;
+    productName: string;
+    expectedQty: number;
+    actualQty: number;
+    verifications: Array<{
+        parameter_id: number;
+        test_name: string;
+        value: string | number | boolean;
+        min_value: number | null;
+        max_value: number | null;
+        target_value: string | null;
+        is_failed: boolean;
+        is_critical: boolean;
+    }>;
+    comments: string;
+    userId: number | null;
+}
+
+export async function submitQAVerification(payload: QAVerificationPayload): Promise<any> {
+    const res = await fetch("/api/manufacturing/qa", {
         method: "POST",
-        body: formData
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
     });
-    return handleResponse(res, "Failed to upload file");
+    if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || "Failed to process QA verification.");
+    }
+    return res.json();
 }
 
-export async function deleteFile(id: string) {
-    const res = await fetch(`/api/manufacturing/files?id=${id}`, {
-        method: "DELETE"
+export interface ShiftRunLogPayload {
+    taskId: number;
+    joId: string | number;
+    shiftName: string;
+    yieldQty: number;
+    inspectorId: number | null;
+    qaStatus: "Passed" | "QA Hold" | "Pending";
+    qaParameters?: Array<{
+        parameter_id: number;
+        test_name: string;
+        value: string | number | boolean;
+        is_failed: boolean;
+        remarks?: string;
+    }>;
+    materialsConsumed?: Array<{
+        product_id: number;
+        actual_qty: number;
+    }>;
+}
+
+export async function submitShiftRunLog(payload: ShiftRunLogPayload): Promise<any> {
+    const res = await fetch("/api/manufacturing/production/shift-run-log", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
     });
-    return handleResponse(res, "Failed to delete file");
+    if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || "Failed to submit shift run log.");
+    }
+    return res.json();
 }

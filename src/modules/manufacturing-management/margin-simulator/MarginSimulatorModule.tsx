@@ -292,41 +292,42 @@ export default function MarginSimulatorModule() {
                 }
                 // Fetch details for the first version (latest/active version)
                 const activeVersion = versions[0];
-                const details = await fetchBOMDetails(Number(currentProd!.id), activeVersion.id);
+                const details = await fetchBOMDetails(Number(currentProd!.id), activeVersion.version_id);
                 if (details) {
-                    const mappedBom: BOMItem[] = details.ingredients.map(ing => ({
-                        id: ing.id,
-                        productId: ing.productId,
-                        name: ing.name,
-                        type: ing.type,
-                        quantity: ing.quantity,
-                        uom: ing.uom,
-                        uomId: ing.uomId,
-                        wastagePercent: ing.wastagePercent,
-                        landedCost: ing.landedCost,
-                        foreignSourced: ing.isForeign || false,
-                        isForeign: ing.isForeign
+                    const ingredients = details.routes?.flatMap(r => r.bom_items || []) || [];
+                    const mappedBom: BOMItem[] = ingredients.map(ing => ({
+                        id: String(ing.id),
+                        productId: ing.product_id,
+                        name: ing.product_name || `Component #${ing.product_id}`,
+                        type: "raw_material" as const,
+                        quantity: ing.quantity_required,
+                        uom: String(ing.unit_of_measurement || "pc"),
+                        uomId: typeof ing.unit_of_measurement === "number" ? ing.unit_of_measurement : 0,
+                        wastagePercent: ing.wastage_factor_percentage || 0,
+                        landedCost: ing.cost_per_unit || 0,
+                        foreignSourced: false,
+                        isForeign: ing.is_foreign || false
                     }));
-                    const calculatedRoutingCost = details.routings.reduce((sum, r) => {
-                        return sum + (Number(r.laborFlatRate || 0) + (Number(r.machineHourlyRate || 0) * Number(r.durationHours || 0)));
-                    }, 0);
+                    const calculatedRoutingCost = details.routes?.reduce((sum, r) => {
+                        return sum + (Number(r.estimated_labor_cost || 0) + (Number(r.work_center?.overhead_cost_per_hour || 0) * Number(r.setup_time_hours + r.run_time_hours)));
+                    }, 0) || 0;
 
                     // Update the product's details in the products list state
                     setProducts(prev => prev.map(p => p.id === currentProd!.id ? {
                         ...p,
-                        expectedYieldPercent: Number(details.expectedYieldPercent) || 100,
+                        expectedYieldPercent: Number(details.expected_yield_percentage) || 100,
                         bom: mappedBom,
                         routingCost: calculatedRoutingCost,
-                        bomId: details.bomId,
-                        versionId: details.versionId,
-                        versionName: details.version,
-                        routings: details.routings,
-                        overheads: details.overheads || []
+                        bomId: details.version_id,
+                        versionId: details.version_id,
+                        versionName: details.version_name,
+                        routings: details.routes || [],
+                        overheads: (details as unknown as { overheads?: unknown[] }).overheads || []
                     } : p));
 
                     applySandboxState(
                         mappedBom,
-                        Number(details.expectedYieldPercent) || 100,
+                        Number(details.expected_yield_percentage) || 100,
                         currentProd!.targetSellingPrice
                     );
                 } else {

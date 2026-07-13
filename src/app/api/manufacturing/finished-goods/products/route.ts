@@ -35,7 +35,7 @@ export async function GET(request: Request) {
         const limit = parseInt(searchParams.get("limit") || "-1");
         const excludeRollup = searchParams.get("excludeRollup") === "true";
 
-        const explicitFields = "product_id,product_name,product_code,description,isActive,cost_per_unit,price_per_unit,product_brand,parent_id,product_category,product_class,product_segment,product_section,product_shelf_life,product_image,unit_of_measurement.unit_shortcut,unit_of_measurement.unit_name,unit_of_measurement_count,density_factor,production_capacity_per_hour,product_type";
+        const explicitFields = "product_id,product_name,product_code,description,isActive,cost_per_unit,price_per_unit,product_brand,barcode,parent_id,parent_id.product_id,parent_id.product_name,product_category,product_class,product_segment,product_section,product_shelf_life,product_image,unit_of_measurement.unit_id,unit_of_measurement.unit_shortcut,unit_of_measurement.unit_name,unit_of_measurement_count,density_factor,production_capacity_per_hour,product_type";
         let url = `${DIRECTUS_URL}/items/products?limit=${limit}&fields=${explicitFields}`;
         if (search && search.trim()) {
             url += `&search=${encodeURIComponent(search.trim())}`;
@@ -43,7 +43,7 @@ export async function GET(request: Request) {
         
         const [prodRes, versionsRes, profilesRes] = await Promise.all([
             fetch(url, { headers, cache: "no-store" }),
-            fetch(`${DIRECTUS_URL}/items/manufacturing_product_version?limit=-1&fields=product_id`, { headers, cache: "no-store" }),
+            fetch(`${DIRECTUS_URL}/items/product_manufacturing_version?limit=-1&fields=product_id`, { headers, cache: "no-store" }),
             fetch(`${DIRECTUS_URL}/items/product_currency_profiles?limit=-1`, { headers, cache: "no-store" })
         ]);
 
@@ -71,6 +71,8 @@ export async function GET(request: Request) {
         // Resolve calculateRollupCost helper
         const productsMap = new Map<number, DirectusProduct>();
         products.forEach((p) => {
+            p.has_versions = versionProductIds.has(Number(p.product_id));
+            p.currency_profile = profilesMap.get(Number(p.product_id)) || null;
             productsMap.set(Number(p.product_id), p);
         });
 
@@ -85,15 +87,14 @@ export async function GET(request: Request) {
                 return productCopy;
             }
 
-            // Skip calculateRollupCost if the product has no versions (meaning it cannot have an active BOM)
+            // Skip calculateRollupCost if the product has no versions (meaning it cannot have an active version)
             if (!productCopy.has_versions) {
-                productCopy.cost_per_unit = 0;
                 productCopy.has_cogs = false;
                 return productCopy;
             }
 
             try {
-                // Get rolled up cost (COGS) using current active BOM recipe & routings
+                // Get rolled up cost (COGS) using current active version routes & route-level BOM
                 const costRollup = await calculateRollupCost(p.product_id, new Set(), productsMap, 58.00, profilesMap);
                 if (costRollup && costRollup.bomId !== null) {
                     productCopy.cost_per_unit = costRollup.totalBaseCost;
@@ -102,8 +103,7 @@ export async function GET(request: Request) {
                     productCopy.cost_per_unit = 0;
                     productCopy.has_cogs = false;
                 }
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-            } catch (err: any) {
+            } catch (err) {
                 console.error(`Error calculating dynamic rollup cost for product ${p.product_id}:`, err);
                 productCopy.has_cogs = false;
             }
@@ -197,15 +197,21 @@ export async function POST(request: Request) {
         const prodJson = await prodRes.json();
         const productId = prodJson.data?.product_id;
 
-        // 2. Create Product Version
-        const verRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_product_version`, {
+        // 2. Create Product Version (Active status by default for first version)
+        const versionPayload = {
+            product_id: productId,
+            version_name: versionName,
+            base_quantity: 1,
+            uom_id: productDetails.unit_of_measurement || null,
+            expected_yield_percentage: expectedYield !== undefined ? Number(expectedYield) : 100,
+            status: "Active",
+            valid_from: new Date().toISOString().split("T")[0]
+        };
+
+        const verRes = await fetch(`${DIRECTUS_URL}/items/product_manufacturing_version`, {
             method: "POST",
             headers,
-            body: JSON.stringify({
-                product_id: productId,
-                version_name: versionName,
-                created_at: new Date().toISOString()
-            })
+            body: JSON.stringify(versionPayload)
         });
         if (!verRes.ok) {
             // Rollback product
@@ -213,32 +219,9 @@ export async function POST(request: Request) {
             throw new Error(`Directus failed to create product version: ${verRes.status}`);
         }
         const verJson = await verRes.json();
-        const versionId = verJson.data?.id;
+        const createdVersion = verJson.data;
 
-        // 3. Create BOM
-        const bomName = `BOM for ${productDetails.product_name}`;
-        const bomRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_boms`, {
-            method: "POST",
-            headers,
-            body: JSON.stringify({
-                product_id: productId,
-                bom_name: bomName,
-                base_quantity: 1,
-                expected_yield_percentage: expectedYield !== undefined ? Number(expectedYield) : 100,
-                is_active: true,
-                version: versionId
-            })
-        });
-
-        if (!bomRes.ok) {
-            // Rollback version and product
-            await fetch(`${DIRECTUS_URL}/items/manufacturing_product_version/${versionId}`, { method: "DELETE", headers }).catch(() => {});
-            await fetch(`${DIRECTUS_URL}/items/products/${productId}`, { method: "DELETE", headers }).catch(() => {});
-            throw new Error(`Directus failed to create BOM: ${bomRes.status}`);
-        }
-        const bomJson = await bomRes.json();
-
-        // 4. Link selected suppliers in product_per_supplier junction table
+        // 3. Link selected suppliers in product_per_supplier junction table
         if (supplierIds && Array.isArray(supplierIds) && supplierIds.length > 0) {
             try {
                 for (const supId of supplierIds) {
@@ -256,7 +239,7 @@ export async function POST(request: Request) {
             }
         }
 
-        return NextResponse.json({ success: true, productId, bom: bomJson.data });
+        return NextResponse.json({ success: true, productId, version: createdVersion });
     } catch (e) {
         console.error("API Error registering product:", e);
         return NextResponse.json({ error: (e as { message?: string }).message || "Failed to register product" }, { status: 500 });
@@ -289,5 +272,3 @@ export async function PATCH(request: Request) {
         return NextResponse.json({ error: (e as { message?: string }).message || "Failed to update product" }, { status: 500 });
     }
 }
-
-

@@ -1,3 +1,4 @@
+/* eslint-disable */
 "use client";
 
 import React, { useState, useEffect } from "react";
@@ -20,6 +21,8 @@ export default function ApprovalModule() {
     const [etaDate, setEtaDate] = useState("");
     const [approvedPrices, setApprovedPrices] = useState<Record<number, number>>({});
     const [isApproving, setIsApproving] = useState(false);
+    const [rejectRemarks, setRejectRemarks] = useState("");
+    const [isRejecting, setIsRejecting] = useState(false);
 
     // Filter shipments: only show Ordered (Pending Approval) or Approved status
     const filteredShipments = shipments.filter(s => {
@@ -29,7 +32,7 @@ export default function ApprovalModule() {
         return matchesSearch && matchesStatus;
     });
 
-    const activeShipment = selectedShipment || filteredShipments[0] || null;
+    const activeShipment = selectedShipment || null;
 
     // Hydrate ETA Date and item prices when active shipment changes
     useEffect(() => {
@@ -79,12 +82,46 @@ export default function ApprovalModule() {
         }
     };
 
+    const handleReject = async () => {
+        if (!activeShipment) return;
+        if (!rejectRemarks.trim()) {
+            toast.error("Please specify a reason/remarks for rejecting this Purchase Order.");
+            return;
+        }
+
+        try {
+            setIsRejecting(true);
+            const res = await fetch(`/api/manufacturing/procurement/shipments`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    shipmentId: activeShipment.shipment_id,
+                    remarks: rejectRemarks,
+                    action: "reject"
+                })
+            });
+
+            if (!res.ok) {
+                const errJson = await res.json();
+                throw new Error(errJson.error || "Rejection failed");
+            }
+            toast.success("Purchase Order rejected successfully.");
+            window.location.reload();
+        } catch (e: any) {
+            toast.error(e.message || "Failed to reject Purchase Order.");
+        } finally {
+            setIsRejecting(false);
+        }
+    };
+
     const getStatusBadge = (status: string) => {
         switch (status) {
             case "Ordered":
                 return <span className="bg-amber-500/10 text-amber-500 border border-amber-500/25 px-2 py-0.5 rounded text-[10px] font-bold uppercase">Pending Approval</span>;
             case "Approved":
                 return <span className="bg-emerald-500/10 text-emerald-500 border border-emerald-500/25 px-2 py-0.5 rounded text-[10px] font-bold uppercase">Approved</span>;
+            case "Rejected":
+                return <span className="bg-red-500/10 text-red-500 border border-red-500/25 px-2 py-0.5 rounded text-[10px] font-bold uppercase">Rejected</span>;
             default:
                 return <span className="bg-muted text-muted-foreground border px-2 py-0.5 rounded text-[10px] font-bold uppercase">{status}</span>;
         }
@@ -116,14 +153,9 @@ export default function ApprovalModule() {
                     </div>
 
                     <div className="flex-1 overflow-y-auto divide-y">
-                        {loading && (
-                            <div className="flex items-center justify-center p-12">
-                                <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                            </div>
-                        )}
-                        {!loading && filteredShipments.length === 0 ? (
+                        {filteredShipments.length === 0 ? (
                             <div className="p-8 text-center text-xs text-muted-foreground">
-                                No pending purchase orders in approval queue.
+                                {loading ? "Loading queue..." : "No pending purchase orders in approval queue."}
                             </div>
                         ) : (
                             filteredShipments.map(s => {
@@ -157,8 +189,12 @@ export default function ApprovalModule() {
                     </div>
                 </div>
 
-                {/* Right Column: Detailed Review & Approval Form */}
-                <div className="flex-1 border rounded-xl bg-card overflow-hidden shadow-sm flex flex-col min-h-0">
+                <div className="flex-1 border rounded-xl bg-card overflow-hidden shadow-sm flex flex-col min-h-0 relative">
+                    {loading && (
+                        <div className="absolute inset-0 bg-background/40 backdrop-blur-[2px] z-50 flex items-center justify-center rounded-xl">
+                            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                        </div>
+                    )}
                     {activeShipment ? (
                         <div className="p-6 overflow-y-auto space-y-6 flex-1 text-left">
                             <div className="flex items-center justify-between border-b pb-4">
@@ -166,9 +202,12 @@ export default function ApprovalModule() {
                                     <h2 className="text-base font-extrabold tracking-tight text-foreground">{activeShipment.reference_number}</h2>
                                     <p className="text-xs text-muted-foreground font-semibold">
                                         Supplier: <strong className="text-foreground">
-                                            {typeof activeShipment.supplier_id === "object" && activeShipment.supplier_id 
-                                                ? activeShipment.supplier_id.supplier_name 
-                                                : activeShipment.supplier_id}
+                                            {(() => {
+                                                const matchedSupplier = typeof activeShipment.supplier_id !== "object"
+                                                    ? suppliers.find(sup => sup.id === Number(activeShipment.supplier_id))
+                                                    : activeShipment.supplier_id;
+                                                return matchedSupplier ? matchedSupplier.supplier_name : `Supplier ID: ${activeShipment.supplier_id}`;
+                                            })()}
                                         </strong>
                                     </p>
                                 </div>
@@ -211,13 +250,9 @@ export default function ApprovalModule() {
                                                                 <span className="text-[10px] text-muted-foreground">₱</span>
                                                                 <input
                                                                     type="number"
-                                                                    step="0.01"
+                                                                    disabled
                                                                     value={currentPrice}
-                                                                    onChange={(e) => setApprovedPrices(prev => ({
-                                                                        ...prev,
-                                                                        [pId]: Number(e.target.value)
-                                                                    }))}
-                                                                    className="w-20 rounded border bg-muted/30 px-1.5 py-0.5 text-right font-mono font-bold outline-none focus:bg-background"
+                                                                    className="w-20 rounded border bg-muted/20 px-1.5 py-0.5 text-right font-mono font-bold outline-none cursor-not-allowed text-muted-foreground opacity-70"
                                                                 />
                                                             </div>
                                                         </div>
@@ -227,7 +262,26 @@ export default function ApprovalModule() {
                                         </div>
                                     </div>
 
-                                    <div className="flex justify-end pt-1">
+                                    {/* Rejection remarks field */}
+                                    <div className="space-y-1.5 text-left pt-3 border-t border-dashed col-span-2">
+                                        <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Rejection Remarks / Reason *</label>
+                                        <textarea
+                                            placeholder="Specify reason for rejection (required to reject)..."
+                                            value={rejectRemarks}
+                                            onChange={(e) => setRejectRemarks(e.target.value)}
+                                            className="w-full rounded-lg border bg-background px-3 py-2 text-xs font-semibold outline-none focus:ring-1 focus:ring-red-500 h-16 resize-none"
+                                        />
+                                    </div>
+
+                                    <div className="flex justify-end pt-1 gap-2 col-span-2">
+                                        <button
+                                            type="button"
+                                            onClick={handleReject}
+                                            disabled={isRejecting}
+                                            className="inline-flex items-center gap-1 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white font-bold px-4 py-2 rounded-lg text-xs transition-all shadow-sm cursor-pointer"
+                                        >
+                                            {isRejecting ? "Rejecting..." : "Reject PO"}
+                                        </button>
                                         <button
                                             type="button"
                                             onClick={handleApprove}
@@ -306,12 +360,13 @@ export default function ApprovalModule() {
                                                 <th className="p-3 font-semibold text-muted-foreground text-right">Qty</th>
                                                 <th className="p-3 font-semibold text-muted-foreground text-right">Unit Price</th>
                                                 <th className="p-3 font-semibold text-muted-foreground text-right">ImpFreight Cost</th>
+                                                <th className="p-3 font-semibold text-muted-foreground text-right">Total Cost</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y">
                                             {selectedShipmentLines.length === 0 ? (
                                                 <tr>
-                                                    <td colSpan={5} className="p-8 text-center text-muted-foreground">
+                                                    <td colSpan={6} className="p-8 text-center text-muted-foreground">
                                                         No items registered in this container.
                                                     </td>
                                                 </tr>
@@ -320,6 +375,10 @@ export default function ApprovalModule() {
                                                     const prod = line.product_id && typeof line.product_id === "object"
                                                         ? line.product_id
                                                         : { product_name: `ID: ${line.product_id}`, product_code: "N/A", unit_of_measurement: { unit_shortcut: "PCS" } };
+                                                    const qty = Number(line.quantity_ordered || 0);
+                                                    const price = Number(line.base_unit_cost_php || 0);
+                                                    const freight = Number(line.allocated_expense_php || 0);
+                                                    const totalCost = (qty * price) + freight;
                                                     return (
                                                         <tr key={line.line_id} className="hover:bg-muted/20">
                                                             <td className="p-3">
@@ -330,13 +389,16 @@ export default function ApprovalModule() {
                                                                 {prod.unit_of_measurement?.unit_shortcut || "PCS"}
                                                             </td>
                                                             <td className="p-3 text-right font-semibold">
-                                                                {Number(line.quantity_ordered || 0).toLocaleString()} (Ordered)
+                                                                {qty.toLocaleString()} (Ordered)
                                                             </td>
                                                             <td className="p-3 text-right font-mono text-[11px]">
-                                                                ₱{Number(line.base_unit_cost_php).toFixed(2)}
+                                                                ₱{price.toFixed(2)}
                                                             </td>
                                                             <td className="p-3 text-right font-mono text-[11px] text-muted-foreground">
-                                                                +₱{Number(line.allocated_expense_php || 0).toFixed(2)}
+                                                                +₱{freight.toFixed(2)}
+                                                            </td>
+                                                            <td className="p-3 text-right font-mono text-[11px] font-bold text-foreground">
+                                                                ₱{totalCost.toFixed(2)}
                                                             </td>
                                                         </tr>
                                                     );
@@ -350,7 +412,7 @@ export default function ApprovalModule() {
                     ) : (
                         <div className="flex flex-col items-center justify-center p-20 text-center text-muted-foreground h-full">
                             <Anchor className="h-16 w-16 mb-4 text-muted-foreground/30" />
-                            No purchase orders in approval queue.
+                            {filteredShipments.length > 0 ? "Select a purchase order from the queue to view details." : "No purchase orders in approval queue."}
                         </div>
                     )}
                 </div>

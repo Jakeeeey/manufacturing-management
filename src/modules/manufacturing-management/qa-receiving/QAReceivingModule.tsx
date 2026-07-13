@@ -35,7 +35,16 @@ export default function QAReceivingModule() {
         filteredShipments,
         filteredFifoList,
         handleLoadFifoInventory,
-        toggleProductExpand
+        toggleProductExpand,
+        
+        searchPO,
+        setSearchPO,
+        searchStatus,
+        setSearchStatus,
+        startDate,
+        setStartDate,
+        endDate,
+        setEndDate
     } = useQAReceiving();
 
     return (
@@ -97,6 +106,14 @@ export default function QAReceivingModule() {
                             showReceived={showReceived}
                             setShowReceived={setShowReceived}
                             onSelectShipment={handleSelectShipment}
+                            searchPO={searchPO}
+                            setSearchPO={setSearchPO}
+                            searchStatus={searchStatus}
+                            setSearchStatus={setSearchStatus}
+                            startDate={startDate}
+                            setStartDate={setStartDate}
+                            endDate={endDate}
+                            setEndDate={setEndDate}
                         />
                     </div>
 

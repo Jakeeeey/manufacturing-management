@@ -1,139 +1,138 @@
-// src/modules/manufacturing-management/manufacturing-qa/services/qa-api.ts
+/* eslint-disable */
+import { QALog, DispositionRecord, JobOrder, Branch } from "../types";
 
-import { JobOrder, QALogEntry } from "../types";
-
-async function handleResponse(res: Response, fallbackMessage: string) {
-    if (!res.ok) {
-        let errMsg = fallbackMessage;
-        try {
-            const data = await res.json();
-            if (data && data.error) errMsg = data.error;
-        } catch {}
-        throw new Error(errMsg);
-    }
+export async function fetchQALogs(): Promise<QALog[]> {
+    const res = await fetch("/api/manufacturing/planning-engineering?action=qa-logs");
+    if (!res.ok) throw new Error("Failed to load QA logs");
     return res.json();
 }
 
-/**
- * Fetch all Job Orders for QA auditing.
- */
+export async function fetchDispositions(): Promise<DispositionRecord[]> {
+    const res = await fetch("/api/manufacturing/qa?action=dispositions");
+    if (!res.ok) throw new Error("Failed to load dispositions");
+    return res.json();
+}
+
 export async function fetchJobOrders(): Promise<JobOrder[]> {
     const res = await fetch("/api/manufacturing/planning-engineering");
-    return handleResponse(res, "Failed to load job orders for QA");
+    if (!res.ok) throw new Error("Failed to load Job Orders");
+    return res.json();
 }
 
-/**
- * Fetch QA inspection history logs.
- */
-export async function fetchQALogsHistory(): Promise<QALogEntry[]> {
-    const res = await fetch("/api/manufacturing/planning-engineering?action=qa-logs");
-    return handleResponse(res, "Failed to load QA logs history");
+export async function fetchBranchesList(): Promise<Branch[]> {
+    const res = await fetch("/api/manufacturing/inventory");
+    if (!res.ok) throw new Error("Failed to load branches");
+    const data = await res.json();
+    return data.branches || [];
 }
 
-/**
- * Submit QA Inspection log for a routing task.
- */
-export async function submitQARoutingTaskVerification(
-    taskId: number,
-    productId: number,
-    branchId: number,
-    expectedQty: number,
-    actualQty: number,
-    comments: string,
-    photos: string[],
-    completedBy?: number | null
-): Promise<unknown> {
-    // 1. Submit the QA Log entry
-    const logRes = await fetch("/api/manufacturing/planning-engineering", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-            taskId,
-            productId,
-            branchId,
-            qaLog: {
-                expected_quantity: expectedQty,
-                actual_quantity: actualQty,
-                qa_status: "Passed",
-                comments,
-                photos
-            }
-        })
-    });
-    await handleResponse(logRes, "Failed to record QA log");
-
-    // 2. Mark the routing task as Completed with timestamps and user references
-    const taskRes = await fetch("/api/manufacturing/planning-engineering", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-            taskId,
-            taskPatch: {
-                status: "Completed",
-                completed_at: new Date().toISOString(),
-                completed_by: completedBy || null
-            }
-        })
-    });
-    return handleResponse(taskRes, "Failed to complete routing task status");
+export async function fetchJobOrderMaterials(joId: string): Promise<any[]> {
+    const res = await fetch(`/api/manufacturing/planning-engineering?action=job-order-materials&joId=${joId}`);
+    if (!res.ok) throw new Error("Failed to load materials");
+    return res.json();
 }
 
-/**
- * Update routing task fields directly (e.g. status and started_at).
- */
-export async function updateRoutingTask(
-    taskId: number,
-    taskPatch: {
-        status: string;
-        started_at?: string | null;
-        completed_at?: string | null;
-        completed_by?: number | null;
-    }
-): Promise<unknown> {
-    const res = await fetch("/api/manufacturing/planning-engineering", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-            taskId,
-            taskPatch
-        })
-    });
-    return handleResponse(res, "Failed to update routing task");
-}
-
-/**
- * Release finished goods to warehouse inventory and transition Job Order & Sales Order statuses.
- */
-export async function releaseFinishedGoodsReceipt(payload: {
+export interface FinishedGoodsReceiptPayload {
     joId: string;
     productId: number;
     productName: string;
     quantityProduced: number;
     branchId: number;
     lotNumber: string;
-    expirationDate: string;
+    expirationDate: string | null;
     unitCost: number;
-    componentsConsumed: unknown[];
-}): Promise<unknown> {
+    componentsConsumed: Array<{
+        component_product_id: number;
+        required: number;
+        quantity: number;
+        component_name: string;
+    }>;
+    completeJobOrder: boolean;
+}
+
+export async function postFinishedGoodsReceipt(payload: FinishedGoodsReceiptPayload): Promise<any> {
     const res = await fetch("/api/manufacturing/production/finished-goods", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
     });
-    return handleResponse(res, "Failed to release finished goods receipt");
+    const data = await res.json();
+    if (!res.ok) {
+        throw new Error(data.error || "Failed to receive finished goods yield.");
+    }
+    return data;
 }
 
-/**
- * Update the Job Order status (e.g. to Finished or Cancelled) directly.
- */
-export async function updateJobOrderStatus(joId: string, status: string): Promise<unknown> {
-    const res = await fetch("/api/manufacturing/planning-engineering", {
-        method: "PATCH",
+export interface SupervisorOverridePayload {
+    action: "disposition";
+    dispositionId: string;
+    decision: "Release with Deviation" | "Rework" | "Scrap";
+    supervisorComments: string;
+    userId: number;
+}
+
+export async function postSupervisorOverride(payload: SupervisorOverridePayload): Promise<any> {
+    const res = await fetch("/api/manufacturing/qa", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-            joId,
-            patch: { status }
-        })
+        body: JSON.stringify(payload)
     });
-    return handleResponse(res, "Failed to update job order status");
+    const data = await res.json();
+    if (!res.ok) {
+        throw new Error(data.error || "Failed to submit override decision.");
+    }
+    return data;
+}
+
+export async function fetchDailyQAInspections(joId?: string): Promise<any[]> {
+    const url = joId ? `/api/manufacturing/production/daily-qa?joId=${joId}` : "/api/manufacturing/production/daily-qa";
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("Failed to load daily QA inspections");
+    return res.json();
+}
+
+export async function fetchFinalQAReleases(joId?: string): Promise<any[]> {
+    const url = joId ? `/api/manufacturing/production/final-qa?joId=${joId}` : "/api/manufacturing/production/final-qa";
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("Failed to load final QA releases");
+    return res.json();
+}
+
+export async function fetchYieldLedger(joId?: string): Promise<any[]> {
+    const url = joId ? `/api/manufacturing/production/shift-run-log?joId=${joId}` : "/api/manufacturing/production/shift-run-log";
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("Failed to load yield ledger");
+    return res.json();
+}
+
+export async function fetchInventoryLotsData(): Promise<{ lots: any[]; products: any[] }> {
+    const res = await fetch("/api/manufacturing/inventory");
+    if (!res.ok) throw new Error("Failed to load inventory lots");
+    const json = await res.json();
+    return {
+        lots: json.data || [],
+        products: json.products || []
+    };
+}
+
+export async function postDailyQAInspection(payload: any): Promise<any> {
+    const res = await fetch("/api/manufacturing/production/daily-qa", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Failed to log daily QA inspection");
+    return data;
+}
+
+export async function postFinalQARelease(payload: any): Promise<any> {
+    const res = await fetch("/api/manufacturing/production/final-qa", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Failed to submit final lot release");
+    return data;
 }

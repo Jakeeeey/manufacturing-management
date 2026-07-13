@@ -12,6 +12,7 @@ export interface Shipment {
     created_at: string;
     supplier_id: unknown;
     date_received: string;
+    branch_id?: number | null;
 }
 
 export interface Product {
@@ -19,7 +20,14 @@ export interface Product {
     product_name: string;
     product_code: string;
     description: string;
-    unit_of_measurement: unknown;
+    unit_of_measurement?: {
+        unit_id: number;
+        unit_shortcut: string;
+        unit_name: string;
+    } | null;
+    unit_of_measurement_count?: number | null;
+    parent_id?: number | null;
+    product_image?: string | null;
 }
 
 export interface ShipmentLineItem {
@@ -38,7 +46,9 @@ export interface ShipmentLineItem {
 }
 
 export interface InspectionRow {
+    receivedQty: number | string;
     acceptedQty: number | string;
+    boQty: number | string;
     lotNumber: string;
     expirationDate: string;
     rejectionReason: string;

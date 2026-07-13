@@ -48,9 +48,11 @@ export default function ProcurementModule({ initialTab = "suppliers" }: Procurem
         setExpenseAllocationForm,
         handleCreateSupplier,
         handleCreateShipment,
+        handleEditShipment,
         handleAllocateExpenses,
         handleUpdateShipmentStatus,
         handleRegisterRawMaterial,
+        handleUpdateRawMaterial,
         handleToggleSupplierActive
     } = useProcurement(initialTab);
 
@@ -63,12 +65,7 @@ export default function ProcurementModule({ initialTab = "suppliers" }: Procurem
     return (
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden space-y-4">
             {/* Tab Content window */}
-            <div className="flex-1 overflow-y-auto min-h-0 relative">
-                {loading && (
-                    <div className="absolute inset-0 bg-background/50 backdrop-blur-sm z-50 flex items-center justify-center">
-                        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                    </div>
-                )}
+            <div className={`flex-1 min-h-0 relative flex flex-col ${activeTab === "raw-materials" ? "overflow-y-auto pr-1" : ""}`}>
 
                 {activeTab === "suppliers" && (
                     <SuppliersDirectory
@@ -102,6 +99,7 @@ export default function ProcurementModule({ initialTab = "suppliers" }: Procurem
                         linesForm={shipmentLinesForm}
                         setLinesForm={setShipmentLinesForm}
                         onCreateShipment={handleCreateShipment}
+                        onEditShipment={handleEditShipment}
                         onTriggerAllocation={handleTriggerExpenseAllocation}
                         onUpdateShipmentStatus={handleUpdateShipmentStatus}
                         loading={loading}
@@ -109,39 +107,46 @@ export default function ProcurementModule({ initialTab = "suppliers" }: Procurem
                 )}
 
                 {activeTab === "shipment-expenses" && (
-                    <div className="border rounded-xl p-6 bg-card shadow-sm h-full overflow-y-auto">
-                        {selectedShipment ? (
-                            <ShipmentExpenses
-                                shipment={selectedShipment}
-                                lines={selectedShipmentLines}
-                                expenses={selectedShipmentExpenses}
-                                isModalOpen={isExpenseModalOpen}
-                                setIsModalOpen={setIsExpenseModalOpen}
-                                allocationForm={expenseAllocationForm}
-                                setAllocationForm={setExpenseAllocationForm}
-                                onAllocate={handleAllocateExpenses}
-                            />
-                        ) : shipments.length > 0 ? (
-                            <div className="space-y-4">
-                                <div className="p-4 bg-amber-500/5 border border-amber-500/10 rounded-xl text-xs text-amber-600 font-semibold">
-                                    Please select a shipment from the dropdown below to calculate and allocate landed costs.
-                                </div>
-                                <div className="space-y-1.5 max-w-sm flex flex-col">
+                    <div className="border rounded-xl p-6 bg-card shadow-sm h-full overflow-y-auto flex flex-col space-y-6">
+                        {shipments.length > 0 ? (
+                            <div className="space-y-6">
+                                {/* Always visible Active Cargo Shipment selection at the top */}
+                                <div className="space-y-1.5 max-w-md flex flex-col shrink-0">
                                     <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block">Active Cargo Shipment</label>
                                     <CreatableSelect
-                                        options={shipments.map(s => ({
-                                            value: String(s.shipment_id),
-                                            label: `BL/PO: ${s.reference_number} (${s.status})`
-                                        }))}
-                                        value=""
+                                        options={shipments.map(s => {
+                                            const poNo = s.purchase_order_no ? ` / ${s.purchase_order_no}` : "";
+                                            return {
+                                                value: String(s.shipment_id),
+                                                label: `BL/PO: ${s.reference_number}${poNo} (${s.status})`
+                                            };
+                                        })}
+                                        value={selectedShipment ? String(selectedShipment.shipment_id) : ""}
                                         onValueChange={(val) => {
                                             const match = shipments.find(s => String(s.shipment_id) === val);
                                             if (match) setSelectedShipment(match);
                                         }}
                                         placeholder="Choose Cargo Shipment..."
-                                        className="h-9 text-xs w-full bg-background font-semibold"
+                                        className="h-10 text-xs w-full bg-background font-semibold"
                                     />
                                 </div>
+
+                                {selectedShipment ? (
+                                    <ShipmentExpenses
+                                        shipment={selectedShipment}
+                                        lines={selectedShipmentLines}
+                                        expenses={selectedShipmentExpenses}
+                                        isModalOpen={isExpenseModalOpen}
+                                        setIsModalOpen={setIsExpenseModalOpen}
+                                        allocationForm={expenseAllocationForm}
+                                        setAllocationForm={setExpenseAllocationForm}
+                                        onAllocate={handleAllocateExpenses}
+                                    />
+                                ) : (
+                                    <div className="p-4 bg-amber-500/5 border border-amber-500/10 rounded-xl text-xs text-amber-600 font-semibold">
+                                        Please select a shipment from the dropdown above to calculate and allocate landed costs.
+                                    </div>
+                                )}
                             </div>
                         ) : (
                             <div className="flex flex-col items-center justify-center p-20 text-center text-muted-foreground">
@@ -157,6 +162,7 @@ export default function ProcurementModule({ initialTab = "suppliers" }: Procurem
                         rawMaterials={rawMaterials} 
                         suppliers={suppliers}
                         onRegisterRawMaterial={handleRegisterRawMaterial}
+                        onUpdateRawMaterial={handleUpdateRawMaterial}
                     />
                 )}
             </div>

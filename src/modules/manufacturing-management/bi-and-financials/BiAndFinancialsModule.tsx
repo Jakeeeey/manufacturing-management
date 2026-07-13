@@ -243,23 +243,24 @@ export default function BiAndFinancialsModule() {
         try {
             const versions = await fetchVersions(Number(variantId));
             if (!versions || versions.length === 0) return;
-            const details = await fetchBOMDetails(Number(variantId), versions[0].id);
+            const details = await fetchBOMDetails(Number(variantId), versions[0].version_id);
             if (details) {
-                const mappedBom: BOMItem[] = details.ingredients.map(ing => ({
-                    id: ing.id,
-                    name: ing.name,
-                    quantity: ing.quantity,
-                    uom: ing.uom,
-                    wastagePercent: ing.wastagePercent,
-                    landedCost: ing.landedCost
+                const ingredients = details.routes?.flatMap(r => r.bom_items || []) || [];
+                const mappedBom: BOMItem[] = ingredients.map(ing => ({
+                    id: String(ing.id),
+                    name: ing.product_name || "Unknown",
+                    quantity: ing.quantity_required,
+                    uom: String(ing.unit_of_measurement),
+                    wastagePercent: ing.wastage_factor_percentage,
+                    landedCost: ing.cost_per_unit || 0
                 }));
                 setProducts(prev => prev.map(p => p.id === variantId ? {
                     ...p,
-                    expectedYieldPercent: Number(details.expectedYieldPercent) || 100,
+                    expectedYieldPercent: Number(details.expected_yield_percentage) || 100,
                     bom: mappedBom,
-                    bomId: details.bomId,
-                    versionId: details.versionId,
-                    versionName: details.version
+                    bomId: details.version_id,
+                    versionId: details.version_id,
+                    versionName: details.version_name
                 } : p));
             }
         } catch (err) {
@@ -314,23 +315,24 @@ export default function BiAndFinancialsModule() {
                         // Async load BOM details for this active product
                         const versions = await fetchVersions(Number(firstWithVersions.id));
                         if (versions && versions.length > 0) {
-                            const details = await fetchBOMDetails(Number(firstWithVersions.id), versions[0].id);
+                            const details = await fetchBOMDetails(Number(firstWithVersions.id), versions[0].version_id);
                             if (details) {
-                                const mappedBom: BOMItem[] = details.ingredients.map(ing => ({
-                                    id: ing.id,
-                                    name: ing.name,
-                                    quantity: ing.quantity,
-                                    uom: ing.uom,
-                                    wastagePercent: ing.wastagePercent,
-                                    landedCost: ing.landedCost
+                                const ingredients = details.routes?.flatMap(r => r.bom_items || []) || [];
+                                const mappedBom: BOMItem[] = ingredients.map(ing => ({
+                                    id: String(ing.id),
+                                    name: ing.product_name || "Unknown",
+                                    quantity: ing.quantity_required,
+                                    uom: String(ing.unit_of_measurement),
+                                    wastagePercent: ing.wastage_factor_percentage,
+                                    landedCost: ing.cost_per_unit || 0
                                 }));
                                 setProducts(prev => prev.map(p => p.id === firstWithVersions.id ? {
                                     ...p,
-                                    expectedYieldPercent: Number(details.expectedYieldPercent) || 100,
+                                    expectedYieldPercent: Number(details.expected_yield_percentage) || 100,
                                     bom: mappedBom,
-                                    bomId: details.bomId,
-                                    versionId: details.versionId,
-                                    versionName: details.version
+                                    bomId: details.version_id,
+                                    versionId: details.version_id,
+                                    versionName: details.version_name
                                 } : p));
                             }
                         }
@@ -385,23 +387,24 @@ export default function BiAndFinancialsModule() {
         try {
             const versions = await fetchVersions(Number(productId));
             if (!versions || versions.length === 0) return;
-            const details = await fetchBOMDetails(Number(productId), versions[0].id);
+            const details = await fetchBOMDetails(Number(productId), versions[0].version_id);
             if (details) {
-                const mappedBom: BOMItem[] = details.ingredients.map(ing => ({
-                    id: ing.id,
-                    name: ing.name,
-                    quantity: ing.quantity,
-                    uom: ing.uom,
-                    wastagePercent: ing.wastagePercent,
-                    landedCost: ing.landedCost
+                const ingredients = details.routes?.flatMap(r => r.bom_items || []) || [];
+                const mappedBom: BOMItem[] = ingredients.map(ing => ({
+                    id: String(ing.id),
+                    name: ing.product_name || "Unknown",
+                    quantity: ing.quantity_required,
+                    uom: String(ing.unit_of_measurement),
+                    wastagePercent: ing.wastage_factor_percentage,
+                    landedCost: ing.cost_per_unit || 0
                 }));
                 setProducts(prev => prev.map(p => p.id === productId ? {
                     ...p,
-                    expectedYieldPercent: Number(details.expectedYieldPercent) || 100,
+                    expectedYieldPercent: Number(details.expected_yield_percentage) || 100,
                     bom: mappedBom,
-                    bomId: details.bomId,
-                    versionId: details.versionId,
-                    versionName: details.version
+                    bomId: details.version_id,
+                    versionId: details.version_id,
+                    versionName: details.version_name
                 } : p));
             }
         } catch (err) {

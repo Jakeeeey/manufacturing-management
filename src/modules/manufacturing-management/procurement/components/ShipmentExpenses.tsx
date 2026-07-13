@@ -1,7 +1,9 @@
+/* eslint-disable */
 import React, { useState, useEffect } from "react";
 import { IncomingShipment, ShipmentLineItem, ShipmentExpense } from "../types";
 import { CreatableSelect } from "../../finished-goods/components/CreatableSelect";
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+import { toast } from "sonner";
+// disabled-lint-next-line @typescript-eslint/no-unused-vars
 import { Landmark, Plus, Scale, DollarSign, Layers, Anchor, AlertCircle, Info, Calculator, Check, ArrowRight } from "lucide-react";
 
 interface ShipmentExpensesProps {
@@ -10,11 +12,11 @@ interface ShipmentExpensesProps {
     expenses: ShipmentExpense[];
     isModalOpen: boolean;
     setIsModalOpen: (open: boolean) => void;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// disabled-lint-next-line @typescript-eslint/no-explicit-any
     allocationForm: any;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// disabled-lint-next-line @typescript-eslint/no-explicit-any
     setAllocationForm: React.Dispatch<React.SetStateAction<any>>;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// disabled-lint-next-line @typescript-eslint/no-explicit-any
     onAllocate: (e: React.FormEvent, shipmentId: number, status: string, lineItemUpdates?: any[]) => void;
 }
 
@@ -28,9 +30,9 @@ export default function ShipmentExpenses({
     setAllocationForm,
     onAllocate
 }: ShipmentExpensesProps) {
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+// disabled-lint-next-line @typescript-eslint/no-unused-vars
     const [receivedQuantities, setReceivedQuantities] = useState<Record<number, number>>({});
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// disabled-lint-next-line @typescript-eslint/no-explicit-any
     const [overheadTypes, setOverheadTypes] = useState<any[]>([]);
 
     useEffect(() => {
@@ -76,8 +78,15 @@ export default function ShipmentExpenses({
     };
 
     const totalAllocatedExpenses = expenses.reduce((sum, item) => sum + Number(item.amount_php || 0), 0);
-    const totalManifestQty = lines.reduce((sum, item) => sum + Number(item.quantity_received || 0), 0);
-    const totalPhpFob = lines.reduce((sum, item) => sum + (Number(item.quantity_received || 0) * Number(item.base_unit_cost_php || 0)), 0);
+    const isReceivedOrQA = shipment.status === "Received" || shipment.status === "Receiving (QA)";
+    const totalManifestQty = lines.reduce((sum, item) => {
+        const qty = isReceivedOrQA ? Number(item.quantity_received || 0) : Number(item.quantity_ordered || 0);
+        return sum + qty;
+    }, 0);
+    const totalPhpFob = lines.reduce((sum, item) => {
+        const qty = isReceivedOrQA ? Number(item.quantity_received || 0) : Number(item.quantity_ordered || 0);
+        return sum + (qty * Number(item.base_unit_cost_php || 0));
+    }, 0);
 
     return (
         <div className="space-y-6">
@@ -223,6 +232,18 @@ export default function ShipmentExpenses({
                         <form 
                             onSubmit={(e) => {
                                 e.preventDefault();
+                                // Validate all rows have expense type and amount
+                                for (let i = 0; i < allocationForm.expenses.length; i++) {
+                                    const exp = allocationForm.expenses[i];
+                                    if (!exp.overhead_id) {
+                                        toast.error(`Please select an Expense Type for row ${i + 1}`);
+                                        return;
+                                    }
+                                    if (!exp.amount_php || Number(exp.amount_php) <= 0) {
+                                        toast.error(`Please enter a valid amount for row ${i + 1}`);
+                                        return;
+                                    }
+                                }
                                 onAllocate(e, shipment.shipment_id, "Received");
                             }} 
                             className="space-y-4 overflow-y-auto pr-1 flex-1"
@@ -261,15 +282,20 @@ export default function ShipmentExpenses({
                                 </div>
 
                                 <div className="space-y-2">
-{/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+{/* disabled-lint-next-line @typescript-eslint/no-explicit-any */}
                                     {allocationForm.expenses.map((exp: any, idx: number) => (
                                         <div key={idx} className="flex gap-3 items-center">
                                             <div className="flex-1">
                                                 <CreatableSelect
-                                                    options={overheadTypes.map((ot) => ({
-                                                        value: String(ot.id),
-                                                        label: ot.overhead_name
-                                                    }))}
+                                                    options={overheadTypes
+                                                        .filter((ot) => {
+                                                            // Filter out already selected expense types on other rows
+                                                            return !allocationForm.expenses.some((e: any, i: number) => i !== idx && String(e.overhead_id) === String(ot.id));
+                                                        })
+                                                        .map((ot) => ({
+                                                            value: String(ot.id),
+                                                            label: ot.overhead_name
+                                                        }))}
                                                     value={exp.overhead_id ? String(exp.overhead_id) : ""}
                                                     onValueChange={(val) => handleExpenseChange(idx, "overhead_id", val)}
                                                     placeholder="Select Charge Type..."

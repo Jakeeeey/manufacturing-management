@@ -17,6 +17,7 @@ interface ExtendedShipmentLineItem {
     line_id: number;
     shipment_id: number;
     product_id: ExtendedProduct;
+    quantity_ordered: number;
     quantity_received: number;
     base_unit_cost_php: number;
     allocated_expense_php?: number;
@@ -36,7 +37,7 @@ function mapShipmentStatusToPo(status: string): number {
 
 export async function fetchShipmentExpenses(shipmentId: number): Promise<unknown[]> {
     try {
-        const url = `${DIRECTUS_URL}/items/shipment_expenses?filter[shipment_id][_eq]=${shipmentId}&fields=*,overhead_id.*&limit=-1`;
+        const url = `${DIRECTUS_URL}/items/purchase_order_expenses?filter[purchase_order_id][_eq]=${shipmentId}&fields=*,overhead_id.*&limit=-1`;
         const res = await fetch(url, { headers, cache: "no-store" });
         if (!res.ok) return [];
         return (await res.json()).data || [];
@@ -103,22 +104,25 @@ export async function processShipmentLandedCosts(
             }
         }
 
-        // 1. Delete existing expenses for this shipment (linked via shipment_id field using PO ID)
-        const oldExpensesRes = await fetch(`${DIRECTUS_URL}/items/shipment_expenses?filter[shipment_id][_eq]=${shipmentId}&limit=-1`, { headers });
+        // 1. Delete existing expenses for this shipment (linked via purchase_order_id field)
+        const oldExpensesRes = await fetch(`${DIRECTUS_URL}/items/purchase_order_expenses?filter[purchase_order_id][_eq]=${shipmentId}&limit=-1`, { headers });
         if (oldExpensesRes.ok) {
             const oldExpenses = (await oldExpensesRes.json()).data || [];
             for (const exp of oldExpenses) {
-                await fetch(`${DIRECTUS_URL}/items/shipment_expenses/${exp.expense_id}`, { method: "DELETE", headers }).catch(() => {});
+                const deleteId = exp.id || exp.expense_id;
+                if (deleteId) {
+                    await fetch(`${DIRECTUS_URL}/items/purchase_order_expenses/${deleteId}`, { method: "DELETE", headers }).catch(() => {});
+                }
             }
         }
 
         // 2. Save new expenses and sum up PHP total
         let totalExpensesPhp = 0;
         for (const exp of expenses) {
-            const resExp = await fetch(`${DIRECTUS_URL}/items/shipment_expenses`, {
+            const resExp = await fetch(`${DIRECTUS_URL}/items/purchase_order_expenses`, {
                 method: "POST",
                 headers,
-                body: JSON.stringify({ ...exp, shipment_id: shipmentId, allocation_method: allocationMethod })
+                body: JSON.stringify({ ...exp, purchase_order_id: shipmentId, allocation_method: allocationMethod })
             });
             if (resExp.ok) {
                 const data = (await resExp.json()).data;
@@ -139,13 +143,15 @@ export async function processShipmentLandedCosts(
             return { success: true };
         }
 
+        const isReceivedOrQA = status === "Received" || status === "Receiving (QA)";
+
         // 4. Calculate total base values for allocation
         let totalWeight = 0;
         let totalVolume = 0;
         let totalCommercialValuePhp = 0;
 
         (lines as ExtendedShipmentLineItem[]).forEach((l) => {
-            const qty = Number(l.quantity_received) || 0;
+            const qty = isReceivedOrQA ? (Number(l.quantity_received) || 0) : (Number(l.quantity_ordered) || 0);
             const price = Number(l.base_unit_cost_php) || 0;
             totalCommercialValuePhp += qty * price;
 
@@ -161,7 +167,7 @@ export async function processShipmentLandedCosts(
 
         // 5. Allocate expenses and update inventory_lots
         for (const l of lines as ExtendedShipmentLineItem[]) {
-            const qty = Number(l.quantity_received) || 1;
+            const qty = isReceivedOrQA ? (Number(l.quantity_received) || 0) : (Number(l.quantity_ordered) || 0);
             const price = Number(l.base_unit_cost_php) || 0;
             const lineValuePhp = qty * price;
 
@@ -188,54 +194,56 @@ export async function processShipmentLandedCosts(
             const allocatedExpense = ratio * totalExpensesPhp;
             const finalLandedUnitCost = price + (qty > 0 ? (allocatedExpense / qty) : 0);
 
-            // Find or create inventory lot to store allocated cost
-            const pId = l.product_id?.product_id || l.product_id;
-            const filterQuery = encodeURIComponent(JSON.stringify({
-                _and: [
-                    { source_type: { _eq: "procurement" } },
-                    { source_reference: { _eq: String(shipmentId) } },
-                    { product_id: { _eq: pId } }
-                ]
-            }));
-            const porRes = await fetch(`${DIRECTUS_URL}/items/inventory_lots?filter=${filterQuery}&limit=1`, { headers });
-            const porList = porRes.ok ? (await porRes.json()).data || [] : [];
-            
-            const allocationPayload = {
-                unit_cost: finalLandedUnitCost
-            };
+            // Only update inventory lot if quantity is greater than 0
+            if (qty > 0) {
+                const pId = l.product_id?.product_id || l.product_id;
+                const filterQuery = encodeURIComponent(JSON.stringify({
+                    _and: [
+                        { source_type: { _eq: "procurement" } },
+                        { source_reference: { _eq: String(shipmentId) } },
+                        { product_id: { _eq: pId } }
+                    ]
+                }));
+                const porRes = await fetch(`${DIRECTUS_URL}/items/inventory_lots?filter=${filterQuery}&limit=1`, { headers });
+                const porList = porRes.ok ? (await porRes.json()).data || [] : [];
+                
+                const allocationPayload = {
+                    unit_cost: finalLandedUnitCost
+                };
 
-            if (porList.length > 0) {
-                const recId = porList[0].id;
-                await fetch(`${DIRECTUS_URL}/items/inventory_lots/${recId}`, {
-                    method: "PATCH",
-                    headers,
-                    body: JSON.stringify(allocationPayload)
-                });
-            } else {
-                await fetch(`${DIRECTUS_URL}/items/inventory_lots`, {
-                    method: "POST",
-                    headers,
-                    body: JSON.stringify({
-                        ...allocationPayload,
-                        source_type: "procurement",
-                        source_reference: String(shipmentId),
-                        product_id: pId,
-                        quantity: qty,
-                        qa_status: "Pending"
-                    })
-                });
-            }
+                if (porList.length > 0) {
+                    const recId = porList[0].id;
+                    await fetch(`${DIRECTUS_URL}/items/inventory_lots/${recId}`, {
+                        method: "PATCH",
+                        headers,
+                        body: JSON.stringify(allocationPayload)
+                    });
+                } else {
+                    await fetch(`${DIRECTUS_URL}/items/inventory_lots`, {
+                        method: "POST",
+                        headers,
+                        body: JSON.stringify({
+                            ...allocationPayload,
+                            source_type: "procurement",
+                            source_reference: String(shipmentId),
+                            product_id: pId,
+                            quantity: qty,
+                            qa_status: "Pending"
+                        })
+                    });
+                }
 
-            // If shipment is received, update product table cost_per_unit & estimated_unit_cost
-            if (status === "Received" || status === "Receiving (QA)") {
-                await fetch(`${DIRECTUS_URL}/items/products/${pId}`, {
-                    method: "PATCH",
-                    headers,
-                    body: JSON.stringify({
-                        cost_per_unit: finalLandedUnitCost,
-                        estimated_unit_cost: finalLandedUnitCost
-                    })
-                });
+                // If shipment is received, update product table cost_per_unit & estimated_unit_cost
+                if (status === "Received" || status === "Receiving (QA)") {
+                    await fetch(`${DIRECTUS_URL}/items/products/${pId}`, {
+                        method: "PATCH",
+                        headers,
+                        body: JSON.stringify({
+                            cost_per_unit: finalLandedUnitCost,
+                            estimated_unit_cost: finalLandedUnitCost
+                        })
+                    });
+                }
             }
         }
 
