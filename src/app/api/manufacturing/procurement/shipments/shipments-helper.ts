@@ -32,9 +32,9 @@ interface ProductMin {
     product_id: number;
     product_name?: string;
     product_code?: string;
-    unit_of_measurement?: any;
+    unit_of_measurement?: { unit_shortcut?: string; unit_name?: string } | null;
     unit_of_measurement_count?: number;
-    parent_id?: any;
+    parent_id?: number | Record<string, unknown> | null;
 }
 
 interface DirectusInventoryLot {
