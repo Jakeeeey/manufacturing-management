@@ -64,12 +64,6 @@ export interface Supplier {
     supplier_shortcut?: string | null;
 }
 
-export interface Supplier {
-    id: number;
-    supplier_name: string;
-    supplier_shortcut?: string | null;
-}
-
 export interface Brand {
     brand_id: number;
     brand_name: string;
@@ -172,6 +166,7 @@ export interface ProductVersion {
     valid_to?: string | null;
     is_active?: boolean; // legacy/compatibility
     routes?: RouteStep[];
+    custom_overhead?: number;
 }
 
 export interface RouteStep {
@@ -247,6 +242,23 @@ export interface OperationType {
 export interface OverheadType {
     id: number;
     overhead_name: string;
+}
+
+export interface CatalogItem {
+    id: number;
+    item_name: string;
+    item_type?: number | null;
+    item_classification?: number | null;
+}
+
+export interface ItemType {
+    id: number;
+    type_name: string;
+}
+
+export interface ItemClassification {
+    id: number;
+    classification_name: string;
 }
 
 // ─── Directus API-layer types (used by API route helpers) ───────────────────

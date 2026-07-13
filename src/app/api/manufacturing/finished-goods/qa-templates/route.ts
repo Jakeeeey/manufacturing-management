@@ -18,11 +18,10 @@ export async function GET() {
         const parameters = parametersJson.data || [];
 
         // Group parameters by template_id
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const templatesWithParams = templates.map((tpl: any) => {
+        const templatesWithParams = templates.map((tpl: { template_id: number }) => {
             return {
                 ...tpl,
-                parameters: parameters.filter((param: any) => param.template_id === tpl.template_id)
+                parameters: parameters.filter((param: { template_id: number }) => param.template_id === tpl.template_id)
             };
         });
 

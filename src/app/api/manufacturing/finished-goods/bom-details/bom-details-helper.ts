@@ -35,7 +35,7 @@ export async function saveActiveBOMDetails(versionId: number, expectedYield: num
     }
 }
 
-export async function syncRoutesAndBOM(versionId: number, routes: any[]): Promise<boolean> {
+export async function syncRoutesAndBOM(versionId: number, routes: Record<string, unknown>[]): Promise<boolean> {
     try {
         // 1. Fetch existing routes in DB for this version
         const getUrl = `${DIRECTUS_URL}/items/manufacturing_routes?filter[version_id][_eq]=${versionId}&limit=-1`;
@@ -97,14 +97,14 @@ export async function syncRoutesAndBOM(versionId: number, routes: any[]): Promis
             }
 
             // Sync BOM items under this route step
-            const uiBomItems = step.bom_items || step.ingredients || [];
+            const uiBomItems = (step.bom_items || step.ingredients || []) as Record<string, unknown>[];
             
             // Get existing BOM items for this route in DB
             const bomsGetUrl = `${DIRECTUS_URL}/items/manufacturing_routes_bom?filter[route_id][_eq]=${finalRouteId}&limit=-1`;
             const resBomGet = await fetch(bomsGetUrl, { headers, cache: "no-store" });
             const existingBoms: { id: number }[] = resBomGet.ok ? (await resBomGet.json()).data || [] : [];
 
-            const uiBomIds = new Set(uiBomItems.map((b: any) => String(b.id || "")).filter(Boolean));
+            const uiBomIds = new Set(uiBomItems.map((b: Record<string, unknown>) => String(b.id || "")).filter(Boolean));
             const bomsToDelete = existingBoms.filter(b => !uiBomIds.has(String(b.id)));
 
             // Delete removed BOM items
