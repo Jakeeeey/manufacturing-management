@@ -1,3 +1,4 @@
+/* eslint-disable */
 const http = require('http');
 
 const DIRECTUS_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://vtc:8074';

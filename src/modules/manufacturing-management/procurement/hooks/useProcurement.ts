@@ -1,10 +1,6 @@
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
-<<<<<<< Updated upstream
-import { Supplier, SupplierRepresentative, IncomingShipment, ShipmentLineItem, ShipmentExpense, RawMaterial, LinkedProduct } from "../types";
-=======
 import { Supplier, SupplierRepresentative, IncomingShipment, ShipmentLineItem, ShipmentExpense, RawMaterial, LinkedProduct, RegisterRawMaterialPayload, PackagingVariant, ShipmentData, LineItem } from "../types";
->>>>>>> Stashed changes
 import type { ShipmentFormState, ManifestLineFormItem } from "../components/IncomingShipments";
 import { 
     fetchSuppliers, 
@@ -491,12 +487,7 @@ export function useProcurement(defaultTab: string = "suppliers") {
             });
             setShipmentLinesForm([{ parent_product_id: "", product_id: "", quantity_ordered: "", base_unit_cost_php: "" }]);
             loadShipments();
-<<<<<<< Updated upstream
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-        } catch (e: any) {
-=======
         } catch (e: unknown) {
->>>>>>> Stashed changes
             console.error(e);
             toast.error((e as Error).message || "Failed to save incoming shipment");
         } finally {
@@ -549,12 +540,7 @@ export function useProcurement(defaultTab: string = "suppliers") {
                     setSelectedShipment(null);
                 }
             }
-<<<<<<< Updated upstream
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-        } catch (e: any) {
-=======
         } catch (e: unknown) {
->>>>>>> Stashed changes
             console.error(e);
             toast.error((e as Error).message || "Failed to allocate expenses");
         }
@@ -569,12 +555,7 @@ export function useProcurement(defaultTab: string = "suppliers") {
             if (selectedShipment && selectedShipment.shipment_id === shipmentId) {
                 setSelectedShipment(null);
             }
-<<<<<<< Updated upstream
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-        } catch (e: any) {
-=======
         } catch (e: unknown) {
->>>>>>> Stashed changes
             console.error(e);
             toast.error((e as Error).message || "Failed to update shipment status");
         } finally {
@@ -593,12 +574,7 @@ export function useProcurement(defaultTab: string = "suppliers") {
             toast.success(`Successfully registered raw material "${productDetails.product_name}"`);
             await loadRawMaterials();
             return true;
-<<<<<<< Updated upstream
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-        } catch (e: any) {
-=======
         } catch (e: unknown) {
->>>>>>> Stashed changes
             console.error(e);
             toast.error((e as Error).message || "Failed to register raw material");
             return false;

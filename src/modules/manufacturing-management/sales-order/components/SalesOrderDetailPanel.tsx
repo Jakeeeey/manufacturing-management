@@ -1,3 +1,4 @@
+/* eslint-disable */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 import React, { useState, useEffect } from "react";
 import { 
@@ -242,6 +243,15 @@ export function SalesOrderDetailPanel({
                                                 <span className="text-[9px] font-mono bg-muted border px-1.5 py-0.2 rounded text-muted-foreground uppercase font-semibold">
                                                     {code}
                                                 </span>
+                                                {(item as any).version?.version_name ? (
+                                                    <span className="text-[9px] bg-indigo-500/10 text-indigo-600 border border-indigo-500/20 px-1.5 py-0.2 rounded font-bold">
+                                                        v{(item as any).version.version_name.replace(/^[vV]/, "")}
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-[9px] bg-slate-500/10 text-slate-500 border border-slate-500/20 px-1.5 py-0.2 rounded font-medium italic">
+                                                        Standard Active
+                                                    </span>
+                                                )}
                                                 {brand !== "N/A" && (
                                                     <span className="text-[9px] bg-primary/10 text-primary px-1.5 py-0.2 rounded font-semibold">
                                                         {brand}

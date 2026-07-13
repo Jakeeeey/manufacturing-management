@@ -410,9 +410,7 @@ export default function IncomingShipments({
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(5);
 
-    useEffect(() => {
-        setCurrentPage(1);
-    }, [search, statusFilter, itemsPerPage]);
+
 
     const handleStartEdit = async () => {
         if (!activeShipment) return;
@@ -734,12 +732,12 @@ export default function IncomingShipments({
                                 type="text"
                                 placeholder="Search BL/Reference, Supplier..."
                                 value={search}
-                                onChange={e => setSearch(e.target.value)}
+                                onChange={e => { setSearch(e.target.value); setCurrentPage(1); }}
                                 className="w-full pl-9 pr-8 py-2 border rounded-lg text-xs bg-background outline-none focus:ring-1 focus:ring-primary font-medium h-9"
                             />
                             {search && (
                                 <button
-                                    onClick={() => setSearch("")}
+                                    onClick={() => { setSearch(""); setCurrentPage(1); }}
                                     className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-1 transition-colors hover:bg-muted rounded"
                                     title="Clear Search"
                                 >
@@ -749,7 +747,7 @@ export default function IncomingShipments({
                         </div>
                         <select
                             value={statusFilter}
-                            onChange={e => setStatusFilter(e.target.value)}
+                            onChange={e => { setStatusFilter(e.target.value); setCurrentPage(1); }}
                             className="rounded-lg border bg-background px-2.5 py-1.5 text-xs outline-none focus:ring-1 focus:ring-primary font-semibold text-foreground h-9 w-32"
                         >
                             <option value="All">All Statuses</option>
@@ -811,7 +809,7 @@ export default function IncomingShipments({
                             <span>Show</span>
                             <select
                                 value={itemsPerPage}
-                                onChange={e => setItemsPerPage(Number(e.target.value))}
+                                onChange={e => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}
                                 className="rounded border bg-background px-1.5 py-0.5 outline-none font-semibold text-foreground focus:ring-1 focus:ring-primary text-[11px]"
                             >
                                 <option value={5}>5</option>
@@ -1394,7 +1392,7 @@ export default function IncomingShipments({
                                                         className="w-full rounded-lg border bg-background px-2.5 py-1.5 text-xs outline-none h-9 font-semibold"
                                                     />
                                                     {(() => {
-                                                        const selectedOpt = line.uom_options?.find((o: any) => String(o.product_id) === String(line.product_id));
+                                                        const selectedOpt = line.uom_options?.find((o: UOMOption) => String(o.product_id) === String(line.product_id));
                                                         const convFactor = Number(selectedOpt?.unit_of_measurement_count || 1);
                                                         
                                                         const parentProduct = rawMaterials.find(rm => String(rm.product_id) === String(line.parent_product_id || line.product_id));

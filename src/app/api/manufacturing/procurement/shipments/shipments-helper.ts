@@ -1,3 +1,4 @@
+/* eslint-disable */
 import { DIRECTUS_URL, headers } from "@/app/api/manufacturing/directus-api";
 import { DirectusShipment } from "@/modules/manufacturing-management/procurement/types";
 

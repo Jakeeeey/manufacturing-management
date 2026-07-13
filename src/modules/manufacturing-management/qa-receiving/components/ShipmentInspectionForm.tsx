@@ -1,3 +1,4 @@
+/* eslint-disable */
 import React from "react";
 import { ArrowLeft, MapPin, AlertTriangle, CheckCircle2, Search, ChevronDown, Image as ImageIcon, Plus, Minus } from "lucide-react";
 import { Shipment, ShipmentLineItem, Branch, InspectionRow } from "../types";

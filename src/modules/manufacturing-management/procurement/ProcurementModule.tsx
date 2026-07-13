@@ -115,7 +115,7 @@ export default function ProcurementModule({ initialTab = "suppliers" }: Procurem
                                     <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block">Active Cargo Shipment</label>
                                     <CreatableSelect
                                         options={shipments.map(s => {
-                                            const poNo = (s as any).purchase_order_no ? ` / ${(s as any).purchase_order_no}` : "";
+                                            const poNo = s.purchase_order_no ? ` / ${s.purchase_order_no}` : "";
                                             return {
                                                 value: String(s.shipment_id),
                                                 label: `BL/PO: ${s.reference_number}${poNo} (${s.status})`

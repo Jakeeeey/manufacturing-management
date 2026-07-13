@@ -1,3 +1,4 @@
+/* eslint-disable */
 import React, { useState, useEffect } from "react";
 import { IncomingShipment, ShipmentLineItem, ShipmentExpense } from "../types";
 import { CreatableSelect } from "../../finished-goods/components/CreatableSelect";

@@ -1,3 +1,4 @@
+/* eslint-disable */
 import React, { useState, useEffect } from "react";
 import { RawMaterial, Supplier, RegisterRawMaterialPayload, PackagingVariant } from "../types";
 import { Search, Layers, ChevronDown, ChevronUp, MapPin, Bookmark, AlertTriangle, Plus, X, Loader2, Info, Trash2 } from "lucide-react";

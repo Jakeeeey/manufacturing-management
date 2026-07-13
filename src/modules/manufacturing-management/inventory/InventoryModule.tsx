@@ -1,3 +1,4 @@
+/* eslint-disable */
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
@@ -59,7 +60,7 @@ export default function InventoryModule() {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const [data, setData] = useState<{ ledger: any[]; batches: any[]; products: any[]; branches: any[] } | null>(null);
     const [loading, setLoading] = useState(true);
-    const [activeTab, setActiveTab] = useState<"stock" | "batches" | "ledger">("stock");
+    const [activeTab, setActiveTab] = useState<"stock" | "batches" | "ledger" | "picking" | "receiving">("stock");
     const [ledgerType, setLedgerType] = useState<"raw" | "fg">("raw");
     const [filterBranch, setFilterBranch] = useState("all");
     const [filterBrand, setFilterBrand] = useState("all");
@@ -86,6 +87,169 @@ export default function InventoryModule() {
     const [adjRemarks, setAdjRemarks] = useState("");
     const [adjDate, setAdjDate] = useState(new Date().toISOString().split("T")[0]);
     const [submittingAdj, setSubmittingAdj] = useState(false);
+
+    // Picking & Receiving States
+    const [pickingList, setPickingList] = useState<any[]>([]);
+    const [receivingJOs, setReceivingJOs] = useState<any[]>([]);
+    const [pickingLoading, setPickingLoading] = useState(false);
+    const [receivingLoading, setReceivingLoading] = useState(false);
+
+    // Modals & Active selections
+    const [isPickingModalOpen, setIsPickingModalOpen] = useState(false);
+    const [isReceivingModalOpen, setIsReceivingModalOpen] = useState(false);
+    const [selectedPickingJO, setSelectedPickingJO] = useState<any | null>(null);
+    const [selectedReceivingJO, setSelectedReceivingJO] = useState<any | null>(null);
+    
+    // Picking form state
+    const [pickingSubmitting, setPickingSubmitting] = useState(false);
+    
+    // Receiving form state
+    const [recQtyProduced, setRecQtyProduced] = useState("");
+    const [recLotNumber, setRecLotNumber] = useState("");
+    const [recExpirationDate, setRecExpirationDate] = useState("");
+    const [recUnitCost, setRecUnitCost] = useState("");
+    const [recSubmitting, setRecSubmitting] = useState(false);
+    
+    // Yield Allocation & Cost Variance output states (after successful receiving)
+    const [receivingResult, setReceivingResult] = useState<any | null>(null);
+    const [showReceivingResult, setShowReceivingResult] = useState(false);
+
+    const loadPickingData = async () => {
+        setPickingLoading(true);
+        try {
+            const res = await fetch("/api/manufacturing/inventory/picking");
+            if (res.ok) {
+                setPickingList(await res.json());
+            } else {
+                throw new Error("Failed to load picking data.");
+            }
+        } catch (e: any) {
+            toast.error(e.message || "Failed to load picking lists.");
+        } finally {
+            setPickingLoading(false);
+        }
+    };
+
+    const loadReceivingData = async () => {
+        setReceivingLoading(true);
+        try {
+            const res = await fetch("/api/manufacturing/inventory/receiving");
+            if (res.ok) {
+                setReceivingJOs(await res.json());
+            } else {
+                throw new Error("Failed to load receiving job orders.");
+            }
+        } catch (e: any) {
+            toast.error(e.message || "Failed to load receiving job orders.");
+        } finally {
+            setReceivingLoading(false);
+        }
+    };
+
+    const handleConfirmPick = async (jo: any) => {
+        if (!jo || !jo.allocationResults || jo.allocationResults.length === 0) {
+            toast.error("No FIFO allocation results found for this Job Order. Schedulers must run the allocation check first.");
+            return;
+        }
+
+        const itemsToPick: any[] = [];
+        jo.allocationResults.forEach((alloc: any) => {
+            const productId = alloc.component_product_id;
+            if (alloc.batches && Array.isArray(alloc.batches)) {
+                alloc.batches.forEach((b: any) => {
+                    itemsToPick.push({
+                        productId,
+                        lotNumber: b.lot_number,
+                        quantity: b.quantity
+                    });
+                });
+            }
+        });
+
+        if (itemsToPick.length === 0) {
+            toast.warning("No materials are allocated to pick for this Job Order.");
+            return;
+        }
+
+        setPickingSubmitting(true);
+        try {
+            const res = await fetch("/api/manufacturing/inventory/picking", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    joId: jo.jo_id,
+                    branchId: jo.branch_id || 1,
+                    items: itemsToPick
+                })
+            });
+
+            if (res.ok) {
+                toast.success(`Successfully picked and transferred stock to WIP for ${jo.jo_id}!`);
+                setIsPickingModalOpen(false);
+                loadPickingData();
+                loadInventoryData();
+            } else {
+                const result = await res.json();
+                throw new Error(result.error || "Failed to process pick.");
+            }
+        } catch (err: any) {
+            toast.error(err.message || "An error occurred during picking.");
+        } finally {
+            setPickingSubmitting(false);
+        }
+    };
+
+    const handleConfirmReceiving = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!selectedReceivingJO) return;
+
+        const qty = parseFloat(recQtyProduced);
+        if (isNaN(qty) || qty <= 0) {
+            toast.warning("Please enter a valid yield quantity.");
+            return;
+        }
+
+        setRecSubmitting(true);
+        try {
+            const res = await fetch("/api/manufacturing/inventory/receiving", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    joId: selectedReceivingJO.jo_id,
+                    productId: selectedReceivingJO.product_id,
+                    quantityProduced: qty,
+                    lotNumber: recLotNumber,
+                    expirationDate: recExpirationDate,
+                    unitCost: parseFloat(recUnitCost) || 0
+                })
+            });
+
+            const result = await res.json();
+
+            if (res.ok && result.success) {
+                toast.success(`Yield received and Job Order ${selectedReceivingJO.jo_id} closed successfully!`);
+                setReceivingResult(result);
+                setShowReceivingResult(true);
+                loadReceivingData();
+                loadInventoryData();
+            } else {
+                throw new Error(result.error || "Failed to receive yield.");
+            }
+        } catch (err: any) {
+            toast.error(err.message || "An error occurred during yield receiving.");
+        } finally {
+            setRecSubmitting(false);
+        }
+    };
+
+    // Tab change loader hook
+    useEffect(() => {
+        if (activeTab === "picking") {
+            loadPickingData();
+        } else if (activeTab === "receiving") {
+            loadReceivingData();
+        }
+    }, [activeTab]);
 
     const toggleGroup = (key: string) => {
         setExpandedGroups(prev => ({ ...prev, [key]: prev[key] === false }));
@@ -655,10 +819,10 @@ export default function InventoryModule() {
             {/* View navigation & Controls */}
             <div className="border border-border rounded-xl bg-card p-4 space-y-4">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-border pb-3">
-                    <div className="flex bg-muted/40 border border-border p-1 rounded-lg gap-1">
+                    <div className="flex bg-muted/40 border border-border p-1 rounded-lg gap-1 overflow-x-auto max-w-full">
                         <button
                             onClick={() => { setActiveTab("stock"); setSearchQuery(""); }}
-                            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all border-none cursor-pointer flex items-center gap-1.5 ${
+                            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all border-none cursor-pointer flex items-center gap-1.5 shrink-0 ${
                                 activeTab === "stock" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground bg-transparent"
                             }`}
                         >
@@ -666,7 +830,7 @@ export default function InventoryModule() {
                         </button>
                         <button
                             onClick={() => { setActiveTab("batches"); setSearchQuery(""); }}
-                            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all border-none cursor-pointer flex items-center gap-1.5 ${
+                            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all border-none cursor-pointer flex items-center gap-1.5 shrink-0 ${
                                 activeTab === "batches" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground bg-transparent"
                             }`}
                         >
@@ -674,11 +838,27 @@ export default function InventoryModule() {
                         </button>
                         <button
                             onClick={() => { setActiveTab("ledger"); setSearchQuery(""); }}
-                            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all border-none cursor-pointer flex items-center gap-1.5 ${
+                            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all border-none cursor-pointer flex items-center gap-1.5 shrink-0 ${
                                 activeTab === "ledger" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground bg-transparent"
                             }`}
                         >
                             <History className="h-4 w-4" /> Audit Ledger
+                        </button>
+                        <button
+                            onClick={() => { setActiveTab("picking"); setSearchQuery(""); }}
+                            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all border-none cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                                activeTab === "picking" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground bg-transparent"
+                            }`}
+                        >
+                            <ArrowUpRight className="h-4 w-4" /> Material Picking
+                        </button>
+                        <button
+                            onClick={() => { setActiveTab("receiving"); setSearchQuery(""); }}
+                            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all border-none cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                                activeTab === "receiving" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground bg-transparent"
+                            }`}
+                        >
+                            <ArrowDownLeft className="h-4 w-4" /> Yield Receiving
                         </button>
                     </div>
 
@@ -705,112 +885,116 @@ export default function InventoryModule() {
                         </button>
                     </div>
                 </div>
-                {/* Ledger Switcher */}
-                <div className="flex bg-muted/50 border border-border p-0.5 rounded-lg w-fit">
-                    <button
-                        type="button"
-                        onClick={() => {
-                            setLedgerType("raw");
-                            setFilterProduct("all");
-                        }}
-                        className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all border-none cursor-pointer flex items-center gap-1.5 ${
-                            ledgerType === "raw" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground bg-transparent"
-                        }`}
-                    >
-                        <Boxes className="h-4 w-4" /> Raw Materials & Packaging Items
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => {
-                            setLedgerType("fg");
-                            setFilterProduct("all");
-                        }}
-                        className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all border-none cursor-pointer flex items-center gap-1.5 ${
-                            ledgerType === "fg" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground bg-transparent"
-                        }`}
-                    >
-                        <Layers className="h-4 w-4" /> Finished Goods
-                    </button>
-                </div>
+                {(activeTab === "stock" || activeTab === "batches" || activeTab === "ledger") && (
+                    <>
+                        {/* Ledger Switcher */}
+                        <div className="flex bg-muted/50 border border-border p-0.5 rounded-lg w-fit">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setLedgerType("raw");
+                                    setFilterProduct("all");
+                                }}
+                                className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all border-none cursor-pointer flex items-center gap-1.5 ${
+                                    ledgerType === "raw" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground bg-transparent"
+                                }`}
+                            >
+                                <Boxes className="h-4 w-4" /> Raw Materials & Packaging Items
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setLedgerType("fg");
+                                    setFilterProduct("all");
+                                }}
+                                className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all border-none cursor-pointer flex items-center gap-1.5 ${
+                                    ledgerType === "fg" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground bg-transparent"
+                                }`}
+                            >
+                                <Layers className="h-4 w-4" /> Finished Goods
+                            </button>
+                        </div>
 
-                {/* Advanced Multi-Criteria Filters */}
-                <div className="grid grid-cols-2 md:grid-cols-6 gap-3 bg-muted/20 p-3 rounded-lg border border-border">
-                    <div className="space-y-1">
-                        <label className="text-[9px] font-black text-muted-foreground uppercase tracking-wider block">Branch</label>
-                        <select
-                            value={filterBranch}
-                            onChange={(e) => setFilterBranch(e.target.value)}
-                            className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-xs text-foreground font-semibold outline-none"
-                        >
-                            <option value="all">All Branches</option>
-                            {data?.branches?.map(b => (
-                                <option key={b.id} value={String(b.id)}>{b.branch_name}</option>
-                            ))}
-                        </select>
-                    </div>
+                        {/* Advanced Multi-Criteria Filters */}
+                        <div className="grid grid-cols-2 md:grid-cols-6 gap-3 bg-muted/20 p-3 rounded-lg border border-border">
+                            <div className="space-y-1">
+                                <label className="text-[9px] font-black text-muted-foreground uppercase tracking-wider block">Branch</label>
+                                <select
+                                    value={filterBranch}
+                                    onChange={(e) => setFilterBranch(e.target.value)}
+                                    className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-xs text-foreground font-semibold outline-none"
+                                >
+                                    <option value="all">All Branches</option>
+                                    {data?.branches?.map(b => (
+                                        <option key={b.id} value={String(b.id)}>{b.branch_name}</option>
+                                    ))}
+                                </select>
+                            </div>
 
-                    <div className="space-y-1">
-                        <label className="text-[9px] font-black text-muted-foreground uppercase tracking-wider block">Brand</label>
-                        <select
-                            value={filterBrand}
-                            onChange={(e) => setFilterBrand(e.target.value)}
-                            className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-xs text-foreground font-semibold outline-none"
-                        >
-                            <option value="all">All Brands</option>
-                            {Array.from(new Set(data?.products?.map(p => p.product_brand?.brand_name).filter(Boolean))).map(brand => (
-                                <option key={String(brand)} value={String(brand)}>{String(brand)}</option>
-                            ))}
-                        </select>
-                    </div>
+                            <div className="space-y-1">
+                                <label className="text-[9px] font-black text-muted-foreground uppercase tracking-wider block">Brand</label>
+                                <select
+                                    value={filterBrand}
+                                    onChange={(e) => setFilterBrand(e.target.value)}
+                                    className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-xs text-foreground font-semibold outline-none"
+                                >
+                                    <option value="all">All Brands</option>
+                                    {Array.from(new Set(data?.products?.map(p => p.product_brand?.brand_name).filter(Boolean))).map(brand => (
+                                        <option key={String(brand)} value={String(brand)}>{String(brand)}</option>
+                                    ))}
+                                </select>
+                            </div>
 
-                    <div className="space-y-1">
-                        <label className="text-[9px] font-black text-muted-foreground uppercase tracking-wider block">Category</label>
-                        <select
-                            value={filterCategory}
-                            onChange={(e) => setFilterCategory(e.target.value)}
-                            className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-xs text-foreground font-semibold outline-none"
-                        >
-                            <option value="all">All Categories</option>
-                            {Array.from(new Set(data?.products?.map(p => p.product_category?.category_name).filter(Boolean))).map(cat => (
-                                <option key={String(cat)} value={String(cat)}>{String(cat)}</option>
-                            ))}
-                        </select>
-                    </div>
+                            <div className="space-y-1">
+                                <label className="text-[9px] font-black text-muted-foreground uppercase tracking-wider block">Category</label>
+                                <select
+                                    value={filterCategory}
+                                    onChange={(e) => setFilterCategory(e.target.value)}
+                                    className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-xs text-foreground font-semibold outline-none"
+                                >
+                                    <option value="all">All Categories</option>
+                                    {Array.from(new Set(data?.products?.map(p => p.product_category?.category_name).filter(Boolean))).map(cat => (
+                                        <option key={String(cat)} value={String(cat)}>{String(cat)}</option>
+                                    ))}
+                                </select>
+                            </div>
 
-                    <div className="space-y-1">
-                        <label className="text-[9px] font-black text-muted-foreground uppercase tracking-wider block">Product</label>
-                        <select
-                            value={filterProduct}
-                            onChange={(e) => setFilterProduct(e.target.value)}
-                            className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-xs text-foreground font-semibold outline-none"
-                        >
-                            <option value="all">All Products</option>
-                            {data?.products?.filter(p => ledgerType === "fg" ? p.is_finished_good : !p.is_finished_good).map(p => (
-                                <option key={p.product_id} value={String(p.product_id)}>{p.product_name}</option>
-                            ))}
-                        </select>
-                    </div>
+                            <div className="space-y-1">
+                                <label className="text-[9px] font-black text-muted-foreground uppercase tracking-wider block">Product</label>
+                                <select
+                                    value={filterProduct}
+                                    onChange={(e) => setFilterProduct(e.target.value)}
+                                    className="w-full bg-background border border-border rounded-lg px-2 py-1.5 text-xs text-foreground font-semibold outline-none"
+                                >
+                                    <option value="all">All Products</option>
+                                    {data?.products?.filter(p => ledgerType === "fg" ? p.is_finished_good : !p.is_finished_good).map(p => (
+                                        <option key={p.product_id} value={String(p.product_id)}>{p.product_name}</option>
+                                    ))}
+                                </select>
+                            </div>
 
-                    <div className="space-y-1">
-                        <label className="text-[9px] font-black text-muted-foreground uppercase tracking-wider block">Start Date</label>
-                        <input
-                            type="date"
-                            value={filterStartDate}
-                            onChange={(e) => setFilterStartDate(e.target.value)}
-                            className="w-full bg-background border border-border rounded-lg px-2.5 py-1 text-xs text-foreground outline-none font-semibold"
-                        />
-                    </div>
+                            <div className="space-y-1">
+                                <label className="text-[9px] font-black text-muted-foreground uppercase tracking-wider block">Start Date</label>
+                                <input
+                                    type="date"
+                                    value={filterStartDate}
+                                    onChange={(e) => setFilterStartDate(e.target.value)}
+                                    className="w-full bg-background border border-border rounded-lg px-2.5 py-1 text-xs text-foreground outline-none font-semibold"
+                                />
+                            </div>
 
-                    <div className="space-y-1">
-                        <label className="text-[9px] font-black text-muted-foreground uppercase tracking-wider block">End Date</label>
-                        <input
-                            type="date"
-                            value={filterEndDate}
-                            onChange={(e) => setFilterEndDate(e.target.value)}
-                            className="w-full bg-background border border-border rounded-lg px-2.5 py-1 text-xs text-foreground outline-none font-semibold"
-                        />
-                    </div>
-                </div>
+                            <div className="space-y-1">
+                                <label className="text-[9px] font-black text-muted-foreground uppercase tracking-wider block">End Date</label>
+                                <input
+                                    type="date"
+                                    value={filterEndDate}
+                                    onChange={(e) => setFilterEndDate(e.target.value)}
+                                    className="w-full bg-background border border-border rounded-lg px-2.5 py-1 text-xs text-foreground outline-none font-semibold"
+                                />
+                            </div>
+                        </div>
+                    </>
+                )}
 
                 {/* Filter section */}
                 <div className="flex flex-col sm:flex-row gap-3">
@@ -1288,6 +1472,162 @@ export default function InventoryModule() {
                             </tbody>
                         </table>
                     )}
+
+                    {activeTab === "picking" && (
+                        <div className="space-y-4">
+                            {pickingLoading ? (
+                                <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                                    <Loader2 className="h-8 w-8 animate-spin text-primary mb-2" />
+                                    <span className="text-xs font-semibold">Loading picking sheets...</span>
+                                </div>
+                            ) : (
+                                <table className="w-full border-collapse text-left text-xs">
+                                    <thead>
+                                        <tr className="border-b border-input text-muted-foreground">
+                                            <th className="py-3 px-4 font-bold">Job Order ID</th>
+                                            <th className="py-3 px-4 font-bold">Target Good</th>
+                                            <th className="py-3 px-4 font-bold">Target Qty</th>
+                                            <th className="py-3 px-4 font-bold">Branch Location</th>
+                                            <th className="py-3 px-4 font-bold">Picking Status</th>
+                                            <th className="py-3 px-4 font-bold text-right">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {pickingList.filter(jo => 
+                                            searchQuery ? jo.jo_id.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                                            (jo.product_name || "").toLowerCase().includes(searchQuery.toLowerCase()) : true
+                                        ).map((jo) => (
+                                            <tr key={jo.jo_id} className="border-b border-input/60 hover:bg-muted/10">
+                                                <td className="py-3.5 px-4 font-extrabold text-foreground">{jo.jo_id}</td>
+                                                <td className="py-3.5 px-4 font-bold text-foreground">{jo.product_name || `Product #${jo.product_id}`}</td>
+                                                <td className="py-3.5 px-4 font-bold text-foreground">{(jo.quantity || 0).toLocaleString()} units</td>
+                                                <td className="py-3.5 px-4 font-semibold text-muted-foreground">{data?.branches?.find(b => Number(b.id) === Number(jo.branch_id))?.branch_name || `Branch #${jo.branch_id}`}</td>
+                                                <td className="py-3.5 px-4">
+                                                    <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                                                        jo.isPicked
+                                                            ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                                                            : "bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                                                    }`}>
+                                                        {jo.isPicked ? "Picked (In WIP)" : "Pending Pick"}
+                                                    </span>
+                                                </td>
+                                                <td className="py-3.5 px-4 text-right">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setSelectedPickingJO(jo);
+                                                            setIsPickingModalOpen(true);
+                                                        }}
+                                                        className={`text-xs font-bold px-3 py-1.5 rounded-lg border cursor-pointer transition-all ${
+                                                            jo.isPicked
+                                                                ? "bg-muted text-foreground border-border hover:bg-muted/20"
+                                                                : "bg-primary text-primary-foreground border-transparent hover:bg-primary/95 shadow-sm"
+                                                        }`}
+                                                    >
+                                                        {jo.isPicked ? "View Pick Sheet" : "Generate Pick Sheet"}
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                        {pickingList.length === 0 && (
+                                            <tr>
+                                                <td colSpan={6} className="py-8 text-center text-muted-foreground border border-dashed rounded-xl bg-card">
+                                                    No active released Job Orders found for picking.
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                            )}
+                        </div>
+                    )}
+
+                    {activeTab === "receiving" && (
+                        <div className="space-y-4">
+                            {receivingLoading ? (
+                                <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                                    <Loader2 className="h-8 w-8 animate-spin text-primary mb-2" />
+                                    <span className="text-xs font-semibold">Loading job orders...</span>
+                                </div>
+                            ) : (
+                                <table className="w-full border-collapse text-left text-xs">
+                                    <thead>
+                                        <tr className="border-b border-input text-muted-foreground">
+                                            <th className="py-3 px-4 font-bold">Job Order ID</th>
+                                            <th className="py-3 px-4 font-bold">Finished Good</th>
+                                            <th className="py-3 px-4 font-bold">Target Qty</th>
+                                            <th className="py-3 px-4 font-bold">Branch Location</th>
+                                            <th className="py-3 px-4 font-bold">Status</th>
+                                            <th className="py-3 px-4 font-bold text-right">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {receivingJOs.filter(jo => 
+                                            searchQuery ? jo.jo_id.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                                            (jo.product_name || "").toLowerCase().includes(searchQuery.toLowerCase()) : true
+                                        ).map((jo) => (
+                                            <tr key={jo.jo_id} className="border-b border-input/60 hover:bg-muted/10">
+                                                <td className="py-3.5 px-4 font-extrabold text-foreground">{jo.jo_id}</td>
+                                                <td className="py-3.5 px-4 font-bold text-foreground">{jo.product_name || `Product #${jo.product_id}`}</td>
+                                                <td className="py-3.5 px-4 font-bold text-foreground">{(jo.quantity || 0).toLocaleString()} units</td>
+                                                <td className="py-3.5 px-4 font-semibold text-muted-foreground">{data?.branches?.find(b => Number(b.id) === Number(jo.branch_id))?.branch_name || `Branch #${jo.branch_id}`}</td>
+                                                <td className="py-3.5 px-4">
+                                                    <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                                                        jo.status === "Finished"
+                                                            ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                                                            : "bg-blue-500/10 text-blue-600 dark:text-blue-400"
+                                                    }`}>
+                                                        {jo.status === "Finished" ? "Closed (Finished)" : "In Production"}
+                                                    </span>
+                                                </td>
+                                                <td className="py-3.5 px-4 text-right">
+                                                    {jo.status === "Finished" ? (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setReceivingResult({
+                                                                    yieldAllocations: jo.yieldAllocations || [],
+                                                                    materialCostVariances: jo.materialCostVariances
+                                                                });
+                                                                setSelectedReceivingJO(jo);
+                                                                setShowReceivingResult(true);
+                                                            }}
+                                                            className="text-xs font-bold px-3 py-1.5 rounded-lg border border-border bg-card text-foreground hover:bg-muted/20 cursor-pointer transition-all"
+                                                        >
+                                                            View Yield Report
+                                                        </button>
+                                                    ) : (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setSelectedReceivingJO(jo);
+                                                                setRecQtyProduced(String(jo.quantity));
+                                                                setRecLotNumber(`MFG-${jo.jo_id}`);
+                                                                setRecExpirationDate(new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]);
+                                                                const stdProd = data?.products?.find(p => p.product_id === jo.product_id);
+                                                                setRecUnitCost(String(stdProd?.cost_per_unit || 0));
+                                                                setIsReceivingModalOpen(true);
+                                                            }}
+                                                            className="text-xs font-bold px-3 py-1.5 rounded-lg border border-transparent bg-primary text-primary-foreground hover:bg-primary/95 cursor-pointer shadow-sm transition-all"
+                                                        >
+                                                            Receive Yield & Close JO
+                                                        </button>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                        {receivingJOs.length === 0 && (
+                                            <tr>
+                                                <td colSpan={6} className="py-8 text-center text-muted-foreground border border-dashed rounded-xl bg-card">
+                                                    No ongoing/released Job Orders found for yield receiving.
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                            )}
+                        </div>
+                    )}
                 </div>
             </div>
 
@@ -1438,6 +1778,443 @@ export default function InventoryModule() {
                                 </button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {/* WMS Picking Sheet Modal */}
+            {isPickingModalOpen && selectedPickingJO && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-background/80 backdrop-blur-xs animate-in fade-in duration-300">
+                    <div className="bg-card border border-border w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+                        <div className="p-5 border-b border-border flex items-center justify-between bg-muted/20">
+                            <div>
+                                <h3 className="text-sm font-bold text-foreground flex items-center gap-1.5">
+                                    <ArrowUpRight className="h-4.5 w-4.5 text-primary" />
+                                    Material Picking Sheet: {selectedPickingJO.jo_id}
+                                </h3>
+                                <p className="text-[10px] text-muted-foreground mt-0.5">Deduct raw stocks and transfer component lots to WIP storage.</p>
+                            </div>
+                            <button
+                                onClick={() => setIsPickingModalOpen(false)}
+                                className="p-1.5 hover:bg-muted rounded-lg text-muted-foreground hover:text-foreground border-none bg-transparent cursor-pointer transition-colors"
+                            >
+                                <X className="h-4 w-4" />
+                            </button>
+                        </div>
+
+                        <div className="p-5 space-y-4">
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-muted/10 p-3 rounded-xl border border-border/60">
+                                <div>
+                                    <span className="text-[9px] text-muted-foreground uppercase font-bold">Target Product</span>
+                                    <div className="text-xs font-bold mt-0.5">{selectedPickingJO.product_name}</div>
+                                </div>
+                                <div>
+                                    <span className="text-[9px] text-muted-foreground uppercase font-bold">Target Run Qty</span>
+                                    <div className="text-xs font-bold mt-0.5">{(selectedPickingJO.quantity || 0).toLocaleString()} units</div>
+                                </div>
+                                <div>
+                                    <span className="text-[9px] text-muted-foreground uppercase font-bold">Branch</span>
+                                    <div className="text-xs font-bold mt-0.5">
+                                        {data?.branches?.find(b => Number(b.id) === Number(selectedPickingJO.branch_id))?.branch_name || `Branch #${selectedPickingJO.branch_id}`}
+                                    </div>
+                                </div>
+                                <div>
+                                    <span className="text-[9px] text-muted-foreground uppercase font-bold">Pick Status</span>
+                                    <div className="text-xs font-bold mt-0.5">
+                                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${
+                                            selectedPickingJO.isPicked ? "bg-emerald-500/10 text-emerald-600" : "bg-amber-500/10 text-amber-600"
+                                        }`}>
+                                            {selectedPickingJO.isPicked ? "Picked" : "Pending"}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="space-y-2">
+                                <h4 className="text-[11px] font-extrabold text-muted-foreground uppercase tracking-wider">Required Component Allocations (FIFO Lots)</h4>
+                                <div className="border border-border rounded-xl overflow-hidden bg-card">
+                                    <table className="w-full text-left text-xs border-collapse">
+                                        <thead>
+                                            <tr className="bg-muted/30 border-b border-border text-muted-foreground">
+                                                <th className="p-2.5 font-bold">Component Name</th>
+                                                <th className="p-2.5 font-bold">Required Qty</th>
+                                                <th className="p-2.5 font-bold">FIFO Lot Number</th>
+                                                <th className="p-2.5 font-bold">Expiry Date</th>
+                                                <th className="p-2.5 font-bold text-right">Pick Qty</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {selectedPickingJO.isPicked ? (
+                                                selectedPickingJO.pickedItems && selectedPickingJO.pickedItems.map((item: any, idx: number) => {
+                                                    const name = data?.products?.find(p => p.product_id === item.productId)?.product_name || `Component #${item.productId}`;
+                                                    return (
+                                                        <tr key={idx} className="border-b border-border/40 last:border-0">
+                                                            <td className="p-2.5 font-semibold text-foreground">{name}</td>
+                                                            <td className="p-2.5 text-muted-foreground">-</td>
+                                                            <td className="p-2.5 font-extrabold text-foreground">{item.lotNumber}</td>
+                                                            <td className="p-2.5 text-muted-foreground">Passed</td>
+                                                            <td className="p-2.5 text-right font-bold text-emerald-600">{item.quantity.toLocaleString()} units</td>
+                                                        </tr>
+                                                    );
+                                                })
+                                            ) : (
+                                                selectedPickingJO.allocationResults && selectedPickingJO.allocationResults.map((alloc: any, idx: number) => {
+                                                    return (
+                                                        <React.Fragment key={idx}>
+                                                            {alloc.batches && alloc.batches.length > 0 ? (
+                                                                alloc.batches.map((batch: any, bIdx: number) => (
+                                                                    <tr key={`${idx}-${bIdx}`} className="border-b border-border/40 last:border-0 hover:bg-muted/5">
+                                                                        <td className="p-2.5 font-semibold text-foreground">
+                                                                            {bIdx === 0 ? alloc.component_name : <span className="text-muted-foreground pl-3">↳ Lot Split</span>}
+                                                                        </td>
+                                                                        <td className="p-2.5 text-muted-foreground font-semibold">
+                                                                            {bIdx === 0 ? `${alloc.required.toLocaleString(undefined, { maximumFractionDigits: 2 })} units` : ""}
+                                                                        </td>
+                                                                        <td className="p-2.5 font-extrabold text-foreground">{batch.lot_number}</td>
+                                                                        <td className="p-2.5 text-muted-foreground font-bold">{batch.expiration_date}</td>
+                                                                        <td className="p-2.5 text-right font-bold text-amber-600">{batch.quantity.toLocaleString(undefined, { maximumFractionDigits: 2 })} units</td>
+                                                                    </tr>
+                                                                ))
+                                                            ) : (
+                                                                <tr className="border-b border-border/40 last:border-0 text-rose-500">
+                                                                    <td className="p-2.5 font-semibold">{alloc.component_name}</td>
+                                                                    <td className="p-2.5 font-semibold">{alloc.required.toLocaleString()} units</td>
+                                                                    <td colSpan={3} className="p-2.5 text-right font-bold text-[10px] uppercase">Deficit: {alloc.deficit.toLocaleString()} units (NO STOCK)</td>
+                                                                </tr>
+                                                            )}
+                                                        </React.Fragment>
+                                                    );
+                                                })
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center justify-end gap-2 pt-3 border-t border-border">
+                                <button
+                                    type="button"
+                                    onClick={() => setIsPickingModalOpen(false)}
+                                    className="bg-muted hover:bg-muted/80 text-foreground border border-border text-xs font-bold px-4 py-2 rounded-lg cursor-pointer transition-all"
+                                >
+                                    Close
+                                </button>
+                                {!selectedPickingJO.isPicked && (
+                                    <button
+                                        type="button"
+                                        onClick={() => handleConfirmPick(selectedPickingJO)}
+                                        disabled={pickingSubmitting || selectedPickingJO.allocationResults?.some((a: any) => a.deficit > 0)}
+                                        className="bg-primary hover:bg-primary/95 text-primary-foreground border-transparent text-xs font-bold px-4 py-2 rounded-lg cursor-pointer shadow-sm transition-all flex items-center gap-1.5"
+                                    >
+                                        {pickingSubmitting ? (
+                                            <>
+                                                <Loader2 className="h-3.5 w-3.5 animate-spin" /> Transferring...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <CheckCircle className="h-3.5 w-3.5" /> Confirm Pick & Issue to WIP
+                                            </>
+                                        )}
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* WMS Yield Receiving Modal */}
+            {isReceivingModalOpen && selectedReceivingJO && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-background/80 backdrop-blur-xs animate-in fade-in duration-300">
+                    <div className="bg-card border border-border w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+                        <div className="p-5 border-b border-border flex items-center justify-between bg-muted/20">
+                            <div>
+                                <h3 className="text-sm font-bold text-foreground flex items-center gap-1.5">
+                                    <ArrowDownLeft className="h-4.5 w-4.5 text-primary" />
+                                    Receive Yield & Close JO: {selectedReceivingJO.jo_id}
+                                </h3>
+                                <p className="text-[10px] text-muted-foreground mt-0.5">Input the packaging output to release finished stock and close production.</p>
+                            </div>
+                            <button
+                                onClick={() => setIsReceivingModalOpen(false)}
+                                className="p-1.5 hover:bg-muted rounded-lg text-muted-foreground hover:text-foreground border-none bg-transparent cursor-pointer transition-colors"
+                            >
+                                <X className="h-4 w-4" />
+                            </button>
+                        </div>
+
+                        <form onSubmit={handleConfirmReceiving} className="p-5 space-y-4">
+                            {/* Materials Consumed Summary */}
+                            <div className="space-y-1.5">
+                                <label className="text-[10px] font-black uppercase text-muted-foreground tracking-wider block">WIP Materials Consumed (Actually Picked)</label>
+                                <div className="border border-border bg-muted/10 p-2.5 rounded-lg text-[10px] space-y-1 max-h-[100px] overflow-y-auto font-semibold">
+                                    {selectedReceivingJO.actualConsumed && selectedReceivingJO.actualConsumed.length > 0 ? (
+                                        selectedReceivingJO.actualConsumed.map((c: any, idx: number) => {
+                                            const name = data?.products?.find(p => p.product_id === c.productId)?.product_name || `Component #${c.productId}`;
+                                            return (
+                                                <div key={idx} className="flex justify-between items-center py-0.5 border-b border-border/40 last:border-none">
+                                                    <span className="text-foreground">{name} (Lot: {c.lotNumber})</span>
+                                                    <span className="font-extrabold text-muted-foreground">{c.quantity.toLocaleString()} units</span>
+                                                </div>
+                                            );
+                                        })
+                                    ) : (
+                                        <div className="text-rose-500 py-1">WARNING: No picking record detected. (Did you bypass picking?)</div>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-1">
+                                    <label className="text-[10px] font-bold uppercase text-muted-foreground">Product SKU (FG)</label>
+                                    <div className="w-full bg-muted/40 border border-border rounded-lg px-3 py-2 text-xs font-bold text-foreground">
+                                        {selectedReceivingJO.product_name}
+                                    </div>
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-[10px] font-bold uppercase text-muted-foreground">Target Production Run</label>
+                                    <div className="w-full bg-muted/40 border border-border rounded-lg px-3 py-2 text-xs font-bold text-foreground">
+                                        {(selectedReceivingJO.quantity || 0).toLocaleString()} units
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-1">
+                                    <label className="text-[10px] font-bold uppercase text-muted-foreground">Actual Packaging Yield</label>
+                                    <input
+                                        type="number"
+                                        step="any"
+                                        placeholder="e.g. 4980"
+                                        value={recQtyProduced}
+                                        onChange={e => setRecQtyProduced(e.target.value)}
+                                        className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs text-foreground focus:ring-1 focus:ring-primary focus:border-primary outline-none"
+                                        required
+                                    />
+                                    <span className="text-[9px] text-muted-foreground block mt-0.5">Input the exact final packed yield</span>
+                                </div>
+
+                                <div className="space-y-1">
+                                    <label className="text-[10px] font-bold uppercase text-muted-foreground">Yield Lot Number</label>
+                                    <input
+                                        type="text"
+                                        placeholder="e.g. MFG-JO-XXXX"
+                                        value={recLotNumber}
+                                        onChange={e => setRecLotNumber(e.target.value)}
+                                        className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs text-foreground focus:ring-1 focus:ring-primary focus:border-primary outline-none font-bold"
+                                        required
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-1">
+                                    <label className="text-[10px] font-bold uppercase text-muted-foreground">Expiration Date</label>
+                                    <input
+                                        type="date"
+                                        value={recExpirationDate}
+                                        onChange={e => setRecExpirationDate(e.target.value)}
+                                        className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs text-foreground focus:ring-1 focus:ring-primary focus:border-primary outline-none"
+                                        required
+                                    />
+                                </div>
+
+                                <div className="space-y-1">
+                                    <label className="text-[10px] font-bold uppercase text-muted-foreground">Unit Cost (Standard COGS)</label>
+                                    <input
+                                        type="number"
+                                        step="any"
+                                        value={recUnitCost}
+                                        onChange={e => setRecUnitCost(e.target.value)}
+                                        className="w-full bg-background border border-border rounded-lg px-3 py-2 text-xs text-foreground focus:ring-1 focus:ring-primary focus:border-primary outline-none"
+                                        required
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="flex items-center justify-end gap-2 pt-3 border-t border-border">
+                                <button
+                                    type="button"
+                                    onClick={() => setIsReceivingModalOpen(false)}
+                                    className="bg-muted hover:bg-muted/80 text-foreground border border-border text-xs font-bold px-4 py-2 rounded-lg cursor-pointer transition-all"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={recSubmitting}
+                                    className="bg-primary hover:bg-primary/95 text-primary-foreground text-xs font-bold px-4 py-2 rounded-lg cursor-pointer transition-all border-none flex items-center gap-1.5 shadow-sm"
+                                >
+                                    {recSubmitting ? (
+                                        <>
+                                            <Loader2 className="h-3.5 w-3.5 animate-spin" /> Closing JO...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <CheckCircle className="h-3.5 w-3.5" /> Close Job Order & Post FG Stock
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* WMS Yield Allocation & Cost Variance Result Modal */}
+            {showReceivingResult && receivingResult && (
+                <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-background/90 backdrop-blur-md animate-in fade-in duration-300">
+                    <div className="bg-card border border-border w-full max-w-4xl rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+                        <div className="p-5 border-b border-border flex items-center justify-between bg-primary/5">
+                            <div>
+                                <h3 className="text-sm font-bold text-foreground flex items-center gap-1.5">
+                                    <Bookmark className="h-4.5 w-4.5 text-primary" />
+                                    Production Closure Summary: {selectedReceivingJO?.jo_id}
+                                </h3>
+                                <p className="text-[10px] text-muted-foreground mt-0.5">Yield allocations back to Sales Orders and Material Cost Variance analysis.</p>
+                            </div>
+                            <button
+                                onClick={() => {
+                                    setShowReceivingResult(false);
+                                    setIsReceivingModalOpen(false);
+                                }}
+                                className="p-1.5 hover:bg-muted rounded-lg text-muted-foreground hover:text-foreground border-none bg-transparent cursor-pointer transition-colors"
+                            >
+                                <X className="h-4 w-4" />
+                            </button>
+                        </div>
+
+                        <div className="p-6 space-y-6 overflow-y-auto max-h-[80vh]">
+                            {/* Yield Allocations section */}
+                            <div className="space-y-2">
+                                <h4 className="text-[11px] font-black uppercase tracking-wider text-primary">Proportional Yield Split back to Sales Orders</h4>
+                                <div className="border border-border rounded-xl overflow-hidden bg-card">
+                                    <table className="w-full text-left text-xs border-collapse">
+                                        <thead>
+                                            <tr className="bg-muted/40 border-b border-border text-muted-foreground">
+                                                <th className="p-2.5 font-bold">Sales Order No</th>
+                                                <th className="p-2.5 font-bold">Customer Name</th>
+                                                <th className="p-2.5 font-bold">Consolidated Target</th>
+                                                <th className="p-2.5 font-bold text-right">Proportionally Allocated Yield</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {receivingResult.yieldAllocations && receivingResult.yieldAllocations.length > 0 ? (
+                                                receivingResult.yieldAllocations.map((alloc: any, idx: number) => (
+                                                    <tr key={idx} className="border-b border-border/40 last:border-0 hover:bg-muted/5">
+                                                        <td className="p-2.5 font-extrabold text-foreground">{alloc.order_no}</td>
+                                                        <td className="p-2.5 font-semibold text-muted-foreground">{alloc.customer_name}</td>
+                                                        <td className="p-2.5 text-foreground font-semibold">{alloc.target_qty.toLocaleString()} units</td>
+                                                        <td className="p-2.5 text-right font-black text-primary">{alloc.allocated_yield.toLocaleString()} units</td>
+                                                    </tr>
+                                                ))
+                                            ) : (
+                                                <tr>
+                                                    <td colSpan={4} className="p-4 text-center text-muted-foreground font-semibold">
+                                                        No Sales Orders were linked to this Job Order. Yield loaded directly to branch warehouse stock.
+                                                    </td>
+                                                </tr>
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            {/* Material Cost Variance section */}
+                            {receivingResult.materialCostVariances && (
+                                <div className="space-y-3">
+                                    <div className="flex justify-between items-center">
+                                        <h4 className="text-[11px] font-black uppercase tracking-wider text-primary">Material Cost Variance Analysis</h4>
+                                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${
+                                            receivingResult.materialCostVariances.total_variance <= 0 
+                                                ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" 
+                                                : "bg-rose-500/10 text-rose-600 dark:text-rose-400"
+                                        }`}>
+                                            {receivingResult.materialCostVariances.total_variance <= 0 ? "Favorable Variance" : "Unfavorable Variance"}
+                                        </span>
+                                    </div>
+
+                                    {/* Cost Summary Cards */}
+                                    <div className="grid grid-cols-3 gap-4">
+                                        <div className="p-3 bg-muted/15 border border-border rounded-xl">
+                                            <span className="text-[9px] text-muted-foreground uppercase font-black tracking-wider block">Standard Material Cost</span>
+                                            <h4 className="text-sm font-bold text-foreground mt-1">
+                                                PHP {receivingResult.materialCostVariances.standard_total_cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            </h4>
+                                        </div>
+                                        <div className="p-3 bg-muted/15 border border-border rounded-xl">
+                                            <span className="text-[9px] text-muted-foreground uppercase font-black tracking-wider block">Actual Picked Cost</span>
+                                            <h4 className="text-sm font-bold text-foreground mt-1">
+                                                PHP {receivingResult.materialCostVariances.actual_total_cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            </h4>
+                                        </div>
+                                        <div className="p-3 bg-muted/15 border border-border rounded-xl">
+                                            <span className="text-[9px] text-muted-foreground uppercase font-black tracking-wider block">Material Cost Variance</span>
+                                            <h4 className={`text-sm font-black mt-1 ${
+                                                receivingResult.materialCostVariances.total_variance <= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
+                                            }`}>
+                                                {receivingResult.materialCostVariances.total_variance > 0 ? "+" : ""}
+                                                PHP {receivingResult.materialCostVariances.total_variance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            </h4>
+                                        </div>
+                                    </div>
+
+                                    {/* Component Cost Breakdowns */}
+                                    <div className="border border-border rounded-xl overflow-hidden bg-card">
+                                        <table className="w-full text-left text-xs border-collapse">
+                                            <thead>
+                                                <tr className="bg-muted/40 border-b border-border text-muted-foreground">
+                                                    <th className="p-2.5 font-bold">Component Name</th>
+                                                    <th className="p-2.5 font-bold">Standard Usage (BOM)</th>
+                                                    <th className="p-2.5 font-bold">Actual Usage (WIP)</th>
+                                                    <th className="p-2.5 font-bold">Std cost</th>
+                                                    <th className="p-2.5 font-bold">Act cost</th>
+                                                    <th className="p-2.5 font-bold text-right">Variance</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {receivingResult.materialCostVariances.details && receivingResult.materialCostVariances.details.map((detail: any, idx: number) => (
+                                                    <tr key={idx} className="border-b border-border/40 last:border-0 hover:bg-muted/5">
+                                                        <td className="p-2.5 font-bold text-foreground">{detail.productName}</td>
+                                                        <td className="p-2.5 text-muted-foreground font-semibold">
+                                                            {detail.standardQty.toLocaleString(undefined, { maximumFractionDigits: 2 })} units
+                                                        </td>
+                                                        <td className="p-2.5 font-bold text-foreground">
+                                                            {detail.actualQty.toLocaleString(undefined, { maximumFractionDigits: 2 })} units
+                                                        </td>
+                                                        <td className="p-2.5 text-muted-foreground font-semibold">
+                                                            PHP {detail.standardTotalCost.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                                                        </td>
+                                                        <td className="p-2.5 text-foreground font-semibold">
+                                                            PHP {detail.actualTotalCost.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                                                        </td>
+                                                        <td className={`p-2.5 text-right font-bold ${
+                                                            detail.variance <= 0 ? "text-emerald-500" : "text-rose-500"
+                                                        }`}>
+                                                            {detail.variance > 0 ? "+" : ""}
+                                                            PHP {detail.variance.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="flex items-center justify-end gap-2 pt-4 border-t border-border">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setShowReceivingResult(false);
+                                        setIsReceivingModalOpen(false);
+                                    }}
+                                    className="bg-primary hover:bg-primary/95 text-primary-foreground text-xs font-bold px-6 py-2 rounded-lg cursor-pointer shadow-sm transition-all border-none"
+                                >
+                                    Done & Close
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             )}

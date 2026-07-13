@@ -2,6 +2,23 @@ import { useState, useEffect } from "react";
 import { Customer, StoreType } from "../types";
 import { toast } from "sonner";
 
+export interface ClientProduct {
+    id: number;
+    name: string;
+    code: string;
+}
+
+export interface ClientProductVersion {
+    version_id: number;
+    version_name: string;
+    status: string;
+}
+
+export interface CustomerOverrideItem {
+    product_id: number;
+    version_id: number;
+}
+
 export function useClients() {
     const [customers, setCustomers] = useState<Customer[]>([]);
     const [storeTypes, setStoreTypes] = useState<StoreType[]>([]);
@@ -29,6 +46,12 @@ export function useClients() {
         longitude: "",
         isActive: true
     });
+
+    // Customer specific product version overrides state
+    const [products, setProducts] = useState<ClientProduct[]>([]);
+    const [versionsMap, setVersionsMap] = useState<Record<number, ClientProductVersion[]>>({});
+    const [overrides, setOverrides] = useState<Record<number, number>>({});
+    const [loadingOverrides, setLoadingOverrides] = useState(false);
 
     // PSGC address data state
     const [provinces, setProvinces] = useState<{ code: string; name: string }[]>([]);
@@ -120,6 +143,7 @@ export function useClients() {
     // Handle modal open for create or edit
     const openCreateModal = () => {
         setEditingCustomer(null);
+        setOverrides({});
         setFormData({
             customer_code: "",
             customer_name: "",
@@ -140,7 +164,7 @@ export function useClients() {
         setIsModalOpen(true);
     };
 
-    const openEditModal = (c: Customer) => {
+    const openEditModal = async (c: Customer) => {
         setEditingCustomer(c);
         
         // Find matching province and city codes from strings to bind select menus
@@ -174,7 +198,59 @@ export function useClients() {
             longitude: c.longitude !== undefined && c.longitude !== null ? String(c.longitude) : "",
             isActive: c.isActive === 1 || c.isActive === true
         });
+        
+        // Open modal first to ensure instant UI response
         setIsModalOpen(true);
+
+        // Load customer version overrides
+        setLoadingOverrides(true);
+        try {
+            const overrideRes = await fetch(`/api/manufacturing/finished-goods/customer-product-version?customerId=${c.id}`);
+            if (overrideRes.ok) {
+                const overrideList = await overrideRes.json();
+                const map: Record<number, number> = {};
+                overrideList.forEach((item: CustomerOverrideItem) => {
+                    map[item.product_id] = item.version_id;
+                });
+                setOverrides(map);
+            }
+        } catch (err) {
+            console.error("Failed to load customer version overrides:", err);
+        } finally {
+            setLoadingOverrides(false);
+        }
+
+        // Load products and versions if not loaded yet
+        try {
+            const resProds = await fetch("/api/manufacturing/finished-goods/products?limit=250");
+            if (resProds.ok) {
+                const prodsData = await resProds.json();
+                const mappedProds = prodsData.map((p: { product_id: number; product_name: string; product_code?: string }) => ({
+                    id: p.product_id,
+                    name: p.product_name,
+                    code: p.product_code || `SKU-${p.product_id}`
+                }));
+                setProducts(mappedProds);
+
+                // Fetch versions in parallel
+                Promise.all(mappedProds.map(async (p: ClientProduct) => {
+                    const verRes = await fetch(`/api/manufacturing/finished-goods/versions?productId=${p.id}`);
+                    if (verRes.ok) {
+                        const verData = await verRes.json();
+                        return { productId: p.id, versions: verData as ClientProductVersion[] };
+                    }
+                    return { productId: p.id, versions: [] as ClientProductVersion[] };
+                })).then((results) => {
+                    const vMap: Record<number, ClientProductVersion[]> = {};
+                    results.forEach(r => {
+                        vMap[r.productId] = r.versions;
+                    });
+                    setVersionsMap(vMap);
+                });
+            }
+        } catch (err) {
+            console.error("Failed to load products/versions for customer settings:", err);
+        }
     };
 
     // Auto-generate customer code based on name
@@ -305,6 +381,40 @@ export function useClients() {
         }
     };
 
+    // Save product version override override settings
+    const updateProductVersionOverride = async (productId: number, versionId: number | null) => {
+        if (!editingCustomer) return;
+        try {
+            const res = await fetch("/api/manufacturing/finished-goods/customer-product-version", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    customerId: editingCustomer.id,
+                    productId,
+                    versionId
+                })
+            });
+            if (res.ok) {
+                setOverrides(prev => {
+                    const next = { ...prev };
+                    if (versionId === null) {
+                        delete next[productId];
+                    } else {
+                        next[productId] = versionId;
+                    }
+                    return next;
+                });
+                toast.success("Customer product version override updated");
+            } else {
+                const err = await res.json();
+                throw new Error(err.error || "Failed to save override");
+            }
+        } catch (err) {
+            console.error("Error saving customer version override:", err);
+            toast.error(err instanceof Error ? err.message : "Failed to save setting");
+        }
+    };
+
     // Client filtering logic
     const filteredCustomers = customers.filter(c => {
         const matchesSearch =
@@ -349,6 +459,11 @@ export function useClients() {
         handleSaveCustomer,
         handleToggleActive,
         handleDeleteCustomer,
+        products,
+        versionsMap,
+        overrides,
+        loadingOverrides,
+        updateProductVersionOverride,
         refresh: loadData
     };
 }

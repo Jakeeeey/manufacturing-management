@@ -35,7 +35,7 @@ export async function GET(request: Request) {
         const limit = parseInt(searchParams.get("limit") || "-1");
         const excludeRollup = searchParams.get("excludeRollup") === "true";
 
-        const explicitFields = "product_id,product_name,product_code,description,isActive,cost_per_unit,price_per_unit,product_brand,parent_id,parent_id.product_id,parent_id.product_name,product_category,product_class,product_segment,product_section,product_shelf_life,product_image,unit_of_measurement.unit_id,unit_of_measurement.unit_shortcut,unit_of_measurement.unit_name,unit_of_measurement_count,density_factor,production_capacity_per_hour,product_type";
+        const explicitFields = "product_id,product_name,product_code,description,isActive,cost_per_unit,price_per_unit,product_brand,barcode,parent_id,parent_id.product_id,parent_id.product_name,product_category,product_class,product_segment,product_section,product_shelf_life,product_image,unit_of_measurement.unit_id,unit_of_measurement.unit_shortcut,unit_of_measurement.unit_name,unit_of_measurement_count,density_factor,production_capacity_per_hour,product_type";
         let url = `${DIRECTUS_URL}/items/products?limit=${limit}&fields=${explicitFields}`;
         if (search && search.trim()) {
             url += `&search=${encodeURIComponent(search.trim())}`;
@@ -71,6 +71,8 @@ export async function GET(request: Request) {
         // Resolve calculateRollupCost helper
         const productsMap = new Map<number, DirectusProduct>();
         products.forEach((p) => {
+            p.has_versions = versionProductIds.has(Number(p.product_id));
+            p.currency_profile = profilesMap.get(Number(p.product_id)) || null;
             productsMap.set(Number(p.product_id), p);
         });
 

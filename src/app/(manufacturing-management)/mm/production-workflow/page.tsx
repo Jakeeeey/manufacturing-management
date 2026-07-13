@@ -1,8 +1,3 @@
-import React from "react";
-import { cookies } from "next/headers";
-import { SidebarTrigger } from "@/components/ui/sidebar";
-import { Separator } from "@/components/ui/separator";
-import { NavUser } from "@/components/shared/app-sidebar/nav-user";
 import {
     Breadcrumb,
     BreadcrumbItem,
@@ -11,14 +6,15 @@ import {
     BreadcrumbPage,
     BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
+import { Separator } from "@/components/ui/separator";
+import { SidebarTrigger } from "@/components/ui/sidebar";
+import { NavUser } from "@/components/shared/app-sidebar/nav-user";
+import { cookies } from "next/headers";
+
 import ProductionWorkflowModule from "@/modules/manufacturing-management/production-workflow/ProductionWorkflowModule";
 
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-export const metadata = {
-    title: "Production execution & Shop Floor | VOS ERP",
-    description: "Manage ongoing production runs, log routing operations, check QA, and issue finished goods."
-};
 
 const COOKIE_NAME = "vos_access_token";
 
@@ -77,6 +73,7 @@ function buildHeaderUserFromToken(token: string | null | undefined) {
 export default async function ProductionWorkflowPage() {
     const cookieStore = await cookies();
     const token = cookieStore.get(COOKIE_NAME)?.value ?? null;
+
     const headerUser = buildHeaderUserFromToken(token);
 
     return (
@@ -85,10 +82,12 @@ export default async function ProductionWorkflowPage() {
             <header className="relative z-10 flex h-14 shrink-0 items-center justify-between border-b shadow-sm bg-background sm:h-16 overflow-hidden">
                 <div className="flex h-full min-w-0 items-center gap-2 px-3 sm:px-4 overflow-hidden">
                     <SidebarTrigger className="-ml-1 shrink-0" />
+
                     <Separator
                         orientation="vertical"
                         className="hidden sm:block mr-2 data-[orientation=vertical]:h-4 shrink-0"
                     />
+
                     <div className="min-w-0 overflow-hidden">
                         <Breadcrumb>
                             <BreadcrumbList className="min-w-0 overflow-hidden">
@@ -98,26 +97,21 @@ export default async function ProductionWorkflowPage() {
                                 <BreadcrumbSeparator className="hidden md:block shrink-0" />
                                 <BreadcrumbItem className="min-w-0 overflow-hidden">
                                     <BreadcrumbPage className="truncate max-w-[56vw] sm:max-w-[60vw] md:max-w-none">
-                                        Production Execution & Shop Floor
+                                        Shop Floor Terminal (WIP Execution)
                                     </BreadcrumbPage>
                                 </BreadcrumbItem>
                             </BreadcrumbList>
                         </Breadcrumb>
                     </div>
                 </div>
+
                 <div className="flex h-full items-center px-2 sm:px-4 shrink-0 max-w-[48vw] sm:max-w-none overflow-hidden">
                     <NavUser user={headerUser} />
                 </div>
             </header>
 
-            {/* Scrollable Content Container */}
-            <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-6 bg-background space-y-4">
-                <div>
-                    <h2 className="text-xl font-extrabold tracking-tight text-foreground">Production Execution Workflow</h2>
-                    <p className="text-muted-foreground text-[11px] mt-0.5">
-                        Real-time shop floor control, sequential operator check-ins, QA inspection checklist, and finished goods batch creation.
-                    </p>
-                </div>
+            {/* Scrollable Content wrapper */}
+            <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-4 bg-background">
                 <ProductionWorkflowModule />
             </main>
         </div>

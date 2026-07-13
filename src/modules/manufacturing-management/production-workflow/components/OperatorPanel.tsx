@@ -1,0 +1,622 @@
+/* eslint-disable */
+import React, { useState, useEffect } from "react";
+import {
+    User,
+    Clock,
+    DollarSign,
+    AlertTriangle,
+    Play,
+    Square,
+    Trash,
+    Loader2
+} from "lucide-react";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { RoutingTask, JobOrder, User as UserType, RouteOperatorRecord } from "../types";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import { toast } from "sonner";
+
+interface OperatorPanelProps {
+    selectedTask: RoutingTask;
+    activeStep: RoutingTask | null;
+    selectedJobOrder: JobOrder;
+    sortedTasks: RoutingTask[];
+    users: UserType[];
+    routeOperators: RouteOperatorRecord[];
+    loadingOperators: boolean;
+    handleAddOperator: (startTimer: boolean, taskId: number, assigneeId: string) => void;
+    handleRemoveOperator: (taskId: number, opUserId: number) => void;
+    handleStartTimer: (taskId: number, opUserId: number) => void;
+    handleStopTimer: (taskId: number, opUserId: number) => void;
+    handleSaveManualHours: (taskId: number, opUserId: number, hours: string) => void;
+    handleCompleteStepClick: (taskId: number) => void;
+}
+
+// Live ticking timer component for clocked-in operators
+function RunningTimer({ startedAt }: { startedAt: string }) {
+    const [elapsed, setElapsed] = useState("");
+
+    useEffect(() => {
+        const updateTimer = () => {
+            const diffMs = new Date().getTime() - new Date(startedAt).getTime();
+            if (diffMs <= 0) {
+                setElapsed("00:00:00");
+                return;
+            }
+            const hours = Math.floor(diffMs / 3600000);
+            const mins = Math.floor((diffMs % 3600000) / 60000);
+            const secs = Math.floor((diffMs % 60000) / 1000);
+            setElapsed(
+                `${String(hours).padStart(2, "0")}:${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`
+            );
+        };
+        updateTimer();
+        const interval = setInterval(updateTimer, 1000);
+        return () => clearInterval(interval);
+    }, [startedAt]);
+
+    return (
+        <span className="font-mono text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 text-[10px] inline-flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
+            {elapsed}
+        </span>
+    );
+}
+
+export default function OperatorPanel({
+    selectedTask,
+    activeStep,
+    selectedJobOrder,
+    sortedTasks,
+    users,
+    routeOperators,
+    loadingOperators,
+    handleAddOperator,
+    handleRemoveOperator,
+    handleStartTimer,
+    handleStopTimer,
+    handleSaveManualHours,
+    handleCompleteStepClick
+}: OperatorPanelProps) {
+    const [isBreakdownOpen, setIsBreakdownOpen] = useState(false);
+    const [localAssigneeId, setLocalAssigneeId] = useState("");
+    const [localManualHours, setLocalManualHours] = useState("");
+    const [localActiveManualUserId, setLocalActiveManualUserId] = useState<number | null>(null);
+
+    const [haltedStepId, setHaltedStepId] = useState<string>("");
+    const [yieldQty, setYieldQty] = useState<string>("0");
+    const [haltReason, setHaltReason] = useState<string>("");
+    const [materials, setMaterials] = useState<any[]>([]);
+    const [consumedQtys, setConsumedQtys] = useState<Record<number, string>>({});
+    const [loadingMaterials, setLoadingMaterials] = useState(false);
+    const [submittingHalt, setSubmittingHalt] = useState(false);
+
+    const groupedOperators = React.useMemo(() => {
+        const groups: Record<number, {
+            user_id: number;
+            user_position: string;
+            hourly_rate: number;
+            total_logged_hours: number;
+            is_running: boolean;
+            active_session: any | null;
+            latest_session: any;
+            all_sessions: any[];
+        }> = {};
+
+        routeOperators.forEach((op: any) => {
+            const userId = op.user_id;
+            const isRunning = op.started_at !== null && op.stopped_at === null;
+            const hours = Number(op.actual_hours || 0);
+
+            if (!groups[userId]) {
+                groups[userId] = {
+                    user_id: userId,
+                    user_position: op.user_position || "",
+                    hourly_rate: Number(op.hourly_rate || 150),
+                    total_logged_hours: 0,
+                    is_running: false,
+                    active_session: null,
+                    latest_session: op,
+                    all_sessions: []
+                };
+            }
+
+            const g = groups[userId];
+            g.all_sessions.push(op);
+            g.total_logged_hours += hours;
+
+            if (isRunning) {
+                g.is_running = true;
+                g.active_session = op;
+            }
+
+            if (op.id > g.latest_session.id) {
+                g.latest_session = op;
+            }
+        });
+
+        return Object.values(groups);
+    }, [routeOperators]);
+
+    const taskSummary = React.useMemo(() => {
+        const totalHours = routeOperators.reduce((sum, r) => sum + (r.actual_hours || 0), 0);
+        const totalLaborCost = routeOperators.reduce((sum, r) => sum + (r.labor_cost || 0), 0);
+        return {
+            total_hours: totalHours,
+            total_labor_cost: totalLaborCost
+        };
+    }, [routeOperators]);
+
+    // Sync halted step selection with the active step
+    useEffect(() => {
+        if (selectedTask) {
+            setHaltedStepId(selectedTask.name);
+        }
+    }, [selectedTask]);
+
+    // Fetch raw materials when breakdown modal opens
+    useEffect(() => {
+        if (isBreakdownOpen && selectedJobOrder.order_id) {
+            setLoadingMaterials(true);
+            fetch(`/api/manufacturing/planning-engineering?action=job-materials&joId=${selectedJobOrder.order_id}`)
+                .then((res) => res.json())
+                .then((data) => {
+                    setMaterials(data);
+                    const initialConsumed: Record<number, string> = {};
+                    data.forEach((m: any) => {
+                        initialConsumed[m.id] = String(m.actual_consumed_quantity || m.quantity_allocated || 0);
+                    });
+                    setConsumedQtys(initialConsumed);
+                })
+                .catch((err) => console.error("Error loading BOM materials for halt:", err))
+                .finally(() => setLoadingMaterials(false));
+        }
+    }, [isBreakdownOpen, selectedJobOrder]);
+
+    const handleHaltSubmit = async () => {
+        if (!haltReason.trim()) {
+            alert("Please input a valid explanation or note for the breakdown halt.");
+            return;
+        }
+        setSubmittingHalt(true);
+        try {
+            const body = {
+                action: "halt",
+                joId: selectedJobOrder.order_id,
+                haltedStepName: haltedStepId,
+                yieldQty: Number(yieldQty),
+                haltReason,
+                materials: Object.entries(consumedQtys).map(([id, val]) => ({
+                    materialId: Number(id),
+                    consumedQty: Number(val)
+                }))
+            };
+            const res = await fetch(`/api/manufacturing/planning-engineering`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(body)
+            });
+            if (res.ok) {
+                setIsBreakdownOpen(false);
+                window.location.reload();
+            } else {
+                alert("Failed to log breakdown. Please try again.");
+            }
+        } catch (e) {
+            console.error("Error logging breakdown:", e);
+            alert("An error occurred. Please try again.");
+        } finally {
+            setSubmittingHalt(false);
+        }
+    };
+
+    const getUserLabel = (uId: number) => {
+        const u = users.find((usr) => (usr.user_id || usr.id) === uId);
+        if (!u) return `Operator #${uId}`;
+        const fname = u.user_fname || u.first_name || "";
+        const lname = u.user_lname || u.last_name || "";
+        return `${fname} ${lname}`.trim() || `User #${uId}`;
+    };
+
+    const isJobOnHold = selectedJobOrder.status === "On Hold";
+
+    return (
+        <Card className="border border-border bg-card shadow-sm rounded-xl overflow-hidden">
+            {/* Header */}
+            <CardHeader className="p-4 border-b border-border/40 bg-muted/5">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                    <div>
+                        <span className="text-[10px] font-bold text-primary uppercase tracking-widest block font-mono">
+                            Workstation Step {selectedTask.sequence_order}0
+                        </span>
+                        <CardTitle className="text-lg font-extrabold text-foreground mt-0.5">
+                            {selectedTask.name}
+                        </CardTitle>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                        {selectedTask.requires_qa === 1 && (
+                            <Badge variant="outline" className="text-[9px] py-0 px-1 text-amber-600 border-amber-500/20 bg-amber-500/5 font-semibold">
+                                QA Checklist Required
+                            </Badge>
+                        )}
+                        {groupedOperators.some((o) => o.is_running) && (
+                            <Badge className="bg-emerald-500 text-white font-mono text-[9px] py-0 px-1 animate-pulse">
+                                Ongoing Run
+                            </Badge>
+                        )}
+                    </div>
+                </div>
+            </CardHeader>
+
+            <CardContent className="p-4 space-y-4">
+                {/* 1. Required Raw Materials Section & planned/actual stats */}
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+                    {/* Raw Materials allocated to step */}
+                    <div className="md:col-span-8 p-3 bg-muted/20 border border-border/50 rounded-xl space-y-2">
+                        <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block font-mono">
+                            Required Raw Materials
+                        </span>
+                        {selectedTask.bom_items && selectedTask.bom_items.length > 0 ? (
+                            <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                                {selectedTask.bom_items.map((item: any, idx: number) => (
+                                    <li key={`${item.product_id}_${idx}`} className="flex flex-wrap items-center gap-1 text-muted-foreground pl-2 border-l border-primary/20 relative py-0.5">
+                                        <span className="font-semibold text-foreground truncate max-w-[130px]" title={item.product_name}>{item.product_name}</span>
+                                        <span className="font-bold text-emerald-600 dark:text-emerald-400 font-mono">
+                                            {item.total_needed.toLocaleString(undefined, { maximumFractionDigits: 1 })} {item.unit_shortcut}
+                                        </span>
+                                    </li>
+                                ))}
+                            </ul>
+                        ) : (
+                            <p className="text-[10px] text-muted-foreground italic">No raw materials allocated to this step.</p>
+                        )}
+                    </div>
+
+                    {/* Step Metrics Stats */}
+                    <div className="md:col-span-4 p-3 bg-muted/20 border border-border/50 rounded-xl grid grid-cols-2 gap-2 text-[10px]">
+                        <div>
+                            <span className="text-muted-foreground block font-medium">Planned Hours</span>
+                            <span className="font-bold text-foreground text-xs">
+                                {(Number(selectedTask.planned_setup_hours || 0) + Number(selectedTask.planned_run_hours || 0)).toFixed(1)} hrs
+                            </span>
+                        </div>
+                        <div>
+                            <span className="text-muted-foreground block font-medium">Actual Hours</span>
+                            <span className="font-bold text-foreground text-xs">
+                                {taskSummary.total_hours.toFixed(1)} hrs
+                            </span>
+                        </div>
+                        <div>
+                            <span className="text-muted-foreground block font-medium">Est Labor Cost</span>
+                            <span className="font-bold text-foreground text-xs">
+                                ₱{Number(selectedTask.estimated_labor_cost || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                            </span>
+                        </div>
+                        <div>
+                            <span className="text-muted-foreground block font-medium">Act Labor Cost</span>
+                            <span className="font-bold text-foreground text-xs">
+                                ₱{taskSummary.total_labor_cost.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                {/* 2. Operators Assignment & Management Section */}
+                <div className="space-y-3">
+                    <div className="flex justify-between items-center">
+                        <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block font-mono">
+                            Operators Team Log
+                        </span>
+                    </div>
+
+                    {/* Compact flex-row operator check-in toolbar */}
+                    {!isJobOnHold && (
+                        <div className="flex flex-wrap gap-2 items-center bg-muted/30 p-2 border border-border/50 rounded-xl">
+                            <div className="flex-1 min-w-[200px]">
+                                <SearchableSelect
+                                    options={users
+                                        .filter((u) => !routeOperators.some((ro) => ro.user_id === (u.user_id || u.id)))
+                                        .map((u) => ({
+                                            value: String(u.user_id || u.id),
+                                            label: `${getUserLabel(u.user_id || u.id)} (${u.user_position || u.position || "Operator"})`
+                                        }))}
+                                    value={localAssigneeId}
+                                    onValueChange={(val) => setLocalAssigneeId(val)}
+                                    placeholder="Select floor personnel..."
+                                    className="h-8 text-xs bg-background"
+                                />
+                            </div>
+                            <div className="flex gap-1.5 shrink-0">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                        handleAddOperator(false, selectedTask.id, localAssigneeId);
+                                        setLocalAssigneeId("");
+                                    }}
+                                    className="h-8 font-bold text-xs px-2.5"
+                                    disabled={!localAssigneeId}
+                                >
+                                    Log Hours
+                                </Button>
+                                <Button
+                                    size="sm"
+                                    onClick={() => {
+                                        handleAddOperator(true, selectedTask.id, localAssigneeId);
+                                        setLocalAssigneeId("");
+                                    }}
+                                    className="h-8 font-bold text-xs px-2.5 bg-primary text-white"
+                                    disabled={!localAssigneeId}
+                                >
+                                    Clock In (Timer)
+                                </Button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Compact operator check-in list table */}
+                    {groupedOperators.length === 0 ? (
+                        <div className="p-3 bg-muted/10 rounded-lg text-muted-foreground text-center italic border border-dashed text-xs">
+                            No operators currently clocked in or logged to this step.
+                        </div>
+                    ) : (
+                        <div className="border border-border/60 rounded-xl overflow-hidden bg-background">
+                            <table className="w-full text-left text-xs border-collapse">
+                                <thead>
+                                    <tr className="bg-muted/50 border-b border-border/40 text-muted-foreground text-[10px] uppercase font-bold font-mono">
+                                        <th className="p-2 pl-3">Personnel</th>
+                                        <th className="p-2">Shift Timer</th>
+                                        <th className="p-2 text-right">Hours Logged</th>
+                                        <th className="p-2 pr-3 text-right">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {groupedOperators.map((gop) => {
+                                        const isTimerActive = gop.is_running && gop.active_session;
+                                        const isEditingHours = localActiveManualUserId === gop.user_id;
+
+                                        return (
+                                            <tr key={gop.user_id} className="border-b border-border/30 last:border-none hover:bg-muted/20 transition-colors">
+                                                <td className="p-2 pl-3">
+                                                    <div className="font-bold text-foreground">{getUserLabel(gop.user_id)}</div>
+                                                    <div className="text-[10px] text-muted-foreground">{gop.user_position || "Operator"}</div>
+                                                </td>
+                                                <td className="p-2">
+                                                    {isTimerActive ? (
+                                                        <RunningTimer startedAt={gop.active_session.started_at} />
+                                                    ) : (
+                                                        <span className="text-[10px] text-muted-foreground font-mono bg-muted/40 px-1.5 py-0.5 rounded border border-border/30">
+                                                            Clocked Out
+                                                        </span>
+                                                    )}
+                                                </td>
+                                                <td className="p-2 text-right font-bold font-mono">
+                                                    {isEditingHours ? (
+                                                        <div className="inline-flex items-center gap-1.5 justify-end">
+                                                            <Input
+                                                                type="number"
+                                                                value={localManualHours}
+                                                                onChange={(e) => setLocalManualHours(e.target.value)}
+                                                                className="h-6 w-14 text-right px-1 font-mono text-xs focus-visible:ring-primary"
+                                                                step="0.1"
+                                                            />
+                                                            <span className="text-[10px] text-muted-foreground">hrs</span>
+                                                        </div>
+                                                    ) : (
+                                                        <span>{gop.total_logged_hours.toFixed(2)} hrs</span>
+                                                    )}
+                                                </td>
+                                                <td className="p-2 pr-3">
+                                                    {isEditingHours ? (
+                                                        <div className="flex gap-1 justify-end">
+                                                            <Button
+                                                                variant="default"
+                                                                size="xs"
+                                                                className="h-6 w-11 text-[10px] font-semibold px-0 bg-emerald-600 hover:bg-emerald-700"
+                                                                onClick={() => {
+                                                                    handleSaveManualHours(selectedTask.id, gop.user_id, localManualHours);
+                                                                    setLocalActiveManualUserId(null);
+                                                                    setLocalManualHours("");
+                                                                }}
+                                                            >
+                                                                Save
+                                                            </Button>
+                                                            <Button
+                                                                variant="outline"
+                                                                size="xs"
+                                                                className="h-6 w-11 text-[10px] font-semibold px-0"
+                                                                onClick={() => {
+                                                                    setLocalActiveManualUserId(null);
+                                                                    setLocalManualHours("");
+                                                                }}
+                                                            >
+                                                                Cancel
+                                                            </Button>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="flex gap-1.5 justify-end">
+                                                            {isTimerActive ? (
+                                                                <Button
+                                                                    variant="outline"
+                                                                    size="xs"
+                                                                    className="h-7 text-amber-700 border-amber-300 hover:bg-amber-50 dark:text-amber-400 dark:border-amber-900/50 dark:hover:bg-amber-950/40 px-2 py-0"
+                                                                    onClick={() => handleStopTimer(selectedTask.id, gop.user_id)}
+                                                                >
+                                                                    <Square className="mr-1 h-3 w-3 fill-current" /> Out
+                                                                </Button>
+                                                            ) : (
+                                                                <Button
+                                                                    variant="outline"
+                                                                    size="xs"
+                                                                    className="h-7 text-emerald-700 border-emerald-300 hover:bg-emerald-50 dark:text-emerald-400 dark:border-emerald-900/50 dark:hover:bg-emerald-950/40 px-2 py-0"
+                                                                    onClick={() => handleStartTimer(selectedTask.id, gop.user_id)}
+                                                                >
+                                                                    <Play className="mr-1 h-3 w-3 fill-current" /> In
+                                                                </Button>
+                                                            )}
+                                                            <Button
+                                                                variant="outline"
+                                                                size="xs"
+                                                                className="h-7 px-1.5 py-0"
+                                                                onClick={() => {
+                                                                    setLocalActiveManualUserId(gop.user_id);
+                                                                    setLocalManualHours(String(gop.total_logged_hours || 0));
+                                                                }}
+                                                                title="Manually log hours"
+                                                            >
+                                                                <Clock className="h-3.5 w-3.5" />
+                                                            </Button>
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="xs"
+                                                                className="h-7 text-destructive hover:bg-destructive/10 px-1.5"
+                                                                onClick={() => handleRemoveOperator(selectedTask.id, gop.user_id)}
+                                                            >
+                                                                <Trash className="h-3.5 w-3.5" />
+                                                            </Button>
+                                                        </div>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </div>
+            </CardContent>
+
+            {/* Compact CardFooter with Halt button only */}
+            <CardFooter className="py-2.5 px-4 border-t border-border/40 bg-muted/5 flex justify-end">
+                <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIsBreakdownOpen(true)}
+                    className="font-bold border-red-500/25 bg-red-950/5 text-red-500 hover:bg-red-900/10 h-8 text-xs px-3"
+                >
+                    <AlertTriangle className="mr-1.5 h-3.5 w-3.5" /> Report Workstation Halt / Breakdown
+                </Button>
+            </CardFooter>
+
+            {/* WORKSTATION BREAKDOWN MODAL */}
+            <Dialog open={isBreakdownOpen} onOpenChange={setIsBreakdownOpen}>
+                <DialogContent className="sm:max-w-[480px] bg-slate-950 border border-slate-800 text-slate-100">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2 text-red-500 font-bold text-base">
+                            <AlertTriangle className="h-5 w-5" /> Report Workstation Halt / Breakdown
+                        </DialogTitle>
+                        <DialogDescription className="text-slate-400 text-xs">
+                            Log a production halt event, record the actual yield produced so far, and adjust the remaining raw material usage.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="space-y-4 py-2 text-xs">
+                        {/* Halted Step Selection */}
+                        <div className="space-y-1.5">
+                            <Label htmlFor="haltedStep" className="text-slate-300 font-bold">Halted Step / Workstation</Label>
+                            <select
+                                id="haltedStep"
+                                value={haltedStepId}
+                                onChange={(e) => setHaltedStepId(e.target.value)}
+                                className="flex h-9 w-full rounded-md border border-slate-850 bg-slate-900 text-slate-100 px-3 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+                            >
+                                {sortedTasks.map((t) => (
+                                    <option key={t.id} value={t.name}>
+                                        {t.name} (Step {t.sequence_order}0)
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {/* Yielded Quantity */}
+                        <div className="space-y-1.5">
+                            <Label htmlFor="yieldQty" className="text-slate-300 font-bold">Actual Yield Produced So Far (in base units)</Label>
+                            <Input
+                                id="yieldQty"
+                                type="number"
+                                value={yieldQty}
+                                onChange={(e) => setYieldQty(e.target.value)}
+                                className="h-9 bg-slate-900 border-slate-800 text-slate-100 text-xs focus-visible:ring-primary"
+                                placeholder="e.g. 1500"
+                            />
+                        </div>
+
+                        {/* Halt Reason / Incident Notes */}
+                        <div className="space-y-1.5">
+                            <Label htmlFor="haltReason" className="text-slate-300 font-bold">Halt Reason / Notes</Label>
+                            <textarea
+                                id="haltReason"
+                                value={haltReason}
+                                onChange={(e) => setHaltReason(e.target.value)}
+                                className="flex min-h-[70px] w-full rounded-md border border-slate-800 bg-slate-900 text-slate-100 px-3 py-2 text-xs placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary focus-visible:ring-offset-0"
+                                placeholder="Detail the incident (e.g. Baking Oven heating unit failed, waiting on maintenance)"
+                            />
+                        </div>
+
+                        {/* Raw Material Inventory Consumption Adjustment */}
+                        <div className="space-y-2">
+                            <Label className="text-slate-300 font-bold block">Actual Raw Material Consumed (Up to Halt)</Label>
+                            {loadingMaterials ? (
+                                <div className="flex justify-center py-4">
+                                    <Loader2 className="h-5 w-5 animate-spin text-slate-500" />
+                                </div>
+                            ) : materials.length === 0 ? (
+                                <p className="text-slate-500 text-center py-2 text-[10px]">No materials allocated to this Job Order.</p>
+                            ) : (
+                                <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
+                                    {materials.map((m) => (
+                                        <div key={m.id} className="flex items-center justify-between p-2 bg-slate-900 border border-slate-800 rounded-md">
+                                            <span className="font-bold text-slate-300 truncate max-w-[200px]" title={m.product_name}>
+                                                {m.product_name}
+                                            </span>
+                                            <div className="flex items-center gap-1.5 shrink-0">
+                                                <Input
+                                                    type="number"
+                                                    value={consumedQtys[m.id] || "0"}
+                                                    onChange={(e) => {
+                                                        const val = e.target.value;
+                                                        setConsumedQtys((prev) => ({ ...prev, [m.id]: val }));
+                                                    }}
+                                                    className="h-7 w-20 bg-slate-950 border-slate-850 text-right text-xs"
+                                                />
+                                                <span className="text-slate-400 font-medium font-mono w-6">{m.unit_shortcut}</span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    <DialogFooter className="border-t border-slate-800 pt-3 gap-2 flex items-center justify-end">
+                        <Button
+                            variant="outline"
+                            onClick={() => setIsBreakdownOpen(false)}
+                            className="border-slate-800 hover:bg-slate-900 text-slate-300 h-8 text-xs font-semibold"
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            onClick={handleHaltSubmit}
+                            disabled={submittingHalt}
+                            className="bg-red-600 hover:bg-red-700 text-white font-bold h-8 text-xs px-4"
+                        >
+                            {submittingHalt ? (
+                                <>
+                                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Logging Halt...
+                                </>
+                            ) : (
+                                "Submit Halt & Log Breakdown"
+                            )}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+        </Card>
+    );
+}

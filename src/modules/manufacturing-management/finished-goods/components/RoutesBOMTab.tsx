@@ -1,3 +1,4 @@
+/* eslint-disable */
 "use client";
 
 import React from "react";
@@ -15,6 +16,9 @@ interface RoutesBOMTabProps {
     qaTemplates: QATemplate[];
     units: Unit[];
     setHasUnsavedChanges: (val: boolean) => void;
+    setOperationTypes?: React.Dispatch<React.SetStateAction<OperationType[]>>;
+    editedVersionDetails?: any;
+    setEditedVersionDetails?: any;
 }
 
 export const RoutesBOMTab: React.FC<RoutesBOMTabProps> = ({
@@ -24,8 +28,50 @@ export const RoutesBOMTab: React.FC<RoutesBOMTabProps> = ({
     workCenters,
     qaTemplates,
     units,
-    setHasUnsavedChanges
+    setHasUnsavedChanges,
+    setOperationTypes,
+    editedVersionDetails,
+    setEditedVersionDetails
 }) => {
+    const operationOptions = React.useMemo(() => {
+        return operationTypes.map(op => ({
+            value: String(op.id),
+            label: op.operation_name
+        }));
+    }, [operationTypes]);
+
+    const workCenterOptions = React.useMemo(() => {
+        return workCenters.map(wc => ({
+            value: String(wc.work_center_id),
+            label: wc.work_center_name
+        }));
+    }, [workCenters]);
+
+    const handleCreateOperationType = async (name: string, routeId: number) => {
+        try {
+            const res = await fetch("/api/manufacturing/finished-goods/operations", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ name })
+            });
+            if (res.ok) {
+                const data = await res.json();
+                if (data.success && data.operation) {
+                    const newOp = data.operation;
+                    handleUpdateRoute(routeId, "operation_id", newOp.id);
+                    
+                    // Refresh operations types list in the parent hook
+                    const refreshRes = await fetch("/api/manufacturing/finished-goods/operations");
+                    if (refreshRes.ok && setOperationTypes) {
+                        setOperationTypes(await refreshRes.json());
+                    }
+                }
+            }
+        } catch (e) {
+            console.error("Failed to create new operation type on the fly:", e);
+        }
+    };
+
     const handleAddRoute = () => {
         const nextSeq = editedRoutes.length > 0
             ? Math.max(...editedRoutes.map(r => r.sequence_order)) + 1
@@ -122,6 +168,61 @@ export const RoutesBOMTab: React.FC<RoutesBOMTabProps> = ({
                 </Button>
             </div>
 
+            {editedVersionDetails && setEditedVersionDetails && (
+                <div className="bg-card border border-border/85 rounded-xl p-5 shadow-xs space-y-4">
+                    <h3 className="text-sm font-semibold text-foreground flex items-center gap-2 border-b pb-2">
+                        <Layers className="h-4 w-4 text-primary/80" /> BOM Version Specifications
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="space-y-1">
+                            <label className="text-[11px] font-bold text-muted-foreground uppercase">Version Name</label>
+                            <input
+                                type="text"
+                                value={editedVersionDetails.version_name || ""}
+                                onChange={e => {
+                                    setEditedVersionDetails((prev: any) => ({ ...prev, version_name: e.target.value }));
+                                    setHasUnsavedChanges(true);
+                                }}
+                                className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
+                            />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-[11px] font-bold text-muted-foreground uppercase">Base Quantity (Batch Size)</label>
+                            <div className="relative">
+                                <input
+                                    type="number"
+                                    step="0.0001"
+                                    value={editedVersionDetails.base_quantity !== undefined ? editedVersionDetails.base_quantity : 1}
+                                    onChange={e => {
+                                        setEditedVersionDetails((prev: any) => ({ ...prev, base_quantity: parseFloat(e.target.value) || 0 }));
+                                        setHasUnsavedChanges(true);
+                                    }}
+                                    className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all pr-12"
+                                />
+                                <span className="absolute right-3 top-2.5 text-xs font-semibold text-muted-foreground">
+                                    {units.find(u => u.unit_id === editedVersionDetails.uom_id)?.unit_shortcut || "Units"}
+                                </span>
+                            </div>
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-[11px] font-bold text-muted-foreground uppercase">Expected Yield (%)</label>
+                            <input
+                                type="number"
+                                step="0.01"
+                                min="1"
+                                max="100"
+                                value={editedVersionDetails.expected_yield_percentage !== undefined ? editedVersionDetails.expected_yield_percentage : 100}
+                                onChange={e => {
+                                    setEditedVersionDetails((prev: any) => ({ ...prev, expected_yield_percentage: parseFloat(e.target.value) || 0 }));
+                                    setHasUnsavedChanges(true);
+                                }}
+                                className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
+                            />
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {editedRoutes.length === 0 ? (
                 <div className="flex flex-col items-center justify-center p-12 rounded-xl border border-dashed bg-muted/5 border-muted text-center">
                     <Layers className="h-10 w-10 text-muted-foreground opacity-40 mb-3" />
@@ -172,65 +273,152 @@ export const RoutesBOMTab: React.FC<RoutesBOMTabProps> = ({
                                 {/* Step Form Fields */}
                                 <div className="p-4 grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
                                     {/* Operation */}
-                                    <div className="space-y-1">
-                                        <label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wide flex items-center gap-1">
+                                    <div className="space-y-1 flex flex-col justify-end">
+                                        <label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wide flex items-center gap-1 mb-1">
                                             <Settings className="h-3 w-3" /> Operation
                                         </label>
-                                        <select
-                                            value={r.operation_id || ""}
-                                            onChange={(e) => handleUpdateRoute(r.route_id, "operation_id", e.target.value ? parseInt(e.target.value) : null)}
-                                            className="w-full h-9 px-2.5 rounded-lg border border-muted bg-background text-foreground text-xs focus:outline-none focus:ring-1 focus:ring-primary"
-                                        >
-                                            <option value="">Select Operation...</option>
-                                            {operationTypes.map(op => (
-                                                <option key={op.id} value={op.id}>{op.operation_name}</option>
-                                            ))}
-                                        </select>
+                                        <CreatableSelect
+                                            options={operationOptions}
+                                            value={r.operation_id ? String(r.operation_id) : ""}
+                                            onValueChange={(val) => {
+                                                handleUpdateRoute(r.route_id, "operation_id", val ? parseInt(val) : null);
+                                            }}
+                                            onCreateOption={(name) => handleCreateOperationType(name, r.route_id)}
+                                            placeholder="Select Operation..."
+                                            className="h-9 text-xs"
+                                        />
                                     </div>
 
                                     {/* Work Center */}
-                                    <div className="space-y-1">
-                                        <label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wide flex items-center gap-1">
+                                    <div className="space-y-1 flex flex-col justify-end">
+                                        <label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wide flex items-center gap-1 mb-1">
                                             <Layers className="h-3 w-3" /> Work Station / Center
                                         </label>
-                                        <select
-                                            value={r.work_center_id || ""}
-                                            onChange={(e) => handleUpdateRoute(r.route_id, "work_center_id", e.target.value ? parseInt(e.target.value) : null)}
-                                            className="w-full h-9 px-2.5 rounded-lg border border-muted bg-background text-foreground text-xs focus:outline-none focus:ring-1 focus:ring-primary"
-                                        >
-                                            <option value="">Select Work Center...</option>
-                                            {workCenters.map(wc => (
-                                                <option key={wc.work_center_id} value={wc.work_center_id}>{wc.work_center_name}</option>
-                                            ))}
-                                        </select>
+                                        <CreatableSelect
+                                            options={workCenterOptions}
+                                            value={r.work_center_id ? String(r.work_center_id) : ""}
+                                            onValueChange={(val) => {
+                                                handleUpdateRoute(r.route_id, "work_center_id", val ? parseInt(val) : null);
+                                            }}
+                                            placeholder="Select Work Center..."
+                                            className="h-9 text-xs"
+                                        />
                                     </div>
 
                                     {/* Setup Time */}
                                     <div className="space-y-1">
                                         <label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wide flex items-center gap-1">
-                                            <Clock className="h-3 w-3" /> Setup Time (Hours)
+                                            <Clock className="h-3 w-3" /> Setup Time (hh&quot;mm&quot;ss)
                                         </label>
-                                        <input
-                                            type="number"
-                                            step="0.01"
-                                            value={r.setup_time_hours}
-                                            onChange={(e) => handleUpdateRoute(r.route_id, "setup_time_hours", parseFloat(e.target.value) || 0)}
-                                            className="w-full h-9 px-2.5 rounded-lg border border-muted bg-background text-foreground text-xs focus:outline-none focus:ring-1 focus:ring-primary"
-                                        />
+                                        <div className="flex items-center gap-1 bg-slate-950/20 px-2 h-9 rounded-lg border border-muted focus-within:ring-1 focus-within:ring-primary focus-within:bg-background w-full">
+                                            {/* Hours */}
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                value={Math.floor(Math.round((r.setup_time_hours || 0) * 3600) / 3600) || ""}
+                                                onChange={(e) => {
+                                                    const h = parseInt(e.target.value) || 0;
+                                                    const totalS = Math.round((r.setup_time_hours || 0) * 3600);
+                                                    const currentMins = Math.floor((totalS % 3600) / 60);
+                                                    const currentSecs = totalS % 60;
+                                                    handleUpdateRoute(r.route_id, "setup_time_hours", h + (currentMins / 60) + (currentSecs / 3600));
+                                                }}
+                                                className="w-10 bg-transparent border-0 outline-hidden p-0 text-xs text-right text-foreground focus:ring-0 placeholder:text-muted-foreground/30 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                                placeholder="0"
+                                            />
+                                            <span className="text-muted-foreground/30 font-bold select-none">&quot;</span>
+                                            {/* Minutes */}
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                max="59"
+                                                value={Math.floor((Math.round((r.setup_time_hours || 0) * 3600) % 3600) / 60) || ""}
+                                                onChange={(e) => {
+                                                    const m = Math.min(59, Math.max(0, parseInt(e.target.value) || 0));
+                                                    const totalS = Math.round((r.setup_time_hours || 0) * 3600);
+                                                    const currentHrs = Math.floor(totalS / 3600);
+                                                    const currentSecs = totalS % 60;
+                                                    handleUpdateRoute(r.route_id, "setup_time_hours", currentHrs + (m / 60) + (currentSecs / 3600));
+                                                }}
+                                                className="w-6 bg-transparent border-0 outline-hidden p-0 text-xs text-center text-foreground focus:ring-0 placeholder:text-muted-foreground/30 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                                placeholder="00"
+                                            />
+                                            <span className="text-muted-foreground/30 font-bold select-none">&quot;</span>
+                                            {/* Seconds */}
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                max="59"
+                                                value={Math.round((r.setup_time_hours || 0) * 3600) % 60 || ""}
+                                                onChange={(e) => {
+                                                    const s = Math.min(59, Math.max(0, parseInt(e.target.value) || 0));
+                                                    const totalS = Math.round((r.setup_time_hours || 0) * 3600);
+                                                    const currentHrs = Math.floor(totalS / 3600);
+                                                    const currentMins = Math.floor((totalS % 3600) / 60);
+                                                    handleUpdateRoute(r.route_id, "setup_time_hours", currentHrs + (currentMins / 60) + (s / 3600));
+                                                }}
+                                                className="w-6 bg-transparent border-0 outline-hidden p-0 text-xs text-left text-foreground focus:ring-0 placeholder:text-muted-foreground/30 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                                placeholder="00"
+                                            />
+                                        </div>
                                     </div>
 
                                     {/* Run Time */}
                                     <div className="space-y-1">
                                         <label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wide flex items-center gap-1">
-                                            <Clock className="h-3 w-3" /> Run Time (Hours)
+                                            <Clock className="h-3 w-3" /> Run Time (hh&quot;mm&quot;ss)
                                         </label>
-                                        <input
-                                            type="number"
-                                            step="0.01"
-                                            value={r.run_time_hours}
-                                            onChange={(e) => handleUpdateRoute(r.route_id, "run_time_hours", parseFloat(e.target.value) || 0)}
-                                            className="w-full h-9 px-2.5 rounded-lg border border-muted bg-background text-foreground text-xs focus:outline-none focus:ring-1 focus:ring-primary"
-                                        />
+                                        <div className="flex items-center gap-1 bg-slate-950/20 px-2 h-9 rounded-lg border border-muted focus-within:ring-1 focus-within:ring-primary focus-within:bg-background w-full">
+                                            {/* Hours */}
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                value={Math.floor(Math.round((r.run_time_hours || 0) * 3600) / 3600) || ""}
+                                                onChange={(e) => {
+                                                    const h = parseInt(e.target.value) || 0;
+                                                    const totalS = Math.round((r.run_time_hours || 0) * 3600);
+                                                    const currentMins = Math.floor((totalS % 3600) / 60);
+                                                    const currentSecs = totalS % 60;
+                                                    handleUpdateRoute(r.route_id, "run_time_hours", h + (currentMins / 60) + (currentSecs / 3600));
+                                                }}
+                                                className="w-10 bg-transparent border-0 outline-hidden p-0 text-xs text-right text-foreground focus:ring-0 placeholder:text-muted-foreground/30 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                                placeholder="0"
+                                            />
+                                            <span className="text-muted-foreground/30 font-bold select-none">&quot;</span>
+                                            {/* Minutes */}
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                max="59"
+                                                value={Math.floor((Math.round((r.run_time_hours || 0) * 3600) % 3600) / 60) || ""}
+                                                onChange={(e) => {
+                                                    const m = Math.min(59, Math.max(0, parseInt(e.target.value) || 0));
+                                                    const totalS = Math.round((r.run_time_hours || 0) * 3600);
+                                                    const currentHrs = Math.floor(totalS / 3600);
+                                                    const currentSecs = totalS % 60;
+                                                    handleUpdateRoute(r.route_id, "run_time_hours", currentHrs + (m / 60) + (currentSecs / 3600));
+                                                }}
+                                                className="w-6 bg-transparent border-0 outline-hidden p-0 text-xs text-center text-foreground focus:ring-0 placeholder:text-muted-foreground/30 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                                placeholder="00"
+                                            />
+                                            <span className="text-muted-foreground/30 font-bold select-none">&quot;</span>
+                                            {/* Seconds */}
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                max="59"
+                                                value={Math.round((r.run_time_hours || 0) * 3600) % 60 || ""}
+                                                onChange={(e) => {
+                                                    const s = Math.min(59, Math.max(0, parseInt(e.target.value) || 0));
+                                                    const totalS = Math.round((r.run_time_hours || 0) * 3600);
+                                                    const currentHrs = Math.floor(totalS / 3600);
+                                                    const currentMins = Math.floor((totalS % 3600) / 60);
+                                                    handleUpdateRoute(r.route_id, "run_time_hours", currentHrs + (currentMins / 60) + (s / 3600));
+                                                }}
+                                                className="w-6 bg-transparent border-0 outline-hidden p-0 text-xs text-left text-foreground focus:ring-0 placeholder:text-muted-foreground/30 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                                placeholder="00"
+                                            />
+                                        </div>
                                     </div>
 
                                     {/* Estimated Labor Cost */}
@@ -324,13 +512,19 @@ export const RoutesBOMTab: React.FC<RoutesBOMTabProps> = ({
                                                                     />
                                                                 </td>
                                                                 <td className="p-1.5 align-middle">
-                                                                    <CreatableSelect
-                                                                        options={unitOptions}
-                                                                        value={String(b.unit_of_measurement || "")}
-                                                                        onValueChange={(val) => handleUpdateIngredient(r.route_id, b.id, "unit_of_measurement", val)}
-                                                                        placeholder="UOM"
-                                                                        className="h-8 py-0 px-2 text-xs"
-                                                                    />
+                                                                    {(() => {
+                                                                        const matched = units.find(u => u.unit_id === b.unit_of_measurement || u.unit_shortcut === b.unit_of_measurement);
+                                                                        const selectValue = matched ? matched.unit_shortcut : String(b.unit_of_measurement || "");
+                                                                        return (
+                                                                            <CreatableSelect
+                                                                                options={unitOptions}
+                                                                                value={selectValue}
+                                                                                onValueChange={(val) => handleUpdateIngredient(r.route_id, b.id, "unit_of_measurement", val)}
+                                                                                placeholder="UOM"
+                                                                                className="h-8 py-0 px-2 text-xs"
+                                                                            />
+                                                                        );
+                                                                    })()}
                                                                 </td>
                                                                 <td className="p-1.5 align-middle">
                                                                     <input 

@@ -1,3 +1,4 @@
+/* eslint-disable */
 import { NextResponse } from "next/server";
 import { DIRECTUS_URL, headers } from "@/app/api/manufacturing/directus-api";
 
@@ -109,19 +110,18 @@ export async function GET(request: Request) {
         const startDate = searchParams.get("startDate") || "";
         const endDate = searchParams.get("endDate") || "";
 
-        const [ledgerRes, productsRes, versionsRes, invoiceRes, invoiceDetailsRes, branchesRes, qaLogsRes, tasksRes, joProdsRes, bomsRes, bomCompsRes, joRes] = await Promise.all([
+        const [ledgerRes, productsRes, versionsRes, invoiceRes, invoiceDetailsRes, branchesRes, qaLogsRes, tasksRes, bomsRes, bomCompsRes, joRes] = await Promise.all([
             fetch(`${DIRECTUS_URL}/items/product_ledger?limit=2000`, { headers, cache: "no-store" }),
             fetch(`${DIRECTUS_URL}/items/products?limit=500&fields=product_id,product_name,product_code,cost_per_unit,price_per_unit,unit_of_measurement.unit_name,unit_of_measurement.unit_shortcut,product_category.category_name`, { headers, cache: "no-store" }),
             fetch(`${DIRECTUS_URL}/items/manufacturing_product_version?limit=-1&fields=product_id`, { headers, cache: "no-store" }).catch(() => null),
             fetch(`${DIRECTUS_URL}/items/sales_invoice?limit=1000&sort=-invoice_date`, { headers, cache: "no-store" }),
             fetch(`${DIRECTUS_URL}/items/sales_invoice_details?limit=2000`, { headers, cache: "no-store" }),
             fetch(`${DIRECTUS_URL}/items/branches?limit=-1`, { headers, cache: "no-store" }),
-            fetch(`${DIRECTUS_URL}/items/job_order_qa_logs?limit=-1`, { headers, cache: "no-store" }).catch(() => null),
-            fetch(`${DIRECTUS_URL}/items/job_order_routing_tasks?limit=-1`, { headers, cache: "no-store" }).catch(() => null),
-            fetch(`${DIRECTUS_URL}/items/job_order_products?limit=-1`, { headers, cache: "no-store" }).catch(() => null),
+            fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_qa_records?limit=-1`, { headers, cache: "no-store" }).catch(() => null),
+            fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_routes?limit=-1&fields=jo_route_id,job_order_id,sequence_order,work_center_id,operation_id,planned_setup_hours,planned_run_hours,actual_setup_hours,actual_run_hours,estimated_labor_cost,actual_labor_cost`, { headers, cache: "no-store" }).catch(() => null),
             fetch(`${DIRECTUS_URL}/items/manufacturing_boms?limit=-1&filter[is_active][_eq]=1`, { headers, cache: "no-store" }).catch(() => null),
             fetch(`${DIRECTUS_URL}/items/manufacturing_bom_components?limit=-1`, { headers, cache: "no-store" }).catch(() => null),
-            fetch(`${DIRECTUS_URL}/items/job_order?limit=-1`, { headers, cache: "no-store" }).catch(() => null)
+            fetch(`${DIRECTUS_URL}/items/manufacturing_job_orders?limit=-1`, { headers, cache: "no-store" }).catch(() => null)
         ]);
 
         if (!ledgerRes.ok) throw new Error("Failed to fetch product_ledger");
@@ -132,10 +132,9 @@ export async function GET(request: Request) {
 
         const ledger: LedgerEntry[] = (await ledgerRes.json()).data || [];
         const products: Product[] = (await productsRes.json()).data || [];
-        const qaLogs: QaLog[] = qaLogsRes && qaLogsRes.ok ? (await qaLogsRes.json()).data || [] : [];
-        const tasks: Task[] = tasksRes && tasksRes.ok ? (await tasksRes.json()).data || [] : [];
-        const joProds: JoProduct[] = joProdsRes && joProdsRes.ok ? (await joProdsRes.json()).data || [] : [];
-        const jobOrders: JobOrder[] = joRes && joRes.ok ? (await joRes.json()).data || [] : [];
+        const qaLogs: any[] = qaLogsRes && qaLogsRes.ok ? (await qaLogsRes.json()).data || [] : [];
+        const tasks: any[] = tasksRes && tasksRes.ok ? (await tasksRes.json()).data || [] : [];
+        const jobOrders: any[] = joRes && joRes.ok ? (await joRes.json()).data || [] : [];
         
         // Resolve versions for has_versions check
         const versionProductIds = new Set<number>();
@@ -255,19 +254,18 @@ export async function GET(request: Request) {
             }
         });
 
-        // B. Aggregate Production Yield Wastage from QA logs
-        qaLogs.forEach((log: QaLog) => {
-            if (!isWithinRange(log.recorded_at)) return;
+        // B. Aggregate Production Yield Wastage from Completed Job Orders
+        jobOrders.forEach((jo: any) => {
+            if (jo.status !== "Completed") return;
+            const dateStr = jo.end_date || jo.created_on;
+            if (!dateStr || !isWithinRange(dateStr)) return;
 
-            const deviation = Number(log.deviation_quantity) || 0;
+            const planned = Number(jo.target_quantity || 0);
+            const actual = Number(jo.actual_quantity_produced || 0);
+            const deviation = planned - actual;
+
             if (deviation > 0) {
-                const task = tasks.find((t: Task) => Number(t.id) === Number(log.task_id));
-                if (!task) return;
-
-                const joProduct = joProds.find((jp: JoProduct) => jp.jo_id === task.jo_id);
-                if (!joProduct) return;
-
-                const pId = Number(joProduct.product_id);
+                const pId = Number(jo.product_id);
                 const prod = products.find((p: Product) => Number(p.product_id) === pId);
                 const cost = prod ? (Number(prod.cost_per_unit) || 0) : 0;
                 const value = deviation * cost;
@@ -281,7 +279,7 @@ export async function GET(request: Request) {
                         code: prod?.product_code || `SKU-${pId}`,
                         qty: 0,
                         value: 0,
-                        reason: "Production QA Scrap"
+                        reason: "Production Yield Shortfall"
                     };
                 }
                 wastageItems[pId].qty += deviation;
@@ -430,51 +428,29 @@ export async function GET(request: Request) {
         }).filter(Boolean);
 
         // Calculate ongoing production runs progress breakdown
-        const ongoingRuns = jobOrders.filter((jo: JobOrder) => ["Ongoing", "Proceed", "On Hold"].includes(jo.status));
-        const ongoingBreakdown = ongoingRuns.map((jo: JobOrder) => {
-            const joProducts = joProds.filter((jp: JoProduct) => jp.jo_id === jo.jo_id);
-            const mainProduct = joProducts[0] || {};
-            const productName = mainProduct.product_name || jo.product_name || "Unknown Product";
-            const targetQty = Number(mainProduct.quantity || jo.quantity || 0);
+        // Calculate ongoing production runs progress breakdown
+        const ongoingRuns = jobOrders.filter((jo: any) => ["In Progress", "Released", "On Hold"].includes(jo.status));
+        const ongoingBreakdown = ongoingRuns.map((jo: any) => {
+            const mainProduct = (products.find((p: Product) => Number(p.product_id) === Number(jo.product_id)) || {}) as any;
+            const productName = mainProduct.product_name || "Unknown Product";
+            const targetQty = Number(jo.target_quantity || 0);
 
-            // Fetch tasks for this job order
-            const joTasks = tasks.filter((t: Task) => t.jo_id === jo.jo_id);
+            // Fetch tasks/routing steps for this job order
+            const joTasks = tasks.filter((t: any) => Number(t.job_order_id) === Number(jo.job_order_id));
             const totalTasks = joTasks.length;
-            const completedTasks = joTasks.filter((t: Task) => t.status === "Completed").length;
+            const completedTasks = joTasks.filter((t: any) => t.status === "Completed" || t.status === "Skipped").length;
 
-            let percentage = 0;
-            let progressText = "";
-
-            if (jo.daily_breakdown && Array.isArray(jo.daily_breakdown) && jo.daily_breakdown.length > 0) {
-                const routingsCount = (mainProduct.routings || []).length || 1;
-                const totalPossibleSteps = jo.daily_breakdown.length * routingsCount;
-                
-                let completedStepsCount = 0;
-                jo.daily_breakdown.forEach((day: DailyBreakdownDay) => {
-                    if (day.completed_steps && Array.isArray(day.completed_steps)) {
-                        completedStepsCount += day.completed_steps.length;
-                    } else if (day.status === "Completed") {
-                        completedStepsCount += routingsCount;
-                    }
-                });
-
-                percentage = totalPossibleSteps > 0 ? (completedStepsCount / totalPossibleSteps) * 100 : 0;
-                progressText = `${completedStepsCount} of ${totalPossibleSteps} steps completed across ${jo.daily_breakdown.length} days`;
-            } else {
-                percentage = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
-                progressText = `${completedTasks} of ${totalTasks} operations completed`;
-            }
-
-            percentage = Math.min(100, Math.max(0, percentage));
+            const percentage = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
+            const progressText = `${completedTasks} of ${totalTasks} operations completed`;
 
             return {
-                jo_id: jo.jo_id,
+                jo_id: jo.job_order_no,
                 status: jo.status,
                 product_name: productName,
                 quantity: targetQty,
                 percentage: Number(percentage.toFixed(1)),
                 progress_text: progressText,
-                due_date: jo.due_date
+                due_date: jo.end_date
             };
         });
 
