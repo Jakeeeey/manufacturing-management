@@ -116,7 +116,7 @@ export function ActiveSalesOrdersTable({
                             <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                             <input
                                 type="text"
-                                placeholder="Search Order No..."
+                                placeholder="Search Order or PO No..."
                                 value={localSearch}
                                 onChange={(e) => {
                                     setLocalSearch(e.target.value);

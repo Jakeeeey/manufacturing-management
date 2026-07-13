@@ -24,6 +24,7 @@ export function addSalesOrderFilters(params: URLSearchParams, filters: {
     if (filters.search) {
         params.set("filter[_or][0][order_no][_icontains]", filters.search);
         params.set("filter[_or][1][customer_code][_icontains]", filters.search);
+        params.set("filter[_or][2][po_no][_icontains]", filters.search);
     }
     if (filters.customerCode) params.set("filter[customer_code][_eq]", filters.customerCode);
     if (filters.dateFrom) params.set("filter[order_date][_gte]", filters.dateFrom);
