@@ -222,7 +222,14 @@ export function useSalesOrder() {
         try {
             const res = await createSalesOrderDirect(payload);
             toast.success("Sales Order created directly!");
-            loadSalesOrders(currentPage, searchQuery, statusFilter);
+            await loadSalesOrders(
+                currentPage,
+                searchQuery,
+                statusFilter,
+                customerCodeFilter,
+                dateFromFilter,
+                dateToFilter
+            );
             return res;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {

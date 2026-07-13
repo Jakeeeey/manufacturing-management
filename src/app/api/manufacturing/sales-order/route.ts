@@ -385,13 +385,13 @@ export async function GET(request: Request) {
 
             const [customerResult, productResult] = await Promise.all([
                 read("customer", new URLSearchParams({
-                    fields: "id,customer_name,customer_code",
+                    fields: "id,customer_name,customer_code,payment_term",
                     limit: "-1",
                     sort: "customer_name"
                 })),
                 read("products", new URLSearchParams({
                     "filter[product_type][_eq]": "388",
-                    fields: "product_id,product_name,product_code,product_type,price_per_unit,cost_per_unit",
+                    fields: "product_id,product_name,product_code,product_type,price_per_unit,cost_per_unit,parent_id,parent_id.product_id,unit_of_measurement.unit_id,unit_of_measurement.unit_name,unit_of_measurement.unit_shortcut,unit_of_measurement_count",
                     limit: "-1",
                     sort: "product_name"
                 }))
@@ -423,9 +423,50 @@ export async function GET(request: Request) {
                 }))
             ]);
 
+            const customers = (customerResult.data || []).map((customer: any) => {
+                const rawPaymentTerm = customer.payment_term;
+                const paymentTermId = Number(
+                    rawPaymentTerm && typeof rawPaymentTerm === "object"
+                        ? rawPaymentTerm.id
+                        : rawPaymentTerm
+                );
+                return {
+                    id: customer.id,
+                    customer_name: customer.customer_name,
+                    customer_code: customer.customer_code,
+                    payment_term_id: Number.isSafeInteger(paymentTermId) && paymentTermId > 0
+                        ? paymentTermId
+                        : null
+                };
+            });
+            const products = (productResult.data || []).map((product: any) => {
+                const rawParent = product.parent_id;
+                const parentId = Number(
+                    rawParent && typeof rawParent === "object"
+                        ? rawParent.product_id
+                        : rawParent
+                );
+                const productId = Number(product.product_id);
+                const unit = product.unit_of_measurement;
+                return {
+                    product_id: productId,
+                    parent_product_id: Number.isSafeInteger(parentId) && parentId > 0 ? parentId : productId,
+                    is_parent: !(Number.isSafeInteger(parentId) && parentId > 0),
+                    product_name: product.product_name,
+                    product_code: product.product_code,
+                    product_type: product.product_type,
+                    price_per_unit: product.price_per_unit,
+                    cost_per_unit: product.cost_per_unit,
+                    unit_id: Number(unit?.unit_id) || null,
+                    unit_name: unit?.unit_name || "Unit",
+                    unit_shortcut: unit?.unit_shortcut || "UNIT",
+                    unit_count: Number(product.unit_of_measurement_count) || 1
+                };
+            });
+
             return NextResponse.json({
-                customers: customerResult.data || [],
-                products: productResult.data || [],
+                customers,
+                products,
                 branches: branchResult.data || [],
                 paymentTerms: paymentTermResult.data || [],
                 salesmen: salesmanResult.data || [],
