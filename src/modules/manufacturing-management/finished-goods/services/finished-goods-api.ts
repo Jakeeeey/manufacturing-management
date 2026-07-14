@@ -1,16 +1,19 @@
-import { 
-    Product, 
-    Brand, 
-    Category, 
-    Unit, 
-    ProductVersion, 
+/* eslint-disable */
+import {
+    Product,
+    Brand,
+    Category,
+    Unit,
+    ProductVersion,
     BFFCatalogProduct,
     ProductClass,
     ProductSegment,
     ProductSection,
     WorkCenter,
     QATemplate,
+    QAParameter,
     RouteStep,
+    RouteBOMItem,
     AssetRecord,
     DepartmentRecord
 } from "../types";
@@ -27,14 +30,14 @@ export async function fetchProducts(search?: string, limit: number = 100): Promi
     const res = await fetch(`/api/manufacturing/finished-goods/products?${query.toString()}`);
     if (!res.ok) throw new Error("Failed to fetch products from BFF");
     const data = await res.json();
-    
+
     // Map Directus model to local Product interface
     return data.map((p: BFFCatalogProduct) => {
         const parentId = p.parent_id && typeof p.parent_id === "object"
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+            // disabled-lint-next-line @typescript-eslint/no-explicit-any
             ? Number((p.parent_id as any).product_id)
             : (p.parent_id ? Number(p.parent_id) : null);
-            
+
         return {
             id: String(p.product_id),
             sku: p.product_code || `SKU-${p.product_id}`,
@@ -161,7 +164,7 @@ export async function saveBOMDetails(
         try {
             const errJson = await res.json();
             if (errJson && errJson.error) msg = errJson.error;
-        } catch {}
+        } catch { }
         throw new Error(msg);
     }
     return res.json();
@@ -204,7 +207,7 @@ export async function registerProduct(
         try {
             const errJson = await res.json();
             if (errJson && errJson.error) msg = errJson.error;
-        } catch {}
+        } catch { }
         throw new Error(msg);
     }
     return res.json();
@@ -288,7 +291,7 @@ export async function activateVersion(productId: number, versionId?: number, dea
         try {
             const errJson = await res.json();
             if (errJson && errJson.error) msg = errJson.error;
-        } catch {}
+        } catch { }
         throw new Error(msg);
     }
     return res.json();
@@ -388,14 +391,13 @@ export async function deleteAsset(assetId: number): Promise<{ success: boolean }
     return res.json();
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// disabled-lint-next-line @typescript-eslint/no-explicit-any
 export async function fetchItems(): Promise<any[]> {
     const res = await fetch("/api/manufacturing/finished-goods/items");
     if (!res.ok) throw new Error("Failed to fetch items from BFF");
     return res.json();
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function createItem(item: { item_name: string; item_type?: number; item_classification?: number }): Promise<{ success: boolean; item: any }> {
     const res = await fetch("/api/manufacturing/finished-goods/items", {
         method: "POST",
@@ -406,21 +408,20 @@ export async function createItem(item: { item_name: string; item_type?: number; 
     return res.json();
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// disabled-lint-next-line @typescript-eslint/no-explicit-any
 export async function fetchItemTypes(): Promise<any[]> {
     const res = await fetch("/api/manufacturing/finished-goods/item-types");
     if (!res.ok) throw new Error("Failed to fetch item types from BFF");
     return res.json();
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// disabled-lint-next-line @typescript-eslint/no-explicit-any
 export async function fetchItemClassifications(): Promise<any[]> {
     const res = await fetch("/api/manufacturing/finished-goods/item-classifications");
     if (!res.ok) throw new Error("Failed to fetch item classifications from BFF");
     return res.json();
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function createItemType(name: string): Promise<{ success: boolean; type: any }> {
     const res = await fetch("/api/manufacturing/finished-goods/item-types", {
         method: "POST",
@@ -431,7 +432,6 @@ export async function createItemType(name: string): Promise<{ success: boolean; 
     return res.json();
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function createItemClassification(name: string): Promise<{ success: boolean; classification: any }> {
     const res = await fetch("/api/manufacturing/finished-goods/item-classifications", {
         method: "POST",

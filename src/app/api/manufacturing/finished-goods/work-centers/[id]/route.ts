@@ -28,12 +28,12 @@ export async function PATCH(
             headers,
             body: JSON.stringify(payload)
         });
-        
+
         if (!res.ok) {
             const errText = await res.text();
             throw new Error(`Directus failed to update work center: ${res.status} - ${errText}`);
         }
-        
+
         const json = await res.json();
         const updatedWc = json.data;
         if (updatedWc && updatedWc.is_active !== undefined) updatedWc.is_active = Boolean(Number(updatedWc.is_active));
@@ -41,5 +41,33 @@ export async function PATCH(
     } catch (e) {
         console.error("API Error updating work center:", e);
         return NextResponse.json({ error: (e as { message?: string }).message || "Failed to update work center" }, { status: 500 });
+    }
+}
+
+export async function DELETE(
+    request: Request,
+    { params }: { params: Promise<{ id: string }> }
+) {
+    try {
+        const { id } = await params;
+        const workCenterId = parseInt(id);
+        if (isNaN(workCenterId)) {
+            return NextResponse.json({ error: "Invalid work center ID" }, { status: 400 });
+        }
+
+        const res = await fetch(`${DIRECTUS_URL}/items/manufacturing_work_centers/${workCenterId}`, {
+            method: "DELETE",
+            headers
+        });
+
+        if (!res.ok) {
+            const errText = await res.text();
+            throw new Error(`Directus failed to delete work center: ${res.status} - ${errText}`);
+        }
+
+        return NextResponse.json({ success: true });
+    } catch (e) {
+        console.error("API Error deleting work center:", e);
+        return NextResponse.json({ error: (e as { message?: string }).message || "Failed to delete work center" }, { status: 500 });
     }
 }

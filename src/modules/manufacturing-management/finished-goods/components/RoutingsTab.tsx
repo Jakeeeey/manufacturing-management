@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { RoutingStep, ProductOverhead, OperationType, OverheadType } from "../types";
 
@@ -36,7 +36,7 @@ export const RoutingsTab: React.FC<RoutingsTabProps> = ({
     operationTypes,
     setOperationTypes
 }) => {
-
+    const [focusedRowId, setFocusedRowId] = useState<string | null>(null);
 
     const handleCreateOperationType = async (name: string, rowId: string) => {
         try {
@@ -177,44 +177,96 @@ export const RoutingsTab: React.FC<RoutingsTabProps> = ({
                                                     className="rt-seq-input w-full bg-transparent border-0 focus:ring-1 focus:ring-primary focus:bg-background focus:outline-hidden py-1 px-2 text-sm text-center text-foreground rounded-sm"
                                                 />
                                             </td>
-                                            <td className="p-1 border-r border-muted/20 min-w-[150px] align-middle">
-                                                <input 
-                                                    type="text" 
-                                                    value={step.name} 
-                                                    data-index={index}
-                                                    onChange={e => {
-                                                        const val = e.target.value;
-                                                        handleRoutingChange(step.id, "name", val);
-                                                        const matched = operationTypes.find(o => o.operation_name.toLowerCase() === val.trim().toLowerCase());
-                                                        if (matched) {
-                                                            handleRoutingChange(step.id, "operationId", matched.id);
-                                                            handleRoutingChange(step.id, "name", matched.operation_name);
-                                                        } else {
-                                                            handleRoutingChange(step.id, "operationId", undefined);
-                                                        }
-                                                    }}
-                                                    onBlur={async (e) => {
-                                                        const val = e.target.value.trim();
-                                                        if (!val) return;
-                                                        const matched = operationTypes.find(o => o.operation_name.toLowerCase() === val.toLowerCase());
-                                                        if (!matched) {
-                                                            await handleCreateOperationType(val, step.id);
-                                                        }
-                                                    }}
-                                                    list="routing-steps-datalist"
-                                                    onKeyDown={e => {
-                                                        if (e.key === "ArrowDown") {
-                                                            e.preventDefault();
-                                                            const el = document.querySelector(`.rt-name-input[data-index="${index + 1}"]`) as HTMLInputElement;
-                                                            if (el) el.focus();
-                                                        } else if (e.key === "ArrowUp") {
-                                                            e.preventDefault();
-                                                            const el = document.querySelector(`.rt-name-input[data-index="${index - 1}"]`) as HTMLInputElement;
-                                                            if (el) el.focus();
-                                                        }
-                                                    }}
-                                                    className="rt-name-input w-full bg-transparent border-0 focus:ring-1 focus:ring-primary focus:bg-background focus:outline-hidden py-1 px-2.5 text-sm font-medium text-foreground rounded-sm"
-                                                />
+                                            <td className="p-1 border-r border-muted/20 min-w-[150px] align-middle relative">
+                                                <div className="relative w-full">
+                                                    <input 
+                                                        type="text" 
+                                                        value={step.name} 
+                                                        data-index={index}
+                                                        onFocus={() => setFocusedRowId(step.id)}
+                                                        onChange={e => {
+                                                            const val = e.target.value;
+                                                            handleRoutingChange(step.id, "name", val);
+                                                            const matched = operationTypes.find(o => o.operation_name.toLowerCase() === val.trim().toLowerCase());
+                                                            if (matched) {
+                                                                handleRoutingChange(step.id, "operationId", matched.id);
+                                                                handleRoutingChange(step.id, "name", matched.operation_name);
+                                                            } else {
+                                                                handleRoutingChange(step.id, "operationId", undefined);
+                                                            }
+                                                        }}
+                                                        onBlur={async (e) => {
+                                                            const val = e.target.value.trim();
+                                                            // Close dropdown after a brief delay
+                                                            setTimeout(() => setFocusedRowId(null), 150);
+                                                            
+                                                            if (!val) return;
+                                                            const matched = operationTypes.find(o => o.operation_name.toLowerCase() === val.toLowerCase());
+                                                            if (!matched) {
+                                                                await handleCreateOperationType(val, step.id);
+                                                            }
+                                                        }}
+                                                        onKeyDown={e => {
+                                                            if (e.key === "ArrowDown") {
+                                                                e.preventDefault();
+                                                                const el = document.querySelector(`.rt-name-input[data-index="${index + 1}"]`) as HTMLInputElement;
+                                                                if (el) el.focus();
+                                                            } else if (e.key === "ArrowUp") {
+                                                                e.preventDefault();
+                                                                const el = document.querySelector(`.rt-name-input[data-index="${index - 1}"]`) as HTMLInputElement;
+                                                                if (el) el.focus();
+                                                            } else if (e.key === "Escape") {
+                                                                setFocusedRowId(null);
+                                                            }
+                                                        }}
+                                                        className="rt-name-input w-full bg-transparent border-0 focus:ring-1 focus:ring-primary focus:bg-background focus:outline-hidden py-1 px-2.5 text-sm font-medium text-foreground rounded-sm"
+                                                    />
+                                                    {focusedRowId === step.id && (
+                                                        <div className="absolute left-0 right-0 top-full mt-1 bg-card border rounded-lg shadow-xl max-h-48 overflow-y-auto z-50 py-1">
+                                                            {operationTypes
+                                                                .filter(op => (op.operation_name || "").toLowerCase().includes((step.name || "").toLowerCase()))
+                                                                .map(op => (
+                                                                    <button
+                                                                        key={op.id}
+                                                                        type="button"
+                                                                        onMouseDown={(e) => {
+                                                                            // Prevent input blur before click event registers
+                                                                            e.preventDefault();
+                                                                            handleRoutingChange(step.id, "operationId", op.id);
+                                                                            handleRoutingChange(step.id, "name", op.operation_name);
+                                                                            setFocusedRowId(null);
+                                                                        }}
+                                                                        className="w-full text-left px-3 py-1.5 text-xs hover:bg-primary/20 text-foreground transition-colors font-medium cursor-pointer"
+                                                                    >
+                                                                        {op.operation_name}
+                                                                    </button>
+                                                                ))}
+                                                            
+                                                            {/* Offer to create operation type on the fly */}
+                                                            {step.name && step.name.trim() !== "" && 
+                                                             !operationTypes.some(op => (op.operation_name || "").toLowerCase() === step.name.trim().toLowerCase()) && (
+                                                                <button
+                                                                    type="button"
+                                                                    onMouseDown={async (e) => {
+                                                                        e.preventDefault();
+                                                                        await handleCreateOperationType(step.name.trim(), step.id);
+                                                                        setFocusedRowId(null);
+                                                                    }}
+                                                                    className="w-full text-left px-3 py-1.5 text-xs hover:bg-primary/20 text-primary font-bold transition-colors border-t bg-primary/5 cursor-pointer"
+                                                                >
+                                                                    + Create &quot;{step.name}&quot; as operation
+                                                                </button>
+                                                            )}
+                                                            
+                                                            {/* If filtered list is empty and input is empty */}
+                                                            {operationTypes.filter(op => (op.operation_name || "").toLowerCase().includes((step.name || "").toLowerCase())).length === 0 && !step.name && (
+                                                                <div className="px-3 py-2 text-xs text-muted-foreground text-center">
+                                                                    No operations found
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
                                             </td>
                                             <td className="p-1 border-r border-muted/20 w-36 align-middle">
                                                 <div className="relative flex items-center px-2">

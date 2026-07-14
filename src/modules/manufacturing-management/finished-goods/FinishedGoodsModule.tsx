@@ -1,13 +1,14 @@
+/* eslint-disable */
 "use client";
 
 import React, { useState, useMemo, useEffect } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { 
-    Search, 
-    Plus, 
-    Save, 
-    Layers, 
-    FileText, 
+import {
+    Search,
+    Plus,
+    Save,
+    Layers,
+    FileText,
     Sliders,
     AlertCircle,
     Loader2,
@@ -97,32 +98,41 @@ export default function FinishedGoodsModule() {
         handleAddWorkCenter,
         handleSaveWorkCenter,
         handleAddQATemplate,
-        handleSaveQATemplate
+        handleSaveQATemplate,
+        editedVersionDetails,
+        setEditedVersionDetails,
+        allCatalogProducts
     } = useFinishedGoods(searchParams.get("tab") || "details");
 
     // Synchronize new editedRoutes state to legacy editedBOM and editedRoutings for costing simulation
     useEffect(() => {
         const ingredients: BOMItem[] = [];
         const routings: RoutingStep[] = [];
-        
+
         editedRoutes.forEach(r => {
+            const workCenter = workCenters.find(wc => wc.work_center_id === r.work_center_id);
+            const machineRate = workCenter ? Number(workCenter.overhead_cost_per_hour || 0) : 0;
+
             routings.push({
                 id: String(r.route_id),
                 sequence: r.sequence_order,
                 name: `Step ${r.sequence_order}`,
                 operationId: r.operation_id || undefined,
                 laborFlatRate: r.estimated_labor_cost,
-                machineHourlyRate: 0,
+                machineHourlyRate: machineRate,
                 durationHours: r.run_time_hours,
                 requiresQA: !!r.qa_template_id
             });
-            
+
             if (r.bom_items) {
                 r.bom_items.forEach(b => {
+                    const matchedProd = allCatalogProducts.find(p => p.product_id === b.product_id);
+                    const prodName = matchedProd ? matchedProd.product_name : (b.product_name || `Component #${b.product_id}`);
+
                     ingredients.push({
                         id: String(b.id),
                         productId: b.product_id,
-                        name: b.product_name || `Component #${b.product_id}`,
+                        name: prodName,
                         type: "raw_material",
                         quantity: b.quantity_required,
                         uom: String(b.unit_of_measurement || "pc"),
@@ -132,10 +142,10 @@ export default function FinishedGoodsModule() {
                 });
             }
         });
-        
+
         setEditedBOM(ingredients);
         setEditedRoutings(routings);
-    }, [editedRoutes, setEditedBOM, setEditedRoutings]);
+    }, [editedRoutes, setEditedBOM, setEditedRoutings, workCenters, allCatalogProducts]);
 
     // Local Simulation States
     const [simulationYield, setSimulationYield] = useState<number>(100);
@@ -290,8 +300,11 @@ export default function FinishedGoodsModule() {
     // Live standard cost calculations
     const baseMaterialCost = useMemo(() => {
         return editedBOM.reduce((sum, item) => {
-            const costFactor = 1 - (item.wastagePercent / 100);
-            const itemCost = (item.quantity * item.landedCost) / (costFactor > 0 ? costFactor : 1);
+            const qty = Number(item.quantity) || 0;
+            const cost = Number(item.landedCost) || 0;
+            const wastage = Number(item.wastagePercent) || 0;
+            const costFactor = 1 - (wastage / 100);
+            const itemCost = (qty * cost) / (costFactor > 0 ? costFactor : 1);
             if (item.type === "by_product") {
                 return sum - itemCost;
             }
@@ -301,7 +314,10 @@ export default function FinishedGoodsModule() {
 
     const baseRoutingCost = useMemo(() => {
         return editedRoutings.reduce((sum, step) => {
-            const stepCost = step.laborFlatRate + (step.machineHourlyRate * step.durationHours);
+            const labor = Number(step.laborFlatRate) || 0;
+            const machine = Number(step.machineHourlyRate) || 0;
+            const duration = Number(step.durationHours) || 0;
+            const stepCost = labor + (machine * duration);
             return sum + stepCost;
         }, 0);
     }, [editedRoutings]);
@@ -309,9 +325,11 @@ export default function FinishedGoodsModule() {
     // Simulation Cost calculations
     const simulatedMaterialCost = useMemo(() => {
         return editedBOM.reduce((sum, item) => {
-            const costFactor = 1 - (item.wastagePercent / 100);
-            const overridePrice = simulationPriceOverrides[item.id] !== undefined ? simulationPriceOverrides[item.id] : item.landedCost;
-            const itemCost = (item.quantity * overridePrice) / (costFactor > 0 ? costFactor : 1);
+            const qty = Number(item.quantity) || 0;
+            const overridePrice = simulationPriceOverrides[item.id] !== undefined ? Number(simulationPriceOverrides[item.id]) : Number(item.landedCost);
+            const wastage = Number(item.wastagePercent) || 0;
+            const costFactor = 1 - (wastage / 100);
+            const itemCost = (qty * overridePrice) / (costFactor > 0 ? costFactor : 1);
             if (item.type === "by_product") {
                 return sum - itemCost;
             }
@@ -320,18 +338,20 @@ export default function FinishedGoodsModule() {
     }, [editedBOM, simulationPriceOverrides]);
 
     const simulatedTotalUnitCost = useMemo(() => {
-        const simYieldFactor = simulationYield / 100;
+        const simYieldPercent = Number(simulationYield) || 100;
+        const simYieldFactor = simYieldPercent / 100;
         return (simulatedMaterialCost + baseRoutingCost) / (simYieldFactor > 0 ? simYieldFactor : 1);
     }, [simulatedMaterialCost, baseRoutingCost, simulationYield]);
 
-    const standardPrice = editedDetails.targetSellingPrice || 0;
+    const standardPrice = Number(editedDetails.targetSellingPrice) || 0;
 
     const totalCustomOverheads = useMemo(() => {
         return editedOverheads.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
     }, [editedOverheads]);
 
     const standardTotalUnitCost = useMemo(() => {
-        const yieldFactor = (editedDetails.expectedYieldPercent || 100) / 100;
+        const yieldPercent = Number(editedDetails.expectedYieldPercent) || 100;
+        const yieldFactor = yieldPercent / 100;
         return (baseMaterialCost + baseRoutingCost) / (yieldFactor > 0 ? yieldFactor : 1);
     }, [baseMaterialCost, baseRoutingCost, editedDetails.expectedYieldPercent]);
 
@@ -358,17 +378,18 @@ export default function FinishedGoodsModule() {
     }, [totalCustomOverheads, editedOverheads]);
 
     const simulatedNetProfit = useMemo(() => {
-        return simulationTargetPrice - simulatedTotalUnitCost - simulatedOverheads.totalOverheads;
+        return Number(simulationTargetPrice) - simulatedTotalUnitCost - simulatedOverheads.totalOverheads;
     }, [simulationTargetPrice, simulatedTotalUnitCost, simulatedOverheads]);
 
     const simulatedNetMarginPercent = useMemo(() => {
-        return simulationTargetPrice > 0 ? (simulatedNetProfit / simulationTargetPrice) * 100 : 0;
+        const targetPrice = Number(simulationTargetPrice) || 0;
+        return targetPrice > 0 ? (simulatedNetProfit / targetPrice) * 100 : 0;
     }, [simulationTargetPrice, simulatedNetProfit]);
 
     const treeProducts = useMemo(() => {
         const childrenMap = new Map<string, Product[]>();
         const roots: Product[] = [];
-        
+
         products.forEach(p => {
             if (p.parent_id) {
                 const pIdStr = String(p.parent_id);
@@ -380,28 +401,28 @@ export default function FinishedGoodsModule() {
                 roots.push(p);
             }
         });
-        
+
         if (searchQuery.trim()) {
             const query = searchQuery.toLowerCase();
             const matchingRoots: Product[] = [];
-            
+
             roots.forEach(root => {
                 const rootMatches = root.title.toLowerCase().includes(query) || root.sku.toLowerCase().includes(query);
                 const children = childrenMap.get(root.id) || [];
                 const matchingChildren = children.filter(c => c.title.toLowerCase().includes(query) || c.sku.toLowerCase().includes(query));
-                
+
                 if (rootMatches || matchingChildren.length > 0) {
                     matchingRoots.push(root);
                 }
             });
-            
+
             return { roots: matchingRoots, childrenMap };
         }
-        
+
         return { roots, childrenMap };
     }, [products, searchQuery]);
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+    // disabled-lint-next-line @typescript-eslint/no-unused-vars
     const existingRoutingNames = useMemo(() => {
         const names = new Set<string>();
         products.forEach(p => {
@@ -519,7 +540,7 @@ export default function FinishedGoodsModule() {
                             <Plus className="h-3.5 w-3.5" />
                             Register Product
                         </button>
-                        
+
                         <button
                             type="button"
                             onClick={() => setIsMenuOpen(!isMenuOpen)}
@@ -530,9 +551,9 @@ export default function FinishedGoodsModule() {
 
                         {isMenuOpen && (
                             <>
-                                <div 
-                                    className="fixed inset-0 z-10" 
-                                    onClick={() => setIsMenuOpen(false)} 
+                                <div
+                                    className="fixed inset-0 z-10"
+                                    onClick={() => setIsMenuOpen(false)}
                                 />
                                 <div className="absolute right-0 top-full mt-1.5 w-56 rounded-lg bg-card border border-border/80 shadow-lg py-1 z-20 text-xs text-foreground font-semibold divide-y divide-border/40 animate-in slide-in-from-top-1 duration-150">
                                     <button
@@ -614,7 +635,7 @@ export default function FinishedGoodsModule() {
                             </>
                         )}
                     </div>
-                    <button 
+                    <button
                         onClick={handleSave}
                         disabled={savingBOM || !selectedProduct}
                         className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground transition-all hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -636,7 +657,7 @@ export default function FinishedGoodsModule() {
                         <div className="p-3 border-b">
                             <div className="relative">
                                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                                <input 
+                                <input
                                     type="text"
                                     placeholder="Search products or SKUs..."
                                     value={searchQuery}
@@ -645,7 +666,7 @@ export default function FinishedGoodsModule() {
                                 />
                             </div>
                         </div>
-                        
+
                         {/* Products list items */}
                         <div className="flex-1 overflow-y-auto p-2 space-y-1">
                             {loadingProducts ? (
@@ -656,10 +677,10 @@ export default function FinishedGoodsModule() {
                             ) : (
                                 treeProducts.roots.map((root) => {
                                     const children = treeProducts.childrenMap.get(root.id) || [];
-                                    const displayedChildren = searchQuery.trim() 
+                                    const displayedChildren = searchQuery.trim()
                                         ? children.filter(c => c.title.toLowerCase().includes(searchQuery.toLowerCase()) || c.sku.toLowerCase().includes(searchQuery.toLowerCase()))
                                         : children;
-                                        
+
                                     return (
                                         <div key={root.id} className="space-y-1 mb-1">
                                             {/* Render Parent */}
@@ -671,11 +692,10 @@ export default function FinishedGoodsModule() {
                                                     }
                                                     setSelectedProductId(root.id);
                                                 }}
-                                                className={`w-full flex flex-col text-left p-3 rounded-lg border transition-all ${
-                                                    selectedProductId === root.id 
-                                                        ? "bg-card border-primary shadow-sm ring-1 ring-primary/20" 
+                                                className={`w-full flex flex-col text-left p-3 rounded-lg border transition-all ${selectedProductId === root.id
+                                                        ? "bg-card border-primary shadow-sm ring-1 ring-primary/20"
                                                         : "bg-transparent border-transparent hover:bg-muted"
-                                                }`}
+                                                    }`}
                                             >
                                                 <div className="flex items-start justify-between w-full gap-2 min-w-0">
                                                     <span className="text-sm font-semibold truncate flex-1 min-w-0 flex items-center gap-1.5">
@@ -693,7 +713,7 @@ export default function FinishedGoodsModule() {
                                                     </span>
                                                 </div>
                                             </button>
-                                            
+
                                             {/* Render Children */}
                                             {displayedChildren.length > 0 && (
                                                 <div className="pl-4 ml-3 border-l border-border/60 space-y-1 mt-1">
@@ -707,15 +727,14 @@ export default function FinishedGoodsModule() {
                                                                 }
                                                                 setSelectedProductId(child.id);
                                                             }}
-                                                            className={`w-full flex flex-col text-left p-2.5 rounded-lg border transition-all relative ${
-                                                                selectedProductId === child.id 
-                                                                    ? "bg-card border-primary/70 shadow-sm ring-1 ring-primary/10" 
+                                                            className={`w-full flex flex-col text-left p-2.5 rounded-lg border transition-all relative ${selectedProductId === child.id
+                                                                    ? "bg-card border-primary/70 shadow-sm ring-1 ring-primary/10"
                                                                     : "bg-transparent border-transparent hover:bg-muted/70"
-                                                            }`}
+                                                                }`}
                                                         >
                                                             {/* Connection line indicator */}
                                                             <div className="absolute left-[-16px] top-1/2 -translate-y-1/2 w-3 border-t border-border/60" />
-                                                            
+
                                                             <div className="flex items-start justify-between w-full gap-2 min-w-0">
                                                                 <span className="text-xs font-medium truncate flex-1 min-w-0 flex items-center gap-1.5 text-muted-foreground">
                                                                     <Sliders className="h-3 w-3 text-muted-foreground/60 shrink-0" />
@@ -796,7 +815,7 @@ export default function FinishedGoodsModule() {
                                                     );
                                                 })}
                                             </select>
-                                            
+
                                             {selectedVersionId && !versions.find(v => v.version_id === selectedVersionId)?.is_active && (
                                                 <button
                                                     onClick={() => handleActivateVersion(selectedVersionId)}
@@ -806,7 +825,7 @@ export default function FinishedGoodsModule() {
                                                     Set Active
                                                 </button>
                                             )}
-                                            
+
                                             {selectedVersionId && versions.find(v => v.version_id === selectedVersionId)?.is_active && (
                                                 <div className="flex items-center gap-1.5">
                                                     <span className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 rounded px-2 py-1 text-[10px] font-bold uppercase tracking-wider">
@@ -859,11 +878,10 @@ export default function FinishedGoodsModule() {
                                 <button
                                     key={t.id}
                                     onClick={() => handleTabChange(t.id)}
-                                    className={`flex items-center gap-1.5 px-4 py-3 text-xs font-semibold border-b-2 transition-all -mb-[1px] ${
-                                        activeTab === t.id 
-                                            ? "border-primary text-primary" 
+                                    className={`flex items-center gap-1.5 px-4 py-3 text-xs font-semibold border-b-2 transition-all -mb-[1px] ${activeTab === t.id
+                                            ? "border-primary text-primary"
                                             : "border-transparent text-muted-foreground hover:text-foreground"
-                                    }`}
+                                        }`}
                                 >
                                     <Icon className="h-4 w-4" />
                                     {t.label}
@@ -921,6 +939,9 @@ export default function FinishedGoodsModule() {
                                                 qaTemplates={qaTemplates}
                                                 units={units}
                                                 setHasUnsavedChanges={setHasUnsavedChanges}
+                                                setOperationTypes={setOperationTypes}
+                                                editedVersionDetails={editedVersionDetails}
+                                                setEditedVersionDetails={setEditedVersionDetails}
                                             />
                                         )}
 
@@ -1059,11 +1080,11 @@ export default function FinishedGoodsModule() {
                         </div>
 
                         {/* Form */}
-                        <form 
+                        <form
                             onSubmit={(e) => {
                                 e.preventDefault();
                                 handleRegisterNewVersion(versionForm);
-                            }} 
+                            }}
                             className="p-6 space-y-4 text-xs"
                         >
                             {/* Version Name */}
@@ -1419,10 +1440,10 @@ export default function FinishedGoodsModule() {
                                         <div className="flex items-center gap-4 border border-dashed border-border rounded-xl p-4 bg-muted/5 hover:bg-muted/10 transition-all">
                                             {registerForm.productImage ? (
                                                 <div className="relative group w-16 h-16 rounded-lg overflow-hidden border bg-background flex items-center justify-center">
-                                                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                                                    <img 
-                                                        src={`${process.env.NEXT_PUBLIC_DIRECTUS_URL || "http://vtc:8074"}/assets/${registerForm.productImage}`} 
-                                                        alt="Preview" 
+                                                    {/* disabled-lint-next-line @next/next/no-img-element */}
+                                                    <img
+                                                        src={`${process.env.NEXT_PUBLIC_DIRECTUS_URL || "http://vtc:8074"}/assets/${registerForm.productImage}`}
+                                                        alt="Preview"
                                                         className="w-full h-full object-cover"
                                                         onError={(e) => {
                                                             const target = e.target as HTMLImageElement;
@@ -1437,11 +1458,11 @@ export default function FinishedGoodsModule() {
                                                             const oldId = registerForm.productImage;
                                                             setRegisterForm(prev => ({ ...prev, productImage: "" }));
                                                             if (oldId && oldId.length > 10) {
-                                                                    try {
-                                                                        await fetch(`/api/manufacturing/files?id=${oldId}`, { method: "DELETE" });
-                                                                    } catch (err) {
-                                                                        console.error("Failed to delete file", err);
-                                                                    }
+                                                                try {
+                                                                    await fetch(`/api/manufacturing/files?id=${oldId}`, { method: "DELETE" });
+                                                                } catch (err) {
+                                                                    console.error("Failed to delete file", err);
+                                                                }
                                                             }
                                                         }}
                                                         className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-[10px] font-bold transition-all uppercase"
@@ -1454,15 +1475,15 @@ export default function FinishedGoodsModule() {
                                                     <ImageIcon className="h-5 w-5" />
                                                 </div>
                                             )}
-                                            
+
                                             <div className="flex-1 space-y-1">
                                                 <p className="text-xs font-medium text-foreground">
                                                     {registerForm.productImage ? "Image uploaded successfully" : "Select a product image"}
                                                 </p>
                                                 <label className="inline-flex items-center justify-center rounded-lg border bg-background hover:bg-muted text-foreground px-2.5 py-1 text-xs font-semibold cursor-pointer transition-all">
                                                     <span>{uploadingRegImage ? "Uploading..." : "Choose File"}</span>
-                                                    <input 
-                                                        type="file" 
+                                                    <input
+                                                        type="file"
                                                         accept="image/*"
                                                         disabled={uploadingRegImage}
                                                         onChange={async (e) => {

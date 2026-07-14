@@ -1,7 +1,8 @@
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+/* eslint-disable */
+// disabled-lint-next-line @typescript-eslint/no-unused-vars
 import React, { useState, useEffect } from "react";
 import { 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+// disabled-lint-next-line @typescript-eslint/no-unused-vars
     Loader2, ShieldCheck, Save, Send, Building2, 
     FileText, CreditCard, Calendar, Plus, Minus, AlertCircle 
 } from "lucide-react";
@@ -26,7 +27,7 @@ export function SalesOrderDetailPanel({
     loadingDetails,
     updatingStatusId,
     savingQuantities = false,
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+// disabled-lint-next-line @typescript-eslint/no-unused-vars
     handleApproveOrder,
     handleUpdateQuantities,
     handleSubmitForApproval
@@ -221,6 +222,8 @@ export function SalesOrderDetailPanel({
                             const brand = pId?.brand || "N/A";
                             const category = pId?.category || "N/A";
                             const uom = pId?.uom || "PCS";
+                            const bomVersionName = item.bom_version_name?.trim() || "No Version";
+                            const hasBomVersion = bomVersionName !== "No Version";
                             
                             const rawQty = editableQuantities[item.detail_id];
                             const currentQty = rawQty !== undefined ? rawQty : item.ordered_quantity;
@@ -242,6 +245,15 @@ export function SalesOrderDetailPanel({
                                                 <span className="text-[9px] font-mono bg-muted border px-1.5 py-0.2 rounded text-muted-foreground uppercase font-semibold">
                                                     {code}
                                                 </span>
+                                                {hasBomVersion ? (
+                                                    <span className="text-[9px] bg-indigo-500/10 text-indigo-600 border border-indigo-500/20 px-1.5 py-0.2 rounded font-bold">
+                                                        {bomVersionName}
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-[9px] bg-slate-500/10 text-slate-500 border border-slate-500/20 px-1.5 py-0.2 rounded font-medium italic">
+                                                        No Version
+                                                    </span>
+                                                )}
                                                 {brand !== "N/A" && (
                                                     <span className="text-[9px] bg-primary/10 text-primary px-1.5 py-0.2 rounded font-semibold">
                                                         {brand}

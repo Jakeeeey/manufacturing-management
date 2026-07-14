@@ -139,8 +139,8 @@ export default function MarginSimulatorModule() {
     const filteredProducts = useMemo(() => {
         if (!searchTerm.trim()) return products;
         const term = searchTerm.toLowerCase();
-        return products.filter(p => 
-            p.title.toLowerCase().includes(term) || 
+        return products.filter(p =>
+            p.title.toLowerCase().includes(term) ||
             p.sku.toLowerCase().includes(term)
         );
     }, [products, searchTerm]);
@@ -164,10 +164,10 @@ export default function MarginSimulatorModule() {
                         has_versions: p.has_versions,
                         unitOfMeasurementCount: p.unit_of_measurement_count
                     }));
-                    
+
                     // Prepend DB products to the mock products so DB items show up first
                     setProducts([...mappedProducts, ...SIMULATOR_PRODUCTS]);
-                    
+
                     // Autoselect the first product with a BOM if available, otherwise just the first product
                     const firstWithVersions = mappedProducts.find(p => p.has_versions);
                     if (firstWithVersions) {
@@ -226,16 +226,16 @@ export default function MarginSimulatorModule() {
                 setSimYield(savedState.simYield !== undefined ? savedState.simYield : standardYield);
                 setForexMultiplier(savedState.forexMultiplier !== undefined ? savedState.forexMultiplier : 1.0);
                 setTargetPrice(savedState.targetPrice !== undefined ? savedState.targetPrice : standardPrice);
-                
+
                 // Merge price overrides
                 const mergedPrices: Record<string, number> = {};
                 bomItems.forEach(item => {
-                    mergedPrices[item.id] = savedState.priceOverrides?.[item.id] !== undefined 
-                        ? savedState.priceOverrides[item.id] 
+                    mergedPrices[item.id] = savedState.priceOverrides?.[item.id] !== undefined
+                        ? savedState.priceOverrides[item.id]
                         : item.landedCost;
                 });
                 setPriceOverrides(mergedPrices);
-                
+
                 // Merge imported overrides
                 const mergedImported: Record<string, boolean> = {};
                 bomItems.forEach(item => {
@@ -248,7 +248,7 @@ export default function MarginSimulatorModule() {
                 setSimYield(standardYield);
                 setTargetPrice(standardPrice);
                 setForexMultiplier(1.0);
-                
+
                 const initialPrices: Record<string, number> = {};
                 const initialImported: Record<string, boolean> = {};
                 bomItems.forEach(item => {
@@ -295,35 +295,23 @@ export default function MarginSimulatorModule() {
                 const activeVersion = versions[0];
                 const details = await fetchBOMDetails(Number(currentProd!.id), activeVersion.version_id);
                 if (details) {
-                    const ingredients = details.routes?.flatMap((r: RouteStep) => r.bom_items || []) || [];
-                    const mappedBom: BOMItem[] = ingredients.map((ing: RouteBOMItem) => ({
+                    const ingredients = details.routes?.flatMap(r => r.bom_items || []) || [];
+                    const mappedBom: BOMItem[] = ingredients.map(ing => ({
                         id: String(ing.id),
                         productId: ing.product_id,
-                        name: ing.product_name || "Unknown",
-                        type: "raw_material",
+                        name: ing.product_name || `Component #${ing.product_id}`,
+                        type: "raw_material" as const,
                         quantity: ing.quantity_required,
-                        uom: String(ing.unit_of_measurement || ""),
-                        uomId: ing.uom_id || undefined,
-                        wastagePercent: ing.wastage_factor_percentage,
+                        uom: String(ing.unit_of_measurement || "pc"),
+                        uomId: typeof ing.unit_of_measurement === "number" ? ing.unit_of_measurement : 0,
+                        wastagePercent: ing.wastage_factor_percentage || 0,
                         landedCost: ing.cost_per_unit || 0,
-                        foreignSourced: ing.is_foreign || false,
-                        isForeign: ing.is_foreign
+                        foreignSourced: false,
+                        isForeign: ing.is_foreign || false
                     }));
-
-                    const mappedRoutings = details.routes?.map((r: RouteStep) => ({
-                        id: String(r.route_id),
-                        sequence: r.sequence_order,
-                        name: `Step ${r.sequence_order}`,
-                        operationId: r.operation_id || undefined,
-                        laborFlatRate: r.estimated_labor_cost,
-                        machineHourlyRate: 0,
-                        durationHours: r.run_time_hours,
-                        requiresQA: !!r.qa_template_id
-                    })) || [];
-
-                    const calculatedRoutingCost = mappedRoutings.reduce((sum, r) => {
-                        return sum + (Number(r.laborFlatRate || 0) + (Number(r.machineHourlyRate || 0) * Number(r.durationHours || 0)));
-                    }, 0);
+                    const calculatedRoutingCost = details.routes?.reduce((sum, r) => {
+                        return sum + (Number(r.estimated_labor_cost || 0) + (Number(r.work_center?.overhead_cost_per_hour || 0) * Number(r.setup_time_hours + r.run_time_hours)));
+                    }, 0) || 0;
 
                     // Update the product's details in the products list state
                     setProducts(prev => prev.map(p => p.id === currentProd!.id ? {
@@ -334,8 +322,8 @@ export default function MarginSimulatorModule() {
                         bomId: details.version_id,
                         versionId: details.version_id,
                         versionName: details.version_name,
-                        routings: mappedRoutings,
-                        overheads: []
+                        routings: details.routes || [],
+                        overheads: (details as unknown as { overheads?: unknown[] }).overheads || []
                     } : p));
 
                     applySandboxState(
@@ -378,8 +366,8 @@ export default function MarginSimulatorModule() {
 
     const toggleImportedStatus = (itemId: string) => {
         setImportedOverrides(prev => {
-            const currentVal = prev[itemId] !== undefined 
-                ? prev[itemId] 
+            const currentVal = prev[itemId] !== undefined
+                ? prev[itemId]
                 : !!(product.bom.find(item => item.id === itemId)?.foreignSourced || product.bom.find(item => item.id === itemId)?.isForeign);
             const newVal = !currentVal;
             return { ...prev, [itemId]: newVal };
@@ -648,15 +636,15 @@ export default function MarginSimulatorModule() {
         return product.bom.reduce((sum, item) => {
             const factor = 1 - (item.wastagePercent / 100);
             let unitCost = priceOverrides[item.id] !== undefined ? priceOverrides[item.id] : item.landedCost;
-            
+
             // Apply Forex rate fluctuation to foreign-sourced materials
-            const isItemForeign = importedOverrides[item.id] !== undefined 
-                ? importedOverrides[item.id] 
+            const isItemForeign = importedOverrides[item.id] !== undefined
+                ? importedOverrides[item.id]
                 : (item.foreignSourced || item.isForeign || false);
             if (isItemForeign) {
                 unitCost = unitCost * forexMultiplier;
             }
-            
+
             return sum + ((item.quantity * unitCost) / (factor > 0 ? factor : 1));
         }, 0);
     }, [product, priceOverrides, forexMultiplier, importedOverrides]);
@@ -690,392 +678,386 @@ export default function MarginSimulatorModule() {
     return (
         <>
             <div className="flex flex-col gap-6 max-w-6xl mx-auto p-4 sm:p-6 bg-background rounded-xl border">
-            {/* Header */}
-            <div className="flex items-center justify-between border-b pb-4">
-                <div>
-                    <h1 className="text-xl font-bold flex items-center gap-2">
-                        <Sliders className="h-5.5 w-5.5 text-primary" />
-                        Cost & Margin What-If Simulator
-                    </h1>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                        Interactive sandbox to stress-test margins against yield drops, forex spikes, and individual raw material price surges.
-                    </p>
+                {/* Header */}
+                <div className="flex items-center justify-between border-b pb-4">
+                    <div>
+                        <h1 className="text-xl font-bold flex items-center gap-2">
+                            <Sliders className="h-5.5 w-5.5 text-primary" />
+                            Cost & Margin What-If Simulator
+                        </h1>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                            Interactive sandbox to stress-test margins against yield drops, forex spikes, and individual raw material price surges.
+                        </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        {!product.id.startsWith("prod-") && product.bomId && (
+                            <>
+                                <button
+                                    type="button"
+                                    onClick={handleSaveCurrentVersion}
+                                    disabled={savingCurrent}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-primary/30 hover:bg-primary/5 text-xs font-bold text-primary shadow-xs transition-all cursor-pointer"
+                                >
+                                    {savingCurrent && <RefreshCw className="h-3.5 w-3.5 animate-spin" />}
+                                    Save to Current Version
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setNewVersionName(`${product.versionName || "1.0"}_simulated`);
+                                        setIsPromoOpen(true);
+                                    }}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary hover:bg-primary/95 text-xs font-bold text-primary-foreground shadow-xs transition-all cursor-pointer"
+                                >
+                                    Promote to New BOM Version
+                                </button>
+                            </>
+                        )}
+                        <button
+                            type="button"
+                            onClick={resetSimulation}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border bg-muted text-xs font-semibold text-foreground hover:bg-accent transition-all cursor-pointer"
+                        >
+                            <RefreshCw className="h-3.5 w-3.5" />
+                            Reset Simulator
+                        </button>
+                    </div>
                 </div>
-                <div className="flex items-center gap-2">
-                    {!product.id.startsWith("prod-") && product.bomId && (
-                        <>
-                            <button
-                                type="button"
-                                onClick={handleSaveCurrentVersion}
-                                disabled={savingCurrent}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-primary/30 hover:bg-primary/5 text-xs font-bold text-primary shadow-xs transition-all cursor-pointer"
-                            >
-                                {savingCurrent && <RefreshCw className="h-3.5 w-3.5 animate-spin" />}
-                                Save to Current Version
-                            </button>
+
+                {/* Selector Grid */}
+                <div className="grid gap-6 md:grid-cols-3">
+                    {/* Simulator Inputs Sidebar */}
+                    <div className="md:col-span-1 space-y-5 border-r pr-0 md:pr-6 border-b md:border-b-0 pb-6 md:pb-0">
+                        <div className="space-y-1.5 relative" ref={dropdownRef}>
+                            <label className="text-xs font-bold text-muted-foreground">Select Product to Simulate</label>
+                            {loadingProducts ? (
+                                <div className="h-9 w-full bg-muted animate-pulse rounded-lg border flex items-center justify-center text-[10px] text-muted-foreground font-semibold">
+                                    Loading products...
+                                </div>
+                            ) : (
+                                <div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsOpen(!isOpen)}
+                                        className="w-full inline-flex items-center justify-between rounded-lg border px-3 py-2 text-sm text-left bg-background hover:bg-accent/5 transition-colors focus:ring-1 focus:ring-primary outline-hidden cursor-pointer"
+                                    >
+                                        <span className="truncate max-w-[85%] font-medium">
+                                            {product.title} ({product.sku}){product.unitOfMeasurementCount ? ` — ${product.unitOfMeasurementCount} ` : " "}{product.baseUom}
+                                        </span>
+                                        <span className="text-[10px] text-muted-foreground ml-2">▼</span>
+                                    </button>
+
+                                    {isOpen && (
+                                        <div className="absolute left-0 right-0 mt-1 z-50 rounded-lg border bg-background shadow-lg p-2 space-y-2 max-w-sm sm:max-w-none">
+                                            <input
+                                                type="text"
+                                                placeholder="Search product..."
+                                                value={searchTerm}
+                                                onChange={e => setSearchTerm(e.target.value)}
+                                                className="w-full rounded border px-2.5 py-1.5 text-xs outline-hidden focus:ring-1 focus:ring-primary bg-background"
+                                                autoFocus
+                                            />
+                                            <div className="max-h-56 overflow-y-auto space-y-0.5 custom-scrollbar">
+                                                {filteredProducts.length === 0 ? (
+                                                    <div className="p-3 text-center text-xs text-muted-foreground">
+                                                        No products found
+                                                    </div>
+                                                ) : (
+                                                    filteredProducts.map(p => {
+                                                        const isSelected = p.id === selectedId;
+                                                        return (
+                                                            <button
+                                                                key={p.id}
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    handleProductChange(p.id);
+                                                                    setIsOpen(false);
+                                                                    setSearchTerm("");
+                                                                }}
+                                                                className={`w-full text-left px-3 py-2 rounded-md text-xs transition-colors flex items-center justify-between cursor-pointer ${isSelected
+                                                                        ? "bg-primary text-primary-foreground font-bold"
+                                                                        : "hover:bg-muted"
+                                                                    }`}
+                                                            >
+                                                                <div className="truncate pr-2">
+                                                                    <span className="block font-medium truncate">{p.title}</span>
+                                                                    <span className={`block text-[10px] ${isSelected ? "text-primary-foreground/85" : "text-muted-foreground"}`}>
+                                                                        {p.sku} {p.unitOfMeasurementCount ? `• ${p.unitOfMeasurementCount} ` : ""}{p.baseUom}
+                                                                    </span>
+                                                                </div>
+                                                                <div className="shrink-0 flex items-center gap-1.5">
+                                                                    {!p.id.startsWith("prod-") && p.has_versions && (
+                                                                        <span className={`text-[9px] px-1 rounded font-bold uppercase ${isSelected ? "bg-primary-foreground/25 text-primary-foreground" : "bg-primary/15 text-primary"
+                                                                            }`}>
+                                                                            BOM
+                                                                        </span>
+                                                                    )}
+                                                                    {isSelected && <span className="font-bold">✓</span>}
+                                                                </div>
+                                                            </button>
+                                                        );
+                                                    })
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Yield loss override */}
+                        <div className="space-y-2 pt-2 border-t">
+                            <div className="flex justify-between items-center text-xs">
+                                <span className="font-semibold text-muted-foreground">Simulate Yield Drop</span>
+                                <span className="font-bold text-amber-600">{Number(simYield).toFixed(1)}%</span>
+                            </div>
+                            <input
+                                type="range"
+                                min="60"
+                                max="100"
+                                step="0.5"
+                                value={simYield}
+                                onChange={e => setSimYield(parseFloat(e.target.value))}
+                                className="w-full h-1.5 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                            />
+                            <div className="flex justify-between text-[10px] text-muted-foreground">
+                                <span>Severe Loss (60%)</span>
+                                <span>Standard Yield ({product.expectedYieldPercent}%)</span>
+                            </div>
+                        </div>
+
+                        {/* Global Forex Override */}
+                        <div className="space-y-2 pt-2 border-t">
+                            <div className="flex justify-between items-center text-xs">
+                                <span className="font-semibold text-muted-foreground">Global Forex Shift (USD/PHP)</span>
+                                <span className="font-bold text-primary">
+                                    {forexMultiplier === 1.0 ? "Standard (1.0x)" : `+${((forexMultiplier - 1) * 100).toFixed(0)}% PHP weakening`}
+                                </span>
+                            </div>
+                            <input
+                                type="range"
+                                min="1.0"
+                                max="1.3"
+                                step="0.01"
+                                value={forexMultiplier}
+                                onChange={e => setForexMultiplier(parseFloat(e.target.value))}
+                                className="w-full h-1.5 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                            />
+                            <div className="flex justify-between text-[10px] text-muted-foreground">
+                                <span>Stable</span>
+                                <span>+30% Inflation</span>
+                            </div>
+                            <p className="text-[10px] text-muted-foreground bg-primary/5 p-1.5 rounded border border-primary/15">
+                                Note: Applies only to ingredients flagged as <strong className="text-primary font-bold">Imported</strong> in the recipe tree.
+                            </p>
+                        </div>
+
+                        {/* Target Price */}
+                        <div className="space-y-1.5 pt-2 border-t">
+                            <label className="text-xs font-bold text-muted-foreground">Simulated Selling Price (PHP)</label>
+                            <div className="relative">
+                                <span className="absolute left-2.5 top-2 text-xs text-muted-foreground font-semibold">₱</span>
+                                <input
+                                    type="number"
+                                    step="0.50"
+                                    value={targetPrice}
+                                    onChange={e => setTargetPrice(parseFloat(e.target.value) || 0)}
+                                    className="w-full rounded-lg border pl-6 pr-3 py-1.5 text-sm outline-none focus:ring-1 focus:ring-primary"
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Ingredients & Margins Output */}
+                    <div className="md:col-span-2 space-y-6">
+                        {/* Material overrides table */}
+                        <div className="space-y-3">
+                            <h3 className="text-sm font-bold tracking-tight">Override Recipe Ingredients Landed Costs</h3>
+                            <div className="border rounded-xl overflow-hidden">
+                                <table className="w-full text-left text-xs border-collapse">
+                                    <thead>
+                                        <tr className="bg-muted/40 border-b font-semibold text-muted-foreground">
+                                            <th className="p-3">Ingredient</th>
+                                            <th className="p-3 text-center">Imported</th>
+                                            <th className="p-3 text-center">UOM</th>
+                                            <th className="p-3">Standard Cost</th>
+                                            <th className="p-3">Simulated Price Override</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {loadingBOM ? (
+                                            <tr>
+                                                <td colSpan={5} className="p-8 text-center text-muted-foreground text-xs">
+                                                    <RefreshCw className="h-5 w-5 animate-spin mx-auto mb-2 text-primary" />
+                                                    Loading recipe details...
+                                                </td>
+                                            </tr>
+                                        ) : product.bom.length === 0 ? (
+                                            <tr>
+                                                <td colSpan={5} className="p-8 text-center text-muted-foreground text-xs">
+                                                    <AlertTriangle className="h-5 w-5 mx-auto mb-2 text-amber-500" />
+                                                    No ingredients recipe found. Select a product with an active BOM version.
+                                                </td>
+                                            </tr>
+                                        ) : (
+                                            product.bom.map(item => {
+                                                const overrideVal = priceOverrides[item.id] !== undefined ? priceOverrides[item.id] : item.landedCost;
+                                                return (
+                                                    <tr key={item.id} className="border-b last:border-0 hover:bg-muted/5">
+                                                        <td className="p-3 font-medium">
+                                                            <span>{item.name}</span>
+                                                        </td>
+                                                        <td className="p-3 text-center">
+                                                            <div className="flex items-center justify-center gap-2">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => toggleImportedStatus(item.id)}
+                                                                    className={`relative inline-flex h-4.5 w-8 shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out outline-hidden ${(importedOverrides[item.id] !== undefined ? importedOverrides[item.id] : (item.foreignSourced || item.isForeign)) ? "bg-blue-600" : "bg-muted"
+                                                                        }`}
+                                                                >
+                                                                    <span
+                                                                        className={`pointer-events-none inline-block h-3.5 w-3.5 transform rounded-full bg-background shadow-sm transition duration-200 ease-in-out ${(importedOverrides[item.id] !== undefined ? importedOverrides[item.id] : (item.foreignSourced || item.isForeign)) ? "translate-x-3.5" : "translate-x-0"
+                                                                            }`}
+                                                                    />
+                                                                </button>
+                                                                <span className={`text-[9px] font-bold tracking-wider uppercase ${(importedOverrides[item.id] !== undefined ? importedOverrides[item.id] : (item.foreignSourced || item.isForeign)) ? "text-blue-600" : "text-muted-foreground"
+                                                                    }`}>
+                                                                    {(importedOverrides[item.id] !== undefined ? importedOverrides[item.id] : (item.foreignSourced || item.isForeign)) ? "Imported" : "Domestic"}
+                                                                </span>
+                                                            </div>
+                                                        </td>
+                                                        <td className="p-3 text-center text-muted-foreground">{item.uom}</td>
+                                                        <td className="p-3 font-medium">₱{item.landedCost.toFixed(2)}</td>
+                                                        <td className="p-3 w-40">
+                                                            <div className="relative">
+                                                                <span className="absolute left-1.5 top-1.5 text-[10px] text-muted-foreground">₱</span>
+                                                                <input
+                                                                    type="number"
+                                                                    step="0.1"
+                                                                    value={overrideVal}
+                                                                    onChange={e => setPriceOverrides(prev => ({ ...prev, [item.id]: parseFloat(e.target.value) || 0 }))}
+                                                                    className="w-full rounded border pl-4 pr-1.5 py-1 text-xs bg-background text-right"
+                                                                />
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        {/* Margin Results Comparative Board */}
+                        <div className="grid gap-4 sm:grid-cols-2">
+                            {/* Standard Baseline */}
+                            <div className="rounded-xl border bg-muted/10 p-4 space-y-3">
+                                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Baseline (Standard Cost)</span>
+                                <div className="space-y-1">
+                                    <p className="text-[10px] text-muted-foreground">Base Unit Cost</p>
+                                    <p className="text-xl font-extrabold text-foreground">₱{baseUnitCost.toFixed(2)}</p>
+                                </div>
+                                <div className="border-t pt-2 space-y-1">
+                                    <div className="flex justify-between items-center text-xs">
+                                        <span className="text-muted-foreground">Selling Price:</span>
+                                        <span className="font-semibold">₱{product.targetSellingPrice.toFixed(2)}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center text-xs pt-1">
+                                        <span className="font-bold text-foreground">Gross Margin %:</span>
+                                        <span className="font-bold text-foreground">{baseMarginPercent.toFixed(1)}%</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Simulated Result */}
+                            {(() => {
+                                const isLow = simulatedMarginPercent < 15;
+                                const isLoss = simulatedMarginPercent < 0;
+                                return (
+                                    <div className={`rounded-xl border p-4 space-y-3 transition-colors ${isLoss
+                                            ? "bg-destructive/5 border-destructive/30 text-destructive-foreground"
+                                            : isLow
+                                                ? "bg-amber-500/5 border-amber-500/30"
+                                                : "bg-emerald-500/5 border-emerald-500/30"
+                                        }`}>
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Simulated What-If</span>
+                                            {isLoss && <AlertTriangle className="h-4 w-4 text-destructive" />}
+                                        </div>
+                                        <div className="space-y-1">
+                                            <p className="text-[10px] text-muted-foreground">Simulated Unit Cost</p>
+                                            <p className={`text-xl font-extrabold ${isLoss ? "text-destructive" : isLow ? "text-amber-600" : "text-emerald-600"}`}>
+                                                ₱{simulatedUnitCost.toFixed(2)}
+                                            </p>
+                                        </div>
+                                        <div className="border-t pt-2 space-y-1 text-foreground">
+                                            <div className="flex justify-between items-center text-xs">
+                                                <span className="text-muted-foreground">Simulated Price:</span>
+                                                <span className="font-semibold">₱{targetPrice.toFixed(2)}</span>
+                                            </div>
+                                            <div className="flex justify-between items-center text-xs pt-1 border-t border-dashed mt-1">
+                                                <span className="font-bold">Simulated Gross Margin %:</span>
+                                                <span className={`font-bold text-sm ${isLoss ? "text-destructive" : isLow ? "text-amber-600" : "text-emerald-600"}`}>
+                                                    {simulatedMarginPercent.toFixed(1)}%
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })()}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Promotion Modal */}
+            {isPromoOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4 backdrop-blur-xs">
+                    <div className="w-full max-w-md rounded-xl border bg-background p-6 shadow-xl space-y-4 relative">
+                        <div className="space-y-1">
+                            <h2 className="text-base font-bold text-foreground">Promote to New BOM Version</h2>
+                            <p className="text-xs text-muted-foreground">
+                                This will clone the current recipe, apply your simulated landed costs, yields, and selling prices, and activate it as the new standard costing.
+                            </p>
+                        </div>
+
+                        <div className="space-y-1.5">
+                            <label className="text-xs font-semibold text-muted-foreground">New Version Name</label>
+                            <input
+                                type="text"
+                                placeholder="e.g. v1.1, v2.0, vSimulated"
+                                value={newVersionName}
+                                onChange={e => setNewVersionName(e.target.value)}
+                                className="w-full rounded-lg border px-3 py-2 text-sm outline-hidden focus:ring-1 focus:ring-primary bg-background"
+                            />
+                        </div>
+
+                        <div className="flex justify-end gap-2 pt-2">
                             <button
                                 type="button"
                                 onClick={() => {
-                                    setNewVersionName(`${product.versionName || "1.0"}_simulated`);
-                                    setIsPromoOpen(true);
+                                    setIsPromoOpen(false);
+                                    setNewVersionName("");
                                 }}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary hover:bg-primary/95 text-xs font-bold text-primary-foreground shadow-xs transition-all cursor-pointer"
+                                disabled={promoting}
+                                className="px-3.5 py-1.5 rounded-lg border bg-muted text-xs font-semibold text-foreground hover:bg-accent cursor-pointer disabled:opacity-50"
                             >
-                                Promote to New BOM Version
+                                Cancel
                             </button>
-                        </>
-                    )}
-                    <button 
-                        type="button"
-                        onClick={resetSimulation}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border bg-muted text-xs font-semibold text-foreground hover:bg-accent transition-all cursor-pointer"
-                    >
-                        <RefreshCw className="h-3.5 w-3.5" />
-                        Reset Simulator
-                    </button>
-                </div>
-            </div>
-
-            {/* Selector Grid */}
-            <div className="grid gap-6 md:grid-cols-3">
-                {/* Simulator Inputs Sidebar */}
-                <div className="md:col-span-1 space-y-5 border-r pr-0 md:pr-6 border-b md:border-b-0 pb-6 md:pb-0">
-                    <div className="space-y-1.5 relative" ref={dropdownRef}>
-                        <label className="text-xs font-bold text-muted-foreground">Select Product to Simulate</label>
-                        {loadingProducts ? (
-                            <div className="h-9 w-full bg-muted animate-pulse rounded-lg border flex items-center justify-center text-[10px] text-muted-foreground font-semibold">
-                                Loading products...
-                            </div>
-                        ) : (
-                            <div>
-                                <button
-                                    type="button"
-                                    onClick={() => setIsOpen(!isOpen)}
-                                    className="w-full inline-flex items-center justify-between rounded-lg border px-3 py-2 text-sm text-left bg-background hover:bg-accent/5 transition-colors focus:ring-1 focus:ring-primary outline-hidden cursor-pointer"
-                                >
-                                    <span className="truncate max-w-[85%] font-medium">
-                                        {product.title} ({product.sku}){product.unitOfMeasurementCount ? ` — ${product.unitOfMeasurementCount} ` : " "}{product.baseUom}
-                                    </span>
-                                    <span className="text-[10px] text-muted-foreground ml-2">▼</span>
-                                </button>
-
-                                {isOpen && (
-                                    <div className="absolute left-0 right-0 mt-1 z-50 rounded-lg border bg-background shadow-lg p-2 space-y-2 max-w-sm sm:max-w-none">
-                                        <input
-                                            type="text"
-                                            placeholder="Search product..."
-                                            value={searchTerm}
-                                            onChange={e => setSearchTerm(e.target.value)}
-                                            className="w-full rounded border px-2.5 py-1.5 text-xs outline-hidden focus:ring-1 focus:ring-primary bg-background"
-                                            autoFocus
-                                        />
-                                        <div className="max-h-56 overflow-y-auto space-y-0.5 custom-scrollbar">
-                                            {filteredProducts.length === 0 ? (
-                                                <div className="p-3 text-center text-xs text-muted-foreground">
-                                                    No products found
-                                                </div>
-                                            ) : (
-                                                filteredProducts.map(p => {
-                                                    const isSelected = p.id === selectedId;
-                                                    return (
-                                                        <button
-                                                            key={p.id}
-                                                            type="button"
-                                                            onClick={() => {
-                                                                handleProductChange(p.id);
-                                                                setIsOpen(false);
-                                                                setSearchTerm("");
-                                                            }}
-                                                            className={`w-full text-left px-3 py-2 rounded-md text-xs transition-colors flex items-center justify-between cursor-pointer ${
-                                                                isSelected 
-                                                                    ? "bg-primary text-primary-foreground font-bold" 
-                                                                    : "hover:bg-muted"
-                                                            }`}
-                                                        >
-                                                            <div className="truncate pr-2">
-                                                                <span className="block font-medium truncate">{p.title}</span>
-                                                                <span className={`block text-[10px] ${isSelected ? "text-primary-foreground/85" : "text-muted-foreground"}`}>
-                                                                    {p.sku} {p.unitOfMeasurementCount ? `• ${p.unitOfMeasurementCount} ` : ""}{p.baseUom}
-                                                                </span>
-                                                            </div>
-                                                            <div className="shrink-0 flex items-center gap-1.5">
-                                                                {!p.id.startsWith("prod-") && p.has_versions && (
-                                                                    <span className={`text-[9px] px-1 rounded font-bold uppercase ${
-                                                                        isSelected ? "bg-primary-foreground/25 text-primary-foreground" : "bg-primary/15 text-primary"
-                                                                    }`}>
-                                                                        BOM
-                                                                    </span>
-                                                                )}
-                                                                {isSelected && <span className="font-bold">✓</span>}
-                                                            </div>
-                                                        </button>
-                                                    );
-                                                })
-                                            )}
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Yield loss override */}
-                    <div className="space-y-2 pt-2 border-t">
-                        <div className="flex justify-between items-center text-xs">
-                            <span className="font-semibold text-muted-foreground">Simulate Yield Drop</span>
-                            <span className="font-bold text-amber-600">{Number(simYield).toFixed(1)}%</span>
-                        </div>
-                        <input 
-                            type="range"
-                            min="60"
-                            max="100"
-                            step="0.5"
-                            value={simYield}
-                            onChange={e => setSimYield(parseFloat(e.target.value))}
-                            className="w-full h-1.5 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
-                        />
-                        <div className="flex justify-between text-[10px] text-muted-foreground">
-                            <span>Severe Loss (60%)</span>
-                            <span>Standard Yield ({product.expectedYieldPercent}%)</span>
-                        </div>
-                    </div>
-
-                    {/* Global Forex Override */}
-                    <div className="space-y-2 pt-2 border-t">
-                        <div className="flex justify-between items-center text-xs">
-                            <span className="font-semibold text-muted-foreground">Global Forex Shift (USD/PHP)</span>
-                            <span className="font-bold text-primary">
-                                {forexMultiplier === 1.0 ? "Standard (1.0x)" : `+${((forexMultiplier - 1) * 100).toFixed(0)}% PHP weakening`}
-                            </span>
-                        </div>
-                        <input 
-                            type="range"
-                            min="1.0"
-                            max="1.3"
-                            step="0.01"
-                            value={forexMultiplier}
-                            onChange={e => setForexMultiplier(parseFloat(e.target.value))}
-                            className="w-full h-1.5 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
-                        />
-                        <div className="flex justify-between text-[10px] text-muted-foreground">
-                            <span>Stable</span>
-                            <span>+30% Inflation</span>
-                        </div>
-                        <p className="text-[10px] text-muted-foreground bg-primary/5 p-1.5 rounded border border-primary/15">
-                            Note: Applies only to ingredients flagged as <strong className="text-primary font-bold">Imported</strong> in the recipe tree.
-                        </p>
-                    </div>
-
-                    {/* Target Price */}
-                    <div className="space-y-1.5 pt-2 border-t">
-                        <label className="text-xs font-bold text-muted-foreground">Simulated Selling Price (PHP)</label>
-                        <div className="relative">
-                            <span className="absolute left-2.5 top-2 text-xs text-muted-foreground font-semibold">₱</span>
-                            <input 
-                                type="number" 
-                                step="0.50"
-                                value={targetPrice}
-                                onChange={e => setTargetPrice(parseFloat(e.target.value) || 0)}
-                                className="w-full rounded-lg border pl-6 pr-3 py-1.5 text-sm outline-none focus:ring-1 focus:ring-primary"
-                            />
+                            <button
+                                type="button"
+                                onClick={handlePromoteBOM}
+                                disabled={promoting || !newVersionName.trim()}
+                                className="px-3.5 py-1.5 rounded-lg bg-primary text-xs font-semibold text-primary-foreground hover:bg-primary/95 cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+                            >
+                                {promoting && <RefreshCw className="h-3.5 w-3.5 animate-spin" />}
+                                Promote & Save
+                            </button>
                         </div>
                     </div>
                 </div>
-
-                {/* Ingredients & Margins Output */}
-                <div className="md:col-span-2 space-y-6">
-                    {/* Material overrides table */}
-                    <div className="space-y-3">
-                        <h3 className="text-sm font-bold tracking-tight">Override Recipe Ingredients Landed Costs</h3>
-                        <div className="border rounded-xl overflow-hidden">
-                            <table className="w-full text-left text-xs border-collapse">
-                                <thead>
-                                    <tr className="bg-muted/40 border-b font-semibold text-muted-foreground">
-                                        <th className="p-3">Ingredient</th>
-                                        <th className="p-3 text-center">Imported</th>
-                                        <th className="p-3 text-center">UOM</th>
-                                        <th className="p-3">Standard Cost</th>
-                                        <th className="p-3">Simulated Price Override</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {loadingBOM ? (
-                                        <tr>
-                                            <td colSpan={5} className="p-8 text-center text-muted-foreground text-xs">
-                                                <RefreshCw className="h-5 w-5 animate-spin mx-auto mb-2 text-primary" />
-                                                Loading recipe details...
-                                            </td>
-                                        </tr>
-                                    ) : product.bom.length === 0 ? (
-                                        <tr>
-                                            <td colSpan={5} className="p-8 text-center text-muted-foreground text-xs">
-                                                <AlertTriangle className="h-5 w-5 mx-auto mb-2 text-amber-500" />
-                                                No ingredients recipe found. Select a product with an active BOM version.
-                                            </td>
-                                        </tr>
-                                    ) : (
-                                        product.bom.map(item => {
-                                            const overrideVal = priceOverrides[item.id] !== undefined ? priceOverrides[item.id] : item.landedCost;
-                                            return (
-                                                <tr key={item.id} className="border-b last:border-0 hover:bg-muted/5">
-                                                    <td className="p-3 font-medium">
-                                                        <span>{item.name}</span>
-                                                    </td>
-                                                    <td className="p-3 text-center">
-                                                        <div className="flex items-center justify-center gap-2">
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => toggleImportedStatus(item.id)}
-                                                                className={`relative inline-flex h-4.5 w-8 shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out outline-hidden ${
-                                                                    (importedOverrides[item.id] !== undefined ? importedOverrides[item.id] : (item.foreignSourced || item.isForeign)) ? "bg-blue-600" : "bg-muted"
-                                                                }`}
-                                                            >
-                                                                <span
-                                                                    className={`pointer-events-none inline-block h-3.5 w-3.5 transform rounded-full bg-background shadow-sm transition duration-200 ease-in-out ${
-                                                                        (importedOverrides[item.id] !== undefined ? importedOverrides[item.id] : (item.foreignSourced || item.isForeign)) ? "translate-x-3.5" : "translate-x-0"
-                                                                    }`}
-                                                                />
-                                                            </button>
-                                                            <span className={`text-[9px] font-bold tracking-wider uppercase ${
-                                                                (importedOverrides[item.id] !== undefined ? importedOverrides[item.id] : (item.foreignSourced || item.isForeign)) ? "text-blue-600" : "text-muted-foreground"
-                                                            }`}>
-                                                                {(importedOverrides[item.id] !== undefined ? importedOverrides[item.id] : (item.foreignSourced || item.isForeign)) ? "Imported" : "Domestic"}
-                                                            </span>
-                                                        </div>
-                                                    </td>
-                                                    <td className="p-3 text-center text-muted-foreground">{item.uom}</td>
-                                                    <td className="p-3 font-medium">₱{item.landedCost.toFixed(2)}</td>
-                                                    <td className="p-3 w-40">
-                                                        <div className="relative">
-                                                            <span className="absolute left-1.5 top-1.5 text-[10px] text-muted-foreground">₱</span>
-                                                            <input 
-                                                                type="number"
-                                                                step="0.1"
-                                                                value={overrideVal}
-                                                                onChange={e => setPriceOverrides(prev => ({ ...prev, [item.id]: parseFloat(e.target.value) || 0 }))}
-                                                                className="w-full rounded border pl-4 pr-1.5 py-1 text-xs bg-background text-right"
-                                                            />
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            );
-                                        })
-                                    )}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-
-                    {/* Margin Results Comparative Board */}
-                    <div className="grid gap-4 sm:grid-cols-2">
-                        {/* Standard Baseline */}
-                        <div className="rounded-xl border bg-muted/10 p-4 space-y-3">
-                            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Baseline (Standard Cost)</span>
-                            <div className="space-y-1">
-                                <p className="text-[10px] text-muted-foreground">Base Unit Cost</p>
-                                <p className="text-xl font-extrabold text-foreground">₱{baseUnitCost.toFixed(2)}</p>
-                            </div>
-                            <div className="border-t pt-2 space-y-1">
-                                <div className="flex justify-between items-center text-xs">
-                                    <span className="text-muted-foreground">Selling Price:</span>
-                                    <span className="font-semibold">₱{product.targetSellingPrice.toFixed(2)}</span>
-                                </div>
-                                <div className="flex justify-between items-center text-xs pt-1">
-                                    <span className="font-bold text-foreground">Gross Margin %:</span>
-                                    <span className="font-bold text-foreground">{baseMarginPercent.toFixed(1)}%</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Simulated Result */}
-                        {(() => {
-                            const isLow = simulatedMarginPercent < 15;
-                            const isLoss = simulatedMarginPercent < 0;
-                            return (
-                                <div className={`rounded-xl border p-4 space-y-3 transition-colors ${
-                                    isLoss 
-                                        ? "bg-destructive/5 border-destructive/30 text-destructive-foreground" 
-                                        : isLow 
-                                        ? "bg-amber-500/5 border-amber-500/30" 
-                                        : "bg-emerald-500/5 border-emerald-500/30"
-                                }`}>
-                                    <div className="flex justify-between items-center">
-                                        <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Simulated What-If</span>
-                                        {isLoss && <AlertTriangle className="h-4 w-4 text-destructive" />}
-                                    </div>
-                                    <div className="space-y-1">
-                                        <p className="text-[10px] text-muted-foreground">Simulated Unit Cost</p>
-                                        <p className={`text-xl font-extrabold ${isLoss ? "text-destructive" : isLow ? "text-amber-600" : "text-emerald-600"}`}>
-                                            ₱{simulatedUnitCost.toFixed(2)}
-                                        </p>
-                                    </div>
-                                    <div className="border-t pt-2 space-y-1 text-foreground">
-                                        <div className="flex justify-between items-center text-xs">
-                                            <span className="text-muted-foreground">Simulated Price:</span>
-                                            <span className="font-semibold">₱{targetPrice.toFixed(2)}</span>
-                                        </div>
-                                        <div className="flex justify-between items-center text-xs pt-1 border-t border-dashed mt-1">
-                                            <span className="font-bold">Simulated Gross Margin %:</span>
-                                            <span className={`font-bold text-sm ${isLoss ? "text-destructive" : isLow ? "text-amber-600" : "text-emerald-600"}`}>
-                                                {simulatedMarginPercent.toFixed(1)}%
-                                            </span>
-                                        </div>
-                                    </div>
-                                </div>
-                            );
-                        })()}
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        {/* Promotion Modal */}
-        {isPromoOpen && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4 backdrop-blur-xs">
-                <div className="w-full max-w-md rounded-xl border bg-background p-6 shadow-xl space-y-4 relative">
-                    <div className="space-y-1">
-                        <h2 className="text-base font-bold text-foreground">Promote to New BOM Version</h2>
-                        <p className="text-xs text-muted-foreground">
-                            This will clone the current recipe, apply your simulated landed costs, yields, and selling prices, and activate it as the new standard costing.
-                        </p>
-                    </div>
-
-                    <div className="space-y-1.5">
-                        <label className="text-xs font-semibold text-muted-foreground">New Version Name</label>
-                        <input 
-                            type="text"
-                            placeholder="e.g. v1.1, v2.0, vSimulated"
-                            value={newVersionName}
-                            onChange={e => setNewVersionName(e.target.value)}
-                            className="w-full rounded-lg border px-3 py-2 text-sm outline-hidden focus:ring-1 focus:ring-primary bg-background"
-                        />
-                    </div>
-
-                    <div className="flex justify-end gap-2 pt-2">
-                        <button
-                            type="button"
-                            onClick={() => {
-                                setIsPromoOpen(false);
-                                setNewVersionName("");
-                            }}
-                            disabled={promoting}
-                            className="px-3.5 py-1.5 rounded-lg border bg-muted text-xs font-semibold text-foreground hover:bg-accent cursor-pointer disabled:opacity-50"
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            type="button"
-                            onClick={handlePromoteBOM}
-                            disabled={promoting || !newVersionName.trim()}
-                            className="px-3.5 py-1.5 rounded-lg bg-primary text-xs font-semibold text-primary-foreground hover:bg-primary/95 cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
-                        >
-                            {promoting && <RefreshCw className="h-3.5 w-3.5 animate-spin" />}
-                            Promote & Save
-                        </button>
-                    </div>
-                </div>
-            </div>
-        )}
+            )}
         </>
     );
 }

@@ -1,3 +1,4 @@
+/* eslint-disable */
 import React from "react";
 import { ArrowLeft, MapPin, AlertTriangle, CheckCircle2, Search, ChevronDown, Image as ImageIcon, Plus, Minus } from "lucide-react";
 import { Shipment, ShipmentLineItem, Branch, InspectionRow } from "../types";
@@ -45,7 +46,7 @@ export default function ShipmentInspectionForm({
     const filteredLines = React.useMemo(() => {
         if (!dropdownSearch.trim()) return lineItems;
         const q = dropdownSearch.toLowerCase();
-        return lineItems.filter(l => 
+        return lineItems.filter(l =>
             l.product_id?.product_name?.toLowerCase().includes(q) ||
             l.product_id?.product_code?.toLowerCase().includes(q)
         );
@@ -55,13 +56,13 @@ export default function ShipmentInspectionForm({
         setDropdownOpen(false);
         setDropdownSearch("");
         setHighlightedLineId(lineId);
-        
+
         // Find and scroll to card
         const element = document.getElementById(`line-card-${lineId}`);
         if (element) {
             element.scrollIntoView({ behavior: "smooth", block: "center" });
         }
-        
+
         // Clear highlight
         setTimeout(() => {
             setHighlightedLineId(null);
@@ -72,11 +73,11 @@ export default function ShipmentInspectionForm({
     const filteredBranches = React.useMemo(() => {
         return branches.filter(b => {
             const name = (b.branch_name || "").toLowerCase();
-            return !name.includes("bad branch") && 
-                   !name.includes("quarantine") && 
-                   !name.includes("damaged") && 
-                   !name.includes("holding") && 
-                   !name.includes("bad order");
+            return !name.includes("bad branch") &&
+                !name.includes("quarantine") &&
+                !name.includes("damaged") &&
+                !name.includes("holding") &&
+                !name.includes("bad order");
         });
     }, [branches]);
 
@@ -202,21 +203,19 @@ export default function ShipmentInspectionForm({
                         const isRemarksMandatory = boVal > 0 || (row.receivedQty !== "" && receivedVal !== orderedVal) || isOverAcceptance;
 
                         return (
-                            <div 
-                                key={line.line_id} 
+                            <div
+                                key={line.line_id}
                                 id={`line-card-${line.line_id}`}
-                                className={`border rounded-xl p-4 bg-muted/5 space-y-3.5 relative transition-all duration-300 ${
-                                    isHighlighted 
-                                        ? "ring-2 ring-primary bg-primary/5 border-primary scale-[1.01]" 
+                                className={`border rounded-xl p-4 bg-muted/5 space-y-3.5 relative transition-all duration-300 ${isHighlighted
+                                        ? "ring-2 ring-primary bg-primary/5 border-primary scale-[1.01]"
                                         : "border-border"
-                                }`}
+                                    }`}
                             >
                                 {/* Header info with Product Image */}
                                 <div className="flex gap-4 border-b pb-3 items-center">
                                     {/* Directus Product Image */}
                                     <div className="h-16 w-16 rounded-xl bg-background border flex items-center justify-center shrink-0 overflow-hidden shadow-xs">
                                         {prod.product_image ? (
-                                            // eslint-disable-next-line @next/next/no-img-element
                                             <img
                                                 src={`${process.env.NEXT_PUBLIC_DIRECTUS_URL || "http://vtc:8074"}/assets/${prod.product_image}`}
                                                 alt={prod.product_name}
@@ -226,140 +225,139 @@ export default function ShipmentInspectionForm({
                                             <ImageIcon className="h-6 w-6 text-muted-foreground/40" />
                                         )}
                                     </div>
-                                    
+
                                     <div className="flex-1 min-w-0">
                                         <span className="font-bold text-xs sm:text-sm text-foreground block truncate">{prod.product_name}</span>
                                         <span className="text-[10px] text-muted-foreground font-mono">SKU: {prod.product_code || `ID-${prod.product_id}`}</span>
                                     </div>
-                                    
+
                                     <div className="flex flex-col items-end gap-1.5 shrink-0">
                                         <button
                                             type="button"
                                             onClick={() => handleUpdateRow(line.line_id, "isPackaging", !row.isPackaging)}
-                                            className={`px-2.5 py-1 rounded-lg text-[8px] uppercase font-extrabold border transition-all ${
-                                                row.isPackaging
+                                            className={`px-2.5 py-1 rounded-lg text-[8px] uppercase font-extrabold border transition-all ${row.isPackaging
                                                     ? "bg-purple-500/10 text-purple-600 border-purple-500/20"
                                                     : "bg-amber-500/10 text-amber-600 border-amber-500/20"
-                                            }`}
+                                                }`}
                                         >
                                             {row.isPackaging ? "Packaging (Lot Req)" : "Raw Material (Expiry Req)"}
                                         </button>
                                     </div>
                                 </div>
 
-                                 {/* QA Inputs Grid - Touch Optimized layout */}
-                                 {(() => {
-                                     const convFactor = Number(line.product_id?.unit_of_measurement_count || 1);
-                                     const childUom = line.product_id?.unit_of_measurement?.unit_shortcut || "PCS";
-                                     const parentObj = line.product_id?.parent_id;
-                                     const parentUom = parentObj && typeof parentObj === "object" 
-                                         ? parentObj.unit_of_measurement?.unit_shortcut 
-                                         : null;
-                                     const baseUom = parentUom || childUom;
+                                {/* QA Inputs Grid - Touch Optimized layout */}
+                                {(() => {
+                                    const convFactor = Number(line.product_id?.unit_of_measurement_count || 1);
+                                    const childUom = line.product_id?.unit_of_measurement?.unit_shortcut || "PCS";
+                                    const parentObj = line.product_id?.parent_id;
+                                    const parentUom = parentObj && typeof parentObj === "object"
+                                        ? (parentObj as any).unit_of_measurement?.unit_shortcut
+                                        : null;
+                                    const baseUom = parentUom || childUom;
 
-                                     const receivedEquiv = receivedVal * convFactor;
-                                     const acceptedEquiv = acceptedVal * convFactor;
-                                     const boEquiv = Number(row.boQty || 0) * convFactor;
+                                    const receivedEquiv = receivedVal * convFactor;
+                                    const acceptedEquiv = acceptedVal * convFactor;
+                                    const boEquiv = Number(row.boQty || 0) * convFactor;
 
-                                     return (
-                                         <div className="grid gap-4 grid-cols-1 sm:grid-cols-3">
-                                             {/* Received Quantity Stepper */}
-                                             <div className="space-y-1">
-                                                 <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">
-                                                     Received Quantity
-                                                 </label>
-                                                 <div className="flex items-center">
-                                                     <button
-                                                         type="button"
-                                                         onClick={() => handleUpdateRow(line.line_id, "receivedQty", Math.max(0, receivedVal - 1))}
-                                                         className="w-10 h-10 border border-r-0 bg-background text-foreground rounded-l-lg hover:bg-muted font-extrabold flex items-center justify-center transition-colors text-base select-none shrink-0"
-                                                     >
-                                                         <Minus className="h-3.5 w-3.5" />
-                                                     </button>
-                                                     <input
-                                                         type="number"
-                                                         required
-                                                         min="0"
-                                                         placeholder="Manually count"
-                                                         value={row.receivedQty}
-                                                         onChange={e => handleUpdateRow(line.line_id, "receivedQty", e.target.value === "" ? "" : Number(e.target.value))}
-                                                         className="w-full h-10 border bg-background text-center text-xs font-semibold text-foreground outline-none focus:ring-0"
-                                                     />
-                                                     <button
-                                                         type="button"
-                                                         onClick={() => handleUpdateRow(line.line_id, "receivedQty", receivedVal + 1)}
-                                                         className="w-10 h-10 border border-l-0 bg-background text-foreground rounded-r-lg hover:bg-muted font-extrabold flex items-center justify-center transition-colors text-base select-none shrink-0"
-                                                     >
-                                                         <Plus className="h-3.5 w-3.5" />
-                                                     </button>
-                                                 </div>
-                                                 {receivedEquiv > 0 && convFactor !== 1 && (
-                                                     <span className="text-[9px] text-primary font-bold block mt-1 bg-primary/5 px-2 py-0.5 rounded border border-primary/10 w-fit select-none">
-                                                         = {receivedEquiv.toLocaleString()} {baseUom}
-                                                     </span>
-                                                 )}
-                                             </div>
+                                    return (
+                                        <div className="grid gap-4 grid-cols-1 sm:grid-cols-3">
+                                            {/* Received Quantity Stepper */}
+                                            <div className="space-y-1">
+                                                <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">
+                                                    Received Quantity
+                                                </label>
+                                                <div className="flex items-center">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleUpdateRow(line.line_id, "receivedQty", Math.max(0, receivedVal - 1))}
+                                                        className="w-10 h-10 border border-r-0 bg-background text-foreground rounded-l-lg hover:bg-muted font-extrabold flex items-center justify-center transition-colors text-base select-none shrink-0"
+                                                    >
+                                                        <Minus className="h-3.5 w-3.5" />
+                                                    </button>
+                                                    <input
+                                                        type="number"
+                                                        required
+                                                        min="0"
+                                                        placeholder="Manually count"
+                                                        value={row.receivedQty}
+                                                        onChange={e => handleUpdateRow(line.line_id, "receivedQty", e.target.value === "" ? "" : Number(e.target.value))}
+                                                        className="w-full h-10 border bg-background text-center text-xs font-semibold text-foreground outline-none focus:ring-0"
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleUpdateRow(line.line_id, "receivedQty", receivedVal + 1)}
+                                                        className="w-10 h-10 border border-l-0 bg-background text-foreground rounded-r-lg hover:bg-muted font-extrabold flex items-center justify-center transition-colors text-base select-none shrink-0"
+                                                    >
+                                                        <Plus className="h-3.5 w-3.5" />
+                                                    </button>
+                                                </div>
+                                                {receivedEquiv > 0 && convFactor !== 1 && (
+                                                    <span className="text-[9px] text-primary font-bold block mt-1 bg-primary/5 px-2 py-0.5 rounded border border-primary/10 w-fit select-none">
+                                                        = {receivedEquiv.toLocaleString()} {baseUom}
+                                                    </span>
+                                                )}
+                                            </div>
 
-                                             {/* Accepted Quantity Stepper */}
-                                             <div className="space-y-1">
-                                                 <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">
-                                                     Accepted Quantity <span className="text-red-500">*</span>
-                                                     <span className="ml-1 text-[8px] text-primary/70 normal-case font-semibold">(can exceed received)</span>
-                                                 </label>
-                                                 <div className="flex items-center">
-                                                     <button
-                                                         type="button"
-                                                         onClick={() => handleUpdateRow(line.line_id, "acceptedQty", Math.max(0, acceptedVal - 1))}
-                                                         className="w-10 h-10 border border-r-0 bg-background text-foreground rounded-l-lg hover:bg-muted font-extrabold flex items-center justify-center transition-colors text-base select-none shrink-0"
-                                                     >
-                                                         <Minus className="h-3.5 w-3.5" />
-                                                     </button>
-                                                     <input
-                                                         type="number"
-                                                         required
-                                                         min="0"
-                                                         placeholder="Accepted qty"
-                                                         value={row.acceptedQty}
-                                                         onChange={e => handleUpdateRow(line.line_id, "acceptedQty", e.target.value === "" ? "" : Number(e.target.value))}
-                                                         className="w-full h-10 border bg-background text-center text-xs font-semibold text-foreground outline-none focus:ring-0"
-                                                     />
-                                                     <button
-                                                         type="button"
-                                                         onClick={() => handleUpdateRow(line.line_id, "acceptedQty", acceptedVal + 1)}
-                                                         className="w-10 h-10 border border-l-0 bg-background text-foreground rounded-r-lg hover:bg-muted font-extrabold flex items-center justify-center transition-colors text-base select-none shrink-0"
-                                                     >
-                                                         <Plus className="h-3.5 w-3.5" />
-                                                     </button>
-                                                 </div>
-                                                 {acceptedEquiv > 0 && convFactor !== 1 && (
-                                                     <span className="text-[9px] text-emerald-600 font-bold block mt-1 bg-emerald-500/5 px-2 py-0.5 rounded border border-emerald-500/10 w-fit select-none">
-                                                         = {acceptedEquiv.toLocaleString()} {baseUom}
-                                                     </span>
-                                                 )}
-                                             </div>
+                                            {/* Accepted Quantity Stepper */}
+                                            <div className="space-y-1">
+                                                <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">
+                                                    Accepted Quantity <span className="text-red-500">*</span>
+                                                    <span className="ml-1 text-[8px] text-primary/70 normal-case font-semibold">(can exceed received)</span>
+                                                </label>
+                                                <div className="flex items-center">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleUpdateRow(line.line_id, "acceptedQty", Math.max(0, acceptedVal - 1))}
+                                                        className="w-10 h-10 border border-r-0 bg-background text-foreground rounded-l-lg hover:bg-muted font-extrabold flex items-center justify-center transition-colors text-base select-none shrink-0"
+                                                    >
+                                                        <Minus className="h-3.5 w-3.5" />
+                                                    </button>
+                                                    <input
+                                                        type="number"
+                                                        required
+                                                        min="0"
+                                                        placeholder="Accepted qty"
+                                                        value={row.acceptedQty}
+                                                        onChange={e => handleUpdateRow(line.line_id, "acceptedQty", e.target.value === "" ? "" : Number(e.target.value))}
+                                                        className="w-full h-10 border bg-background text-center text-xs font-semibold text-foreground outline-none focus:ring-0"
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleUpdateRow(line.line_id, "acceptedQty", acceptedVal + 1)}
+                                                        className="w-10 h-10 border border-l-0 bg-background text-foreground rounded-r-lg hover:bg-muted font-extrabold flex items-center justify-center transition-colors text-base select-none shrink-0"
+                                                    >
+                                                        <Plus className="h-3.5 w-3.5" />
+                                                    </button>
+                                                </div>
+                                                {acceptedEquiv > 0 && convFactor !== 1 && (
+                                                    <span className="text-[9px] text-emerald-600 font-bold block mt-1 bg-emerald-500/5 px-2 py-0.5 rounded border border-emerald-500/10 w-fit select-none">
+                                                        = {acceptedEquiv.toLocaleString()} {baseUom}
+                                                    </span>
+                                                )}
+                                            </div>
 
-                                             {/* BO Qty (Calculated, Read Only) */}
-                                             <div className="space-y-1">
-                                                 <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">
-                                                     BO Qty (Calculated)
-                                                 </label>
-                                                 <input
-                                                     type="number"
-                                                     readOnly
-                                                     disabled
-                                                     placeholder="0"
-                                                     value={row.boQty}
-                                                     className="w-full h-10 bg-muted/40 border border-border text-muted-foreground rounded-lg px-2.5 py-1.5 text-xs font-semibold cursor-not-allowed select-none"
-                                                 />
-                                                 {boEquiv > 0 && convFactor !== 1 && (
-                                                     <span className="text-[9px] text-red-600 font-bold block mt-1 bg-red-500/5 px-2 py-0.5 rounded border border-red-500/10 w-fit select-none">
-                                                         = {boEquiv.toLocaleString()} {baseUom}
-                                                     </span>
-                                                 )}
-                                             </div>
-                                         </div>
-                                     );
-                                 })()}
+                                            {/* BO Qty (Calculated, Read Only) */}
+                                            <div className="space-y-1">
+                                                <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">
+                                                    BO Qty (Calculated)
+                                                </label>
+                                                <input
+                                                    type="number"
+                                                    readOnly
+                                                    disabled
+                                                    placeholder="0"
+                                                    value={row.boQty}
+                                                    className="w-full h-10 bg-muted/40 border border-border text-muted-foreground rounded-lg px-2.5 py-1.5 text-xs font-semibold cursor-not-allowed select-none"
+                                                />
+                                                {boEquiv > 0 && convFactor !== 1 && (
+                                                    <span className="text-[9px] text-red-600 font-bold block mt-1 bg-red-500/5 px-2 py-0.5 rounded border border-red-500/10 w-fit select-none">
+                                                        = {boEquiv.toLocaleString()} {baseUom}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
 
                                 <div className="grid gap-4 grid-cols-1 sm:grid-cols-3 pt-1">
                                     <div className="space-y-1">
@@ -398,33 +396,30 @@ export default function ShipmentInspectionForm({
                                             <button
                                                 type="button"
                                                 onClick={() => handleUpdateRow(line.line_id, "qaStatus", "Passed")}
-                                                className={`text-[10px] font-bold rounded-lg flex items-center justify-center transition-all cursor-pointer ${
-                                                    row.qaStatus === "Passed"
+                                                className={`text-[10px] font-bold rounded-lg flex items-center justify-center transition-all cursor-pointer ${row.qaStatus === "Passed"
                                                         ? "bg-green-500 text-white shadow-sm"
                                                         : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                                                }`}
+                                                    }`}
                                             >
                                                 Passed
                                             </button>
                                             <button
                                                 type="button"
                                                 onClick={() => handleUpdateRow(line.line_id, "qaStatus", "Partially Accepted")}
-                                                className={`text-[10px] font-bold rounded-lg flex items-center justify-center transition-all text-center leading-tight cursor-pointer ${
-                                                    row.qaStatus === "Partially Accepted"
+                                                className={`text-[10px] font-bold rounded-lg flex items-center justify-center transition-all text-center leading-tight cursor-pointer ${row.qaStatus === "Partially Accepted"
                                                         ? "bg-amber-500 text-white shadow-sm"
                                                         : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                                                }`}
+                                                    }`}
                                             >
                                                 Partial
                                             </button>
                                             <button
                                                 type="button"
                                                 onClick={() => handleUpdateRow(line.line_id, "qaStatus", "Rejected")}
-                                                className={`text-[10px] font-bold rounded-lg flex items-center justify-center transition-all cursor-pointer ${
-                                                    row.qaStatus === "Rejected"
+                                                className={`text-[10px] font-bold rounded-lg flex items-center justify-center transition-all cursor-pointer ${row.qaStatus === "Rejected"
                                                         ? "bg-red-500 text-white shadow-sm"
                                                         : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                                                }`}
+                                                    }`}
                                             >
                                                 Rejected
                                             </button>

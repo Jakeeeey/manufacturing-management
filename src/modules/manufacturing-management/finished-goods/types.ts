@@ -172,7 +172,6 @@ export interface ProductVersion {
     valid_to?: string | null;
     is_active?: boolean; // legacy/compatibility
     routes?: RouteStep[];
-    custom_overhead?: number | null;
 }
 
 export interface RouteStep {
@@ -203,8 +202,6 @@ export interface RouteBOMItem {
     product_code?: string;
     cost_per_unit?: number;
     is_foreign?: boolean;
-    uom_id?: number | null;
-    type?: "raw_material" | "packaging" | "sub_assembly" | "by_product" | "finished_good";
 }
 
 

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { DIRECTUS_URL, headers } from "@/app/api/manufacturing/directus-api";
 
 export async function GET(request: Request) {
@@ -17,7 +18,7 @@ export async function GET(request: Request) {
         const res = await fetch(url, { headers, cache: "no-store" });
         if (!res.ok) throw new Error(`Directus failed to fetch versions: ${res.status}`);
         const json = await res.json();
-        
+
         const versionsList = (json.data || []).map((v: Record<string, unknown> & { version_id: number; version_name?: string; status?: string; expected_yield_percentage?: number; base_quantity?: number; uom_id?: number | null; valid_from?: string | null; valid_to?: string | null }) => ({
             version_id: v.version_id,
             id: v.version_id, // compatibility
@@ -58,6 +59,29 @@ export async function POST(request: Request) {
         const createdRoutes: number[] = [];
         const createdBOMItems: number[] = [];
 
+        // Get logged in user ID from secure access token cookie
+        let userId: number | null = null;
+        try {
+            const cookieStore = await cookies();
+            const token = cookieStore.get("vos_access_token")?.value;
+            if (token) {
+                const parts = token.split(".");
+                if (parts.length >= 2) {
+                    const base64Url = parts[1];
+                    let base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+                    while (base64.length % 4) base64 += "=";
+                    const jsonPayload = Buffer.from(base64, "base64").toString("utf8");
+                    const payload = JSON.parse(jsonPayload);
+                    const rawId = payload?.id || payload?.user_id || payload?.sub;
+                    if (rawId && !isNaN(Number(rawId))) {
+                        userId = Number(rawId);
+                    }
+                }
+            }
+        } catch (err) {
+            console.error("Error parsing user token in POST versions route:", err);
+        }
+
         try {
             // 1. Create product manufacturing version
             const verRes = await fetch(`${DIRECTUS_URL}/items/product_manufacturing_version`, {
@@ -70,7 +94,8 @@ export async function POST(request: Request) {
                     uom_id: uId,
                     expected_yield_percentage: yieldPercent,
                     status: "For Approval", // New version starts as For Approval
-                    valid_from: today
+                    valid_from: today,
+                    created_by: userId
                 })
             });
             if (!verRes.ok) throw new Error(`Directus failed to create product version: ${verRes.status}`);
@@ -98,7 +123,8 @@ export async function POST(request: Request) {
                             setup_time_hours: step.setup_time_hours || 0,
                             run_time_hours: step.run_time_hours || 0,
                             estimated_labor_cost: step.estimated_labor_cost || 0,
-                            qa_template_id: step.qa_template_id || null
+                            qa_template_id: step.qa_template_id || null,
+                            created_by: userId
                         };
 
                         const resStep = await fetch(`${DIRECTUS_URL}/items/manufacturing_routes`, {
@@ -125,7 +151,8 @@ export async function POST(request: Request) {
                                         product_id: item.product_id,
                                         quantity_required: item.quantity_required,
                                         unit_of_measurement: item.unit_of_measurement || null,
-                                        wastage_factor_percentage: item.wastage_factor_percentage || 0
+                                        wastage_factor_percentage: item.wastage_factor_percentage || 0,
+                                        created_by: userId
                                     };
 
                                     const resItem = await fetch(`${DIRECTUS_URL}/items/manufacturing_routes_bom`, {
@@ -150,13 +177,13 @@ export async function POST(request: Request) {
             console.error("Error cloning version, rolling back...", err);
             // Rollback newly created items
             for (const id of createdBOMItems) {
-                await fetch(`${DIRECTUS_URL}/items/manufacturing_routes_bom/${id}`, { method: "DELETE", headers }).catch(() => {});
+                await fetch(`${DIRECTUS_URL}/items/manufacturing_routes_bom/${id}`, { method: "DELETE", headers }).catch(() => { });
             }
             for (const id of createdRoutes) {
-                await fetch(`${DIRECTUS_URL}/items/manufacturing_routes/${id}`, { method: "DELETE", headers }).catch(() => {});
+                await fetch(`${DIRECTUS_URL}/items/manufacturing_routes/${id}`, { method: "DELETE", headers }).catch(() => { });
             }
             if (createdVersionId) {
-                await fetch(`${DIRECTUS_URL}/items/product_manufacturing_version/${createdVersionId}`, { method: "DELETE", headers }).catch(() => {});
+                await fetch(`${DIRECTUS_URL}/items/product_manufacturing_version/${createdVersionId}`, { method: "DELETE", headers }).catch(() => { });
             }
             throw err;
         }

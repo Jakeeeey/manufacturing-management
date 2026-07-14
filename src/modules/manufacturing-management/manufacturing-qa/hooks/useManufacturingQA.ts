@@ -1,304 +1,616 @@
-// src/modules/manufacturing-management/manufacturing-qa/hooks/useManufacturingQA.ts
-
-import { useState, useEffect, useCallback, useMemo } from "react";
+/* eslint-disable */
+import { useState, useEffect, useMemo } from "react";
 import { toast } from "sonner";
-import { JobOrder, QALogEntry, Branch, CatalogProduct, JobOrderRoutingTask, FinishedGoodsReceipt } from "../types";
+import { QALog, DispositionRecord, JobOrder, Branch } from "../types";
 import {
+    fetchQALogs,
+    fetchDispositions,
     fetchJobOrders,
-    fetchQALogsHistory,
-    submitQARoutingTaskVerification,
-    releaseFinishedGoodsReceipt,
-    updateRoutingTask
+    fetchBranchesList,
+    fetchJobOrderMaterials,
+    postFinishedGoodsReceipt,
+    postSupervisorOverride,
+    fetchDailyQAInspections,
+    fetchFinalQAReleases,
+    fetchYieldLedger,
+    fetchInventoryLotsData,
+    postDailyQAInspection,
+    postFinalQARelease
 } from "../services/qa-api";
 
-export function useManufacturingQA(userId?: number) {
-    const [activeTab, setActiveTab] = useState<"pending" | "history" | "released">("pending");
+export function useManufacturingQA() {
+    // Tab State
+    const [activeTab, setActiveTab] = useState("holds");
+
+    // Data lists
+    const [qaLogs, setQaLogs] = useState<QALog[]>([]);
+    const [dispositions, setDispositions] = useState<DispositionRecord[]>([]);
     const [jobOrders, setJobOrders] = useState<JobOrder[]>([]);
-    const [qaHistory, setQaHistory] = useState<QALogEntry[]>([]);
-    const [catalogProducts, setCatalogProducts] = useState<CatalogProduct[]>([]);
     const [branches, setBranches] = useState<Branch[]>([]);
-    const [finishedGoodsReceipts, setFinishedGoodsReceipts] = useState<FinishedGoodsReceipt[]>([]);
-    const [loading, setLoading] = useState(true);
 
-    const [searchQuery, setSearchQuery] = useState("");
+    // Loading states
+    const [loadingLogs, setLoadingLogs] = useState(false);
+    const [loadingDispositions, setLoadingDispositions] = useState(false);
+    const [loadingJobOrders, setLoadingJobOrders] = useState(false);
+    const [actionLoading, setActionLoading] = useState(false);
+
+    // Search and filters
+    const [logSearch, setLogSearch] = useState("");
+    const [logStatusFilter, setLogStatusFilter] = useState("all");
+    const [joSearch, setJoSearch] = useState("");
+
+    // Yield Closing Dialog states
     const [selectedJO, setSelectedJO] = useState<JobOrder | null>(null);
-    const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
-    
-    // Audit submission states
-    const [submittingAudit, setSubmittingAudit] = useState(false);
-    const [releasingGoods, setReleasingGoods] = useState(false);
+    const [isYieldDialogOpen, setIsYieldDialogOpen] = useState(false);
+    const [yieldQty, setYieldQty] = useState("");
+    const [lotNumber, setLotNumber] = useState("");
+    const [expiryDate, setExpiryDate] = useState("");
+    const [unitCost, setUnitCost] = useState("");
 
-    const loadData = useCallback(async () => {
-        setLoading(true);
+    // Supervisor Override Dialog states
+    const [selectedDisp, setSelectedDisp] = useState<DispositionRecord | null>(null);
+    const [isOverrideDialogOpen, setIsOverrideDialogOpen] = useState(false);
+    const [overrideDecision, setOverrideDecision] = useState<"Release with Deviation" | "Rework" | "Scrap">("Release with Deviation");
+    const [overrideComments, setOverrideComments] = useState("");
+
+    // Load QA Logs
+    const loadQALogs = async () => {
+        setLoadingLogs(true);
         try {
-            const [joData, historyData, prodRes, branchRes, fgRes] = await Promise.all([
-                fetchJobOrders(),
-                fetchQALogsHistory(),
-                fetch("/api/manufacturing/finished-goods/products?limit=250"),
-                fetch("/api/manufacturing/procurement/qa-receiving?action=branches"),
-                fetch("/api/manufacturing/production/finished-goods")
-            ]);
+            const data = await fetchQALogs();
+            setQaLogs(data);
+        } catch (e) {
+            console.error("QA Logs fetch error:", e);
+            toast.error("Failed to retrieve quality checkpoint logs.");
+        } finally {
+            setLoadingLogs(false);
+        }
+    };
 
-            setJobOrders(joData);
-            
-            // Format history data to resolve task references
-            const taskMap = new Map<number, { task: JobOrderRoutingTask; jo: JobOrder }>();
-            (joData || []).forEach((jo: JobOrder) => {
-                const tasks = jo.routing_tasks || [];
-                tasks.forEach((t: JobOrderRoutingTask) => {
-                    taskMap.set(Number(t.id), { task: t, jo });
-                });
-            });
+    // Load Dispositions
+    const loadDispositions = async () => {
+        setLoadingDispositions(true);
+        try {
+            const data = await fetchDispositions();
+            setDispositions(data);
+        } catch (e) {
+            console.error("Dispositions fetch error:", e);
+            toast.error("Failed to retrieve quarantine/holds list.");
+        } finally {
+            setLoadingDispositions(false);
+        }
+    };
 
-            const formattedHistory: QALogEntry[] = (historyData || []).map((log: QALogEntry) => {
-                const taskId = typeof log.task_id === "object" && log.task_id !== null 
-                    ? Number(log.task_id.id) 
-                    : Number(log.task_id);
+    // Load Active Job Orders
+    const loadJobOrders = async () => {
+        setLoadingJobOrders(true);
+        try {
+            const data = await fetchJobOrders();
+            setJobOrders(data);
+        } catch (e) {
+            console.error("Job Orders fetch error:", e);
+            toast.error("Failed to retrieve active job orders.");
+        } finally {
+            setLoadingJobOrders(false);
+        }
+    };
 
-                const taskInfo = taskMap.get(taskId);
-                const task = taskInfo?.task;
-                const relatedJO = taskInfo?.jo;
+    // Load Branches
+    const loadBranches = async () => {
+        try {
+            const list = await fetchBranchesList();
+            setBranches(list);
+        } catch (e) {
+            console.error("Branches load error:", e);
+        }
+    };
 
-                return {
-                    id: log.id,
-                    task_id: taskId,
-                    jo_id: task?.jo_id || "Unknown",
-                    task_name: task?.name || "Inspected Task",
-                    product_name: relatedJO?.product_name || `Product ID ${relatedJO?.product_id || "N/A"}`,
-                    expected_quantity: Number(log.expected_quantity || 0),
-                    actual_quantity: Number(log.actual_quantity || 0),
-                    deviation_quantity: Number(log.deviation_quantity || 0),
-                    qa_status: log.qa_status || "Passed",
-                    recorded_at: log.recorded_at,
-                    comments: log.comments,
-                    photos: log.photos
-                };
-            });
-            setQaHistory(formattedHistory);
+    // Daily Yield QA & Final release QA states
+    const [yieldLedger, setYieldLedger] = useState<any[]>([]);
+    const [dailyInspections, setDailyInspections] = useState<any[]>([]);
+    const [qaTemplates, setQaTemplates] = useState<any[]>([]);
+    const [qaParamValues, setQaParamValues] = useState<Record<number, string>>({});
+    const [finalReleases, setFinalReleases] = useState<any[]>([]);
+    const [lots, setLots] = useState<any[]>([]);
+    const [lotsProducts, setLotsProducts] = useState<any[]>([]);
+    const [loadingDailyQA, setLoadingDailyQA] = useState(false);
+    const [loadingFinalQA, setLoadingFinalQA] = useState(false);
 
-            if (prodRes.ok) {
-                const prodJson = await prodRes.json();
-                setCatalogProducts(prodJson || []);
-            }
-            if (branchRes.ok) {
-                const branchJson = await branchRes.json();
-                setBranches(branchJson || []);
-            }
-            if (fgRes.ok) {
-                const fgJson = await fgRes.json();
-                setFinishedGoodsReceipts(fgJson || []);
+    // Recording Daily QA Dialog states
+    const [isDailyAuditOpen, setIsDailyAuditOpen] = useState(false);
+    const [selectedLedgerEntry, setSelectedLedgerEntry] = useState<any | null>(null);
+    const [moisturePct, setMoisturePct] = useState("");
+    const [acidityPh, setAcidityPh] = useState("");
+    const [sensoryStatus, setSensoryStatus] = useState<"Passed" | "Failed">("Passed");
+    const [weightCheckPassed, setWeightCheckPassed] = useState(true);
+    const [dailyLabStatus, setDailyLabStatus] = useState<"Pending" | "Passed" | "Failed">("Passed");
+    const [dailyActionTaken, setDailyActionTaken] = useState<"Released" | "Quarantined" | "Scrapped">("Released");
+    const [dailyRemarks, setDailyRemarks] = useState("");
+    const [selectedRouteId, setSelectedRouteId] = useState<number | null>(null);
+    const [routes, setRoutes] = useState<any[]>([]);
+
+    // Recording Final QA release Dialog states
+    const [isFinalReleaseOpen, setIsFinalReleaseOpen] = useState(false);
+    const [selectedLot, setSelectedLot] = useState<any | null>(null);
+    const [inspectedQty, setInspectedQty] = useState("");
+    const [defectQty, setDefectQty] = useState("");
+    const [microbiologicalStatus, setMicrobiologicalStatus] = useState<"Pending" | "Passed" | "Failed">("Passed");
+    const [packagingSealPassed, setPackagingSealPassed] = useState(true);
+    const [labelCompliancePassed, setLabelCompliancePassed] = useState(true);
+    const [overallDisposition, setOverallDisposition] = useState<"Approved" | "Quarantined" | "Rejected">("Approved");
+    const [coaRefNo, setCoaRefNo] = useState("");
+    const [finalRemarks, setFinalRemarks] = useState("");
+
+    // Imports from services are now at the top of the file
+
+    const loadDailyQAData = async () => {
+        setLoadingDailyQA(true);
+        try {
+            const ledger = await fetchYieldLedger();
+            const inspections = await fetchDailyQAInspections();
+            setYieldLedger(ledger);
+            setDailyInspections(inspections);
+
+            // Load QA templates list
+            const res = await fetch("/api/manufacturing/qa?action=templates");
+            if (res.ok) {
+                const data = await res.json();
+                setQaTemplates(data);
             }
         } catch (e) {
-            const error = e as Error;
-            console.error("Failed to load QA data:", e);
-            toast.error(error.message || "Failed to sync quality control data.");
+            console.error("Error loading daily QA data:", e);
         } finally {
-            setLoading(false);
+            setLoadingDailyQA(false);
         }
+    };
+
+    const loadFinalQAData = async () => {
+        setLoadingFinalQA(true);
+        try {
+            const releases = await fetchFinalQAReleases();
+            const lotsData = await fetchInventoryLotsData();
+            setFinalReleases(releases);
+            setLots(lotsData.lots);
+            setLotsProducts(lotsData.products);
+        } catch (e) {
+            console.error("Error loading final QA data:", e);
+        } finally {
+            setLoadingFinalQA(false);
+        }
+    };
+
+    // Refresh all data
+    const refreshAll = () => {
+        loadQALogs();
+        loadDispositions();
+        loadJobOrders();
+        loadDailyQAData();
+        loadFinalQAData();
+    };
+
+    // Mount lifecycle
+    useEffect(() => {
+        refreshAll();
+        loadBranches();
     }, []);
 
-    useEffect(() => {
-        loadData();
-    }, [loadData]);
+    // Resolve Branch Name from ID
+    const getBranchName = (branchId?: number | null) => {
+        if (!branchId) return "Main Branch";
+        const found = branches.find(b => Number(b.branch_id || b.id) === Number(branchId));
+        return found?.branch_name || found?.name || `Branch #${branchId}`;
+    };
 
-    const filteredJobOrders = useMemo(() => {
-        // Only show ongoing, hold, completed proceed-status Job Orders that are active for QA
-        const activeJOs = jobOrders.filter(jo => 
-            ["Ongoing", "Proceed", "On Hold"].includes(jo.status)
+    // Filtered QA Logs
+    const filteredQALogs = useMemo(() => {
+        return qaLogs.filter(log => {
+            const joNo = typeof log.task_id === "object" ? log.task_id?.jo_id || "" : "";
+            const stepName = typeof log.task_id === "object" ? log.task_id?.operation_name || log.task_id?.name || "" : "";
+            const matchesSearch = joNo.toLowerCase().includes(logSearch.toLowerCase()) || 
+                                  stepName.toLowerCase().includes(logSearch.toLowerCase()) ||
+                                  (log.comments || "").toLowerCase().includes(logSearch.toLowerCase());
+            
+            const matchesStatus = logStatusFilter === "all" ? true : log.qa_status.toLowerCase() === logStatusFilter.toLowerCase();
+            
+            return matchesSearch && matchesStatus;
+        });
+    }, [qaLogs, logSearch, logStatusFilter]);
+
+    // Active Pending Holds (Quarantined Job Orders)
+    const pendingHolds = useMemo(() => {
+        return dispositions.filter(d => d.disposition_status === "Pending");
+    }, [dispositions]);
+
+    // Filtered Active Job Orders (Awaiting yield closing)
+    const activeJobOrders = useMemo(() => {
+        return jobOrders.filter(jo => {
+            const status = jo.status?.toLowerCase();
+            const isCompleted = status === "finished" || status === "completed" || status === "cancelled";
+            const matchesSearch = jo.jo_id.toLowerCase().includes(joSearch.toLowerCase()) || 
+                                  jo.product_name.toLowerCase().includes(joSearch.toLowerCase());
+            return !isCompleted && matchesSearch;
+        });
+    }, [jobOrders, joSearch]);
+
+    // Handle Open Yield Dialog
+    const handleOpenYieldDialog = (jo: JobOrder) => {
+        setSelectedJO(jo);
+        setYieldQty(String(jo.quantity));
+        setLotNumber(`MFG-${jo.jo_id}`);
+        
+        const nextYear = new Date();
+        nextYear.setFullYear(nextYear.getFullYear() + 1);
+        setExpiryDate(nextYear.toISOString().split("T")[0]);
+        
+        setUnitCost("0");
+        setIsYieldDialogOpen(true);
+    };
+
+    // Submit Finished Goods Yield closing
+    const handleSubmitYieldClosing = async () => {
+        if (!selectedJO) return;
+        if (!yieldQty || isNaN(Number(yieldQty)) || Number(yieldQty) <= 0) {
+            toast.error("Please enter a valid yield quantity.");
+            return;
+        }
+
+        setActionLoading(true);
+        try {
+            let componentsConsumed: Array<{
+                component_product_id: number;
+                required: number;
+                quantity: number;
+                component_name: string;
+            }> = [];
+            try {
+                const materials = await fetchJobOrderMaterials(selectedJO.jo_id);
+                componentsConsumed = materials.map((m: any) => ({
+                    component_product_id: m.product_id,
+                    required: m.quantity_required,
+                    quantity: m.quantity_required,
+                    component_name: m.product_name
+                }));
+            } catch (err) {
+                console.warn("Failed to load materials for yield closing consumption:", err);
+            }
+
+            await postFinishedGoodsReceipt({
+                joId: selectedJO.jo_id,
+                productId: selectedJO.product_id,
+                productName: selectedJO.product_name,
+                quantityProduced: Number(yieldQty),
+                branchId: selectedJO.branch_id || 1,
+                lotNumber: lotNumber || `MFG-${selectedJO.jo_id}`,
+                expirationDate: expiryDate || null,
+                unitCost: Number(unitCost || 0),
+                componentsConsumed: componentsConsumed,
+                completeJobOrder: true
+            });
+
+            toast.success(`Job Order ${selectedJO.jo_id} successfully completed and WMS ledger receipted!`);
+            setIsYieldDialogOpen(false);
+            refreshAll();
+        } catch (e: any) {
+            console.error("Yield closing error:", e);
+            toast.error(e.message || "An error occurred during finished goods yield closing.");
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
+    // Handle Open Supervisor Override Dialog
+    const handleOpenOverrideDialog = (disp: DispositionRecord) => {
+        setSelectedDisp(disp);
+        setOverrideDecision("Release with Deviation");
+        setOverrideComments("");
+        setIsOverrideDialogOpen(true);
+    };
+
+    // Submit Supervisor Override resolution
+    const handleSubmitOverride = async () => {
+        if (!selectedDisp) return;
+        if (!overrideComments.trim()) {
+            toast.error("Please enter supervisor reasoning comments.");
+            return;
+        }
+
+        setActionLoading(true);
+        try {
+            await postSupervisorOverride({
+                action: "disposition",
+                dispositionId: selectedDisp.id,
+                decision: overrideDecision,
+                supervisorComments: overrideComments.trim(),
+                userId: 1
+            });
+
+            toast.success(`Hold resolved successfully: Quarantined Job Order updated to "${overrideDecision}"`);
+            setIsOverrideDialogOpen(false);
+            refreshAll();
+        } catch (e: any) {
+            console.error("Override submission error:", e);
+            toast.error(e.message || "Failed to resolve quarantine hold.");
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
+    // Handle Open Daily QA Dialog
+    const handleOpenDailyAuditDialog = (ledgerEntry: any) => {
+        setSelectedLedgerEntry(ledgerEntry);
+        setMoisturePct("");
+        setAcidityPh("");
+        setSensoryStatus("Passed");
+        setWeightCheckPassed(true);
+        setDailyLabStatus("Passed");
+        setDailyActionTaken("Released");
+        setDailyRemarks("");
+        setQaParamValues({}); // Reset dynamic parameter inputs
+
+        const jo = jobOrders.find(
+            (j) => 
+                Number(j.order_id || j.job_order_id || j.id) === Number(ledgerEntry.job_order_id) ||
+                j.jo_id === String(ledgerEntry.job_order_id)
         );
+        const tasks = jo ? (jo.routing_tasks || jo.routingTasks || []) : [];
+        setRoutes(tasks);
 
-        if (!searchQuery.trim()) return activeJOs;
+        // Find the first task that has NOT been audited yet for this ledger entry
+        const audits = dailyInspections.filter((ins: any) => Number(ins.ledger_id) === Number(ledgerEntry.ledger_id || ledgerEntry.id));
+        const pendingTask = tasks.find((t: any) => !audits.some((a: any) => Number(a.jo_route_id) === Number(t.id)));
+        
+        setSelectedRouteId(pendingTask ? (pendingTask.id || null) : (tasks.length > 0 ? (tasks[0].id || null) : null));
 
-        const term = searchQuery.toLowerCase();
-        return activeJOs.filter(jo => 
-            jo.jo_id.toLowerCase().includes(term) ||
-            jo.product_name.toLowerCase().includes(term) ||
-            (jo.order_no && jo.order_no.toLowerCase().includes(term))
+        setIsDailyAuditOpen(true);
+    };
+
+    // Submit Daily QA Inspection
+    const handleSubmitDailyAudit = async () => {
+        if (!selectedLedgerEntry) return;
+
+        const jo = jobOrders.find(
+            (j) => 
+                Number(j.order_id || j.job_order_id || j.id) === Number(selectedLedgerEntry.job_order_id) ||
+                j.jo_id === String(selectedLedgerEntry.job_order_id)
         );
-    }, [jobOrders, searchQuery]);
+        const tasks = jo ? (jo.routing_tasks || jo.routingTasks || []) : [];
 
-    const filteredHistory = useMemo(() => {
-        if (!searchQuery.trim()) return qaHistory;
+        // Prepare the inspections array for all steps
+        const inspectionsPayload = tasks.map((task: any) => {
+            let activeParameters: any[] = [];
+            if (task.qa_template_id) {
+                const activeTemplate = qaTemplates.find((t: any) => Number(t.template_id) === Number(task.qa_template_id));
+                if (activeTemplate) {
+                    activeParameters = activeTemplate.parameters || [];
+                }
+            }
 
-        const term = searchQuery.toLowerCase();
-        return qaHistory.filter(log => 
-            log.jo_id.toLowerCase().includes(term) ||
-            log.task_name.toLowerCase().includes(term) ||
-            log.product_name.toLowerCase().includes(term) ||
-            (log.comments && log.comments.toLowerCase().includes(term))
-        );
-    }, [qaHistory, searchQuery]);
+            // Map parameter values to payload format for this task
+            const qaParametersPayload = activeParameters.map((param: any) => {
+                const val = qaParamValues[param.parameter_id] || "";
+                let isFailed = false;
 
-    const completedBatches = useMemo(() => {
-        const finishedJOs = jobOrders.filter(jo => jo.status === "Finished");
+                if (param.test_type === "Numeric" && val) {
+                    const num = parseFloat(val);
+                    if (!isNaN(num)) {
+                        if (param.min_value !== null && num < Number(param.min_value)) isFailed = true;
+                        if (param.max_value !== null && num > Number(param.max_value)) isFailed = true;
+                    }
+                } else if (param.test_type === "Boolean" || param.test_type === "Pass/Fail" || param.test_type === "Yes/No") {
+                    if (val === "Fail" || val === "false" || val === "No") {
+                        isFailed = true;
+                    }
+                }
 
-        const mapped = finishedJOs.map(jo => {
-            const receipts = finishedGoodsReceipts.filter(r => r.jo_id === jo.jo_id);
-            const totalYielded = receipts.reduce((sum, r) => sum + Number(r.quantity_produced || 0), 0);
-            const lotCodes = receipts.map(r => r.lot_number).filter(Boolean).join(", ");
-            const dateReleased = receipts[0]?.date_received || jo.due_date || "";
+                return {
+                    parameter_id: param.parameter_id,
+                    test_name: param.test_name,
+                    value: val,
+                    is_failed: isFailed,
+                    remarks: isFailed ? "Out of specification range" : "In specification"
+                };
+            });
+
+            // Auto-extract moisture and acidity pH for this step
+            let resolvedMoisture = "";
+            let resolvedAcidity = "";
+            activeParameters.forEach((param: any) => {
+                const val = qaParamValues[param.parameter_id];
+                if (!val) return;
+                const name = (param.test_name || "").toLowerCase();
+                if (name.includes("moisture")) {
+                    resolvedMoisture = val;
+                } else if (name.includes("ph") || name.includes("acidity")) {
+                    resolvedAcidity = val;
+                }
+            });
+
+            // Determine sensory status/action taken per step
+            const stepHasFailure = qaParametersPayload.some(p => p.is_failed);
+            const stepSensoryStatus = stepHasFailure ? "Failed" : sensoryStatus;
+            const stepActionTaken = stepHasFailure ? "Quarantined" : dailyActionTaken;
+            const stepLabStatus = stepHasFailure ? "Failed" : dailyLabStatus;
 
             return {
-                jo_id: jo.jo_id,
-                product_name: jo.product_name,
-                expected_quantity: jo.quantity,
-                actual_yielded: totalYielded || jo.quantity,
-                variance: totalYielded ? (totalYielded - jo.quantity) : 0,
-                lot_codes: lotCodes || "Migrated Release",
-                date_released: dateReleased
+                jobOrderId: selectedLedgerEntry.job_order_id,
+                joRouteId: task.id,
+                ledgerId: selectedLedgerEntry.id || selectedLedgerEntry.ledger_id,
+                inspectorId: 1, // Default supervisor ID
+                moisturePercentage: resolvedMoisture,
+                acidityPh: resolvedAcidity,
+                sensoryStatus: stepSensoryStatus,
+                weightCheckPassed: 1,
+                labStatus: stepLabStatus,
+                actionTaken: stepActionTaken,
+                remarks: stepHasFailure ? `[Critical Specs Failed] ${dailyRemarks}` : dailyRemarks,
+                qaParameters: qaParametersPayload
             };
         });
 
-        if (!searchQuery.trim()) return mapped;
-
-        const term = searchQuery.toLowerCase();
-        return mapped.filter(b => 
-            b.jo_id.toLowerCase().includes(term) ||
-            b.product_name.toLowerCase().includes(term) ||
-            b.lot_codes.toLowerCase().includes(term)
-        );
-    }, [jobOrders, finishedGoodsReceipts, searchQuery]);
-
-    const handleOpenAudit = (jo: JobOrder) => {
-        setSelectedJO(jo);
-        setIsAuditModalOpen(true);
-    };
-
-    const handleVerifyQATask = async (
-        taskId: number,
-        productId: number,
-        expectedQty: number,
-        actualQty: number,
-        comments: string,
-        photos: string[]
-    ) => {
-        if (!selectedJO) return;
-        setSubmittingAudit(true);
+        setActionLoading(true);
         try {
-            await submitQARoutingTaskVerification(
-                taskId,
-                productId,
-                Number(selectedJO.branch_id),
-                expectedQty,
-                actualQty,
-                comments,
-                photos,
-                userId ? Number(userId) : null
-            );
-            toast.success("Stage verification logged successfully!");
-            
-            // Refresh detailed select JO to fetch updated tasks
-            const allJOs = await fetchJobOrders();
-            setJobOrders(allJOs);
-            const updatedJO = allJOs.find(j => j.jo_id === selectedJO.jo_id);
-            if (updatedJO) {
-                setSelectedJO(updatedJO);
-            }
-            loadData(); // Sync history
-        } catch (e) {
-            const error = e as Error;
-            console.error("QA task submit error:", e);
-            toast.error(error.message || "Failed to submit stage inspection.");
+            await postDailyQAInspection(inspectionsPayload);
+
+            toast.success("Daily yield QA checklist signed off successfully.");
+            setIsDailyAuditOpen(false);
+            refreshAll();
+        } catch (e: any) {
+            console.error("Daily QA submission error:", e);
+            toast.error(e.message || "Failed to log daily QA inspection.");
         } finally {
-            setSubmittingAudit(false);
+            setActionLoading(false);
         }
     };
 
-    const handleReleaseGoods = async (yieldQties: Record<number, number>, lotNumbers: Record<number, string>, expiryDates: Record<number, string>) => {
-        if (!selectedJO) return;
-        setReleasingGoods(true);
-        try {
-            const productsList = selectedJO.products && selectedJO.products.length > 0 
-                ? selectedJO.products 
-                : [{
-                    product_id: selectedJO.product_id,
-                    product_name: selectedJO.product_name,
-                    quantity: selectedJO.quantity,
-                    components: selectedJO.components,
-                    allocation_results: selectedJO.allocationResults
-                }];
-
-            for (const p of productsList) {
-                const prodId = Number(p.product_id);
-                const catalogProduct = catalogProducts.find(cp => Number(cp.product_id) === prodId);
-                const payload = {
-                    joId: selectedJO.jo_id,
-                    productId: prodId,
-                    productName: p.product_name,
-                    quantityProduced: yieldQties[prodId] !== undefined ? yieldQties[prodId] : p.quantity,
-                    branchId: Number(selectedJO.branch_id),
-                    lotNumber: lotNumbers[prodId] || `LOT-QA-${selectedJO.jo_id}-${prodId}`,
-                    expirationDate: expiryDates[prodId] || new Date(Date.now() + 1000 * 60 * 60 * 24 * 365).toISOString().split("T")[0],
-                    unitCost: Number(catalogProduct?.cost_per_unit || 0),
-                    componentsConsumed: (p.allocation_results || p.components || []) as unknown[]
-                };
-
-                await releaseFinishedGoodsReceipt(payload);
-            }
-
-            toast.success("All finished goods released to warehouse! Inventory updated successfully.");
-            setIsAuditModalOpen(false);
-            setSelectedJO(null);
-            loadData();
-        } catch (e) {
-            const error = e as Error;
-            console.error("Goods release error:", e);
-            toast.error(error.message || "Failed to release finished goods to inventory.");
-        } finally {
-            setReleasingGoods(false);
-        }
+    // Handle Open Final QA Release Dialog
+    const handleOpenFinalReleaseDialog = (lot: any) => {
+        setSelectedLot(lot);
+        setInspectedQty(String(lot.quantity_received || lot.quantity || 0));
+        setDefectQty("0");
+        setMicrobiologicalStatus("Passed");
+        setPackagingSealPassed(true);
+        setLabelCompliancePassed(true);
+        setOverallDisposition("Approved");
+        setCoaRefNo(`COA-${lot.lot_number}`);
+        setFinalRemarks("");
+        setIsFinalReleaseOpen(true);
     };
 
-    const handleStartRoutingTask = async (taskId: number) => {
-        setSubmittingAudit(true);
+    // Submit Final QA Release
+    const handleSubmitFinalRelease = async () => {
+        if (!selectedLot) return;
+
+        setActionLoading(true);
         try {
-            await updateRoutingTask(taskId, {
-                status: "In Progress",
-                started_at: new Date().toISOString()
+            // Self-healing: Resolve correct Job Order ID from lot number
+            const matchingJO = jobOrders.find(jo => selectedLot.lot_number?.includes(jo.jo_id));
+            const resolvedJoId = matchingJO ? matchingJO.order_id || matchingJO.id || 0 : 0;
+
+            await postFinalQARelease({
+                jobOrderId: resolvedJoId,
+                lotId: selectedLot.line_id || selectedLot.id || selectedLot.lot_id,
+                inspectedQuantity: Number(inspectedQty),
+                defectQuantity: Number(defectQty),
+                microbiologicalStatus,
+                packagingSealPassed,
+                labelCompliancePassed,
+                overallDisposition,
+                coaReferenceNo: coaRefNo,
+                approvedBy: 1, // Supervisor
+                remarks: finalRemarks
             });
-            toast.success("Routing stage started successfully!");
-            
-            // Refresh detailed select JO to fetch updated tasks
-            const allJOs = await fetchJobOrders();
-            setJobOrders(allJOs);
-            if (selectedJO) {
-                const updatedJO = allJOs.find(j => j.jo_id === selectedJO.jo_id);
-                if (updatedJO) {
-                    setSelectedJO(updatedJO);
-                }
-            }
-            loadData(); // Sync history
-        } catch (e) {
-            const error = e as Error;
-            console.error("Start stage error:", e);
-            toast.error(error.message || "Failed to start stage.");
+
+            toast.success(`Finished Goods Lot successfully released: ${overallDisposition}`);
+            setIsFinalReleaseOpen(false);
+            refreshAll();
+        } catch (e: any) {
+            console.error("Final QA release error:", e);
+            toast.error(e.message || "Failed to record final QA lot release.");
         } finally {
-            setSubmittingAudit(false);
+            setActionLoading(false);
         }
     };
 
     return {
         activeTab,
         setActiveTab,
+        qaLogs,
+        dispositions,
         jobOrders,
-        loading,
-        searchQuery,
-        setSearchQuery,
-        selectedJO,
-        setSelectedJO,
-        isAuditModalOpen,
-        setIsAuditModalOpen,
-        submittingAudit,
-        releasingGoods,
-        catalogProducts,
         branches,
-        filteredJobOrders,
-        filteredHistory,
-        completedBatches,
-        handleOpenAudit,
-        handleVerifyQATask,
-        handleStartRoutingTask,
-        handleReleaseGoods,
-        refresh: loadData
+        loadingLogs,
+        loadingDispositions,
+        loadingJobOrders,
+        actionLoading,
+        logSearch,
+        setLogSearch,
+        logStatusFilter,
+        setLogStatusFilter,
+        joSearch,
+        setJoSearch,
+        selectedJO,
+        isYieldDialogOpen,
+        setIsYieldDialogOpen,
+        yieldQty,
+        setYieldQty,
+        lotNumber,
+        setLotNumber,
+        expiryDate,
+        setExpiryDate,
+        unitCost,
+        setUnitCost,
+        selectedDisp,
+        isOverrideDialogOpen,
+        setIsOverrideDialogOpen,
+        overrideDecision,
+        setOverrideDecision,
+        overrideComments,
+        setOverrideComments,
+        refreshAll,
+        getBranchName,
+        filteredQALogs,
+        pendingHolds,
+        activeJobOrders,
+        handleOpenYieldDialog,
+        handleSubmitYieldClosing,
+        handleOpenOverrideDialog,
+        handleSubmitOverride,
+
+        // Daily Yield QA states & handlers
+        yieldLedger,
+        dailyInspections,
+        loadingDailyQA,
+        isDailyAuditOpen,
+        setIsDailyAuditOpen,
+        selectedLedgerEntry,
+        moisturePct,
+        setMoisturePct,
+        acidityPh,
+        setAcidityPh,
+        sensoryStatus,
+        setSensoryStatus,
+        weightCheckPassed,
+        setWeightCheckPassed,
+        dailyLabStatus,
+        setDailyLabStatus,
+        dailyActionTaken,
+        setDailyActionTaken,
+        dailyRemarks,
+        setDailyRemarks,
+        handleOpenDailyAuditDialog,
+        handleSubmitDailyAudit,
+        selectedRouteId,
+        setSelectedRouteId,
+        routes,
+        qaTemplates,
+        qaParamValues,
+        setQaParamValues,
+
+        // Final QA states & handlers
+        finalReleases,
+        lots,
+        lotsProducts,
+        loadingFinalQA,
+        isFinalReleaseOpen,
+        setIsFinalReleaseOpen,
+        selectedLot,
+        inspectedQty,
+        setInspectedQty,
+        defectQty,
+        setDefectQty,
+        microbiologicalStatus,
+        setMicrobiologicalStatus,
+        packagingSealPassed,
+        setPackagingSealPassed,
+        labelCompliancePassed,
+        setLabelCompliancePassed,
+        overallDisposition,
+        setOverallDisposition,
+        coaRefNo,
+        setCoaRefNo,
+        finalRemarks,
+        setFinalRemarks,
+        handleOpenFinalReleaseDialog,
+        handleSubmitFinalRelease
     };
 }

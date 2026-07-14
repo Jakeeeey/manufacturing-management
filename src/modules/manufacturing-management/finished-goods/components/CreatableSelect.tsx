@@ -31,7 +31,9 @@ export interface CreatableSelectProps {
     onKeyDown?: React.KeyboardEventHandler<HTMLElement>;
     "data-index"?: number;
     popoverClassName?: string;
-    variant?: "popover" | "inline";
+    "aria-label"?: string;
+    "aria-invalid"?: boolean;
+    "aria-describedby"?: string;
 }
 
 export function CreatableSelect({
@@ -45,7 +47,9 @@ export function CreatableSelect({
     onKeyDown,
     "data-index": dataIndex,
     popoverClassName,
-    variant = "popover",
+    "aria-label": ariaLabel,
+    "aria-invalid": ariaInvalid,
+    "aria-describedby": ariaDescribedBy,
 }: CreatableSelectProps) {
     const [open, setOpen] = React.useState(false);
     const [searchQuery, setSearchQuery] = React.useState("");
@@ -71,51 +75,23 @@ export function CreatableSelect({
 
     return (
         <Popover open={open} onOpenChange={setOpen}>
-            {variant === "inline" ? (
-                <PopoverAnchor asChild>
-                    <input
-                        type="text"
-                        disabled={disabled}
-                        placeholder={placeholder}
-                        value={open ? searchQuery : (selectedLabel || "")}
-                        onChange={(e) => {
-                            setSearchQuery(e.target.value);
-                            setOpen(true);
-                        }}
-                        onFocus={() => {
-                            setOpen(true);
-                        }}
-                        onKeyDown={(e) => {
-                            if (e.key === "Escape") {
-                                setOpen(false);
-                            }
-                            if (onKeyDown) {
-                                onKeyDown(e);
-                            }
-                        }}
-                        className={cn(
-                            "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-xs shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
-                            className
-                        )}
-                        data-index={dataIndex}
-                    />
-                </PopoverAnchor>
-            ) : (
-                <PopoverTrigger asChild>
-                    <Button
-                        variant="outline"
-                        role="combobox"
-                        aria-expanded={open}
-                        className={cn("w-full justify-between", !value && "text-muted-foreground", className)}
-                        disabled={disabled}
-                        onKeyDown={onKeyDown}
-                        data-index={dataIndex}
-                    >
-                        <span className="truncate">{selectedLabel || placeholder}</span>
-                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                    </Button>
-                </PopoverTrigger>
-            )}
+            <PopoverTrigger asChild>
+                <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={open}
+                    className={cn("w-full justify-between", !value && "text-muted-foreground", className)}
+                    disabled={disabled}
+                    onKeyDown={onKeyDown}
+                    data-index={dataIndex}
+                    aria-label={ariaLabel}
+                    aria-invalid={ariaInvalid}
+                    aria-describedby={ariaDescribedBy}
+                >
+                    <span className="truncate">{selectedLabel || placeholder}</span>
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                </Button>
+            </PopoverTrigger>
             <PopoverContent className={cn("w-[--radix-popover-trigger-width] p-0", popoverClassName)} align="start">
                 <Command shouldFilter={false}>
                     {variant !== "inline" && (

@@ -52,7 +52,7 @@ export async function PATCH(
             // Create or Update parameters
             for (const param of parameters) {
                 const paramId = param.parameter_id || param.id;
-                const isNewParam = !paramId || isNaN(Number(paramId));
+                const isNewParam = !paramId || isNaN(Number(paramId)) || Number(paramId) < 0;
 
                 const paramPayload = {
                     template_id: templateId,

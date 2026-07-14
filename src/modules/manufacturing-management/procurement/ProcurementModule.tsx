@@ -57,7 +57,7 @@ export default function ProcurementModule({ initialTab = "suppliers" }: Procurem
         handleToggleSupplierActive
     } = useProcurement(initialTab);
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const handleTriggerExpenseAllocation = (shipment: any) => {
         setSelectedShipment(shipment);
         setIsExpenseModalOpen(true);
@@ -115,7 +115,7 @@ export default function ProcurementModule({ initialTab = "suppliers" }: Procurem
                                 <div className="space-y-1.5 max-w-md flex flex-col shrink-0">
                                     <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block">Active Cargo Shipment</label>
                                     <CreatableSelect
-                                        options={shipments.map((s: IncomingShipment) => {
+                                        options={shipments.map(s => {
                                             const poNo = s.purchase_order_no ? ` / ${s.purchase_order_no}` : "";
                                             return {
                                                 value: String(s.shipment_id),
@@ -159,8 +159,8 @@ export default function ProcurementModule({ initialTab = "suppliers" }: Procurem
                 )}
 
                 {activeTab === "raw-materials" && (
-                    <RawMaterialsMaster 
-                        rawMaterials={rawMaterials} 
+                    <RawMaterialsMaster
+                        rawMaterials={rawMaterials}
                         suppliers={suppliers}
                         onRegisterRawMaterial={handleRegisterRawMaterial}
                         onUpdateRawMaterial={handleUpdateRawMaterial}

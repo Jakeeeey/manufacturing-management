@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { 
+import { cookies } from "next/headers";
+import {
     getBOMDetailsForVersion,
     saveActiveBOMDetails,
     syncRoutesAndBOM
@@ -71,14 +72,34 @@ export async function POST(request: Request) {
 
         // 2. Save version metadata (expected yield and base quantity)
         const versionOk = await saveActiveBOMDetails(
-            numericVersionId, 
+            numericVersionId,
             details.expected_yield_percentage || details.expectedYieldPercent || 100,
             details.base_quantity || 1
         );
         if (!versionOk) throw new Error("Failed to update version metadata in Directus");
 
+        // Get logged in user ID from secure access token cookie
+        let userId: number | null = null;
+        try {
+            const cookieStore = await cookies();
+            const token = cookieStore.get("vos_access_token")?.value;
+            if (token) {
+                const parts = token.split(".");
+                if (parts.length >= 2) {
+                    const base64Url = parts[1];
+                    let base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+                    while (base64.length % 4) base64 += "=";
+                    const jsonPayload = Buffer.from(base64, "base64").toString("utf8");
+                    const payload = JSON.parse(jsonPayload);
+                    userId = payload?.id || payload?.user_id || payload?.sub || null;
+                }
+            }
+        } catch (err) {
+            console.error("Error parsing user token in POST bom-details route:", err);
+        }
+
         // 3. Sync routes and their route-level BOM items
-        const syncOk = await syncRoutesAndBOM(numericVersionId, routes);
+        const syncOk = await syncRoutesAndBOM(numericVersionId, routes, userId ? Number(userId) : null);
         if (!syncOk) throw new Error("Failed to sync routes and route-level BOM items in Directus");
 
         // 4. Run standard rollup costing recalculation and save to product standard cost field

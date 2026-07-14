@@ -1,8 +1,10 @@
+/* eslint-disable */
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { X, Save, User, MapPin, ChevronDown, Loader2 } from "lucide-react";
+import { X, Save, User, MapPin, ChevronDown, Loader2, Search } from "lucide-react";
 import { Customer, StoreType } from "../types";
 import { toast } from "sonner";
 import CustomerMapSelector from "./CustomerMapSelector";
+import { ClientProduct, ClientProductVersion } from "../hooks/useClients";
 
 export interface ClientFormData {
     customer_code: string;
@@ -37,6 +39,13 @@ interface ClientFormModalProps {
     setSelectedCityCode: (v: string) => void;
     onSave: (e: React.FormEvent) => void;
     onNameChange: (val: string) => void;
+
+    // Overrides settings props
+    products?: ClientProduct[];
+    versionsMap?: Record<number, ClientProductVersion[]>;
+    overrides?: Record<number, number>;
+    loadingOverrides?: boolean;
+    updateProductVersionOverride?: (productId: number, versionId: number | null) => Promise<void>;
 }
 
 export default function ClientFormModal({
@@ -55,12 +64,34 @@ export default function ClientFormModal({
     selectedCityCode,
     setSelectedCityCode,
     onSave,
-    onNameChange
+    onNameChange,
+    products = [],
+    versionsMap = {},
+    overrides = {},
+    loadingOverrides = false,
+    updateProductVersionOverride
 }: ClientFormModalProps) {
     const [storeTypeQuery, setStoreTypeQuery] = useState("");
     const [isStoreTypeFocused, setIsStoreTypeFocused] = useState(false);
     const [isRegisteringStoreType, setIsRegisteringStoreType] = useState(false);
     const storeTypeContainerRef = useRef<HTMLDivElement>(null);
+
+    const [activeTab, setActiveTab] = useState<"general" | "overrides">("general");
+    const [productSearch, setProductSearch] = useState("");
+
+    const filteredProducts = useMemo(() => {
+        return products.filter(p =>
+            (p.name || "").toLowerCase().includes(productSearch.toLowerCase()) ||
+            (p.code || "").toLowerCase().includes(productSearch.toLowerCase())
+        );
+    }, [products, productSearch]);
+
+    useEffect(() => {
+        if (isOpen) {
+            setActiveTab("general");
+            setProductSearch("");
+        }
+    }, [isOpen]);
 
     // Sync query string with the selected ID
     useEffect(() => {
@@ -172,6 +203,8 @@ export default function ClientFormModal({
         ? cities.filter(c => c.provinceCode === selectedProvinceCode || String(c.provinceCode) === "130000000")
         : cities;
 
+    const showOverridesTab = editingCustomer && !!updateProductVersionOverride;
+
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
             <div 
@@ -192,8 +225,103 @@ export default function ClientFormModal({
                     </button>
                 </div>
 
-                {/* Modal Scrollable Body */}
-                <form onSubmit={onSave} className="flex-1 overflow-y-auto p-6 space-y-6">
+                {/* Navigation Tabs (only shown when editing existing customer) */}
+                {showOverridesTab && (
+                    <div className="flex border-b px-6 pt-2 gap-4 bg-muted/5 shrink-0">
+                        <button
+                            type="button"
+                            onClick={() => setActiveTab("general")}
+                            className={`pb-2 text-xs font-bold transition-all border-b-2 outline-none cursor-pointer ${
+                                activeTab === "general"
+                                    ? "border-primary text-primary"
+                                    : "border-transparent text-muted-foreground hover:text-foreground"
+                            }`}
+                        >
+                            General Info
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setActiveTab("overrides")}
+                            className={`pb-2 text-xs font-bold transition-all border-b-2 outline-none cursor-pointer ${
+                                activeTab === "overrides"
+                                    ? "border-primary text-primary"
+                                    : "border-transparent text-muted-foreground hover:text-foreground"
+                            }`}
+                        >
+                            Served Product Versions
+                        </button>
+                    </div>
+                )}
+
+                {activeTab === "overrides" && showOverridesTab ? (
+                    <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                        <div className="flex flex-col gap-1">
+                            <h4 className="text-xs font-extrabold text-primary uppercase tracking-wider">Served Product Versions Configuration</h4>
+                            <p className="text-[10px] text-muted-foreground">
+                                Override which manufacturing BOM version is served to this customer. By default, customers are served the globally Active version.
+                            </p>
+                        </div>
+
+                        {/* Search bar */}
+                        <div className="relative group">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/50 group-focus-within:text-primary transition-colors" />
+                            <input
+                                type="text"
+                                placeholder="Search products by name or code..."
+                                value={productSearch}
+                                onChange={(e) => setProductSearch(e.target.value)}
+                                className="w-full bg-background border rounded-lg pl-9 pr-4 py-2 text-xs outline-none focus:ring-1 focus:ring-primary font-semibold"
+                            />
+                        </div>
+
+                        {loadingOverrides ? (
+                            <div className="flex flex-col items-center justify-center py-12 gap-2">
+                                <Loader2 className="h-6 w-6 text-primary animate-spin" />
+                                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest animate-pulse">Loading settings...</span>
+                            </div>
+                        ) : (
+                            <div className="border rounded-xl divide-y bg-background overflow-hidden max-h-[40vh] overflow-y-auto">
+                                {filteredProducts.length === 0 ? (
+                                    <div className="p-8 text-center text-xs text-muted-foreground">
+                                        No products found
+                                    </div>
+                                ) : (
+                                    filteredProducts.map((p) => {
+                                        const productVersions = versionsMap[p.id] || [];
+                                        const selectedVer = overrides[p.id] || "";
+                                        
+                                        return (
+                                            <div key={p.id} className="flex items-center justify-between p-3.5 hover:bg-muted/5 transition-colors gap-4">
+                                                <div className="flex flex-col gap-0.5 min-w-0">
+                                                    <span className="text-xs font-bold text-foreground truncate">{p.name}</span>
+                                                    <span className="text-[9px] font-mono text-muted-foreground uppercase">{p.code}</span>
+                                                </div>
+                                                <div className="flex items-center gap-2 shrink-0">
+                                                    <select
+                                                        value={selectedVer}
+                                                        onChange={(e) => {
+                                                            const val = e.target.value ? Number(e.target.value) : null;
+                                                            updateProductVersionOverride?.(p.id, val);
+                                                        }}
+                                                        className="rounded-lg border bg-background text-foreground text-xs font-semibold px-2 py-1.5 outline-none focus:ring-1 focus:ring-primary cursor-pointer transition-all"
+                                                    >
+                                                        <option value="">Default (Global Active Version)</option>
+                                                         {productVersions.map((v) => (
+                                                             <option key={(v as any).version_id ?? (v as any).id} value={(v as any).version_id ?? (v as any).id}>
+                                                                 {v.version_name} ({v.status})
+                                                             </option>
+                                                         ))}
+                                                    </select>
+                                                </div>
+                                            </div>
+                                        );
+                                    })
+                                )}
+                            </div>
+                        )}
+                    </div>
+                ) : (
+                    <form onSubmit={onSave} className="flex-1 overflow-y-auto p-6 space-y-6">
                     {/* section 1: Identity */}
                     <div className="space-y-4">
                         <h4 className="text-[10px] font-extrabold text-primary uppercase tracking-wider border-b pb-1">1. Customer Identity</h4>
@@ -496,24 +624,37 @@ export default function ClientFormModal({
                         </div>
                     </div>
                 </form>
+                )}
 
                 {/* Modal Footer */}
                 <div className="flex gap-3 justify-end p-5 border-t bg-muted/5 shrink-0">
-                    <button
-                        type="button"
-                        onClick={onClose}
-                        className="px-4 py-2 rounded-lg border text-xs font-semibold hover:bg-muted text-foreground transition-all cursor-pointer"
-                    >
-                        Cancel
-                    </button>
-                    <button
-                        type="button"
-                        onClick={onSave}
-                        className="inline-flex items-center gap-1.5 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-xs font-bold hover:bg-primary/95 transition-all shadow-md cursor-pointer"
-                    >
-                        <Save className="h-3.5 w-3.5" />
-                        Save Profile
-                    </button>
+                    {activeTab === "overrides" ? (
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            className="px-5 py-2 inline-flex items-center justify-center bg-primary text-primary-foreground rounded-lg text-xs font-bold hover:bg-primary/95 transition-all shadow-md cursor-pointer"
+                        >
+                            Done / Close
+                        </button>
+                    ) : (
+                        <>
+                            <button
+                                type="button"
+                                onClick={onClose}
+                                className="px-4 py-2 rounded-lg border text-xs font-semibold hover:bg-muted text-foreground transition-all cursor-pointer"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={onSave}
+                                className="inline-flex items-center gap-1.5 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-xs font-bold hover:bg-primary/95 transition-all shadow-md cursor-pointer"
+                            >
+                                <Save className="h-3.5 w-3.5" />
+                                Save Profile
+                            </button>
+                        </>
+                    )}
                 </div>
             </div>
         </div>

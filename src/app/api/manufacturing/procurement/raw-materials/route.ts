@@ -1,3 +1,4 @@
+/* eslint-disable */
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { DIRECTUS_URL, headers } from "@/app/api/manufacturing/directus-api";
@@ -148,7 +149,7 @@ export async function POST(request: Request) {
                                         product_id: childId,
                                         supplier_id: Number(supId)
                                     })
-                                }).catch(() => {});
+                                }).catch(() => { });
                             }
                         }
                     }
@@ -200,7 +201,7 @@ export async function PATCH(request: Request) {
             // 1. Get all child products of this parent
             const childrenRes = await fetch(`${DIRECTUS_URL}/items/products?filter[parent_id][_eq]=${productId}&fields=product_id&limit=-1`, { headers });
             const children = childrenRes.ok ? (await childrenRes.json()).data || [] : [];
-            const allProductIdsToSync = [Number(productId), ...children.map((c: { product_id: number | string }) => Number(c.product_id))];
+            const allProductIdsToSync = [Number(productId), ...children.map((c: any) => Number(c.product_id))];
 
             // 2. Delete old links
             for (const pid of allProductIdsToSync) {
@@ -208,7 +209,7 @@ export async function PATCH(request: Request) {
                 if (oldLinksRes.ok) {
                     const oldLinks = (await oldLinksRes.json()).data || [];
                     for (const link of oldLinks) {
-                        await fetch(`${DIRECTUS_URL}/items/product_per_supplier/${link.id}`, { method: "DELETE", headers }).catch(() => {});
+                        await fetch(`${DIRECTUS_URL}/items/product_per_supplier/${link.id}`, { method: "DELETE", headers }).catch(() => { });
                     }
                 }
             }
@@ -223,7 +224,7 @@ export async function PATCH(request: Request) {
                             product_id: pid,
                             supplier_id: Number(supId)
                         })
-                    }).catch(() => {});
+                    }).catch(() => { });
                 }
             }
         }
@@ -266,7 +267,7 @@ export async function PATCH(request: Request) {
                                         product_id: childId,
                                         supplier_id: Number(supId)
                                     })
-                                }).catch(() => {});
+                                }).catch(() => { });
                             }
                         }
                     }

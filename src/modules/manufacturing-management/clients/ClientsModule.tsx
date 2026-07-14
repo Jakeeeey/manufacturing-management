@@ -33,6 +33,11 @@ export default function ClientsModule() {
         handleCustomerNameChange,
         handleSaveCustomer,
         handleToggleActive,
+        products,
+        versionsMap,
+        overrides,
+        loadingOverrides,
+        updateProductVersionOverride
     } = useClients();
 
     return (
@@ -136,6 +141,11 @@ export default function ClientsModule() {
                 setSelectedCityCode={setSelectedCityCode}
                 onSave={handleSaveCustomer}
                 onNameChange={handleCustomerNameChange}
+                products={products}
+                versionsMap={versionsMap}
+                overrides={overrides}
+                loadingOverrides={loadingOverrides}
+                updateProductVersionOverride={updateProductVersionOverride}
             />
         </div>
     );
