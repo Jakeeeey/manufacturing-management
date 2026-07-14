@@ -18,7 +18,7 @@ export async function GET(request: Request) {
         const res = await fetch(url, { headers, cache: "no-store" });
         if (!res.ok) throw new Error(`Directus failed to fetch versions: ${res.status}`);
         const json = await res.json();
-        
+
         const versionsList = (json.data || []).map((v: Record<string, unknown> & { version_id: number; version_name?: string; status?: string; expected_yield_percentage?: number; base_quantity?: number; uom_id?: number | null; valid_from?: string | null; valid_to?: string | null }) => ({
             version_id: v.version_id,
             id: v.version_id, // compatibility
@@ -177,13 +177,13 @@ export async function POST(request: Request) {
             console.error("Error cloning version, rolling back...", err);
             // Rollback newly created items
             for (const id of createdBOMItems) {
-                await fetch(`${DIRECTUS_URL}/items/manufacturing_routes_bom/${id}`, { method: "DELETE", headers }).catch(() => {});
+                await fetch(`${DIRECTUS_URL}/items/manufacturing_routes_bom/${id}`, { method: "DELETE", headers }).catch(() => { });
             }
             for (const id of createdRoutes) {
-                await fetch(`${DIRECTUS_URL}/items/manufacturing_routes/${id}`, { method: "DELETE", headers }).catch(() => {});
+                await fetch(`${DIRECTUS_URL}/items/manufacturing_routes/${id}`, { method: "DELETE", headers }).catch(() => { });
             }
             if (createdVersionId) {
-                await fetch(`${DIRECTUS_URL}/items/product_manufacturing_version/${createdVersionId}`, { method: "DELETE", headers }).catch(() => {});
+                await fetch(`${DIRECTUS_URL}/items/product_manufacturing_version/${createdVersionId}`, { method: "DELETE", headers }).catch(() => { });
             }
             throw err;
         }

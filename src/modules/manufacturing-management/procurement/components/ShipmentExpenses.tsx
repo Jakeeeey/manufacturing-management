@@ -67,10 +67,10 @@ export default function ShipmentExpenses({
         const copy = [...allocationForm.expenses];
         if (field === "overhead_id") {
             const selectedOverhead = overheadTypes.find(ot => String(ot.id) === value);
-            copy[index] = { 
-                ...copy[index], 
-                overhead_id: value, 
-                expense_type: selectedOverhead ? selectedOverhead.overhead_name : "" 
+            copy[index] = {
+                ...copy[index],
+                overhead_id: value,
+                expense_type: selectedOverhead ? selectedOverhead.overhead_name : ""
             };
         } else {
             copy[index] = { ...copy[index], [field]: value };
@@ -230,7 +230,7 @@ export default function ShipmentExpenses({
                             </button>
                         </div>
 
-                        <form 
+                        <form
                             onSubmit={(e) => {
                                 e.preventDefault();
                                 // Validate all rows have expense type and amount
@@ -246,7 +246,7 @@ export default function ShipmentExpenses({
                                     }
                                 }
                                 onAllocate(e, shipment.shipment_id, "Received");
-                            }} 
+                            }}
                             className="space-y-4 overflow-y-auto pr-1 flex-1"
                         >
                             <div className="space-y-1.5 bg-muted/20 p-4 rounded-xl border">
@@ -257,11 +257,10 @@ export default function ShipmentExpenses({
                                             key={method}
                                             type="button"
                                             onClick={() => setAllocationForm({ ...allocationForm, allocation_method: method })}
-                                            className={`py-2 px-3 rounded-lg border text-xs font-bold transition-all ${
-                                                allocationForm.allocation_method === method
+                                            className={`py-2 px-3 rounded-lg border text-xs font-bold transition-all ${allocationForm.allocation_method === method
                                                     ? "bg-primary text-primary-foreground border-primary"
                                                     : "bg-background border-border hover:bg-muted"
-                                            }`}
+                                                }`}
                                         >
                                             {method === "Value" ? "Commercial Value" : method}
                                         </button>

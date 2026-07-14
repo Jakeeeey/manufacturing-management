@@ -2,14 +2,14 @@ import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { Supplier, SupplierRepresentative, IncomingShipment, ShipmentLineItem, ShipmentExpense, RawMaterial, LinkedProduct, RegisterRawMaterialPayload, PackagingVariant, ShipmentData, LineItem } from "../types";
 import type { ShipmentFormState, ManifestLineFormItem } from "../components/IncomingShipments";
-import { 
-    fetchSuppliers, 
-    createSupplier, 
-    fetchShipments, 
-    fetchShipmentLineItems, 
-    createShipment, 
-    fetchShipmentExpenses, 
-    saveAndAllocateExpenses, 
+import {
+    fetchSuppliers,
+    createSupplier,
+    fetchShipments,
+    fetchShipmentLineItems,
+    createShipment,
+    fetchShipmentExpenses,
+    saveAndAllocateExpenses,
     fetchRawMaterials,
     updateShipmentStatus,
     registerRawMaterial,
@@ -121,7 +121,7 @@ export function useProcurement(defaultTab: string = "suppliers") {
                                 activeRate = String(history[0].rate || "");
                             }
                         }
-                    } catch {}
+                    } catch { }
                 } else {
                     const locked = localStorage.getItem("vos_locked_forex_rate");
                     if (locked) {
@@ -176,11 +176,11 @@ export function useProcurement(defaultTab: string = "suppliers") {
         if (selectedShipmentExpenses && selectedShipmentExpenses.length > 0) {
             setExpenseAllocationForm({
                 allocation_method: selectedShipmentExpenses[0].allocation_method === "By Weight" ? "Weight" :
-                                   selectedShipmentExpenses[0].allocation_method === "By Volume" ? "Volume" : "Value",
+                    selectedShipmentExpenses[0].allocation_method === "By Volume" ? "Volume" : "Value",
                 expenses: selectedShipmentExpenses.map(x => ({
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     overhead_id: x.overhead_id ? String(typeof x.overhead_id === "object" ? (x.overhead_id as any).id : x.overhead_id) : "",
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     expense_type: x.expense_type || (x.overhead_id && typeof x.overhead_id === "object" ? (x.overhead_id as any).overhead_name : ""),
                     amount_php: String(x.amount_php || "")
                 }))
@@ -315,7 +315,7 @@ export function useProcurement(defaultTab: string = "suppliers") {
         }
 
         // Check for duplicates
-        const isDuplicateName = suppliers.some(s => 
+        const isDuplicateName = suppliers.some(s =>
             s.id !== editingSupplierId &&
             s.supplier_name.trim().toLowerCase() === supplierForm.supplier_name.trim().toLowerCase()
         );
@@ -325,7 +325,7 @@ export function useProcurement(defaultTab: string = "suppliers") {
             return;
         }
 
-        const isDuplicateCode = suppliers.some(s => 
+        const isDuplicateCode = suppliers.some(s =>
             s.id !== editingSupplierId &&
             s.supplier_shortcut?.trim().toLowerCase() === supplierForm.supplier_shortcut.trim().toLowerCase()
         );
@@ -341,7 +341,7 @@ export function useProcurement(defaultTab: string = "suppliers") {
             const notes = restOfSupplier.notes_or_comments || "";
             const currencyTag = `[Currency: ${currency || "PHP"}]`;
             const finalNotes = notes.trim() ? `${notes.trim()}\n\n${currencyTag}` : currencyTag;
-            
+
             const payload = {
                 ...restOfSupplier,
                 notes_or_comments: finalNotes
@@ -514,11 +514,11 @@ export function useProcurement(defaultTab: string = "suppliers") {
     };
 
     const handleAllocateExpenses = async (
-        e: React.FormEvent, 
-        shipmentId: number, 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+        e: React.FormEvent,
+        shipmentId: number,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         targetStatus: any,
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         lineItemUpdates?: any[]
     ) => {
         e.preventDefault();
@@ -533,9 +533,9 @@ export function useProcurement(defaultTab: string = "suppliers") {
             }));
 
             // Map UI allocation method to DB ENUM values ('By Value', 'By Weight', 'By Volume')
-            const dbAllocationMethod = 
+            const dbAllocationMethod =
                 expenseAllocationForm.allocation_method === "Weight" ? "By Weight" :
-                expenseAllocationForm.allocation_method === "Volume" ? "By Volume" : "By Value";
+                    expenseAllocationForm.allocation_method === "Volume" ? "By Volume" : "By Value";
 
             await saveAndAllocateExpenses(
                 shipmentId,
@@ -556,6 +556,16 @@ export function useProcurement(defaultTab: string = "suppliers") {
             });
             setIsExpenseModalOpen(false);
             
+            setExpenseAllocationForm({
+                allocation_method: expenseAllocationForm.allocation_method,
+                expenses: validExps.map(x => ({
+                    overhead_id: String(x.overhead_id),
+                    expense_type: x.expense_type,
+                    amount_php: String(x.amount_php)
+                }))
+            });
+            setIsExpenseModalOpen(false);
+
             // Reload active selections
             const freshShipments = await loadShipments();
             await loadRawMaterials();

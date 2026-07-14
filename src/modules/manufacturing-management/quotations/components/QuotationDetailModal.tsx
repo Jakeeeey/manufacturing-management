@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { Loader2, ArrowRight, X } from "lucide-react";
 import { Customer, QuotationHeader, QuotationSnapshotNode } from "../types";
+import { formatCurrency } from "@/lib/utils";
 
 interface QuotationDetailModalProps {
     isDetailModalOpen: boolean;
@@ -23,6 +24,7 @@ export function QuotationDetailModal({
     loadQuotes
 }: QuotationDetailModalProps) {
     const [converting, setConverting] = useState(false);
+    const [showConfirmModal, setShowConfirmModal] = useState(false);
     
     // Sub-form overlay state for Sales Order fields
     const [showSOFieldsForm, setShowSOFieldsForm] = useState(false);
@@ -116,10 +118,8 @@ export function QuotationDetailModal({
         calculateAndSetDueDate(deliveryDate, val, paymentTermsList);
     };
 
-    const handleConvertToSalesOrder = async (e?: React.FormEvent) => {
-        if (e) e.preventDefault();
-        if (!selectedQuote) return;
-        
+    const handlePreSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
         if (!poNo.trim()) {
             toast.error("Purchase Order Number (PO No.) is required");
             return;
@@ -140,7 +140,12 @@ export function QuotationDetailModal({
             toast.error("Production Branch is required");
             return;
         }
+        setShowConfirmModal(true);
+    };
 
+    const handleConvertToSalesOrder = async () => {
+        if (!selectedQuote) return;
+        
         setConverting(true);
         try {
             const res = await fetch("/api/manufacturing/sales-order", {
@@ -168,6 +173,7 @@ export function QuotationDetailModal({
             toast.success(`Successfully converted to Sales Order: ${data.order_no}`);
             setIsDetailModalOpen(false);
             setShowSOFieldsForm(false);
+            setShowConfirmModal(false);
             
             // Reset fields
             setPoNo("");
@@ -190,6 +196,7 @@ export function QuotationDetailModal({
         } catch (e: any) {
             console.error(e);
             toast.error(e.message || "Failed to convert quote");
+            setShowConfirmModal(false);
         } finally {
             setConverting(false);
         }
@@ -253,19 +260,19 @@ export function QuotationDetailModal({
                     <div className="rounded-lg border bg-muted/5 p-3">
                         <span className="text-[10px] font-bold text-muted-foreground uppercase block">Production Cost (Total)</span>
                         <span className="text-xs font-bold text-foreground block">
-                            ₱{simulatedCost.toFixed(2)}
+                            {formatCurrency(simulatedCost)}
                         </span>
                     </div>
                     <div className="rounded-lg border bg-muted/5 p-3">
                         <span className="text-[10px] font-bold text-muted-foreground uppercase block">Agreed Quote Price</span>
                         <span className="text-xs font-bold text-primary block">
-                            ₱{sellingPrice.toFixed(2)}
+                            {formatCurrency(sellingPrice)}
                         </span>
                     </div>
                     <div className="rounded-lg border bg-muted/5 p-3">
                         <span className="text-[10px] font-bold text-muted-foreground uppercase block">Estimated Net Margin</span>
                         <span className={`text-xs font-bold block ${netMargin >= 0 ? "text-emerald-600" : "text-destructive"}`}>
-                            ₱{netMargin.toFixed(2)} ({marginPct.toFixed(1)}%)
+                            {formatCurrency(netMargin)} ({marginPct.toFixed(1)}%)
                         </span>
                     </div>
                 </div>
@@ -301,8 +308,8 @@ export function QuotationDetailModal({
                                                         <td className="p-2.5 font-medium text-foreground">{item.node_name}</td>
                                                         <td className="p-2.5 text-right font-medium">{item.quantity}</td>
                                                         <td className="p-2.5 text-muted-foreground">{item.uom}</td>
-                                                        <td className="p-2.5 text-right font-semibold text-muted-foreground">₱{unitCost.toFixed(2)}</td>
-                                                        <td className="p-2.5 text-right font-bold text-primary">₱{totalCost.toFixed(2)}</td>
+                                                        <td className="p-2.5 text-right font-semibold text-muted-foreground">{formatCurrency(unitCost)}</td>
+                                                        <td className="p-2.5 text-right font-bold text-primary">{formatCurrency(totalCost)}</td>
                                                     </tr>
                                                 );
                                             })}
@@ -330,29 +337,29 @@ export function QuotationDetailModal({
 
             {/* Sales Order Required Fields Sub-Form Popup Overlay */}
             {showSOFieldsForm && (
-                <div className="fixed inset-0 bg-[#020617]/75 backdrop-blur-sm flex items-center justify-center z-[60] p-4 animate-in fade-in duration-200">
-                    <div className="bg-[#0f172a] border border-slate-800 rounded-xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200 text-slate-100">
+                <div className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-[60] p-4 animate-in fade-in duration-200">
+                    <div className="bg-card border rounded-xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200 text-foreground">
                         {/* Header */}
-                        <div className="px-6 py-4 border-b border-slate-800 flex justify-between items-center bg-[#1e293b]/35">
+                        <div className="px-6 py-4 border-b flex justify-between items-center bg-muted/30">
                             <div>
-                                <h3 className="text-sm font-bold text-white">Convert to Sales Order</h3>
-                                <p className="text-[10px] text-slate-400 mt-0.5">Please provide required details to create the Sales Order.</p>
+                                <h3 className="text-sm font-bold text-foreground">Convert to Sales Order</h3>
+                                <p className="text-[10px] text-muted-foreground mt-0.5">Please provide required details to create the Sales Order.</p>
                             </div>
                             <button
                                 type="button"
                                 onClick={() => setShowSOFieldsForm(false)}
-                                className="text-slate-400 hover:text-white transition-colors p-1 rounded-lg hover:bg-slate-800"
+                                className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-lg hover:bg-muted"
                             >
                                 <X className="h-4 w-4" />
                             </button>
                         </div>
 
                         {/* Form Body */}
-                        <form onSubmit={handleConvertToSalesOrder} className="p-6 space-y-4 flex-1 overflow-y-auto custom-scrollbar">
+                        <form onSubmit={handlePreSubmit} className="p-6 space-y-4 flex-1 overflow-y-auto custom-scrollbar">
                             {/* PO Number */}
                             <div>
-                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide block mb-1">
-                                    PO Number <span className="text-primary">*</span>
+                                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide block mb-1">
+                                    PO Number <span className="text-destructive">*</span>
                                 </label>
                                 <input
                                     type="text"
@@ -360,50 +367,50 @@ export function QuotationDetailModal({
                                     placeholder="e.g. PO-992384"
                                     value={poNo}
                                     onChange={e => setPoNo(e.target.value)}
-                                    className="w-full rounded-lg border border-slate-700 px-3 py-2 text-xs bg-slate-900/50 text-white placeholder-slate-500 outline-none focus:ring-1 focus:ring-primary focus:border-primary font-mono transition-all"
+                                    className="w-full rounded-lg border border-input px-3 py-2 text-xs bg-background text-foreground placeholder-muted-foreground outline-none focus:ring-1 focus:ring-primary focus:border-primary font-mono transition-all"
                                 />
                             </div>
 
                             <div className="grid grid-cols-2 gap-4">
                                 {/* Delivery Date */}
                                 <div>
-                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide block mb-1">
-                                        Delivery Date <span className="text-primary">*</span>
+                                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide block mb-1">
+                                        Delivery Date <span className="text-destructive">*</span>
                                     </label>
                                     <input
                                         type="date"
                                         value={deliveryDate}
                                         onChange={e => handleDeliveryDateChange(e.target.value)}
-                                        className="w-full rounded-lg border border-slate-700 px-3 py-2 text-xs bg-slate-900/50 text-white placeholder-slate-500 outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all"
+                                        className="w-full rounded-lg border border-input px-3 py-2 text-xs bg-background text-foreground placeholder-muted-foreground outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all"
                                     />
                                 </div>
 
                                 {/* Due Date */}
                                 <div>
-                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide block mb-1">
+                                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide block mb-1">
                                         Due Date
                                     </label>
                                     <input
                                         type="date"
                                         value={dueDate}
                                         onChange={e => setDueDate(e.target.value)}
-                                        className="w-full rounded-lg border border-slate-700 px-3 py-2 text-xs bg-slate-900/50 text-white placeholder-slate-500 outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all"
+                                        className="w-full rounded-lg border border-input px-3 py-2 text-xs bg-background text-foreground placeholder-muted-foreground outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all"
                                     />
                                 </div>
 
                                 {/* Payment Terms Selector */}
                                 <div>
-                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide block mb-1">
-                                        Payment Terms <span className="text-primary">*</span>
+                                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide block mb-1">
+                                        Payment Terms <span className="text-destructive">*</span>
                                     </label>
                                     <select
                                         value={paymentTerms}
                                         onChange={e => handlePaymentTermChange(e.target.value)}
-                                        className="w-full rounded-lg border border-slate-700 px-3.5 py-2 text-xs bg-slate-900/50 text-white placeholder-slate-500 outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all"
+                                        className="w-full rounded-lg border border-input px-3.5 py-2 text-xs bg-background text-foreground placeholder-muted-foreground outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all"
                                     >
-                                        <option value="" className="bg-slate-900">Select Term...</option>
+                                        <option value="" className="bg-background">Select Term...</option>
                                         {paymentTermsList.map(term => (
-                                            <option key={term.id} value={term.id} className="bg-slate-900">
+                                            <option key={term.id} value={term.id} className="bg-background">
                                                 {term.payment_name} {term.payment_days !== null ? `(${term.payment_days} days)` : "(COD/Immediate)"}
                                             </option>
                                         ))}
@@ -412,7 +419,7 @@ export function QuotationDetailModal({
 
                                 {/* Discount Amount */}
                                 <div>
-                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide block mb-1">
+                                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide block mb-1">
                                         Discount Amount (₱)
                                     </label>
                                     <input
@@ -421,7 +428,7 @@ export function QuotationDetailModal({
                                         placeholder="e.g. 1500"
                                         value={discountAmount}
                                         onChange={e => setDiscountAmount(e.target.value)}
-                                        className="w-full rounded-lg border border-slate-700 px-3 py-2 text-xs bg-slate-900/50 text-white placeholder-slate-500 outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all"
+                                        className="w-full rounded-lg border border-input px-3 py-2 text-xs bg-background text-foreground placeholder-muted-foreground outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all"
                                     />
                                 </div>
                             </div>
@@ -429,7 +436,7 @@ export function QuotationDetailModal({
                             <div className="grid grid-cols-1 gap-4 pt-2">
                                 {/* Searchable Salesman */}
                                 <div className="space-y-1.5 relative">
-                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide block">
+                                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide block">
                                         Salesman
                                     </label>
                                     <input
@@ -439,10 +446,10 @@ export function QuotationDetailModal({
                                         onFocus={() => setIsSalesmanFocused(true)}
                                         onBlur={() => setTimeout(() => setIsSalesmanFocused(false), 200)}
                                         onChange={(e) => setSalesmanSearch(e.target.value)}
-                                        className="w-full rounded-lg border border-slate-700 px-3 py-2 text-xs bg-slate-900/50 text-white placeholder-slate-500 outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all font-semibold"
+                                        className="w-full rounded-lg border border-input px-3 py-2 text-xs bg-background text-foreground placeholder-muted-foreground outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all font-semibold"
                                     />
                                     {isSalesmanFocused && (
-                                        <div className="absolute z-50 left-0 right-0 mt-1 max-h-40 overflow-y-auto rounded-lg border border-slate-800 bg-[#0f172a] shadow-xl divide-y divide-slate-800">
+                                        <div className="absolute z-50 left-0 right-0 mt-1 max-h-40 overflow-y-auto rounded-lg border bg-popover shadow-xl divide-y divide-border">
                                             {filteredSalesmen.map(s => (
                                                 <button
                                                     type="button"
@@ -455,15 +462,15 @@ export function QuotationDetailModal({
                                                         if (s.branch_code) {
                                                             const matchBranch = branchesList.find(b => b.id === s.branch_code);
                                                             if (matchBranch) {
-                                                                setBranchId(String(matchBranch.id));
-                                                                setBranchSearch(`${matchBranch.branch_name} (${matchBranch.branch_code})`);
+                                                                 setBranchId(String(matchBranch.id));
+                                                                 setBranchSearch(`${matchBranch.branch_name} (${matchBranch.branch_code})`);
                                                             } else {
-                                                                setBranchId(String(s.branch_code));
-                                                                setBranchSearch(`Branch ID ${s.branch_code}`);
+                                                                 setBranchId(String(s.branch_code));
+                                                                 setBranchSearch(`Branch ID ${s.branch_code}`);
                                                             }
                                                         }
                                                     }}
-                                                    className="w-full text-left px-3 py-2 text-xs hover:bg-primary hover:text-primary-foreground text-slate-100 transition-colors"
+                                                    className="w-full text-left px-3 py-2 text-xs hover:bg-accent hover:text-accent-foreground text-foreground transition-colors"
                                                 >
                                                     {s.salesman_name} ({s.salesman_code})
                                                 </button>
@@ -477,8 +484,8 @@ export function QuotationDetailModal({
 
                                 {/* Searchable Supplier */}
                                 <div className="space-y-1.5 relative">
-                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide block">
-                                        Supplier <span className="text-primary">*</span>
+                                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide block">
+                                        Supplier <span className="text-destructive">*</span>
                                     </label>
                                     <input
                                         type="text"
@@ -487,10 +494,10 @@ export function QuotationDetailModal({
                                         onFocus={() => setIsSupplierFocused(true)}
                                         onBlur={() => setTimeout(() => setIsSupplierFocused(false), 200)}
                                         onChange={(e) => setSupplierSearch(e.target.value)}
-                                        className="w-full rounded-lg border border-slate-700 px-3 py-2 text-xs bg-slate-900/50 text-white placeholder-slate-500 outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all font-semibold"
+                                        className="w-full rounded-lg border border-input px-3 py-2 text-xs bg-background text-foreground placeholder-muted-foreground outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all font-semibold"
                                     />
                                     {isSupplierFocused && (
-                                        <div className="absolute z-50 left-0 right-0 mt-1 max-h-40 overflow-y-auto rounded-lg border border-slate-800 bg-[#0f172a] shadow-xl divide-y divide-slate-800">
+                                        <div className="absolute z-50 left-0 right-0 mt-1 max-h-40 overflow-y-auto rounded-lg border bg-popover shadow-xl divide-y divide-border">
                                             {filteredSuppliers.map(s => (
                                                 <button
                                                     type="button"
@@ -500,7 +507,7 @@ export function QuotationDetailModal({
                                                         setSupplierSearch(s.supplier_name);
                                                         setIsSupplierFocused(false);
                                                     }}
-                                                    className="w-full text-left px-3 py-2 text-xs hover:bg-primary hover:text-primary-foreground text-slate-100 transition-colors"
+                                                    className="w-full text-left px-3 py-2 text-xs hover:bg-accent hover:text-accent-foreground text-foreground transition-colors"
                                                 >
                                                     {s.supplier_name}
                                                 </button>
@@ -514,8 +521,8 @@ export function QuotationDetailModal({
 
                                 {/* Searchable Target Branch */}
                                 <div className="space-y-1.5 relative">
-                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide block">
-                                        Production Branch <span className="text-primary">*</span>
+                                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide block">
+                                        Production Branch <span className="text-destructive">*</span>
                                     </label>
                                     <input
                                         type="text"
@@ -524,10 +531,10 @@ export function QuotationDetailModal({
                                         onFocus={() => setIsBranchFocused(true)}
                                         onBlur={() => setTimeout(() => setIsBranchFocused(false), 200)}
                                         onChange={(e) => setBranchSearch(e.target.value)}
-                                        className="w-full rounded-lg border border-slate-700 px-3 py-2 text-xs bg-slate-900/50 text-white placeholder-slate-500 outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all font-semibold"
+                                        className="w-full rounded-lg border border-input px-3 py-2 text-xs bg-background text-foreground placeholder-muted-foreground outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all font-semibold"
                                     />
                                     {isBranchFocused && (
-                                        <div className="absolute z-50 left-0 right-0 mt-1 max-h-40 overflow-y-auto rounded-lg border border-slate-700 bg-slate-900 shadow-xl divide-y divide-slate-800">
+                                        <div className="absolute z-50 left-0 right-0 mt-1 max-h-40 overflow-y-auto rounded-lg border bg-popover shadow-xl divide-y divide-border">
                                             {filteredBranches.map(b => (
                                                 <button
                                                     type="button"
@@ -537,7 +544,7 @@ export function QuotationDetailModal({
                                                         setBranchSearch(`${b.branch_name} (${b.branch_code})`);
                                                         setIsBranchFocused(false);
                                                     }}
-                                                    className="w-full text-left px-3 py-2 text-xs hover:bg-primary hover:text-primary-foreground text-slate-100 transition-colors"
+                                                    className="w-full text-left px-3 py-2 text-xs hover:bg-accent hover:text-accent-foreground text-foreground transition-colors"
                                                 >
                                                     {b.branch_name} ({b.branch_code})
                                                 </button>
@@ -552,7 +559,7 @@ export function QuotationDetailModal({
 
                             {/* Remarks */}
                             <div>
-                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide block mb-1">
+                                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide block mb-1">
                                     Remarks / Internal Notes
                                 </label>
                                 <textarea
@@ -560,16 +567,16 @@ export function QuotationDetailModal({
                                     placeholder="Add any special instructions or terms..."
                                     value={soRemarks}
                                     onChange={e => setSoRemarks(e.target.value)}
-                                    className="w-full rounded-lg border border-slate-700 px-3 py-2 text-xs bg-slate-900/50 text-white placeholder-slate-500 outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all"
+                                    className="w-full rounded-lg border border-input px-3 py-2 text-xs bg-background text-foreground placeholder-muted-foreground outline-none focus:ring-1 focus:ring-primary focus:border-primary transition-all"
                                 />
                             </div>
 
                             {/* Footer Buttons */}
-                            <div className="flex justify-end gap-2 border-t border-slate-800 pt-4 mt-6">
+                            <div className="flex justify-end gap-2 border-t pt-4 mt-6">
                                 <button
                                     type="button"
                                     onClick={() => setShowSOFieldsForm(false)}
-                                    className="px-4 py-2 text-xs font-semibold rounded-lg border border-slate-700 hover:bg-slate-800 text-slate-300 transition-all"
+                                    className="px-4 py-2 text-xs font-semibold rounded-lg border hover:bg-muted text-foreground transition-all"
                                 >
                                     Cancel
                                 </button>
@@ -589,6 +596,44 @@ export function QuotationDetailModal({
                                 </button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {showConfirmModal && (
+                <div className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-[70] p-4 animate-in fade-in duration-200">
+                    <div className="bg-card border rounded-xl shadow-xl w-full max-w-sm overflow-hidden flex flex-col p-6 animate-in zoom-in-95 duration-200 text-foreground space-y-4">
+                        <div className="space-y-2">
+                            <h4 className="text-sm font-bold text-foreground">Confirm Conversion</h4>
+                            <p className="text-xs text-muted-foreground">
+                                Are you sure you want to convert this quote into a Sales Order? <strong className="text-destructive block mt-1">Warning: All prices, product rules, and quantities will be frozen and strictly non-editable once generated.</strong>
+                            </p>
+                        </div>
+                        <div className="flex justify-end gap-2 pt-2 border-t">
+                            <button
+                                type="button"
+                                disabled={converting}
+                                onClick={() => setShowConfirmModal(false)}
+                                className="px-3.5 py-1.5 text-xs font-semibold rounded-lg border hover:bg-muted text-foreground transition-all disabled:opacity-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                disabled={converting}
+                                onClick={() => handleConvertToSalesOrder()}
+                                className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold rounded-lg px-3.5 py-1.5 transition-all shadow-md flex items-center gap-1.5"
+                            >
+                                {converting ? (
+                                    <>
+                                        <Loader2 className="h-3 w-3 animate-spin" />
+                                        Converting...
+                                    </>
+                                ) : (
+                                    "Confirm & Generate"
+                                )}
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

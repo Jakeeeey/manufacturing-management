@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { 
+import {
     getBOMDetailsForVersion,
     saveActiveBOMDetails,
     syncRoutesAndBOM
@@ -72,7 +72,7 @@ export async function POST(request: Request) {
 
         // 2. Save version metadata (expected yield and base quantity)
         const versionOk = await saveActiveBOMDetails(
-            numericVersionId, 
+            numericVersionId,
             details.expected_yield_percentage || details.expectedYieldPercent || 100,
             details.base_quantity || 1
         );

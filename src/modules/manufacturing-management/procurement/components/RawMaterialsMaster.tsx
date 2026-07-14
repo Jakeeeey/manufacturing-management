@@ -23,9 +23,9 @@ interface SelectOption {
     label: string;
 }
 
-export default function RawMaterialsMaster({ 
-    rawMaterials, 
-    suppliers, 
+export default function RawMaterialsMaster({
+    rawMaterials,
+    suppliers,
     onRegisterRawMaterial,
     onUpdateRawMaterial
 }: RawMaterialsMasterProps) {
@@ -79,30 +79,30 @@ export default function RawMaterialsMaster({
     useEffect(() => {
         if (!isModalOpen) return;
         setLoadingUnits(true);
-        
+
         Promise.all([
             fetch("/api/manufacturing/finished-goods/units").then(res => res.json()),
             fetch("/api/manufacturing/finished-goods/brands").then(res => res.json()),
             fetch("/api/manufacturing/finished-goods/categories").then(res => res.json())
         ])
-        .then(([unitsData, brandsData, categoriesData]) => {
-            setUnits(unitsData || []);
-            // Only auto-select UOM if in Register mode
-            if (!editingItem && unitsData && unitsData.length > 0) {
-                setFormUom(unitsData[0].unit_id);
-            }
-            // disabled-lint-next-line @typescript-eslint/no-explicit-any
-            setBrandsList((brandsData || []).map((b: any) => ({ value: String(b.brand_id), label: b.brand_name })));
-            // disabled-lint-next-line @typescript-eslint/no-explicit-any
-            setCategoriesList((categoriesData || []).map((c: any) => ({ value: String(c.category_id), label: c.category_name })));
-        })
-        .catch(err => {
-            console.error("Failed to load raw material metadata:", err);
-            toast.error("Failed to load options metadata");
-        })
-        .finally(() => {
-            setLoadingUnits(false);
-        });
+            .then(([unitsData, brandsData, categoriesData]) => {
+                setUnits(unitsData || []);
+                // Only auto-select UOM if in Register mode
+                if (!editingItem && unitsData && unitsData.length > 0) {
+                    setFormUom(unitsData[0].unit_id);
+                }
+                // disabled-lint-next-line @typescript-eslint/no-explicit-any
+                setBrandsList((brandsData || []).map((b: any) => ({ value: String(b.brand_id), label: b.brand_name })));
+                // disabled-lint-next-line @typescript-eslint/no-explicit-any
+                setCategoriesList((categoriesData || []).map((c: any) => ({ value: String(c.category_id), label: c.category_name })));
+            })
+            .catch(err => {
+                console.error("Failed to load raw material metadata:", err);
+                toast.error("Failed to load options metadata");
+            })
+            .finally(() => {
+                setLoadingUnits(false);
+            });
     }, [isModalOpen, editingItem]);
 
     // Reset/Populate form fields depending on Register/Edit mode
@@ -133,7 +133,7 @@ export default function RawMaterialsMaster({
             setFormProductType(editingItem.product_type || 389);
             setFormParentId(editingItem.parent_id ? String(editingItem.parent_id) : "");
             setFormUomCount(editingItem.unit_of_measurement_count ? String(editingItem.unit_of_measurement_count) : "1");
-            
+
             // Fetch linked suppliers for this item
             fetch(`/api/manufacturing/procurement/raw-materials?productId=${editingItem.product_id}`)
                 .then(res => res.ok ? res.json() : [])
@@ -212,9 +212,9 @@ export default function RawMaterialsMaster({
     const filtered = rawMaterials.filter(m => {
         const matchesSearch = m.product_name.toLowerCase().includes(search.toLowerCase()) ||
             m.product_code?.toLowerCase().includes(search.toLowerCase());
-        
+
         if (!matchesSearch) return false;
-        
+
         const isPkg = isItemPkg(m);
         if (typeFilter === "raw") return !isPkg;
         if (typeFilter === "pkg") return isPkg;
@@ -225,21 +225,21 @@ export default function RawMaterialsMaster({
     const sortedFiltered = React.useMemo(() => {
         const parents = filtered.filter(rm => !rm.parent_id);
         const children = filtered.filter(rm => !!rm.parent_id);
-        
+
         const result: RawMaterial[] = [];
         parents.forEach(parent => {
             result.push(parent);
             const parentChildren = children.filter(child => Number(child.parent_id) === parent.product_id);
             result.push(...parentChildren);
         });
-        
+
         // Add any orphans (children whose parents aren't matching current filters)
         children.forEach(child => {
             if (!result.some(r => r.product_id === child.product_id)) {
                 result.push(child);
             }
         });
-        
+
         return result;
     }, [filtered]);
 
@@ -278,7 +278,7 @@ export default function RawMaterialsMaster({
 
     const handleFormSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        
+
         // Validation Checks
         const isNameEmpty = !formName.trim();
         const isCodeEmpty = !formCode.trim();
@@ -559,19 +559,18 @@ export default function RawMaterialsMaster({
                                     connector = isLast ? "└──" : "├──";
                                 }
 
-                                const childrenCount = !isChild 
-                                    ? rawMaterials.filter(c => Number(c.parent_id) === m.product_id).length 
+                                const childrenCount = !isChild
+                                    ? rawMaterials.filter(c => Number(c.parent_id) === m.product_id).length
                                     : 0;
 
                                 return (
                                     <React.Fragment key={m.product_id}>
-                                        <tr 
+                                        <tr
                                             onClick={() => handleToggleExpand(m.product_id)}
-                                            className={`${
-                                                isChild 
-                                                    ? "bg-muted/20 hover:bg-muted/40 border-l-4 border-l-primary/30" 
+                                            className={`${isChild
+                                                    ? "bg-muted/20 hover:bg-muted/40 border-l-4 border-l-primary/30"
                                                     : "bg-card hover:bg-muted/10 border-l-2 border-l-transparent hover:border-l-primary"
-                                            } cursor-pointer transition-all border-b`}
+                                                } cursor-pointer transition-all border-b`}
                                         >
                                             <td className="p-3 text-center">
                                                 {isExpanded ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
@@ -637,7 +636,7 @@ export default function RawMaterialsMaster({
                                                             <MapPin className="h-3.5 w-3.5 text-primary" />
                                                             Active Stock Locations & Batch Logs
                                                         </h4>
-                                                        
+
                                                         {loadingBatches ? (
                                                             <div className="text-center py-4 text-xs text-muted-foreground">Loading stock logs...</div>
                                                         ) : groupedByBranch.length === 0 ? (
@@ -700,7 +699,7 @@ export default function RawMaterialsMaster({
             {isModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
                     <div className="bg-card border rounded-xl shadow-2xl w-full max-w-xl flex flex-col max-h-[90vh] scale-in duration-200">
-                        
+
                         {/* Header */}
                         <div className="flex items-center justify-between border-b p-5 shrink-0">
                             <h3 className="font-extrabold text-sm text-foreground flex items-center gap-2">
@@ -737,11 +736,10 @@ export default function RawMaterialsMaster({
                                                 }
                                             }
                                         }}
-                                        className={`w-full rounded-lg border bg-background px-3.5 py-2.5 text-xs outline-none transition-all duration-200 font-semibold text-foreground ${
-                                            showValidationErrors && !formName.trim() 
-                                                ? "border-red-500 focus:ring-2 focus:ring-red-100 shadow-[0_0_0_2px_rgba(239,68,68,0.15)]" 
+                                        className={`w-full rounded-lg border bg-background px-3.5 py-2.5 text-xs outline-none transition-all duration-200 font-semibold text-foreground ${showValidationErrors && !formName.trim()
+                                                ? "border-red-500 focus:ring-2 focus:ring-red-100 shadow-[0_0_0_2px_rgba(239,68,68,0.15)]"
                                                 : "border-border focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                                        }`}
+                                            }`}
                                     />
                                 </div>
 
@@ -754,11 +752,10 @@ export default function RawMaterialsMaster({
                                         placeholder="e.g. RM-SOYA-01"
                                         value={formCode}
                                         onChange={e => setFormCode(e.target.value)}
-                                        className={`w-full rounded-lg border bg-background px-3.5 py-2.5 text-xs outline-none transition-all duration-200 font-mono text-foreground font-bold ${
-                                            showValidationErrors && !formCode.trim() 
-                                                ? "border-red-500 focus:ring-2 focus:ring-red-100 shadow-[0_0_0_2px_rgba(239,68,68,0.15)]" 
+                                        className={`w-full rounded-lg border bg-background px-3.5 py-2.5 text-xs outline-none transition-all duration-200 font-mono text-foreground font-bold ${showValidationErrors && !formCode.trim()
+                                                ? "border-red-500 focus:ring-2 focus:ring-red-100 shadow-[0_0_0_2px_rgba(239,68,68,0.15)]"
                                                 : "border-border focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                                        }`}
+                                            }`}
                                     />
                                 </div>
 
@@ -788,11 +785,10 @@ export default function RawMaterialsMaster({
                                         <select
                                             value={formUom}
                                             onChange={e => setFormUom(Number(e.target.value))}
-                                            className={`w-full rounded-lg border bg-background px-3.5 py-2.5 text-xs outline-none transition-all duration-200 text-foreground font-semibold ${
-                                                showValidationErrors && !formUom 
-                                                    ? "border-red-500 focus:ring-2 focus:ring-red-100 shadow-[0_0_0_2px_rgba(239,68,68,0.15)]" 
+                                            className={`w-full rounded-lg border bg-background px-3.5 py-2.5 text-xs outline-none transition-all duration-200 text-foreground font-semibold ${showValidationErrors && !formUom
+                                                    ? "border-red-500 focus:ring-2 focus:ring-red-100 shadow-[0_0_0_2px_rgba(239,68,68,0.15)]"
                                                     : "border-border focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                                            }`}
+                                                }`}
                                         >
                                             <option value="">-- Select UOM --</option>
                                             {units.map(u => (
@@ -840,11 +836,10 @@ export default function RawMaterialsMaster({
                                         min="0.001"
                                         value={formDensity}
                                         onChange={e => setFormDensity(e.target.value)}
-                                        className={`w-full rounded-lg border bg-background px-3.5 py-2.5 text-xs outline-none transition-all duration-200 font-mono font-bold text-foreground ${
-                                            showValidationErrors && (!formDensity || parseFloat(formDensity) <= 0) 
-                                                ? "border-red-500 focus:ring-2 focus:ring-red-100 shadow-[0_0_0_2px_rgba(239,68,68,0.15)]" 
+                                        className={`w-full rounded-lg border bg-background px-3.5 py-2.5 text-xs outline-none transition-all duration-200 font-mono font-bold text-foreground ${showValidationErrors && (!formDensity || parseFloat(formDensity) <= 0)
+                                                ? "border-red-500 focus:ring-2 focus:ring-red-100 shadow-[0_0_0_2px_rgba(239,68,68,0.15)]"
                                                 : "border-border focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                                        }`}
+                                            }`}
                                     />
                                 </div>
 
@@ -893,14 +888,13 @@ export default function RawMaterialsMaster({
                                         min="0.0001"
                                         value={formUomCount}
                                         onChange={e => setFormUomCount(e.target.value)}
-                                        className={`w-full rounded-lg border bg-background px-3.5 py-2.5 text-xs outline-none transition-all duration-200 font-semibold text-foreground ${
-                                            showValidationErrors && (!formUomCount || Number(formUomCount) <= 0) 
-                                                ? "border-red-500 focus:ring-2 focus:ring-red-100 shadow-[0_0_0_2px_rgba(239,68,68,0.15)]" 
+                                        className={`w-full rounded-lg border bg-background px-3.5 py-2.5 text-xs outline-none transition-all duration-200 font-semibold text-foreground ${showValidationErrors && (!formUomCount || Number(formUomCount) <= 0)
+                                                ? "border-red-500 focus:ring-2 focus:ring-red-100 shadow-[0_0_0_2px_rgba(239,68,68,0.15)]"
                                                 : "border-border focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                                        }`}
+                                            }`}
                                         placeholder="e.g. 1"
                                     />
-                                    
+
                                     {/* Dynamic visual preview of the formula */}
                                     <div className="mt-2.5 p-3 rounded-lg bg-muted/40 border border-border/60 flex items-center justify-between gap-2 text-xs">
                                         <div className="flex flex-col items-center flex-1 bg-background p-1.5 rounded border border-border/50">
@@ -964,8 +958,8 @@ export default function RawMaterialsMaster({
                                             filteredSuppliers.map(s => {
                                                 const isChecked = selectedSupplierIds.includes(s.id);
                                                 return (
-                                                    <label 
-                                                        key={s.id} 
+                                                    <label
+                                                        key={s.id}
                                                         className="flex items-center gap-2 py-1.5 hover:bg-muted/10 cursor-pointer select-none text-xs font-semibold text-foreground"
                                                     >
                                                         <input

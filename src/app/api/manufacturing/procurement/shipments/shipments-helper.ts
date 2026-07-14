@@ -235,7 +235,7 @@ export async function createIncomingShipment(
                 if (errorJson.errors && errorJson.errors[0]?.message) {
                     errorMsg = errorJson.errors[0].message;
                 }
-            } catch {}
+            } catch { }
             throw new Error(errorMsg);
         }
         const poJson = await res.json();
@@ -275,7 +275,7 @@ export async function createIncomingShipment(
                     if (errorJson.errors && errorJson.errors[0]?.message) {
                         errorMsg = errorJson.errors[0].message;
                     }
-                } catch {}
+                } catch { }
                 throw new Error(errorMsg);
             }
             const popJson = await popRes.json();
@@ -286,17 +286,17 @@ export async function createIncomingShipment(
     } catch (e) {
         console.error("[Manufacturing Directus API] Failed to save purchase order. Rolling back...", e);
         for (const pid of createdProductIds) {
-            await fetch(`${DIRECTUS_URL}/items/purchase_order_products/${pid}`, { method: "DELETE", headers }).catch(() => {});
+            await fetch(`${DIRECTUS_URL}/items/purchase_order_products/${pid}`, { method: "DELETE", headers }).catch(() => { });
         }
         if (poId) {
-            await fetch(`${DIRECTUS_URL}/items/purchase_order/${poId}`, { method: "DELETE", headers }).catch(() => {});
+            await fetch(`${DIRECTUS_URL}/items/purchase_order/${poId}`, { method: "DELETE", headers }).catch(() => { });
         }
         throw e;
     }
 }
 
 export async function updateIncomingShipmentStatus(
-    shipmentId: number, 
+    shipmentId: number,
     status: "Ordered" | "Approved" | "En Route" | "Receiving (QA)" | "Received",
     userId?: number | null,
     leadTimeReceiving?: string | null
