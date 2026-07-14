@@ -9,18 +9,22 @@ export async function GET(req: NextRequest) {
         const { searchParams } = new URL(req.url);
         const branchId = searchParams.get("branchId");
 
+        if (!branchId) {
+            return NextResponse.json({ message: "branchId is required" }, { status: 400 });
+        }
+
         const filter: Record<string, unknown> = {
             _and: [
+                { branch_id: { _eq: Number(branchId) } },
                 { transaction_status: { _neq: "Cancelled" } },
-                { _or: [
-                    { isDispatched: { _eq: false } },
-                    { isDispatched: { _null: true } },
-                ]},
+                {
+                    _or: [
+                        { isDispatched: { _eq: false } },
+                        { isDispatched: { _null: true } },
+                    ],
+                },
             ],
         };
-        if (branchId) {
-            (filter._and as Record<string, unknown>[]).push({ branch_id: { _eq: Number(branchId) } });
-        }
 
         const qs = new URLSearchParams();
         qs.set("filter", JSON.stringify(filter));
@@ -54,14 +58,12 @@ export async function GET(req: NextRequest) {
             `${DIRECTUS_URL}/items/consolidator_invoices?filter[consolidator_id][consolidator_no][_starts_with]=CLINV-&filter[consolidator_id][is_delete][_eq]=0&limit=-1&fields=invoice_id`,
             { headers: directusHeaders, cache: "no-store" }
         );
-        let linkedIds = new Set<number>();
-        if (clinvRes.ok) {
-            const clinvData = (await clinvRes.json()).data || [];
-            linkedIds = new Set(clinvData.map((j: { invoice_id: number }) => j.invoice_id));
-        } else {
+        if (!clinvRes.ok) {
             return NextResponse.json({ message: `Directus error (HTTP ${clinvRes.status})` }, { status: clinvRes.status });
         }
 
+        const clinvData = (await clinvRes.json()).data || [];
+        const linkedIds = new Set(clinvData.map((j: { invoice_id: number }) => j.invoice_id));
         invoices = invoices.filter((inv) => !linkedIds.has(inv.invoice_id));
 
         const customerCodes = [...new Set(invoices.map((inv) => inv.customer_code).filter(Boolean))];
@@ -77,6 +79,39 @@ export async function GET(req: NextRequest) {
             }
         }
 
+        const invoiceIds = invoices.map((inv) => inv.invoice_id);
+        const detsRes = await fetch(
+            `${DIRECTUS_URL}/items/sales_invoice_details?filter[invoice_no][_in]=${invoiceIds.join(",")}&limit=-1&fields=invoice_no,product_id,quantity`,
+            { headers: directusHeaders, cache: "no-store" }
+        );
+        const detsData: { invoice_no: number; product_id: number; quantity: number }[] = detsRes.ok ? (await detsRes.json()).data || [] : [];
+
+        const prodIds = [...new Set(detsData.map((d) => d.product_id))];
+        let prodMap = new Map<number, { product_name: string; product_code: string }>();
+        if (prodIds.length > 0) {
+            const prodRes = await fetch(
+                `${DIRECTUS_URL}/items/products?filter[product_id][_in]=${prodIds.join(",")}&fields=product_id,product_name,product_code&limit=-1`,
+                { headers: directusHeaders, cache: "no-store" }
+            );
+            if (prodRes.ok) {
+                const prodData = (await prodRes.json()).data || [];
+                prodMap = new Map(prodData.map((p: { product_id: number; product_name: string; product_code: string }) => [p.product_id, p]));
+            }
+        }
+
+        const detailsByInvoice = new Map<number, { productId: number; productName: string; productCode: string; quantity: number }[]>();
+        for (const d of detsData) {
+            const invId = d.invoice_no;
+            if (!detailsByInvoice.has(invId)) detailsByInvoice.set(invId, []);
+            const prod = prodMap.get(d.product_id);
+            detailsByInvoice.get(invId)!.push({
+                productId: d.product_id,
+                productName: prod?.product_name || `Product #${d.product_id}`,
+                productCode: prod?.product_code || "",
+                quantity: Number(d.quantity || 0),
+            });
+        }
+
         const enriched = invoices.map((inv) => {
             const cust = customerMap.get(inv.customer_code);
             return {
@@ -89,6 +124,7 @@ export async function GET(req: NextRequest) {
                 customerCode: inv.customer_code,
                 customerName: cust?.customer_name || inv.customer_code,
                 businessName: cust?.business_name || "",
+                products: detailsByInvoice.get(inv.invoice_id) || [],
             };
         });
 

@@ -9,15 +9,17 @@ export async function GET(req: NextRequest) {
         const { searchParams } = new URL(req.url);
         const branchId = searchParams.get("branchId");
 
+        if (!branchId) {
+            return NextResponse.json({ message: "branchId is required" }, { status: 400 });
+        }
+
         const filter: Record<string, unknown> = {
             _and: [
                 { consolidator_no: { _starts_with: "CLINV-" } },
                 { is_delete: { _eq: 0 } },
+                { branch_id: { _eq: Number(branchId) } },
             ],
         };
-        if (branchId) {
-            (filter._and as Record<string, unknown>[]).push({ branch_id: { _eq: Number(branchId) } });
-        }
 
         const qs = new URLSearchParams();
         qs.set("filter", JSON.stringify(filter));

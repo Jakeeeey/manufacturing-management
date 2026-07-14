@@ -1,18 +1,19 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
-import { X, Search, Loader2, CheckSquare, Square, FileText } from "lucide-react";
-import { CandidateInvoice } from "../types";
+import { X, Search, Loader2, CheckSquare, Square, FileText, Building2, Package } from "lucide-react";
+import { CandidateInvoice, CandidateProductLine, Branch } from "../types";
 
 interface Props {
     isOpen: boolean;
     onClose: () => void;
+    branch: Branch;
     candidates: CandidateInvoice[];
     loading: boolean;
     onSubmit: (payload: { branchId: number; invoiceIds: number[] }) => Promise<boolean>;
 }
 
-export default function CreateConsolidationModal({ isOpen, onClose, candidates, loading, onSubmit }: Props) {
+export default function CreateConsolidationModal({ isOpen, onClose, branch, candidates, loading, onSubmit }: Props) {
     const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
     const [search, setSearch] = useState("");
     const [submitting, setSubmitting] = useState(false);
@@ -49,15 +50,32 @@ export default function CreateConsolidationModal({ isOpen, onClose, candidates, 
             .reduce((sum, c) => sum + (c.netAmount || 0), 0);
     }, [candidates, selectedIds]);
 
+    const aggregatedProducts = useMemo(() => {
+        const selected = candidates.filter((c) => selectedIds.has(c.invoiceId));
+        const agg = new Map<number, { line: CandidateProductLine; invoiceCount: Set<number> }>();
+        for (const inv of selected) {
+            for (const p of inv.products) {
+                if (!agg.has(p.productId)) {
+                    agg.set(p.productId, { line: { ...p }, invoiceCount: new Set() });
+                }
+                const entry = agg.get(p.productId)!;
+                entry.line.quantity += p.quantity;
+                entry.invoiceCount.add(inv.invoiceId);
+            }
+        }
+        return Array.from(agg.values()).map((e) => ({
+            productId: e.line.productId,
+            productName: e.line.productName,
+            productCode: e.line.productCode,
+            totalQuantity: e.line.quantity,
+            invoiceCount: e.invoiceCount.size,
+        })).sort((a, b) => a.productName.localeCompare(b.productName));
+    }, [candidates, selectedIds]);
+
     const handleSubmit = async () => {
         if (selectedIds.size === 0 || submitting) return;
         setSubmitting(true);
-        const branchId = candidates.find((c) => selectedIds.has(c.invoiceId))?.branchId;
-        if (!branchId) {
-            setSubmitting(false);
-            return;
-        }
-        await onSubmit({ branchId, invoiceIds: Array.from(selectedIds) });
+        await onSubmit({ branchId: branch.id, invoiceIds: Array.from(selectedIds) });
         setSubmitting(false);
     };
 
@@ -70,6 +88,10 @@ export default function CreateConsolidationModal({ isOpen, onClose, candidates, 
                     <div className="flex items-center gap-2">
                         <FileText className="h-5 w-5 text-primary" />
                         <h2 className="text-sm font-bold text-foreground">Create Invoice Consolidation Batch</h2>
+                        <span className="text-[10px] text-muted-foreground bg-muted px-2 py-0.5 rounded-full flex items-center gap-1 ml-2">
+                            <Building2 className="h-3 w-3" />
+                            {branch.branchName}
+                        </span>
                     </div>
                     <button onClick={onClose} className="p-1 rounded-lg hover:bg-muted transition-colors cursor-pointer" suppressHydrationWarning>
                         <X className="h-4 w-4 text-muted-foreground" />
@@ -161,6 +183,37 @@ export default function CreateConsolidationModal({ isOpen, onClose, candidates, 
                                 })}
                             </tbody>
                         </table>
+                    )}
+
+                    {selectedIds.size > 0 && aggregatedProducts.length > 0 && (
+                        <div className="mt-4 border rounded-xl bg-muted/10">
+                            <div className="flex items-center gap-1.5 px-4 py-2.5 border-b">
+                                <Package className="h-3.5 w-3.5 text-muted-foreground" />
+                                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">
+                                    Consolidated Products Preview — {aggregatedProducts.length} unique product(s)
+                                </span>
+                            </div>
+                            <table className="w-full text-left border-collapse text-xs">
+                                <thead>
+                                    <tr className="border-b bg-muted/20">
+                                        <th className="p-2.5 font-semibold text-muted-foreground">Product</th>
+                                        <th className="p-2.5 font-semibold text-muted-foreground">Code</th>
+                                        <th className="p-2.5 font-semibold text-muted-foreground text-right">Total Qty</th>
+                                        <th className="p-2.5 font-semibold text-muted-foreground text-right">Invoices</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y">
+                                    {aggregatedProducts.map((p) => (
+                                        <tr key={p.productId} className="hover:bg-muted/10">
+                                            <td className="p-2.5 font-medium text-foreground">{p.productName}</td>
+                                            <td className="p-2.5 text-muted-foreground">{p.productCode}</td>
+                                            <td className="p-2.5 text-right font-bold text-foreground">{p.totalQuantity}</td>
+                                            <td className="p-2.5 text-right text-muted-foreground">{p.invoiceCount}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
                     )}
                 </div>
 

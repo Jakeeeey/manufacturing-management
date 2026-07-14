@@ -15,6 +15,7 @@ import {
     CheckCircle,
     RotateCcw,
     AlertTriangle,
+    Building2,
 } from "lucide-react";
 
 type ConfirmAction = "revert" | "audit" | "start-picking" | null;
@@ -25,19 +26,20 @@ export default function InvoiceConsolidationModule() {
         summary,
         candidates,
         branches,
+        selectedBranch,
         loading,
         submitting,
         page,
         totalPages,
         statusFilter,
         searchQuery,
+        branchId,
         selectedConsolidation,
         showCreateModal,
-        branchId,
         setPage,
         setStatusFilter,
         setSearchQuery,
-        setBranchId,
+        handleBranchChange,
         setSelectedConsolidation,
         setShowCreateModal,
         handleCreate,
@@ -47,6 +49,7 @@ export default function InvoiceConsolidationModule() {
         handleCompletePicking,
         handleSaveQuantities,
         loadCandidates,
+        openDetail,
     } = useInvoiceConsolidation();
 
     const [expandedId, setExpandedId] = React.useState<number | null>(null);
@@ -55,7 +58,7 @@ export default function InvoiceConsolidationModule() {
     const [confirmAction, setConfirmAction] = React.useState<{ type: ConfirmAction; batchId: number } | null>(null);
 
     useEffect(() => {
-        if (showCreateModal) {
+        if (showCreateModal && branchId) {
             loadCandidates(branchId);
         }
     }, [showCreateModal, loadCandidates, branchId]);
@@ -81,7 +84,7 @@ export default function InvoiceConsolidationModule() {
 
     const handleRowClick = (c: typeof consolidations[number]) => {
         setEditingDetailId(null);
-        setSelectedConsolidation(c);
+        openDetail(c);
     };
 
     const handleRowKeyDown = (e: React.KeyboardEvent, c: typeof consolidations[number]) => {
@@ -131,6 +134,90 @@ export default function InvoiceConsolidationModule() {
         "start-picking": { title: "Start picking this batch?", description: "This will move the batch to Picking status so quantities can be recorded." },
     };
 
+    if (!selectedBranch) {
+        return (
+            <div className="flex flex-col min-h-0 min-w-0 flex-1 space-y-4">
+                {/* Summary Cards — zeros */}
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 shrink-0">
+                    {summaryCards.map((card) => (
+                        <div key={card.label} className="border bg-card rounded-xl p-4 flex items-center gap-3.5 shadow-sm">
+                            <div className={`p-2.5 rounded-xl ${card.color}`}>{card.icon}</div>
+                            <div>
+                                <span className="text-[10px] text-muted-foreground font-bold uppercase block">{card.label}</span>
+                                <h4 className="text-base font-black text-foreground mt-0.5">0</h4>
+                            </div>
+                        </div>
+                    ))}
+                    <div className="border bg-card rounded-xl p-4 flex items-center gap-3.5 shadow-sm">
+                        <div className="p-2.5 rounded-xl bg-slate-500/10 border border-slate-500/20 text-slate-500">
+                            <SlidersHorizontal className="h-5 w-5" />
+                        </div>
+                        <div>
+                            <span className="text-[10px] text-muted-foreground font-bold uppercase block">Total</span>
+                            <h4 className="text-base font-black text-foreground mt-0.5">0</h4>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-3 items-center shrink-0">
+                    <div className="relative w-full sm:flex-1" />
+                    <select
+                        value=""
+                        onChange={(e) => {
+                            const b = branches.find((br) => br.id === Number(e.target.value));
+                            if (b) handleBranchChange(b);
+                        }}
+                        className="bg-card border border-input rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 outline-none w-full sm:w-44"
+                        suppressHydrationWarning
+                    >
+                        <option value="" disabled>Select a branch...</option>
+                        {branches.map((b) => (
+                            <option key={b.id} value={b.id}>{b.branchName}</option>
+                        ))}
+                    </select>
+                    <div className="flex items-center gap-2 w-full sm:w-auto opacity-40 pointer-events-none">
+                        <SlidersHorizontal className="h-3.5 w-3.5 text-muted-foreground" />
+                        <select className="bg-card border border-input rounded-xl px-3 py-2 text-xs outline-none w-full sm:w-32" suppressHydrationWarning>
+                            <option>All Status</option>
+                        </select>
+                    </div>
+                    <button
+                        disabled
+                        className="opacity-40 cursor-not-allowed bg-primary text-primary-foreground px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 shrink-0"
+                        suppressHydrationWarning
+                    >
+                        <Plus className="h-3.5 w-3.5" />
+                        New Consolidation
+                    </button>
+                </div>
+
+                <div className="flex-1 min-h-0 relative bg-background border rounded-xl p-4 md:p-6 shadow-sm flex flex-col">
+                    <div className="text-center py-16">
+                        <Building2 className="h-10 w-10 text-muted-foreground/30 mx-auto" />
+                        <h5 className="font-bold text-foreground text-xs uppercase tracking-wide mt-3">
+                            Select a Branch
+                        </h5>
+                        <p className="text-[10px] text-muted-foreground mt-1">
+                            Choose your active warehouse branch to view and manage invoice consolidation batches.
+                        </p>
+                    </div>
+                </div>
+
+                {selectedBranch && (
+                    <CreateConsolidationModal
+                        key={`create-modal-${showCreateModal}`}
+                        isOpen={showCreateModal}
+                        onClose={() => setShowCreateModal(false)}
+                        branch={selectedBranch}
+                        candidates={candidates}
+                        loading={loading}
+                        onSubmit={handleCreate}
+                    />
+                )}
+            </div>
+        );
+    }
+
     return (
         <div className="flex flex-col min-h-0 min-w-0 flex-1 space-y-4">
             {/* Summary Cards */}
@@ -169,13 +256,16 @@ export default function InvoiceConsolidationModule() {
                     />
                 </div>
                 <select
-                    value={branchId ?? ""}
-                    onChange={(e) => setBranchId(e.target.value ? Number(e.target.value) : undefined)}
-                    className="bg-card border border-input rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 outline-none w-full sm:w-40"
+                    value={selectedBranch.id}
+                    onChange={(e) => {
+                        const b = branches.find((br) => br.id === Number(e.target.value));
+                        if (b) handleBranchChange(b);
+                    }}
+                    className="bg-card border border-input rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 outline-none w-full sm:w-44"
                     suppressHydrationWarning
                 >
-                    <option value="">All Branches</option>
-                    {branches.map((b) => (
+                    <option value={selectedBranch.id}>{selectedBranch.branchName}</option>
+                    {branches.filter((b) => b.id !== selectedBranch.id).map((b) => (
                         <option key={b.id} value={b.id}>{b.branchName}</option>
                     ))}
                 </select>
@@ -258,7 +348,7 @@ export default function InvoiceConsolidationModule() {
                             No Consolidation Batches
                         </h5>
                         <p className="text-[10px] text-muted-foreground mt-1">
-                            Click &quot;New Consolidation&quot; to create an invoice consolidation batch.
+                            Click &quot;New Consolidation&quot; to create an invoice consolidation batch for <strong>{selectedBranch.branchName}</strong>.
                         </p>
                     </div>
                 ) : (
@@ -284,7 +374,7 @@ export default function InvoiceConsolidationModule() {
                                             className="hover:bg-muted/10 transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary/30"
                                         >
                                             <td className="p-3 font-bold text-foreground">{c.consolidatorNo}</td>
-                                            <td className="p-3 text-muted-foreground">{c.branchName || `Branch #${c.branchId}`}</td>
+                                            <td className="p-3 text-muted-foreground">{c.branchName || selectedBranch.branchName}</td>
                                             <td className="p-3 text-muted-foreground">
                                                 <button
                                                     onClick={(e) => toggleExpand(e, c.id)}
@@ -381,7 +471,7 @@ export default function InvoiceConsolidationModule() {
                                 </div>
                                 <div>
                                     <span className="text-muted-foreground block">Branch</span>
-                                    <span className="font-bold text-foreground">{selectedConsolidation.branchName}</span>
+                                    <span className="font-bold text-foreground">{selectedConsolidation.branchName || selectedBranch.branchName}</span>
                                 </div>
                                 <div>
                                     <span className="text-muted-foreground block">Created</span>
@@ -393,6 +483,7 @@ export default function InvoiceConsolidationModule() {
                                 </div>
                             </div>
 
+                            {/* Product Details */}
                             {selectedConsolidation.details && selectedConsolidation.details.length > 0 && (
                                 <div>
                                     <span className="text-xs text-muted-foreground font-semibold uppercase block mb-2">
@@ -402,76 +493,89 @@ export default function InvoiceConsolidationModule() {
                                         <thead>
                                             <tr className="border-b bg-muted/20">
                                                 <th className="p-2 font-semibold text-muted-foreground">Product</th>
-                                                <th className="p-2 font-semibold text-muted-foreground text-right">Ordered Qty</th>
-                                                <th className="p-2 font-semibold text-muted-foreground text-right">Picked Qty</th>
+                                                <th className="p-2 font-semibold text-muted-foreground text-right">Ordered</th>
+                                                <th className="p-2 font-semibold text-muted-foreground text-right">Picked</th>
+                                                <th className="p-2 font-semibold text-muted-foreground text-right">Short</th>
+                                                <th className="p-2 font-semibold text-muted-foreground text-right">Applied</th>
                                                 {selectedConsolidation.status === "Picking" && (
                                                     <th className="p-2 font-semibold text-muted-foreground text-right">Update</th>
                                                 )}
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y">
-                                            {selectedConsolidation.details.map((d) => (
-                                                <tr key={d.id}>
-                                                    <td className="p-2 font-medium text-foreground">
-                                                        {d.productName || d.productCode || `Product #${d.productId}`}
-                                                    </td>
-                                                    <td className="p-2 text-right font-bold text-foreground">{d.orderedQuantity}</td>
-                                                    <td className="p-2 text-right font-bold text-foreground">{d.pickedQuantity}</td>
-                                                    {selectedConsolidation.status === "Picking" && (
-                                                        <td className="p-2 text-right">
-                                                            {editingDetailId === d.id ? (
-                                                                <div className="flex items-center justify-end gap-1">
-                                                                    <input
-                                                                        type="number"
-                                                                        min={0}
-                                                                        value={editQuantity}
-                                                                        onChange={(e) => setEditQuantity(Math.max(0, Number(e.target.value)))}
-                                                                        className="w-16 border border-input rounded px-1.5 py-0.5 text-xs text-right"
-                                                                        suppressHydrationWarning
-                                                                    />
-                                                                    <button
-                                                                        onClick={async () => {
-                                                                            const ok = await handleSaveQuantities({
-                                                                                batchId: selectedConsolidation.id,
-                                                                                quantities: [{ detailId: d.id, pickedQuantity: editQuantity }],
-                                                                            });
-                                                                            if (ok) {
-                                                                                setEditingDetailId(null);
-                                                                                setEditQuantity(0);
-                                                                            }
-                                                                        }}
-                                                                        disabled={submitting}
-                                                                        className="bg-primary text-primary-foreground px-1.5 py-0.5 rounded text-[10px] font-bold cursor-pointer"
-                                                                        suppressHydrationWarning
-                                                                    >
-                                                                        Save
-                                                                    </button>
-                                                                    <button
-                                                                        onClick={() => setEditingDetailId(null)}
-                                                                        className="px-1.5 py-0.5 rounded text-[10px] font-bold text-muted-foreground hover:bg-muted cursor-pointer"
-                                                                        suppressHydrationWarning
-                                                                    >
-                                                                        X
-                                                                    </button>
-                                                                </div>
-                                                            ) : (
-                                                                <button
-                                                                    onClick={() => { setEditingDetailId(d.id); setEditQuantity(d.pickedQuantity); }}
-                                                                    className="text-primary font-semibold hover:underline cursor-pointer text-[10px]"
-                                                                    suppressHydrationWarning
-                                                                >
-                                                                    Edit
-                                                                </button>
-                                                            )}
+                                            {selectedConsolidation.details.map((d) => {
+                                                const short = d.orderedQuantity - d.pickedQuantity;
+                                                return (
+                                                    <tr key={d.id}>
+                                                        <td className="p-2 font-medium text-foreground">
+                                                            {d.productName || d.productCode || `Product #${d.productId}`}
                                                         </td>
-                                                    )}
-                                                </tr>
-                                            ))}
+                                                        <td className="p-2 text-right font-bold text-foreground">{d.orderedQuantity}</td>
+                                                        <td className="p-2 text-right font-bold text-foreground">{d.pickedQuantity}</td>
+                                                        <td className="p-2 text-right font-bold">
+                                                            <span className={short > 0 ? "text-amber-600" : "text-muted-foreground"}>
+                                                                {short}
+                                                            </span>
+                                                        </td>
+                                                        <td className="p-2 text-right font-bold text-muted-foreground">{d.appliedQuantity}</td>
+                                                        {selectedConsolidation.status === "Picking" && (
+                                                            <td className="p-2 text-right">
+                                                                {editingDetailId === d.id ? (
+                                                                    <div className="flex items-center justify-end gap-1">
+                                                                        <input
+                                                                            type="number"
+                                                                            min={0}
+                                                                            max={d.orderedQuantity}
+                                                                            value={editQuantity}
+                                                                            onChange={(e) => setEditQuantity(Math.min(d.orderedQuantity, Math.max(0, Number(e.target.value))))}
+                                                                            className="w-16 border border-input rounded px-1.5 py-0.5 text-xs text-right"
+                                                                            suppressHydrationWarning
+                                                                        />
+                                                                        <button
+                                                                            onClick={async () => {
+                                                                                const ok = await handleSaveQuantities({
+                                                                                    batchId: selectedConsolidation.id,
+                                                                                    quantities: [{ detailId: d.id, pickedQuantity: editQuantity }],
+                                                                                });
+                                                                                if (ok) {
+                                                                                    setEditingDetailId(null);
+                                                                                    setEditQuantity(0);
+                                                                                }
+                                                                            }}
+                                                                            disabled={submitting}
+                                                                            className="bg-primary text-primary-foreground px-1.5 py-0.5 rounded text-[10px] font-bold cursor-pointer"
+                                                                            suppressHydrationWarning
+                                                                        >
+                                                                            Save
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={() => setEditingDetailId(null)}
+                                                                            className="px-1.5 py-0.5 rounded text-[10px] font-bold text-muted-foreground hover:bg-muted cursor-pointer"
+                                                                            suppressHydrationWarning
+                                                                        >
+                                                                            X
+                                                                        </button>
+                                                                    </div>
+                                                                ) : (
+                                                                    <button
+                                                                        onClick={() => { setEditingDetailId(d.id); setEditQuantity(d.pickedQuantity); }}
+                                                                        className="text-primary font-semibold hover:underline cursor-pointer text-[10px]"
+                                                                        suppressHydrationWarning
+                                                                    >
+                                                                        Edit
+                                                                    </button>
+                                                                )}
+                                                            </td>
+                                                        )}
+                                                    </tr>
+                                                );
+                                            })}
                                         </tbody>
                                     </table>
                                 </div>
                             )}
 
+                            {/* Invoices */}
                             <div>
                                 <span className="text-xs text-muted-foreground font-semibold uppercase block mb-2">
                                     Invoices ({selectedConsolidation.invoices?.length || 0})
@@ -554,13 +658,17 @@ export default function InvoiceConsolidationModule() {
             )}
 
             {/* Create Modal */}
-            <CreateConsolidationModal
-                isOpen={showCreateModal}
-                onClose={() => setShowCreateModal(false)}
-                candidates={candidates}
-                loading={loading}
-                onSubmit={handleCreate}
-            />
+            {selectedBranch && (
+                <CreateConsolidationModal
+                    key={`create-modal-${showCreateModal}`}
+                    isOpen={showCreateModal}
+                    onClose={() => setShowCreateModal(false)}
+                    branch={selectedBranch}
+                    candidates={candidates}
+                    loading={loading}
+                    onSubmit={handleCreate}
+                />
+            )}
         </div>
     );
 }

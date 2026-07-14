@@ -37,15 +37,15 @@ export async function POST(req: NextRequest) {
         }
 
         const getRes = await fetch(
-            `${DIRECTUS_URL}/items/consolidator/${batchId}`,
+            `${DIRECTUS_URL}/items/consolidator?filter[id][_eq]=${batchId}&filter[is_delete][_eq]=0&limit=1`,
             { headers: directusHeaders, cache: "no-store" }
         );
         if (!getRes.ok) {
-            return NextResponse.json({ message: `Batch not found (HTTP ${getRes.status})` }, { status: getRes.status });
+            return NextResponse.json({ message: `Directus error (HTTP ${getRes.status})` }, { status: getRes.status });
         }
 
-        const consolidator = (await getRes.json()).data;
-        if (!consolidator || consolidator.is_delete) {
+        const items = (await getRes.json()).data || [];
+        if (items.length === 0) {
             return NextResponse.json({ message: "Batch not found" }, { status: 404 });
         }
 

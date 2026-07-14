@@ -38,6 +38,13 @@ export interface InvoiceConsolidation {
     invoices: ConsolidatorInvoice[];
 }
 
+export interface CandidateProductLine {
+    productId: number;
+    productName: string;
+    productCode: string;
+    quantity: number;
+}
+
 export interface CandidateInvoice {
     invoiceId: number;
     invoiceNo: string;
@@ -48,6 +55,7 @@ export interface CandidateInvoice {
     customerCode: string;
     customerName: string;
     businessName: string;
+    products: CandidateProductLine[];
 }
 
 export interface StatusSummary {

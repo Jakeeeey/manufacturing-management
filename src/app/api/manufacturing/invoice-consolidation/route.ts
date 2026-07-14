@@ -57,9 +57,14 @@ export async function GET(req: NextRequest) {
         const search = searchParams.get("search");
         const branchId = searchParams.get("branchId");
 
+        if (!branchId) {
+            return NextResponse.json({ message: "branchId is required" }, { status: 400 });
+        }
+
         const qs = new URLSearchParams();
         qs.set("filter[consolidator_no][_starts_with]", "CLINV-");
         qs.set("filter[is_delete][_eq]", "0");
+        qs.set("filter[branch_id][_eq]", branchId);
         qs.set("sort", "-created_at");
         qs.set("limit", String(size));
         qs.set("offset", String(page * size));
@@ -70,9 +75,6 @@ export async function GET(req: NextRequest) {
         }
         if (search) {
             qs.set("filter[consolidator_no][_contains]", search);
-        }
-        if (branchId) {
-            qs.set("filter[branch_id][_eq]", branchId);
         }
 
         const res = await fetch(`${DIRECTUS_URL}/items/consolidator?${qs.toString()}`, {
@@ -244,7 +246,7 @@ export async function POST(req: NextRequest) {
         if (!siRes.ok) {
             return NextResponse.json({ message: `Failed to verify invoices (HTTP ${siRes.status})` }, { status: siRes.status });
         }
-        const siData: { invoice_id: number; invoice_no: string; branch_id: number; isDispatched: boolean | null; transaction_status: string }[] = (await siRes.json()).data || [];
+        const siData: { invoice_id: number; invoice_no: string; branch_id: number; total_amount: number; isDispatched: boolean | null; transaction_status: string }[] = (await siRes.json()).data || [];
 
         if (siData.length !== uniqueIds.length) {
             const found = new Set(siData.map((s) => s.invoice_id));
@@ -268,12 +270,13 @@ export async function POST(req: NextRequest) {
             `${DIRECTUS_URL}/items/consolidator_invoices?filter[invoice_id][_in]=${uniqueIds.join(",")}&filter[consolidator_id][consolidator_no][_starts_with]=CLINV-&filter[consolidator_id][is_delete][_eq]=0&limit=-1&fields=invoice_id`,
             { headers: directusHeaders, cache: "no-store" }
         );
-        if (clinvRes.ok) {
-            const linked: { invoice_id: number }[] = (await clinvRes.json()).data || [];
-            if (linked.length > 0) {
-                const alreadyLinked = linked.map((l) => l.invoice_id);
-                return NextResponse.json({ message: `Invoices already in another batch: ${alreadyLinked.join(", ")}` }, { status: 400 });
-            }
+        if (!clinvRes.ok) {
+            return NextResponse.json({ message: `Failed to check existing links (HTTP ${clinvRes.status})` }, { status: clinvRes.status });
+        }
+        const linked: { invoice_id: number }[] = (await clinvRes.json()).data || [];
+        if (linked.length > 0) {
+            const alreadyLinked = linked.map((l) => l.invoice_id);
+            return NextResponse.json({ message: `Invoices already in another batch: ${alreadyLinked.join(", ")}` }, { status: 409 });
         }
 
         const consolidatorNo = await generateConsolidatorNo();
@@ -330,26 +333,28 @@ export async function POST(req: NextRequest) {
                 aggMap.set(d.product_id, (aggMap.get(d.product_id) || 0) + Number(d.quantity || 0));
             }
 
-            if (aggMap.size > 0) {
-                const detailPayload = Array.from(aggMap.entries()).map(([productId, qty]) => ({
-                    consolidator_id: newId,
-                    product_id: productId,
-                    ordered_quantity: qty,
-                    picked_quantity: 0,
-                    applied_quantity: 0,
-                }));
-                const detCreateRes = await fetch(`${DIRECTUS_URL}/items/consolidator_details`, {
-                    method: "POST",
-                    headers: directusHeaders,
-                    body: JSON.stringify(detailPayload),
-                });
-                if (!detCreateRes.ok) {
-                    const errText = await detCreateRes.text();
-                    throw new Error(`Failed to create details: ${detCreateRes.status} - ${errText}`);
-                }
-                const detCreateData = (await detCreateRes.json()).data || [];
-                createdDetailIds = detCreateData.map((d: { id: number }) => d.id);
+            if (aggMap.size === 0) {
+                throw new Error("Selected invoices have no valid product lines to consolidate");
             }
+
+            const detailPayload = Array.from(aggMap.entries()).map(([productId, qty]) => ({
+                consolidator_id: newId,
+                product_id: productId,
+                ordered_quantity: qty,
+                picked_quantity: 0,
+                applied_quantity: 0,
+            }));
+            const detCreateRes = await fetch(`${DIRECTUS_URL}/items/consolidator_details`, {
+                method: "POST",
+                headers: directusHeaders,
+                body: JSON.stringify(detailPayload),
+            });
+            if (!detCreateRes.ok) {
+                const errText = await detCreateRes.text();
+                throw new Error(`Failed to create details: ${detCreateRes.status} - ${errText}`);
+            }
+            const detCreateData = (await detCreateRes.json()).data || [];
+            createdDetailIds = detCreateData.map((d: { id: number }) => d.id);
 
             const productIds = Array.from(aggMap.keys());
             let productMap = new Map<number, { product_name: string; product_code: string }>();
@@ -384,7 +389,7 @@ export async function POST(req: NextRequest) {
                 checkedBy: null,
                 branchId: Number(branchId),
                 branchName: `Branch #${branchId}`,
-                totalSalesOrderAmount: siData.reduce((sum, s) => sum + Number(s.isDispatched === true ? 0 : 0), 0),
+                totalSalesOrderAmount: siData.reduce((sum, s) => sum + Number(s.total_amount || 0), 0),
                 createdAt: newConsolidator.created_at,
                 updatedAt: newConsolidator.updated_at,
                 details,

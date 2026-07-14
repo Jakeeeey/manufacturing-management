@@ -7,6 +7,7 @@ import {
     fetchSummary,
     fetchCandidates,
     fetchBranches,
+    fetchConsolidationByNo,
     createConsolidation,
     auditBatch,
     revertBatch,
@@ -27,9 +28,11 @@ export function useInvoiceConsolidation() {
     const [totalPages, setTotalPages] = useState(0);
     const [statusFilter, setStatusFilter] = useState("All");
     const [searchQuery, setSearchQuery] = useState("");
-    const [branchId, setBranchId] = useState<number | undefined>(undefined);
+    const [selectedBranch, setSelectedBranch] = useState<Branch | null>(null);
     const [selectedConsolidation, setSelectedConsolidation] = useState<InvoiceConsolidation | null>(null);
     const [showCreateModal, setShowCreateModal] = useState(false);
+
+    const branchId = selectedBranch?.id;
 
     const loadBranches = useCallback(async () => {
         try {
@@ -41,6 +44,7 @@ export function useInvoiceConsolidation() {
     }, []);
 
     const loadData = useCallback(async () => {
+        if (!branchId) return;
         setLoading(true);
         try {
             const [consRes, sumRes] = await Promise.all([
@@ -66,13 +70,32 @@ export function useInvoiceConsolidation() {
         loadBranches();
     }, [loadBranches]);
 
-    const loadCandidates = useCallback(async (bId?: number) => {
+    const handleBranchChange = useCallback((branch: Branch | null) => {
+        setSelectedBranch(branch);
+        setPage(0);
+        setStatusFilter("All");
+        setSearchQuery("");
+        setSelectedConsolidation(null);
+        setShowCreateModal(false);
+        setCandidates([]);
+    }, []);
+
+    const loadCandidates = useCallback(async (bId: number) => {
         try {
             const data = await fetchCandidates(bId);
             setCandidates(data);
         } catch (e) {
             const err = e as Error;
             toast.error(err.message || "Failed to load candidate invoices");
+        }
+    }, []);
+
+    const openDetail = useCallback(async (c: InvoiceConsolidation) => {
+        try {
+            const fresh = await fetchConsolidationByNo(c.consolidatorNo);
+            setSelectedConsolidation(fresh);
+        } catch {
+            setSelectedConsolidation(c);
         }
     }, []);
 
@@ -116,6 +139,7 @@ export function useInvoiceConsolidation() {
             const result = await revertBatch(batchId);
             toast.success(result.message || "Batch reverted to Pending");
             await loadData();
+            setSelectedConsolidation(null);
             return true;
         } catch (e) {
             const err = e as Error;
@@ -132,6 +156,7 @@ export function useInvoiceConsolidation() {
             const result = await startPicking(batchId);
             toast.success(result.message || "Picking started");
             await loadData();
+            setSelectedConsolidation(null);
             return true;
         } catch (e) {
             const err = e as Error;
@@ -180,6 +205,7 @@ export function useInvoiceConsolidation() {
         summary,
         candidates,
         branches,
+        selectedBranch,
         loading,
         submitting,
         page,
@@ -192,7 +218,7 @@ export function useInvoiceConsolidation() {
         setPage,
         setStatusFilter,
         setSearchQuery,
-        setBranchId,
+        handleBranchChange,
         setSelectedConsolidation,
         setShowCreateModal,
         loadCandidates,
@@ -202,6 +228,7 @@ export function useInvoiceConsolidation() {
         handleStartPicking,
         handleCompletePicking,
         handleSaveQuantities,
+        openDetail,
         refresh: loadData,
     };
 }

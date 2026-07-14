@@ -14,7 +14,12 @@ export async function GET() {
             return NextResponse.json({ message: `Directus error (HTTP ${res.status})` }, { status: res.status });
         }
         const json = await res.json();
-        return NextResponse.json(json.data || []);
+        const data = (json.data || []).map((b: { id: number; branch_name: string; branch_code: string }) => ({
+            id: b.id,
+            branchName: b.branch_name,
+            branchCode: b.branch_code,
+        }));
+        return NextResponse.json(data);
     } catch (e) {
         console.error("branches GET error:", e);
         return NextResponse.json({ message: "BFF Network Error" }, { status: 502 });

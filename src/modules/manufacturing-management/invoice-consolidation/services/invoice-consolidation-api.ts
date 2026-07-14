@@ -43,14 +43,14 @@ export async function fetchBranches(): Promise<Branch[]> {
 }
 
 export async function fetchConsolidations(params: {
-    branchId?: number;
+    branchId: number;
     page?: number;
     size?: number;
     status?: string;
     search?: string;
 }): Promise<{ content: InvoiceConsolidation[]; totalElements: number; totalPages: number }> {
     const qs = new URLSearchParams();
-    if (params.branchId != null) qs.set("branchId", String(params.branchId));
+    qs.set("branchId", String(params.branchId));
     if (params.page != null) qs.set("page", String(params.page));
     if (params.size != null) qs.set("size", String(params.size));
     if (params.status) qs.set("status", params.status);
@@ -59,15 +59,13 @@ export async function fetchConsolidations(params: {
     return handleResponse(res, "Failed to load consolidations");
 }
 
-export async function fetchSummary(branchId?: number): Promise<StatusSummary> {
-    const qs = branchId ? `?branchId=${branchId}` : "";
-    const res = await fetchWithSessionRetry(`/api/manufacturing/invoice-consolidation/summary${qs}`);
+export async function fetchSummary(branchId: number): Promise<StatusSummary> {
+    const res = await fetchWithSessionRetry(`/api/manufacturing/invoice-consolidation/summary?branchId=${branchId}`);
     return handleResponse(res, "Failed to load summary");
 }
 
-export async function fetchCandidates(branchId?: number): Promise<CandidateInvoice[]> {
-    const qs = branchId ? `?branchId=${branchId}` : "";
-    const res = await fetchWithSessionRetry(`/api/manufacturing/invoice-consolidation/candidates${qs}`);
+export async function fetchCandidates(branchId: number): Promise<CandidateInvoice[]> {
+    const res = await fetchWithSessionRetry(`/api/manufacturing/invoice-consolidation/candidates?branchId=${branchId}`);
     return handleResponse(res, "Failed to load candidate invoices");
 }
 
