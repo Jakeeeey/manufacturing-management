@@ -76,6 +76,9 @@ export default function QAReceivingModule() {
                     >
                         <Boxes className="h-3.5 w-3.5" />
                         Inbound QA Queue
+                        <span className="text-[9px] bg-background/80 text-foreground px-1.5 py-0.5 rounded-full font-extrabold">
+                            {filteredShipments.length}
+                        </span>
                     </button>
                     <button
                         onClick={() => {

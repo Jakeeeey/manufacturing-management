@@ -1,6 +1,6 @@
-/* eslint-disable */
 import React from "react";
-import { ArrowLeft, MapPin, AlertTriangle, CheckCircle2, Search, ChevronDown, Image as ImageIcon, Plus, Minus } from "lucide-react";
+import Image from "next/image";
+import { ArrowLeft, MapPin, AlertTriangle, CheckCircle2, Search, ChevronDown, Image as ImageIcon, Plus, Minus, Loader2 } from "lucide-react";
 import { Shipment, ShipmentLineItem, Branch, InspectionRow } from "../types";
 
 interface ShipmentInspectionFormProps {
@@ -28,6 +28,10 @@ export default function ShipmentInspectionForm({
     handleSubmitInspection,
     onCancel
 }: ShipmentInspectionFormProps) {
+    const totalOrderedQty = React.useMemo(() => {
+        return lineItems.reduce((sum, l) => sum + Number(l.quantity_ordered || 0), 0);
+    }, [lineItems]);
+
     const [dropdownOpen, setDropdownOpen] = React.useState(false);
     const [dropdownSearch, setDropdownSearch] = React.useState("");
     const [highlightedLineId, setHighlightedLineId] = React.useState<number | null>(null);
@@ -106,6 +110,9 @@ export default function ShipmentInspectionForm({
                             <p className="text-[10px] text-muted-foreground">Verify physical quantities, tag batch IDs, and set Expiration limits.</p>
                             <span className="text-[9px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-extrabold whitespace-nowrap">
                                 Original PO Branch: {originalBranchName}
+                            </span>
+                            <span className="text-[9px] bg-blue-500/10 text-blue-600 px-1.5 py-0.5 rounded font-extrabold whitespace-nowrap">
+                                PO Qty: {totalOrderedQty.toLocaleString()} units
                             </span>
                         </div>
                     </div>
@@ -199,8 +206,8 @@ export default function ShipmentInspectionForm({
                         const boVal = row.receivedQty !== "" && row.acceptedQty !== "" ? Math.max(0, receivedVal - acceptedVal) : (row.boQty !== "" ? Number(row.boQty) : 0);
                         const isOverAcceptance = row.acceptedQty !== "" && row.receivedQty !== "" && acceptedVal > receivedVal;
 
-                        // Remarks mandatory rule: BO Qty > 0, Received ≠ Ordered, OR over-acceptance
-                        const isRemarksMandatory = boVal > 0 || (row.receivedQty !== "" && receivedVal !== orderedVal) || isOverAcceptance;
+                        // Remarks mandatory rule: BO Qty > 0, Received > Ordered, OR over-acceptance
+                        const isRemarksMandatory = boVal > 0 || (row.receivedQty !== "" && receivedVal > orderedVal) || isOverAcceptance;
 
                         return (
                             <div
@@ -214,12 +221,14 @@ export default function ShipmentInspectionForm({
                                 {/* Header info with Product Image */}
                                 <div className="flex gap-4 border-b pb-3 items-center">
                                     {/* Directus Product Image */}
-                                    <div className="h-16 w-16 rounded-xl bg-background border flex items-center justify-center shrink-0 overflow-hidden shadow-xs">
+                                    <div className="h-16 w-16 rounded-xl bg-background border flex items-center justify-center shrink-0 overflow-hidden shadow-xs relative">
                                         {prod.product_image ? (
-                                            <img
+                                            <Image
                                                 src={`${process.env.NEXT_PUBLIC_DIRECTUS_URL || "http://vtc:8074"}/assets/${prod.product_image}`}
                                                 alt={prod.product_name}
-                                                className="h-full w-full object-cover"
+                                                fill
+                                                className="object-cover"
+                                                unoptimized
                                             />
                                         ) : (
                                             <ImageIcon className="h-6 w-6 text-muted-foreground/40" />
@@ -245,58 +254,67 @@ export default function ShipmentInspectionForm({
                                     </div>
                                 </div>
 
-                                {/* QA Inputs Grid - Touch Optimized layout */}
-                                {(() => {
-                                    const convFactor = Number(line.product_id?.unit_of_measurement_count || 1);
-                                    const childUom = line.product_id?.unit_of_measurement?.unit_shortcut || "PCS";
-                                    const parentObj = line.product_id?.parent_id;
-                                    const parentUom = parentObj && typeof parentObj === "object"
-                                        ? (parentObj as any).unit_of_measurement?.unit_shortcut
-                                        : null;
-                                    const baseUom = parentUom || childUom;
+                                 {/* QA Inputs Grid - Touch Optimized layout */}
+                                 {(() => {
+                                     const convFactor = Number(line.product_id?.unit_of_measurement_count || 1);
+                                     const childUom = line.product_id?.unit_of_measurement?.unit_shortcut || "PCS";
+                                     const parentObj = line.product_id?.parent_id;
+                                     const parentUom = parentObj && typeof parentObj === "object" 
+                                         ? (parentObj as { unit_of_measurement?: { unit_shortcut?: string } }).unit_of_measurement?.unit_shortcut 
+                                         : null;
+                                     const baseUom = parentUom || childUom;
 
                                     const receivedEquiv = receivedVal * convFactor;
                                     const acceptedEquiv = acceptedVal * convFactor;
                                     const boEquiv = Number(row.boQty || 0) * convFactor;
 
-                                    return (
-                                        <div className="grid gap-4 grid-cols-1 sm:grid-cols-3">
-                                            {/* Received Quantity Stepper */}
-                                            <div className="space-y-1">
-                                                <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">
-                                                    Received Quantity
-                                                </label>
-                                                <div className="flex items-center">
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => handleUpdateRow(line.line_id, "receivedQty", Math.max(0, receivedVal - 1))}
-                                                        className="w-10 h-10 border border-r-0 bg-background text-foreground rounded-l-lg hover:bg-muted font-extrabold flex items-center justify-center transition-colors text-base select-none shrink-0"
-                                                    >
-                                                        <Minus className="h-3.5 w-3.5" />
-                                                    </button>
-                                                    <input
-                                                        type="number"
-                                                        required
-                                                        min="0"
-                                                        placeholder="Manually count"
-                                                        value={row.receivedQty}
-                                                        onChange={e => handleUpdateRow(line.line_id, "receivedQty", e.target.value === "" ? "" : Number(e.target.value))}
-                                                        className="w-full h-10 border bg-background text-center text-xs font-semibold text-foreground outline-none focus:ring-0"
-                                                    />
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => handleUpdateRow(line.line_id, "receivedQty", receivedVal + 1)}
-                                                        className="w-10 h-10 border border-l-0 bg-background text-foreground rounded-r-lg hover:bg-muted font-extrabold flex items-center justify-center transition-colors text-base select-none shrink-0"
-                                                    >
-                                                        <Plus className="h-3.5 w-3.5" />
-                                                    </button>
-                                                </div>
-                                                {receivedEquiv > 0 && convFactor !== 1 && (
-                                                    <span className="text-[9px] text-primary font-bold block mt-1 bg-primary/5 px-2 py-0.5 rounded border border-primary/10 w-fit select-none">
-                                                        = {receivedEquiv.toLocaleString()} {baseUom}
-                                                    </span>
-                                                )}
-                                            </div>
+                                     return (
+                                         <div className="grid gap-4 grid-cols-1 sm:grid-cols-3">
+                                             {/* Received Quantity Stepper */}
+                                             <div className="space-y-1">
+                                                 <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">
+                                                     Received Quantity
+                                                 </label>
+                                                 <div className="flex items-center">
+                                                     <button
+                                                         type="button"
+                                                         onClick={() => handleUpdateRow(line.line_id, "receivedQty", Math.max(0, receivedVal - 1))}
+                                                         className="w-10 h-10 border border-r-0 bg-background text-foreground rounded-l-lg hover:bg-muted font-extrabold flex items-center justify-center transition-colors text-base select-none shrink-0"
+                                                     >
+                                                         <Minus className="h-3.5 w-3.5" />
+                                                     </button>
+                                                     <input
+                                                         type="number"
+                                                         required
+                                                         min="0"
+                                                         placeholder="Manually count"
+                                                         value={row.receivedQty}
+                                                         onChange={e => handleUpdateRow(line.line_id, "receivedQty", e.target.value === "" ? "" : Number(e.target.value))}
+                                                         className={`w-full h-10 border text-center text-xs font-semibold text-foreground outline-none focus:ring-0 transition-all ${
+                                                             row.receivedQty !== "" && receivedVal > orderedVal
+                                                                 ? "border-red-500 bg-red-500/5 focus:bg-red-500/5"
+                                                                 : "border-border bg-background"
+                                                         }`}
+                                                     />
+                                                     <button
+                                                         type="button"
+                                                         onClick={() => handleUpdateRow(line.line_id, "receivedQty", receivedVal + 1)}
+                                                         className="w-10 h-10 border border-l-0 bg-background text-foreground rounded-r-lg hover:bg-muted font-extrabold flex items-center justify-center transition-colors text-base select-none shrink-0"
+                                                     >
+                                                         <Plus className="h-3.5 w-3.5" />
+                                                     </button>
+                                                 </div>
+                                                 {row.receivedQty !== "" && receivedVal > orderedVal && (
+                                                     <span className="text-[9px] text-red-500 font-extrabold block mt-1 bg-red-500/5 px-2 py-0.5 rounded border border-red-500/10 w-fit select-none">
+                                                         Warning: Exceeds Ordered Qty ({orderedVal})
+                                                     </span>
+                                                 )}
+                                                 {receivedEquiv > 0 && convFactor !== 1 && (
+                                                     <span className="text-[9px] text-primary font-bold block mt-1 bg-primary/5 px-2 py-0.5 rounded border border-primary/10 w-fit select-none">
+                                                         = {receivedEquiv.toLocaleString()} {baseUom}
+                                                     </span>
+                                                 )}
+                                             </div>
 
                                             {/* Accepted Quantity Stepper */}
                                             <div className="space-y-1">
@@ -428,24 +446,26 @@ export default function ShipmentInspectionForm({
                                 </div>
 
                                 {/* Remarks field */}
-                                <div className="space-y-1 pt-1">
-                                    <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">
-                                        Remarks / Rejection Notes {isRemarksMandatory && <span className="text-red-500">*</span>}
-                                    </label>
-                                    <input
-                                        type="text"
-                                        placeholder={isRemarksMandatory ? "Logistics discrepancy or bad order explanation is mandatory" : "Reason for discrepancy or failure"}
-                                        value={row.rejectionReason}
-                                        onChange={e => handleUpdateRow(line.line_id, "rejectionReason", e.target.value)}
-                                        className="w-full h-10 bg-background border text-foreground rounded-lg px-3 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-primary"
-                                    />
-                                </div>
+                                {isRemarksMandatory && (
+                                    <div className="space-y-1 pt-1 animate-in fade-in duration-200">
+                                        <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">
+                                            Remarks / Rejection Notes <span className="text-red-500">*</span>
+                                        </label>
+                                        <input
+                                            type="text"
+                                            placeholder={boVal > 0 ? "Bad order explanation is mandatory" : isOverAcceptance ? "Document source of extra units" : "Reason for over-shipment"}
+                                            value={row.rejectionReason}
+                                            onChange={e => handleUpdateRow(line.line_id, "rejectionReason", e.target.value)}
+                                            className="w-full h-10 bg-background border text-foreground rounded-lg px-3 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-primary"
+                                        />
+                                    </div>
+                                )}
 
                                 {/* Discrepancy warnings */}
                                 {row.receivedQty !== "" && receivedVal !== orderedVal && !isOverAcceptance && (
                                     <div className="bg-amber-500/5 border border-amber-500/10 rounded-lg p-2.5 flex items-center gap-2 text-[10px] text-amber-600 animate-in fade-in duration-200">
                                         <AlertTriangle className="h-4 w-4 shrink-0" />
-                                        <span>Logistics discrepancy detected (Counted quantity differs from original purchase order). Remarks are mandatory.</span>
+                                        <span>Logistics discrepancy detected (Counted quantity differs from original purchase order).</span>
                                     </div>
                                 )}
                                 {isOverAcceptance && (
@@ -478,10 +498,10 @@ export default function ShipmentInspectionForm({
                 </button>
                 <button
                     type="submit"
-                    className="px-5 py-2.5 bg-primary text-primary-foreground rounded-xl text-xs font-bold flex items-center gap-1.5 shadow h-11 justify-center cursor-pointer"
+                    disabled={loadingLines}
+                    className="px-5 py-2.5 bg-primary text-primary-foreground rounded-xl text-xs font-bold flex items-center gap-1.5 shadow h-11 justify-center cursor-pointer disabled:opacity-60 disabled:cursor-wait"
                 >
-                    <CheckCircle2 className="h-4 w-4" />
-                    Complete QA Receiving & Write Ledger
+                    {loadingLines ? <><Loader2 className="h-4 w-4 animate-spin" /> Processing...</> : <><CheckCircle2 className="h-4 w-4" /> Complete QA Receiving & Write Ledger</>}
                 </button>
             </div>
         </form>

@@ -6,6 +6,7 @@ interface UOMOption {
     product_id: number;
     unit_shortcut: string;
     cost_per_unit: number;
+    unit_of_measurement_count?: number;
 }
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { Search, Plus, Calendar, ShieldCheck, Truck, Layers, Anchor, AlertCircle, Info, Landmark, Edit, RefreshCw, Loader2, Trash2, CheckCircle2, CheckSquare, X } from "lucide-react";
@@ -34,9 +35,9 @@ export interface ShipmentFormState {
     total_php_value: string;
     status: "Ordered" | "Approved" | "En Route" | "Receiving (QA)" | "Received" | "Rejected";
     date_received: string;
-    branch_id: number;
-    payment_type: number;
-    price_type: string;
+    branch_id: number | null;
+    payment_type: number | null;
+    price_type: string | null;
 }
 
 interface IncomingShipmentsProps {
@@ -91,6 +92,27 @@ function RawProductSelector({
     productName,
     onSelect
 }: RawProductSelectorProps) {
+    const getTypeBadge = (typeId?: number | null, isShort = false) => {
+        if (typeId === 389) {
+            return (
+                <span className="bg-blue-500/10 text-blue-600 border border-blue-500/20 px-1 py-0.5 rounded text-[8px] font-extrabold uppercase tracking-wider">
+                    {isShort ? "RM" : "Raw Material"}
+                </span>
+            );
+        }
+        if (typeId === 390) {
+            return (
+                <span className="bg-amber-500/10 text-amber-600 border border-amber-500/20 px-1 py-0.5 rounded text-[8px] font-extrabold uppercase tracking-wider">
+                    {isShort ? "PKG" : "Packaging"}
+                </span>
+            );
+        }
+        return (
+            <span className="bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 px-1 py-0.5 rounded text-[8px] font-extrabold uppercase tracking-wider">
+                {isShort ? "FG" : "Finished Good"}
+            </span>
+        );
+    };
     const [isOpen, setIsOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
     const [highlightedIndex, setHighlightedIndex] = useState(0);
@@ -118,15 +140,15 @@ function RawProductSelector({
         }
     };
 
-    const displayValue = isOpen
-        ? searchQuery
+    const displayValue = isOpen 
+        ? searchQuery 
         : (productName || rawMaterials.find(m => String(m.product_id) === String(parentProductId || selectedProductId))?.product_name || "");
 
     // Filter results locally
     const filteredResults = React.useMemo(() => {
         const query = searchQuery.trim().toLowerCase();
         if (!query) return rawMaterials;
-        return rawMaterials.filter(m =>
+        return rawMaterials.filter(m => 
             m.product_name.toLowerCase().includes(query) ||
             (m.product_code && m.product_code.toLowerCase().includes(query))
         );
@@ -172,12 +194,12 @@ function RawProductSelector({
         return Array.from(parentMap.values()).map(parent => {
             const children = childrenMap.get(parent.product_id) || [];
             const optionsMap = new Map<number, RawMaterial>();
-
+            
             if (parent.unit_of_measurement) {
                 optionsMap.set(parent.product_id, parent);
             }
             children.forEach(c => optionsMap.set(c.product_id, c));
-
+            
             if (optionsMap.size === 0) {
                 optionsMap.set(parent.product_id, parent);
             }
@@ -292,6 +314,7 @@ function RawProductSelector({
                     id={id}
                     ref={inputRef}
                     type="text"
+                    autoComplete="off"
                     placeholder="Type to search product..."
                     value={displayValue}
                     onChange={e => { setSearchQuery(e.target.value); setHighlightedIndex(0); }}
@@ -305,7 +328,7 @@ function RawProductSelector({
             {isOpen && (
                 <>
                     <div className="fixed inset-0 z-[40]" onClick={() => setIsOpen(false)} />
-                    <div
+                    <div 
                         ref={dropdownRef}
                         data-dropdown-open="true"
                         className={`absolute left-0 right-0 ${dropUp ? "bottom-full mb-1" : "top-full mt-1"} bg-card border rounded-xl shadow-2xl z-[50] max-h-60 overflow-y-auto divide-y`}
@@ -317,14 +340,40 @@ function RawProductSelector({
                             });
 
                             return (
-                                <div
-                                    key={group.parent.product_id}
-                                    className={`p-3 transition-all flex flex-col gap-1.5 text-xs text-left ${hasHighlightedOption ? "bg-primary/[0.02] border-l-2 border-l-primary" : "hover:bg-muted/5"
-                                        }`}
+                                <div 
+                                    key={group.parent.product_id} 
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        const firstOpt = group.options[0];
+                                        if (firstOpt) {
+                                            const cost = Number(firstOpt.cost_per_unit || firstOpt.estimated_unit_cost || 0);
+                                            onSelect({
+                                                parent_product_id: String(group.parent.product_id),
+                                                product_id: String(firstOpt.product_id),
+                                                product_name: group.parent.product_name,
+                                                product_code: firstOpt.product_code || "",
+                                                selected_uom: firstOpt.unit_of_measurement?.unit_shortcut || "PCS",
+                                                base_unit_cost_php: String(cost),
+                                                uom_options: group.options.map((x: RawMaterial) => ({
+                                                    product_id: x.product_id,
+                                                    unit_shortcut: x.unit_of_measurement?.unit_shortcut || "PCS",
+                                                    cost_per_unit: x.cost_per_unit || x.estimated_unit_cost || 0,
+                                                    unit_of_measurement_count: x.unit_of_measurement_count || 1
+                                                }))
+                                            });
+                                            setIsOpen(false);
+                                        }
+                                    }}
+                                    className={`p-3 transition-all flex flex-col gap-1.5 text-xs text-left cursor-pointer ${
+                                        hasHighlightedOption ? "bg-primary/[0.02] border-l-2 border-l-primary" : "hover:bg-muted/5"
+                                    }`}
                                 >
                                     <div>
-                                        <div className="font-extrabold text-foreground">{group.parent.product_name}</div>
-                                        <div className="text-[9px] text-muted-foreground font-mono">Base SKU: {group.parent.product_code || `ID-${group.parent.product_id}`}</div>
+                                        <div className="flex items-center gap-1">
+                                            <div className="font-extrabold text-foreground">{group.parent.product_name}</div>
+                                            {getTypeBadge(group.parent.product_type)}
+                                        </div>
+                                        <div className="text-[9px] text-muted-foreground font-mono mt-0.5">Base SKU: {group.parent.product_code || `ID-${group.parent.product_id}`}</div>
                                     </div>
                                     <div className="flex flex-wrap gap-1.5 mt-0.5">
                                         {group.options.map((opt: RawMaterial) => {
@@ -355,12 +404,14 @@ function RawProductSelector({
                                                         });
                                                         setIsOpen(false);
                                                     }}
-                                                    className={`border px-2 py-1 rounded-[4px] text-[9px] font-bold transition-all flex items-center gap-1 ${isHighlighted
-                                                            ? "bg-primary text-primary-foreground border-primary shadow-sm scale-[1.03]"
+                                                    className={`border px-2 py-1 rounded-[4px] text-[9px] font-bold transition-all flex items-center gap-1 ${
+                                                        isHighlighted 
+                                                            ? "bg-primary text-primary-foreground border-primary shadow-sm scale-[1.03]" 
                                                             : "bg-primary/10 hover:bg-primary text-primary hover:text-primary-foreground border-primary/20"
-                                                        }`}
+                                                    }`}
                                                 >
                                                     <span>{opt.unit_of_measurement?.unit_shortcut || "PCS"}</span>
+                                                    {getTypeBadge(opt.product_type, true)}
                                                     <span className="opacity-50">|</span>
                                                     <span>₱{cost.toFixed(2)}</span>
                                                 </button>
@@ -402,13 +453,17 @@ export default function IncomingShipments({
     loading = false
 }: IncomingShipmentsProps) {
     const [editingShipmentId, setEditingShipmentId] = useState<number | null>(null);
+    const [statusLoading, setStatusLoading] = useState<"en-route" | "arrived" | null>(null);
     const [search, setSearch] = useState("");
     const [isOverridden, setIsOverridden] = useState(false);
     const [statusFilter, setStatusFilter] = useState("All");
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(5);
 
-
+    useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setCurrentPage(1);
+    }, [search, statusFilter, itemsPerPage]);
 
     const handleStartEdit = async () => {
         if (!activeShipment) return;
@@ -467,19 +522,19 @@ export default function IncomingShipments({
             supplier_id: "",
             date_received: new Date().toISOString().split("T")[0],
             total_foreign_currency: "",
-            exchange_rate: "58.00",
+            exchange_rate: "",
             total_php_value: "",
             status: "Ordered",
-            branch_id: 182,
-            payment_type: 1,
-            price_type: "Internal"
+            branch_id: null,
+            payment_type: null,
+            price_type: ""
         });
         setLinesForm([]);
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-
+        
         const hasBlankProduct = linesForm.some(l => !l.product_id || l.product_id.trim() === "");
         if (hasBlankProduct) {
             toast.error("Please select a valid Raw Product Name for all rows in the cargo manifest.");
@@ -516,7 +571,7 @@ export default function IncomingShipments({
             return () => { active = false; };
         }
 
-        const match = priceTypes.find(pt => pt.name?.toLowerCase() === shipmentForm.price_type.toLowerCase());
+        const match = priceTypes.find(pt => pt.name?.toLowerCase() === shipmentForm.price_type?.toLowerCase());
         if (!match) {
             setTimeout(() => {
                 if (active) setPriceTypeRatesMap({});
@@ -567,18 +622,18 @@ export default function IncomingShipments({
                 if (parts.length >= 2) {
                     const payload = JSON.parse(window.atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
                     const pos = String(
-                        payload.position ||
-                        payload.Position ||
-                        payload.role ||
-                        payload.Role ||
-                        payload.user_position ||
-                        payload.user_role ||
+                        payload.position || 
+                        payload.Position || 
+                        payload.role || 
+                        payload.Role || 
+                        payload.user_position || 
+                        payload.user_role || 
                         ""
                     ).toLowerCase();
-
+                    
                     return (
-                        pos.includes("finance") ||
-                        pos.includes("accounting") ||
+                        pos.includes("finance") || 
+                        pos.includes("accounting") || 
                         pos.includes("accountant") ||
                         pos.includes("admin") ||
                         pos.includes("manager") ||
@@ -617,7 +672,7 @@ export default function IncomingShipments({
             poNo.toLowerCase().includes(search.toLowerCase()) ||
             (s.supplier_id && typeof s.supplier_id === "object" && s.supplier_id.supplier_name.toLowerCase().includes(search.toLowerCase()));
         const matchesStatus = statusFilter === "All" || s.status === statusFilter;
-
+        
         return matchesSearch && matchesStatus;
     });
 
@@ -629,7 +684,7 @@ export default function IncomingShipments({
 
     const supplierRawMaterials = React.useMemo(() => {
         if (!shipmentForm.supplier_id) return [];
-
+        
         // Extract all valid linked product IDs
         const linkedIds = supplierLinkedProducts
             .map(lp => {
@@ -663,7 +718,8 @@ export default function IncomingShipments({
     }, [linesForm]);
 
     const totalUsdValue = React.useMemo(() => {
-        const rate = parseFloat(String(shipmentForm.exchange_rate)) || 58.00;
+        const rate = parseFloat(String(shipmentForm.exchange_rate));
+        if (isNaN(rate) || rate <= 0) return 0;
         return totalPhpValue / rate;
     }, [totalPhpValue, shipmentForm.exchange_rate]);
 
@@ -730,12 +786,12 @@ export default function IncomingShipments({
                                 type="text"
                                 placeholder="Search BL/Reference, Supplier..."
                                 value={search}
-                                onChange={e => { setSearch(e.target.value); setCurrentPage(1); }}
+                                onChange={e => setSearch(e.target.value)}
                                 className="w-full pl-9 pr-8 py-2 border rounded-lg text-xs bg-background outline-none focus:ring-1 focus:ring-primary font-medium h-9"
                             />
                             {search && (
                                 <button
-                                    onClick={() => { setSearch(""); setCurrentPage(1); }}
+                                    onClick={() => setSearch("")}
                                     className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-1 transition-colors hover:bg-muted rounded"
                                     title="Clear Search"
                                 >
@@ -745,7 +801,7 @@ export default function IncomingShipments({
                         </div>
                         <select
                             value={statusFilter}
-                            onChange={e => { setStatusFilter(e.target.value); setCurrentPage(1); }}
+                            onChange={e => setStatusFilter(e.target.value)}
                             className="rounded-lg border bg-background px-2.5 py-1.5 text-xs outline-none focus:ring-1 focus:ring-primary font-semibold text-foreground h-9 w-32"
                         >
                             <option value="All">All Statuses</option>
@@ -774,8 +830,9 @@ export default function IncomingShipments({
                                 <button
                                     key={s.shipment_id}
                                     onClick={() => setSelectedShipment(s)}
-                                    className={`w-full text-left p-4 hover:bg-muted/40 transition-all flex flex-col gap-2 hover:-translate-y-0.5 hover:shadow-[0_4px_12px_rgba(0,0,0,0.03)] focus:bg-primary/5 active:translate-y-0 ${activeShipment?.shipment_id === s.shipment_id ? "bg-primary/5 border-l-2 border-primary" : ""
-                                        }`}
+                                    className={`w-full text-left p-4 hover:bg-muted/40 transition-all flex flex-col gap-2 hover:-translate-y-0.5 hover:shadow-[0_4px_12px_rgba(0,0,0,0.03)] focus:bg-primary/5 active:translate-y-0 ${
+                                        activeShipment?.shipment_id === s.shipment_id ? "bg-primary/5 border-l-2 border-primary" : ""
+                                    }`}
                                 >
                                     <div className="flex items-start justify-between gap-2">
                                         <span className="font-bold text-xs text-foreground truncate">BL/PO: {s.reference_number}</span>
@@ -788,8 +845,8 @@ export default function IncomingShipments({
                                     <div className="text-[10px] text-muted-foreground flex justify-between">
                                         <span>Status: {s.status}</span>
                                         <span>
-                                            {s.status === "Received"
-                                                ? `Received: ${s.date_received ? new Date(s.date_received).toLocaleDateString() : "N/A"}`
+                                            {s.status === "Received" 
+                                                ? `Received: ${s.date_received ? new Date(s.date_received).toLocaleDateString() : "N/A"}` 
                                                 : `ETA: ${s.lead_time_receiving ? new Date(s.lead_time_receiving).toLocaleDateString() : "Pending"}`}
                                         </span>
                                     </div>
@@ -806,7 +863,7 @@ export default function IncomingShipments({
                             <span>Show</span>
                             <select
                                 value={itemsPerPage}
-                                onChange={e => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}
+                                onChange={e => setItemsPerPage(Number(e.target.value))}
                                 className="rounded border bg-background px-1.5 py-0.5 outline-none font-semibold text-foreground focus:ring-1 focus:ring-primary text-[11px]"
                             >
                                 <option value={5}>5</option>
@@ -918,27 +975,30 @@ export default function IncomingShipments({
                                             const statuses = ["Ordered", "Approved", "En Route", "Receiving (QA)", "Received"];
                                             const currentIdx = statuses.indexOf(activeShipment.status);
                                             const stepIdx = statuses.indexOf(st);
-
+                                            
                                             const isCompleted = stepIdx < currentIdx;
                                             const isActive = stepIdx === currentIdx;
-
+                                            
                                             return (
                                                 <React.Fragment key={st}>
                                                     <div className="flex flex-col items-center flex-1 relative z-10">
-                                                        <div className={`h-6 w-6 rounded-full flex items-center justify-center border-2 text-[10px] font-bold transition-all ${isCompleted
-                                                                ? "bg-emerald-500 border-emerald-500 text-emerald-foreground"
-                                                                : isActive
-                                                                    ? "bg-primary border-primary text-primary-foreground shadow-md scale-110"
+                                                        <div className={`h-6 w-6 rounded-full flex items-center justify-center border-2 text-[10px] font-bold transition-all ${
+                                                            isCompleted 
+                                                                ? "bg-emerald-500 border-emerald-500 text-emerald-foreground" 
+                                                                : isActive 
+                                                                    ? "bg-primary border-primary text-primary-foreground shadow-md scale-110" 
                                                                     : "bg-background border-muted text-muted-foreground"
-                                                            }`}>
+                                                        }`}>
                                                             {isCompleted ? "✓" : idx + 1}
                                                         </div>
-                                                        <span className={`text-[9px] font-bold mt-1.5 truncate max-w-[70px] ${isActive ? "text-primary animate-pulse" : "text-muted-foreground"
-                                                            }`}>{st}</span>
+                                                        <span className={`text-[9px] font-bold mt-1.5 truncate max-w-[70px] ${
+                                                            isActive ? "text-primary animate-pulse" : "text-muted-foreground"
+                                                        }`}>{st}</span>
                                                     </div>
                                                     {idx < arr.length - 1 && (
-                                                        <div className={`flex-1 h-[2px] -mt-4 transition-all ${stepIdx < currentIdx ? "bg-emerald-500" : "bg-muted"
-                                                            }`} />
+                                                        <div className={`flex-1 h-[2px] -mt-4 transition-all ${
+                                                            stepIdx < currentIdx ? "bg-emerald-500" : "bg-muted"
+                                                        }`} />
                                                     )}
                                                 </React.Fragment>
                                             );
@@ -949,10 +1009,15 @@ export default function IncomingShipments({
                                     {activeShipment.status === "Approved" && (
                                         <button
                                             type="button"
-                                            onClick={() => onUpdateShipmentStatus(activeShipment.shipment_id, "En Route")}
-                                            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded-lg text-xs transition-all shadow-sm cursor-pointer mt-3"
+                                            disabled={statusLoading !== null}
+                                            onClick={() => {
+                                                setStatusLoading("en-route");
+                                                onUpdateShipmentStatus(activeShipment.shipment_id, "En Route");
+                                                setTimeout(() => setStatusLoading(null), 3000);
+                                            }}
+                                            className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-60 disabled:cursor-wait text-white font-bold py-2 px-3 rounded-lg text-xs transition-all shadow-sm cursor-pointer mt-3 inline-flex items-center justify-center gap-1.5"
                                         >
-                                            Mark Cargo as En Route (Departed)
+                                            {statusLoading === "en-route" ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Processing...</> : "Mark Cargo as En Route (Departed)"}
                                         </button>
                                     )}
 
@@ -960,7 +1025,7 @@ export default function IncomingShipments({
                                         <button
                                             type="button"
                                             onClick={handleStartEdit}
-                                            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-3 rounded-lg text-xs transition-all shadow-sm cursor-pointer mt-3"
+                                            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-3 rounded-lg text-xs transition-all shadow-sm cursor-pointer mt-3 inline-flex items-center justify-center gap-1.5"
                                         >
                                             {activeShipment.status === "Ordered" ? "Edit Purchase Order" : "Edit & Resubmit Purchase Order"}
                                         </button>
@@ -969,10 +1034,15 @@ export default function IncomingShipments({
                                     {activeShipment.status === "En Route" && (
                                         <button
                                             type="button"
-                                            onClick={() => onUpdateShipmentStatus(activeShipment.shipment_id, "Receiving (QA)")}
-                                            className="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-2 px-3 rounded-lg text-xs transition-all shadow-sm cursor-pointer mt-3"
+                                            disabled={statusLoading !== null}
+                                            onClick={() => {
+                                                setStatusLoading("arrived");
+                                                onUpdateShipmentStatus(activeShipment.shipment_id, "Receiving (QA)");
+                                                setTimeout(() => setStatusLoading(null), 3000);
+                                            }}
+                                            className="w-full bg-amber-600 hover:bg-amber-700 disabled:opacity-60 disabled:cursor-wait text-white font-bold py-2 px-3 rounded-lg text-xs transition-all shadow-sm cursor-pointer mt-3 inline-flex items-center justify-center gap-1.5"
                                         >
-                                            Mark Cargo as Arrived (Proceed to QA Checklist)
+                                            {statusLoading === "arrived" ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Processing...</> : "Mark Cargo as Arrived (Proceed to QA Checklist)"}
                                         </button>
                                     )}
                                 </div>
@@ -1004,11 +1074,11 @@ export default function IncomingShipments({
                                 <span className="text-xs font-semibold text-foreground flex items-center gap-1">
                                     <Calendar className="h-3.5 w-3.5 text-primary" />
                                     {activeShipment.status === "Received"
-                                        ? (activeShipment.date_received && activeShipment.date_received !== "1970-01-01"
-                                            ? new Date(activeShipment.date_received).toLocaleDateString()
+                                        ? (activeShipment.date_received && activeShipment.date_received !== "1970-01-01" 
+                                            ? new Date(activeShipment.date_received).toLocaleDateString() 
                                             : "N/A")
-                                        : (activeShipment.lead_time_receiving
-                                            ? new Date(activeShipment.lead_time_receiving).toLocaleDateString()
+                                        : (activeShipment.lead_time_receiving 
+                                            ? new Date(activeShipment.lead_time_receiving).toLocaleDateString() 
                                             : "Pending")}
                                 </span>
                             </div>
@@ -1124,348 +1194,352 @@ export default function IncomingShipments({
                         <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
                             {/* Set overflow-y-auto but add generous bottom padding so that dropdowns at the bottom have room to display without being cut off */}
                             <div className="space-y-4 overflow-y-auto pr-1 flex-1 pb-44">
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="space-y-1.5">
-                                        <label className="text-[11px] font-semibold text-muted-foreground">PO / Bill of Lading Number *</label>
-                                        <input
-                                            type="text"
-                                            required
-                                            placeholder="e.g. BL-NABATI-2026-004"
-                                            value={shipmentForm.reference_number}
-                                            onChange={e => setShipmentForm({ ...shipmentForm, reference_number: e.target.value })}
-                                            className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary"
-                                        />
-                                    </div>
-
-                                    <div className="space-y-1.5 flex flex-col">
-                                        <label className="text-[11px] font-semibold text-muted-foreground">Select Vendor / Supplier *</label>
-                                        <CreatableSelect
-                                            options={suppliers.map(s => ({ value: String(s.id), label: s.supplier_name }))}
-                                            value={String(shipmentForm.supplier_id)}
-                                            onValueChange={(val) => setShipmentForm({ ...shipmentForm, supplier_id: val })}
-                                            placeholder="Select Supplier..."
-                                            className="h-9 text-xs w-full bg-background font-semibold"
-                                        />
-                                    </div>
-
-                                    <div className="space-y-1.5">
-                                        <div className="flex items-center justify-between">
-                                            <label className="text-[11px] font-semibold text-muted-foreground">Customs FX Rate Used (USD to PHP)</label>
-                                            {isFinanceManager ? (
-                                                <label className="flex items-center gap-1 text-[10px] text-primary cursor-pointer select-none font-semibold">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={isOverridden}
-                                                        onChange={e => setIsOverridden(e.target.checked)}
-                                                        className="rounded border"
-                                                    />
-                                                    Override Rate
-                                                </label>
-                                            ) : (
-                                                <span className="text-[9px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded font-mono">
-                                                    Locked (Standard)
-                                                </span>
-                                            )}
-                                        </div>
-                                        <input
-                                            type="number"
-                                            step="0.0001"
-                                            readOnly={!isOverridden || !isFinanceManager}
-                                            value={String(shipmentForm.exchange_rate)}
-                                            onChange={e => setShipmentForm({ ...shipmentForm, exchange_rate: e.target.value })}
-                                            className={`w-full rounded-lg border px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary font-mono font-semibold ${(!isOverridden || !isFinanceManager) ? "bg-muted text-muted-foreground cursor-not-allowed" : "bg-background text-foreground"
-                                                }`}
-                                        />
-                                        {isOverridden && isFinanceManager && (
-                                            <p className="text-[10px] text-amber-600 font-semibold mt-1 flex items-start gap-1">
-                                                <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-                                                Warning: You are overriding the standard Customs FX Rate. This may affect standard landed cost calculations.
-                                            </p>
-                                        )}
-                                    </div>
-
-                                    <div className="space-y-1.5 flex flex-col">
-                                        <label className="text-[11px] font-semibold text-muted-foreground">Destination Branch *</label>
-                                        <select
-                                            value={shipmentForm.branch_id ? String(shipmentForm.branch_id) : "183"}
-                                            onChange={e => setShipmentForm({ ...shipmentForm, branch_id: parseInt(e.target.value) })}
-                                            className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary font-semibold text-foreground h-9"
-                                        >
-                                            <option value={183}>Main Branch</option>
-                                            <option value={163}>Urdaneta Branch</option>
-                                            <option value={181}>Bihon Branch</option>
-                                            <option value={182}>Bihon Bad Branch</option>
-                                        </select>
-                                    </div>
-
-                                    <div className="space-y-1.5 flex flex-col">
-                                        <label className="text-[11px] font-semibold text-muted-foreground">Payment Type *</label>
-                                        <select
-                                            value={Number(shipmentForm.payment_type)}
-                                            onChange={e => setShipmentForm({ ...shipmentForm, payment_type: parseInt(e.target.value) })}
-                                            className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary font-semibold text-foreground h-9"
-                                        >
-                                            <option value={3}>Full Payment</option>
-                                            <option value={1}>Advance Payment</option>
-                                            <option value={2}>Partial Payment</option>
-                                            <option value={4}>Refund</option>
-                                            <option value={5}>Installment</option>
-                                        </select>
-                                    </div>
-
-                                    <div className="space-y-1.5 flex flex-col">
-                                        <label className="text-[11px] font-semibold text-muted-foreground">Price Type *</label>
-                                        <select
-                                            value={String(shipmentForm.price_type)}
-                                            onChange={e => setShipmentForm({ ...shipmentForm, price_type: e.target.value })}
-                                            className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary font-semibold text-foreground h-9"
-                                        >
-                                            <option value="Internal">Internal</option>
-                                            <option value="SRP">SRP</option>
-                                            <option value="Government">Government</option>
-                                            <option value="Dealer">Dealer</option>
-                                            <option value="Sub-Dealer">Sub-Dealer</option>
-                                            <option value="Project">Project</option>
-                                        </select>
-                                    </div>
-
-                                    <div className="space-y-1.5 col-span-2">
-                                        <label className="text-[11px] font-semibold text-muted-foreground">Receive Date / ETA *</label>
-                                        <input
-                                            type="date"
-                                            required
-                                            value={shipmentForm.date_received || ""}
-                                            onChange={e => setShipmentForm({ ...shipmentForm, date_received: e.target.value })}
-                                            className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary font-semibold text-foreground text-left"
-                                        />
-                                    </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-1.5">
+                                    <label className="text-[11px] font-semibold text-muted-foreground">PO / Bill of Lading Number *</label>
+                                    <input
+                                        type="text"
+                                        required
+                                        placeholder="e.g. BL-NABATI-2026-004"
+                                        value={shipmentForm.reference_number}
+                                        onChange={e => setShipmentForm({...shipmentForm, reference_number: e.target.value})}
+                                        className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary"
+                                    />
                                 </div>
 
-                                {/* Cargo Manifest builder */}
-                                <div className="space-y-3 pt-3 border-t">
+                                <div className="space-y-1.5 flex flex-col">
+                                    <label className="text-[11px] font-semibold text-muted-foreground">Select Vendor / Supplier *</label>
+                                    <CreatableSelect
+                                        options={suppliers.map(s => ({ value: String(s.id), label: s.supplier_name }))}
+                                        value={String(shipmentForm.supplier_id)}
+                                        onValueChange={(val) => setShipmentForm({...shipmentForm, supplier_id: val})}
+                                        placeholder="Select Supplier..."
+                                        className="h-9 text-xs w-full bg-background font-semibold"
+                                    />
+                                </div>
+
+                                <div className="space-y-1.5">
                                     <div className="flex items-center justify-between">
-                                        <h4 className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Cargo Manifest Contents</h4>
-                                        {shipmentForm.supplier_id && (
-                                            <button
-                                                type="button"
-                                                onClick={handleAddLineForm}
-                                                className="inline-flex items-center gap-1 text-primary hover:text-primary/80 text-xs font-semibold"
-                                            >
-                                                <Plus className="h-3.5 w-3.5" /> Add Row
-                                            </button>
+                                        <label className="text-[11px] font-semibold text-muted-foreground">Customs FX Rate Used (USD to PHP)</label>
+                                        {isFinanceManager ? (
+                                            <label className="flex items-center gap-1 text-[10px] text-primary cursor-pointer select-none font-semibold">
+                                                <input 
+                                                    type="checkbox" 
+                                                    checked={isOverridden}
+                                                    onChange={e => setIsOverridden(e.target.checked)}
+                                                    className="rounded border"
+                                                />
+                                                Override Rate
+                                            </label>
+                                        ) : (
+                                            <span className="text-[9px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded font-mono">
+                                                Locked (Standard)
+                                            </span>
                                         )}
                                     </div>
-
-                                    {!shipmentForm.supplier_id ? (
-                                        <div className="p-4 rounded-xl border bg-amber-500/5 border-amber-500/10 text-center space-y-1.5 animate-in fade-in slide-in-from-top-2 duration-200">
-                                            <AlertCircle className="h-5 w-5 text-amber-500 mx-auto animate-pulse" />
-                                            <p className="text-xs text-amber-700 font-extrabold uppercase tracking-wider">Vendor Selection Required</p>
-                                            <p className="text-[10px] text-amber-600/90 font-semibold leading-relaxed">Please select a supplier first to view and search their registered raw materials.</p>
-                                        </div>
-                                    ) : (
-                                        <div className="space-y-3 animate-in fade-in duration-200">
-                                            {linesForm.map((line, idx) => (
-                                                <div key={idx} className="flex gap-3 items-end bg-muted/10 border p-3 pr-10 rounded-lg relative flex-wrap sm:flex-nowrap">
-                                                    <div className="flex-[3] space-y-1.5 min-w-[200px] flex flex-col relative">
-                                                        <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Raw Product Name</label>
-                                                        <RawProductSelector
-                                                            id={`search-input-${idx}`}
-                                                            autoFocus={idx === linesForm.length - 1 && linesForm.length > 1}
-                                                            rawMaterials={supplierRawMaterials.filter(rm => {
-                                                                const isAlreadySelected = linesForm.some((l, lIdx) => {
-                                                                    if (lIdx === idx) return false;
-                                                                    const selectedId = String(l.product_id);
-                                                                    const selectedParentId = l.parent_product_id ? String(l.parent_product_id) : "";
-                                                                    const currentId = String(rm.product_id);
-                                                                    const currentParentId = rm.parent_id ? String(rm.parent_id) : "";
-
-                                                                    return (
-                                                                        selectedId === currentId ||
-                                                                        (selectedParentId && selectedParentId === currentId) ||
-                                                                        (currentParentId && selectedId === currentParentId) ||
-                                                                        (selectedParentId && currentParentId && selectedParentId === currentParentId)
-                                                                    );
-                                                                });
-                                                                return !isAlreadySelected;
-                                                            })}
-                                                            selectedProductId={line.product_id}
-                                                            parentProductId={line.parent_product_id}
-                                                            productName={line.product_name}
-                                                            onSelect={(selected) => {
-                                                                const isDuplicate = linesForm.some((l, i) => i !== idx && String(l.product_id) === String(selected.product_id));
-                                                                if (isDuplicate) {
-                                                                    toast.error(`"${selected.product_name}" is already added to this manifest. Please adjust the quantity instead.`);
-                                                                    return;
-                                                                }
-
-                                                                const finalSelected = { ...selected };
-                                                                const specialPrice = priceTypeRatesMap[Number(selected.product_id)];
-                                                                if (specialPrice !== undefined && specialPrice > 0) {
-                                                                    finalSelected.base_unit_cost_php = String(specialPrice);
-                                                                }
-
-                                                                handleLineFormChange(idx, finalSelected);
-                                                                // Move focus to Qty Ordered input of the same row
-                                                                setTimeout(() => {
-                                                                    const nextInput = document.getElementById(`qty-input-${idx}`);
-                                                                    if (nextInput) {
-                                                                        nextInput.focus();
-                                                                        if (nextInput instanceof HTMLInputElement) {
-                                                                            nextInput.select();
-                                                                        }
-                                                                    }
-                                                                }, 50);
-                                                            }}
-                                                        />
-                                                    </div>
-
-                                                    {line.uom_options && line.uom_options.length > 0 && (
-                                                        <div className="w-28 space-y-1.5 shrink-0">
-                                                            <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Packaging / UOM</label>
-                                                            <select
-                                                                value={line.product_id}
-                                                                onChange={(e) => {
-                                                                    const selectedId = e.target.value;
-                                                                    const isDuplicate = linesForm.some((l, i) => i !== idx && String(l.product_id) === String(selectedId));
-                                                                    if (isDuplicate) {
-                                                                        toast.error("This product variation is already added to this manifest. Please adjust the quantity instead.");
-                                                                        return;
-                                                                    }
-                                                                    const opt = line.uom_options?.find((o: UOMOption) => String(o.product_id) === String(selectedId));
-                                                                    if (opt) {
-                                                                        let costVal = opt.cost_per_unit;
-                                                                        const specialPrice = priceTypeRatesMap[Number(selectedId)];
-                                                                        if (specialPrice !== undefined && specialPrice > 0) {
-                                                                            costVal = specialPrice;
-                                                                        }
-                                                                        handleLineFormChange(idx, {
-                                                                            product_id: String(selectedId),
-                                                                            selected_uom: opt.unit_shortcut,
-                                                                            base_unit_cost_php: String(costVal)
-                                                                        });
-                                                                    }
-                                                                }}
-                                                                className="w-full rounded-lg border bg-background px-2.5 py-1.5 text-xs outline-none h-9 text-foreground font-semibold"
-                                                            >
-                                                                {line.uom_options.map((o: UOMOption) => (
-                                                                    <option key={o.product_id} value={o.product_id}>
-                                                                        {o.unit_shortcut} (₱{Number(o.cost_per_unit || 0).toFixed(2)})
-                                                                    </option>
-                                                                ))}
-                                                            </select>
-                                                        </div>
-                                                    )}
-
-                                                    <div className="w-24 space-y-1.5 shrink-0 relative">
-                                                        <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">
-                                                            Qty Ordered {line.selected_uom ? `(${line.selected_uom})` : ""}
-                                                        </label>
-                                                        <input
-                                                            id={`qty-input-${idx}`}
-                                                            type="number"
-                                                            required
-                                                            placeholder="1000"
-                                                            value={line.quantity_ordered || ""}
-                                                            onChange={e => handleLineFormChange(idx, "quantity_ordered", e.target.value)}
-                                                            onKeyDown={(e) => {
-                                                                if (e.key === "Enter") {
-                                                                    e.preventDefault();
-                                                                    const costInput = document.getElementById(`cost-input-${idx}`);
-                                                                    if (costInput) {
-                                                                        costInput.focus();
-                                                                        if (costInput instanceof HTMLInputElement) {
-                                                                            costInput.select();
-                                                                        }
-                                                                    }
-                                                                } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-                                                                    e.preventDefault();
-                                                                    document.getElementById("register-shipment-btn")?.click();
-                                                                }
-                                                            }}
-                                                            className="w-full rounded-lg border bg-background px-2.5 py-1.5 text-xs outline-none h-9 font-semibold"
-                                                        />
-                                                        {(() => {
-                                                            const selectedOpt = line.uom_options?.find((o: UOMOption) => String(o.product_id) === String(line.product_id));
-                                                            const convFactor = Number(selectedOpt?.unit_of_measurement_count || 1);
-
-                                                            const parentProduct = rawMaterials.find(rm => String(rm.product_id) === String(line.parent_product_id || line.product_id));
-                                                            const baseUomShortcut = parentProduct?.unit_of_measurement?.unit_shortcut || "pcs";
-
-                                                            const equivQty = Number(line.quantity_ordered || 0) * convFactor;
-
-                                                            if (equivQty > 0 && convFactor !== 1) {
-                                                                return (
-                                                                    <span className="absolute right-0 top-full pt-0.5 text-[9px] text-primary font-bold whitespace-nowrap bg-primary/5 px-1 py-0.5 rounded border border-primary/10 select-none">
-                                                                        = {equivQty.toLocaleString()} {baseUomShortcut}
-                                                                    </span>
-                                                                );
-                                                            }
-                                                            return null;
-                                                        })()}
-                                                    </div>
-
-                                                    <div className="w-28 space-y-1.5 shrink-0">
-                                                        <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">FOB Unit Cost (PHP)</label>
-                                                        <input
-                                                            id={`cost-input-${idx}`}
-                                                            type="number"
-                                                            required
-                                                            step="0.0001"
-                                                            placeholder="19.00"
-                                                            value={line.base_unit_cost_php}
-                                                            onChange={e => handleLineFormChange(idx, "base_unit_cost_php", e.target.value)}
-                                                            onKeyDown={(e) => {
-                                                                if (e.key === "Enter") {
-                                                                    e.preventDefault();
-                                                                    if (idx === linesForm.length - 1) {
-                                                                        handleAddLineForm();
-                                                                    } else {
-                                                                        const nextSearchInput = document.getElementById(`search-input-${idx + 1}`);
-                                                                        if (nextSearchInput) {
-                                                                            nextSearchInput.focus();
-                                                                        }
-                                                                    }
-                                                                } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-                                                                    e.preventDefault();
-                                                                    document.getElementById("register-shipment-btn")?.click();
-                                                                }
-                                                            }}
-                                                            className="w-full rounded-lg border bg-background px-2.5 py-1.5 text-xs outline-none font-mono h-9"
-                                                        />
-                                                    </div>
-                                                    {linesForm.length > 1 && (
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => handleRemoveLineForm(idx)}
-                                                            className="absolute top-2 right-2 text-red-500 hover:text-red-600 hover:bg-red-500/10 p-1.5 rounded-lg transition-all shrink-0 animate-in fade-in zoom-in-95 duration-150"
-                                                            title="Remove Row"
-                                                        >
-                                                            <Trash2 className="h-4 w-4" />
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            ))}
-                                        </div>
+                                    <input
+                                        type="number"
+                                        step="0.0001"
+                                        readOnly={!isOverridden || !isFinanceManager}
+                                        value={String(shipmentForm.exchange_rate)}
+                                        onChange={e => setShipmentForm({...shipmentForm, exchange_rate: e.target.value})}
+                                        className={`w-full rounded-lg border px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary font-mono font-semibold ${
+                                            (!isOverridden || !isFinanceManager) ? "bg-muted text-muted-foreground cursor-not-allowed" : "bg-background text-foreground"
+                                        }`}
+                                    />
+                                    {isOverridden && isFinanceManager && (
+                                        <p className="text-[10px] text-amber-600 font-semibold mt-1 flex items-start gap-1">
+                                            <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                                            Warning: You are overriding the standard Customs FX Rate. This may affect standard landed cost calculations.
+                                        </p>
                                     )}
                                 </div>
 
-                                {/* Live calculations display */}
-                                {totalPhpValue > 0 && (
-                                    <div className="p-3.5 bg-muted/40 border rounded-xl space-y-2 animate-in fade-in duration-200 shadow-inner">
-                                        <div className="flex justify-between text-xs font-bold text-muted-foreground">
-                                            <span>Total Cargo Value (PHP)</span>
-                                            <span className="font-mono text-foreground text-sm font-extrabold">
-                                                ₱{totalPhpValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                            </span>
-                                        </div>
-                                        <div className="flex justify-between text-xs font-bold text-muted-foreground border-t pt-1.5">
-                                            <span>Total Cargo Value (USD @ {parseFloat(shipmentForm.exchange_rate) || 58.00})</span>
-                                            <span className="font-mono text-foreground text-sm font-extrabold">
-                                                ${totalUsdValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                            </span>
-                                        </div>
+                                <div className="space-y-1.5 flex flex-col">
+                                    <label className="text-[11px] font-semibold text-muted-foreground">Destination Branch *</label>
+                                    <select
+                                        value={shipmentForm.branch_id ? String(shipmentForm.branch_id) : ""}
+                                        onChange={e => setShipmentForm({...shipmentForm, branch_id: e.target.value ? parseInt(e.target.value) : null})}
+                                        className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary font-semibold text-foreground h-9"
+                                    >
+                                        <option value="" disabled hidden>Select Destination Branch...</option>
+                                        <option value={183}>Main Branch</option>
+                                        <option value={163}>Urdaneta Branch</option>
+                                        <option value={181}>Bihon Branch</option>
+                                        <option value={182}>Bihon Bad Branch</option>
+                                    </select>
+                                </div>
+
+                                <div className="space-y-1.5 flex flex-col">
+                                    <label className="text-[11px] font-semibold text-muted-foreground">Payment Type *</label>
+                                    <select
+                                        value={shipmentForm.payment_type !== null ? String(shipmentForm.payment_type) : ""}
+                                        onChange={e => setShipmentForm({...shipmentForm, payment_type: e.target.value ? parseInt(e.target.value) : null})}
+                                        className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary font-semibold text-foreground h-9"
+                                    >
+                                        <option value="" disabled hidden>Select Payment Type...</option>
+                                        <option value={3}>Full Payment</option>
+                                        <option value={1}>Advance Payment</option>
+                                        <option value={2}>Partial Payment</option>
+                                        <option value={4}>Refund</option>
+                                        <option value={5}>Installment</option>
+                                    </select>
+                                </div>
+
+                                <div className="space-y-1.5 flex flex-col">
+                                    <label className="text-[11px] font-semibold text-muted-foreground">Price Type *</label>
+                                    <select
+                                        value={shipmentForm.price_type || ""}
+                                        onChange={e => setShipmentForm({...shipmentForm, price_type: e.target.value || null})}
+                                        className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary font-semibold text-foreground h-9"
+                                    >
+                                        <option value="" disabled hidden>Select Price Type...</option>
+                                        <option value="Internal">Internal</option>
+                                        <option value="SRP">SRP</option>
+                                        <option value="Government">Government</option>
+                                        <option value="Dealer">Dealer</option>
+                                        <option value="Sub-Dealer">Sub-Dealer</option>
+                                        <option value="Project">Project</option>
+                                    </select>
+                                </div>
+
+                                <div className="space-y-1.5 col-span-2">
+                                    <label className="text-[11px] font-semibold text-muted-foreground">Receive Date / ETA *</label>
+                                    <input
+                                        type="date"
+                                        required
+                                        value={shipmentForm.date_received || ""}
+                                        onChange={e => setShipmentForm({...shipmentForm, date_received: e.target.value})}
+                                        className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary font-semibold text-foreground text-left"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Cargo Manifest builder */}
+                            <div className="space-y-3 pt-3 border-t">
+                                <div className="flex items-center justify-between">
+                                    <h4 className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Cargo Manifest Contents</h4>
+                                    {shipmentForm.supplier_id && (
+                                        <button
+                                            type="button"
+                                            onClick={handleAddLineForm}
+                                            className="inline-flex items-center gap-1 text-primary hover:text-primary/80 text-xs font-semibold"
+                                        >
+                                            <Plus className="h-3.5 w-3.5" /> Add Row
+                                        </button>
+                                    )}
+                                </div>
+
+                                {!shipmentForm.supplier_id ? (
+                                    <div className="p-4 rounded-xl border bg-amber-500/5 border-amber-500/10 text-center space-y-1.5 animate-in fade-in slide-in-from-top-2 duration-200">
+                                        <AlertCircle className="h-5 w-5 text-amber-500 mx-auto animate-pulse" />
+                                        <p className="text-xs text-amber-700 font-extrabold uppercase tracking-wider">Vendor Selection Required</p>
+                                        <p className="text-[10px] text-amber-600/90 font-semibold leading-relaxed">Please select a supplier first to view and search their registered raw materials.</p>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-3 animate-in fade-in duration-200">
+                                        {linesForm.map((line, idx) => (
+                                            <div key={idx} className="flex gap-3 items-end bg-muted/10 border p-3 pr-10 rounded-lg relative flex-wrap sm:flex-nowrap">
+                                                <div className="flex-[3] space-y-1.5 min-w-[200px] flex flex-col relative">
+                                                    <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Raw Product Name <span className="text-red-500">*</span></label>
+                                                    <RawProductSelector
+                                                        id={`search-input-${idx}`}
+                                                        autoFocus={idx === linesForm.length - 1 && linesForm.length > 1}
+                                                        rawMaterials={supplierRawMaterials.filter(rm => {
+                                                            const isAlreadySelected = linesForm.some((l, lIdx) => {
+                                                                if (lIdx === idx) return false;
+                                                                const selectedId = String(l.product_id);
+                                                                const selectedParentId = l.parent_product_id ? String(l.parent_product_id) : "";
+                                                                const currentId = String(rm.product_id);
+                                                                const currentParentId = rm.parent_id ? String(rm.parent_id) : "";
+
+                                                                return (
+                                                                    selectedId === currentId ||
+                                                                    (selectedParentId && selectedParentId === currentId) ||
+                                                                    (currentParentId && selectedId === currentParentId) ||
+                                                                    (selectedParentId && currentParentId && selectedParentId === currentParentId)
+                                                                );
+                                                            });
+                                                            return !isAlreadySelected;
+                                                        })}
+                                                        selectedProductId={line.product_id}
+                                                        parentProductId={line.parent_product_id}
+                                                        productName={line.product_name}
+                                                        onSelect={(selected) => {
+                                                            const isDuplicate = linesForm.some((l, i) => i !== idx && String(l.product_id) === String(selected.product_id));
+                                                            if (isDuplicate) {
+                                                                toast.error(`"${selected.product_name}" is already added to this manifest. Please adjust the quantity instead.`);
+                                                                return;
+                                                            }
+                                                            
+                                                            const finalSelected = { ...selected };
+                                                            const specialPrice = priceTypeRatesMap[Number(selected.product_id)];
+                                                            if (specialPrice !== undefined && specialPrice > 0) {
+                                                                finalSelected.base_unit_cost_php = String(specialPrice);
+                                                            }
+
+                                                            handleLineFormChange(idx, finalSelected);
+                                                            // Move focus to Qty Ordered input of the same row
+                                                            setTimeout(() => {
+                                                                const nextInput = document.getElementById(`qty-input-${idx}`);
+                                                                if (nextInput) {
+                                                                    nextInput.focus();
+                                                                    if (nextInput instanceof HTMLInputElement) {
+                                                                        nextInput.select();
+                                                                    }
+                                                                }
+                                                            }, 50);
+                                                        }}
+                                                    />
+                                                </div>
+
+                                                {line.uom_options && line.uom_options.length > 0 && (
+                                                    <div className="w-28 space-y-1.5 shrink-0">
+                                                        <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Packaging / UOM</label>
+                                                        <select
+                                                            value={line.product_id}
+                                                            onChange={(e) => {
+                                                                const selectedId = e.target.value;
+                                                                const isDuplicate = linesForm.some((l, i) => i !== idx && String(l.product_id) === String(selectedId));
+                                                                if (isDuplicate) {
+                                                                    toast.error("This product variation is already added to this manifest. Please adjust the quantity instead.");
+                                                                    return;
+                                                                }
+                                                                const opt = line.uom_options?.find((o: UOMOption) => String(o.product_id) === String(selectedId));
+                                                                if (opt) {
+                                                                    let costVal = opt.cost_per_unit;
+                                                                    const specialPrice = priceTypeRatesMap[Number(selectedId)];
+                                                                    if (specialPrice !== undefined && specialPrice > 0) {
+                                                                        costVal = specialPrice;
+                                                                    }
+                                                                    handleLineFormChange(idx, {
+                                                                        product_id: String(selectedId),
+                                                                        selected_uom: opt.unit_shortcut,
+                                                                        base_unit_cost_php: String(costVal)
+                                                                    });
+                                                                }
+                                                            }}
+                                                            className="w-full rounded-lg border bg-background px-2.5 py-1.5 text-xs outline-none h-9 text-foreground font-semibold"
+                                                        >
+                                                            {line.uom_options.map((o: UOMOption) => (
+                                                                <option key={o.product_id} value={o.product_id}>
+                                                                    {o.unit_shortcut} (₱{Number(o.cost_per_unit || 0).toFixed(2)})
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                )}
+
+                                                <div className="w-24 space-y-1.5 shrink-0 relative">
+                                                    <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">
+                                                        Qty Ordered {line.selected_uom ? `(${line.selected_uom})` : ""} <span className="text-red-500">*</span>
+                                                    </label>
+                                                    <input
+                                                        id={`qty-input-${idx}`}
+                                                        type="number"
+                                                        required
+                                                        placeholder="1000"
+                                                        value={line.quantity_ordered || ""}
+                                                        onChange={e => handleLineFormChange(idx, "quantity_ordered", e.target.value)}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === "Enter") {
+                                                                e.preventDefault();
+                                                                const costInput = document.getElementById(`cost-input-${idx}`);
+                                                                if (costInput) {
+                                                                    costInput.focus();
+                                                                    if (costInput instanceof HTMLInputElement) {
+                                                                        costInput.select();
+                                                                    }
+                                                                }
+                                                            } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                                                                e.preventDefault();
+                                                                document.getElementById("register-shipment-btn")?.click();
+                                                            }
+                                                        }}
+                                                        className="w-full rounded-lg border bg-background px-2.5 py-1.5 text-xs outline-none h-9 font-semibold"
+                                                    />
+                                                    {(() => {
+                                                        const selectedOpt = line.uom_options?.find((o: UOMOption) => String(o.product_id) === String(line.product_id));
+                                                        const convFactor = Number(selectedOpt?.unit_of_measurement_count || 1);
+                                                        
+                                                        const parentProduct = rawMaterials.find(rm => String(rm.product_id) === String(line.parent_product_id || line.product_id));
+                                                        const baseUomShortcut = parentProduct?.unit_of_measurement?.unit_shortcut || "pcs";
+                                                        
+                                                        const equivQty = Number(line.quantity_ordered || 0) * convFactor;
+                                                        
+                                                        if (equivQty > 0 && convFactor !== 1) {
+                                                            return (
+                                                                <span className="absolute right-0 top-full pt-0.5 text-[9px] text-primary font-bold whitespace-nowrap bg-primary/5 px-1 py-0.5 rounded border border-primary/10 select-none">
+                                                                    = {equivQty.toLocaleString()} {baseUomShortcut}
+                                                                </span>
+                                                            );
+                                                        }
+                                                        return null;
+                                                    })()}
+                                                </div>
+
+                                                <div className="w-28 space-y-1.5 shrink-0">
+                                                    <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">FOB Unit Cost (PHP) <span className="text-red-500">*</span></label>
+                                                    <input
+                                                        id={`cost-input-${idx}`}
+                                                        type="number"
+                                                        required
+                                                        step="0.0001"
+                                                        placeholder="19.00"
+                                                        value={line.base_unit_cost_php}
+                                                        onChange={e => handleLineFormChange(idx, "base_unit_cost_php", e.target.value)}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === "Enter") {
+                                                                e.preventDefault();
+                                                                if (idx === linesForm.length - 1) {
+                                                                    handleAddLineForm();
+                                                                } else {
+                                                                    const nextSearchInput = document.getElementById(`search-input-${idx + 1}`);
+                                                                    if (nextSearchInput) {
+                                                                        nextSearchInput.focus();
+                                                                    }
+                                                                }
+                                                            } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                                                                e.preventDefault();
+                                                                document.getElementById("register-shipment-btn")?.click();
+                                                            }
+                                                        }}
+                                                        className="w-full rounded-lg border bg-background px-2.5 py-1.5 text-xs outline-none font-mono h-9"
+                                                    />
+                                                </div>
+                                                {linesForm.length > 1 && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleRemoveLineForm(idx)}
+                                                        className="absolute top-2 right-2 text-red-500 hover:text-red-600 hover:bg-red-500/10 p-1.5 rounded-lg transition-all shrink-0 animate-in fade-in zoom-in-95 duration-150"
+                                                        title="Remove Row"
+                                                    >
+                                                        <Trash2 className="h-4 w-4" />
+                                                    </button>
+                                                )}
+                                            </div>
+                                        ))}
                                     </div>
                                 )}
+                            </div>
+
+                            {/* Live calculations display */}
+                            {totalPhpValue > 0 && (
+                                <div className="p-3.5 bg-muted/40 border rounded-xl space-y-2 animate-in fade-in duration-200 shadow-inner">
+                                    <div className="flex justify-between text-xs font-bold text-muted-foreground">
+                                        <span>Total Cargo Value (PHP)</span>
+                                        <span className="font-mono text-foreground text-sm font-extrabold">
+                                            ₱{totalPhpValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        </span>
+                                    </div>
+                                    <div className="flex justify-between text-xs font-bold text-muted-foreground border-t pt-1.5">
+                                        <span>Total Cargo Value (USD @ {parseFloat(shipmentForm.exchange_rate) || "N/A"})</span>
+                                        <span className="font-mono text-foreground text-sm font-extrabold">
+                                            ${totalUsdValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        </span>
+                                    </div>
+                                </div>
+                            )}
 
                             </div>
 
