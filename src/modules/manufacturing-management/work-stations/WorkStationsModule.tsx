@@ -12,6 +12,7 @@ import {
     fetchDepartments 
 } from "@/modules/manufacturing-management/finished-goods/services/finished-goods-api";
 import { Button } from "@/components/ui/button";
+import { formatCurrency, formatNumber } from "@/lib/utils";
 
 export default function WorkStationsModule() {
     const [workCenters, setWorkCenters] = useState<WorkCenter[]>([]);
@@ -111,8 +112,8 @@ export default function WorkStationsModule() {
     const handleOpenEditModal = (wc: WorkCenter) => {
         setEditingWorkCenter(wc);
         setWcName(wc.work_center_name);
-        setOverheadCost(wc.overhead_cost_per_hour !== null ? String(wc.overhead_cost_per_hour) : "0");
-        setCapacity(wc.capacity_per_hour !== null ? String(wc.capacity_per_hour) : "0");
+        setOverheadCost(wc.overhead_cost_per_hour != null ? String(Number(wc.overhead_cost_per_hour)) : "0");
+        setCapacity(wc.capacity_per_hour != null ? String(Math.round(Number(wc.capacity_per_hour))) : "0");
         setSelectedAssetId(wc.asset_id || null);
         setSelectedDeptId(wc.department_id || null);
         setIsActive(Boolean(wc.is_active));
@@ -268,10 +269,10 @@ export default function WorkStationsModule() {
                                         {wc.work_center_name}
                                     </td>
                                     <td className="p-4 align-middle text-muted-foreground font-medium">
-                                        ₱{(wc.overhead_cost_per_hour || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                                        {formatCurrency(wc.overhead_cost_per_hour)}
                                     </td>
                                     <td className="p-4 align-middle text-muted-foreground font-medium">
-                                        {(wc.capacity_per_hour || 0).toLocaleString("en-US")} units
+                                        {formatNumber(Number(wc.capacity_per_hour) || 0, "en-PH", 0)} units
                                     </td>
                                     <td className="p-4 align-middle text-muted-foreground">
                                         {wc.asset ? (() => {
@@ -306,13 +307,16 @@ export default function WorkStationsModule() {
                                         )}
                                     </td>
                                     <td className="p-4 align-middle text-muted-foreground">
-                                        {wc.department ? (
-                                            <span className="bg-primary/5 text-primary border border-primary/10 px-2 py-0.5 rounded font-medium">
-                                                {wc.department.department_name}
-                                            </span>
-                                        ) : (
-                                            <span className="text-muted-foreground/50 italic">None mapped</span>
-                                        )}
+                                        {(() => {
+                                            const dept = departments.find(d => d.department_id === wc.department_id) || wc.department;
+                                            return dept ? (
+                                                <span className="bg-primary/5 text-primary border border-primary/10 px-2 py-0.5 rounded font-medium">
+                                                    {dept.department_name}
+                                                </span>
+                                            ) : (
+                                                <span className="text-muted-foreground/50 italic">None mapped</span>
+                                            );
+                                        })()}
                                     </td>
                                     <td className="p-4 align-middle">
                                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase ${

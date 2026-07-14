@@ -6,7 +6,7 @@ async function handleResponse(res: Response, fallbackMessage: string) {
         try {
             const data = await res.json();
             if (data && data.error) errMsg = data.error;
-        } catch {}
+        } catch { }
         throw new Error(errMsg);
     }
     return res.json();
@@ -178,7 +178,7 @@ export async function fetchPHProvinces(): Promise<PSGCItem[]> {
         const res = await fetch("https://psgc.gitlab.io/api/provinces/", { cache: "force-cache" });
         if (!res.ok) throw new Error("Failed to fetch provinces");
         const data = await res.json();
-        
+
         const list = Array.isArray(data) ? data : [];
         return list.map((item: PSGCResponseItem) => ({
             code: item.code,
@@ -196,7 +196,7 @@ export async function fetchPHCities(provinceCode: string): Promise<PSGCItem[]> {
         const res = await fetch(`https://psgc.gitlab.io/api/provinces/${provinceCode}/cities-municipalities/`, { cache: "force-cache" });
         if (!res.ok) throw new Error("Failed to fetch cities");
         const data = await res.json();
-        
+
         const list = Array.isArray(data) ? data : [];
         return list.map((item: PSGCResponseItem) => ({
             code: item.code,
@@ -214,7 +214,7 @@ export async function fetchPHBarangays(cityCode: string): Promise<PSGCItem[]> {
         const res = await fetch(`https://psgc.gitlab.io/api/cities-municipalities/${cityCode}/barangays/`, { cache: "force-cache" });
         if (!res.ok) throw new Error("Failed to fetch barangays");
         const data = await res.json();
-        
+
         const list = Array.isArray(data) ? data : [];
         return list.map((item: PSGCResponseItem) => ({
             code: item.code,

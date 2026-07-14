@@ -3,23 +3,23 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import { toast } from "sonner";
-import { 
-    Boxes, 
-    History, 
-    AlertTriangle, 
-// disabled-lint-next-line @typescript-eslint/no-unused-vars
-    CheckCircle, 
-    Search, 
-// disabled-lint-next-line @typescript-eslint/no-unused-vars
-    Filter, 
-    TrendingDown, 
-    Calendar, 
-    ArrowUpRight, 
-    ArrowDownLeft, 
-    Layers, 
+import {
+    Boxes,
+    History,
+    AlertTriangle,
+    // disabled-lint-next-line @typescript-eslint/no-unused-vars
+    CheckCircle,
+    Search,
+    // disabled-lint-next-line @typescript-eslint/no-unused-vars
+    Filter,
+    TrendingDown,
+    Calendar,
+    ArrowUpRight,
+    ArrowDownLeft,
+    Layers,
     Loader2,
     RefreshCw,
-// disabled-lint-next-line @typescript-eslint/no-unused-vars
+    // disabled-lint-next-line @typescript-eslint/no-unused-vars
     ShieldAlert,
     ChevronDown,
     ChevronRight,
@@ -57,7 +57,7 @@ interface BatchItem {
 }
 
 export default function InventoryModule() {
-// disabled-lint-next-line @typescript-eslint/no-explicit-any
+    // disabled-lint-next-line @typescript-eslint/no-explicit-any
     const [data, setData] = useState<{ ledger: any[]; batches: any[]; products: any[]; branches: any[] } | null>(null);
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState<"stock" | "batches" | "ledger" | "picking" | "receiving">("stock");
@@ -99,17 +99,17 @@ export default function InventoryModule() {
     const [isReceivingModalOpen, setIsReceivingModalOpen] = useState(false);
     const [selectedPickingJO, setSelectedPickingJO] = useState<any | null>(null);
     const [selectedReceivingJO, setSelectedReceivingJO] = useState<any | null>(null);
-    
+
     // Picking form state
     const [pickingSubmitting, setPickingSubmitting] = useState(false);
-    
+
     // Receiving form state
     const [recQtyProduced, setRecQtyProduced] = useState("");
     const [recLotNumber, setRecLotNumber] = useState("");
     const [recExpirationDate, setRecExpirationDate] = useState("");
     const [recUnitCost, setRecUnitCost] = useState("");
     const [recSubmitting, setRecSubmitting] = useState(false);
-    
+
     // Yield Allocation & Cost Variance output states (after successful receiving)
     const [receivingResult, setReceivingResult] = useState<any | null>(null);
     const [showReceivingResult, setShowReceivingResult] = useState(false);
@@ -276,7 +276,7 @@ export default function InventoryModule() {
             } else {
                 throw new Error("Failed to load inventory logs from server");
             }
-// disabled-lint-next-line @typescript-eslint/no-explicit-any
+            // disabled-lint-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
             toast.error(e.message || "Failed to load inventory.");
         } finally {
@@ -324,7 +324,7 @@ export default function InventoryModule() {
             setAdjProductId("");
             setAdjQty("");
             setAdjRemarks("");
-            
+
             // Reload inventory
             loadInventoryData();
         } catch (err) {
@@ -350,17 +350,17 @@ export default function InventoryModule() {
                 console.warn("[Directus Realtime] Maximum reconnect attempts reached (10). Standing by.");
                 return;
             }
-            
+
             try {
                 const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://vtc:8074";
                 const wsUrl = `${baseUrl.replace(/^http/, "ws")}/websocket`;
-                
+
                 ws = new WebSocket(wsUrl);
 
                 ws.onopen = () => {
                     console.log("[Directus Realtime] Connected to WebSocket");
                     reconnectAttempts = 0; // Reset on successful connection
-                    
+
                     // Authenticate with the server using the static token 'test'
                     ws?.send(JSON.stringify({
                         type: "auth",
@@ -371,11 +371,11 @@ export default function InventoryModule() {
                 ws.onmessage = (event) => {
                     try {
                         const msg = JSON.parse(event.data);
-                        
+
                         // Handle authentication success -> Subscribe to collections
                         if (msg.type === "auth" && msg.status === "ok") {
                             console.log("[Directus Realtime] Authenticated successfully");
-                            
+
                             // Subscribe to inventory_lots
                             ws?.send(JSON.stringify({
                                 type: "subscribe",
@@ -394,14 +394,14 @@ export default function InventoryModule() {
                         // Handle event message -> Trigger silent refresh
                         if (msg.type === "subscription" && (msg.event === "create" || msg.event === "update" || msg.event === "delete")) {
                             console.log(`[Directus Realtime] Event detected (${msg.event} on ${msg.collection}). Refreshing dashboard...`);
-                            
+
                             // Silent API refresh
                             fetch("/api/manufacturing/inventory")
                                 .then(res => res.ok ? res.json() : null)
                                 .then(json => {
                                     if (json) setData(json);
                                 })
-                                .catch(() => {});
+                                .catch(() => { });
                         }
                     } catch (e) {
                         console.error("[Directus Realtime] Error parsing WebSocket message:", e);
@@ -444,7 +444,7 @@ export default function InventoryModule() {
                     .then(json => {
                         if (json) setData(json);
                     })
-                    .catch(() => {});
+                    .catch(() => { });
             }
         }, 10000);
 
@@ -463,7 +463,7 @@ export default function InventoryModule() {
     useEffect(() => {
         if (!data) return;
         const { ledger } = data;
-        
+
         // Compute new stock levels map
         const newStocks: Record<number, number> = {};
         // disabled-lint-next-line @typescript-eslint/no-explicit-any
@@ -483,7 +483,7 @@ export default function InventoryModule() {
             if (oldQty !== undefined && oldQty !== newQty) {
                 newFlashStates[pId] = newQty > oldQty ? "up" : "down";
                 hasChanges = true;
-                
+
                 // Trigger toast notification
                 // disabled-lint-next-line @typescript-eslint/no-explicit-any
                 const prod = data.products.find((p: any) => Number(p.product_id) === pId);
@@ -499,7 +499,7 @@ export default function InventoryModule() {
 
         if (hasChanges) {
             setFlashStates(prev => ({ ...prev, ...newFlashStates }));
-            
+
             // Clear flash animation state after 2.5 seconds
             const timer = setTimeout(() => {
                 setFlashStates(prev => {
@@ -510,7 +510,7 @@ export default function InventoryModule() {
                     return next;
                 });
             }, 2500);
-            
+
             return () => clearTimeout(timer);
         }
 
@@ -557,11 +557,11 @@ export default function InventoryModule() {
             const categoryName = item.product_category?.category_name || "Unassigned Category";
 
             const query = searchQuery.toLowerCase();
-            const matchesQuery = item.product_name.toLowerCase().includes(query) || 
-                                 item.product_code.toLowerCase().includes(query) ||
-                                 brandName.toLowerCase().includes(query) ||
-                                 categoryName.toLowerCase().includes(query);
-            
+            const matchesQuery = item.product_name.toLowerCase().includes(query) ||
+                item.product_code.toLowerCase().includes(query) ||
+                brandName.toLowerCase().includes(query) ||
+                categoryName.toLowerCase().includes(query);
+
             const matchesLowStock = !lowStockFilter || item.currentStock < 50;
             const matchesBrand = filterBrand === "all" || brandName === filterBrand;
             const matchesCategory = filterCategory === "all" || categoryName === filterCategory;
@@ -575,11 +575,11 @@ export default function InventoryModule() {
     // Grouping category > brand > product
     const groupedStock = useMemo(() => {
         const categories: Record<string, Record<string, typeof stockLevels>> = {};
-        
+
         stockLevels.forEach(prod => {
             const cat = prod.product_category?.category_name || "Unassigned Category";
             const brand = prod.product_brand?.brand_name || "Generic Brand";
-            
+
             if (!categories[cat]) {
                 categories[cat] = {};
             }
@@ -588,7 +588,7 @@ export default function InventoryModule() {
             }
             categories[cat][brand].push(prod);
         });
-        
+
         return categories;
     }, [stockLevels]);
 
@@ -608,15 +608,15 @@ export default function InventoryModule() {
 
         return products.map(prod => {
             const prodBatches = groupedMap[Number(prod.product_id)] || [];
-            
+
             const mappedBatches = prodBatches.map(b => {
                 const branchObj = branches.find(br => Number(br.id) === Number(b.branch_id));
                 const branchName = branchObj ? branchObj.branch_name : `Branch #${b.branch_id}`;
 
-                const daysToExpiry = b.expiration_date 
+                const daysToExpiry = b.expiration_date
                     ? Math.ceil((new Date(b.expiration_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
                     : null;
-                
+
                 let status: "active" | "soon" | "expired" = "active";
                 if (daysToExpiry !== null) {
                     if (daysToExpiry < 0) status = "expired";
@@ -658,11 +658,11 @@ export default function InventoryModule() {
             const categoryName = p.product_category?.category_name || "Unassigned Category";
 
             const query = searchQuery.toLowerCase();
-            const matchesQuery = p.product_name.toLowerCase().includes(query) || 
-                                 p.product_code.toLowerCase().includes(query) ||
-                                 brandName.toLowerCase().includes(query) ||
-                                 categoryName.toLowerCase().includes(query) ||
-                                 p.batches.some((b: BatchItem) => (b.lot_number || "").toLowerCase().includes(query) || (b.branch_name || "").toLowerCase().includes(query));
+            const matchesQuery = p.product_name.toLowerCase().includes(query) ||
+                p.product_code.toLowerCase().includes(query) ||
+                brandName.toLowerCase().includes(query) ||
+                categoryName.toLowerCase().includes(query) ||
+                p.batches.some((b: BatchItem) => (b.lot_number || "").toLowerCase().includes(query) || (b.branch_name || "").toLowerCase().includes(query));
 
             if (!matchesQuery) return false;
 
@@ -712,11 +712,11 @@ export default function InventoryModule() {
             const categoryName = l.product_category?.category_name || "Unassigned Category";
 
             const query = searchQuery.toLowerCase();
-            const matchesQuery = l.productName.toLowerCase().includes(query) || 
-                                 l.productCode.toLowerCase().includes(query) ||
-                                 (l.documentNo && l.documentNo.toLowerCase().includes(query)) ||
-                                 (l.documentDescription && l.documentDescription.toLowerCase().includes(query)) ||
-                                 l.branchName.toLowerCase().includes(query);
+            const matchesQuery = l.productName.toLowerCase().includes(query) ||
+                l.productCode.toLowerCase().includes(query) ||
+                (l.documentNo && l.documentNo.toLowerCase().includes(query)) ||
+                (l.documentDescription && l.documentDescription.toLowerCase().includes(query)) ||
+                l.branchName.toLowerCase().includes(query);
 
             if (!matchesQuery) return false;
 
@@ -724,7 +724,7 @@ export default function InventoryModule() {
             const matchesBrand = filterBrand === "all" || brandName === filterBrand;
             const matchesCategory = filterCategory === "all" || categoryName === filterCategory;
             const matchesProduct = filterProduct === "all" || String(l.productId) === filterProduct;
-            
+
             const entryDate = l.documentDate || l.date_added || "";
             const matchesStartDate = !filterStartDate || entryDate >= filterStartDate;
             const matchesEndDate = !filterEndDate || entryDate <= filterEndDate;
@@ -822,41 +822,36 @@ export default function InventoryModule() {
                     <div className="flex bg-muted/40 border border-border p-1 rounded-lg gap-1 overflow-x-auto max-w-full">
                         <button
                             onClick={() => { setActiveTab("stock"); setSearchQuery(""); }}
-                            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all border-none cursor-pointer flex items-center gap-1.5 shrink-0 ${
-                                activeTab === "stock" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground bg-transparent"
-                            }`}
+                            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all border-none cursor-pointer flex items-center gap-1.5 shrink-0 ${activeTab === "stock" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground bg-transparent"
+                                }`}
                         >
                             <Boxes className="h-4 w-4" /> Stock Balances
                         </button>
                         <button
                             onClick={() => { setActiveTab("batches"); setSearchQuery(""); }}
-                            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all border-none cursor-pointer flex items-center gap-1.5 shrink-0 ${
-                                activeTab === "batches" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground bg-transparent"
-                            }`}
+                            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all border-none cursor-pointer flex items-center gap-1.5 shrink-0 ${activeTab === "batches" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground bg-transparent"
+                                }`}
                         >
                             <Calendar className="h-4 w-4" /> FIFO Batches
                         </button>
                         <button
                             onClick={() => { setActiveTab("ledger"); setSearchQuery(""); }}
-                            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all border-none cursor-pointer flex items-center gap-1.5 shrink-0 ${
-                                activeTab === "ledger" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground bg-transparent"
-                            }`}
+                            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all border-none cursor-pointer flex items-center gap-1.5 shrink-0 ${activeTab === "ledger" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground bg-transparent"
+                                }`}
                         >
                             <History className="h-4 w-4" /> Audit Ledger
                         </button>
                         <button
                             onClick={() => { setActiveTab("picking"); setSearchQuery(""); }}
-                            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all border-none cursor-pointer flex items-center gap-1.5 shrink-0 ${
-                                activeTab === "picking" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground bg-transparent"
-                            }`}
+                            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all border-none cursor-pointer flex items-center gap-1.5 shrink-0 ${activeTab === "picking" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground bg-transparent"
+                                }`}
                         >
                             <ArrowUpRight className="h-4 w-4" /> Material Picking
                         </button>
                         <button
                             onClick={() => { setActiveTab("receiving"); setSearchQuery(""); }}
-                            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all border-none cursor-pointer flex items-center gap-1.5 shrink-0 ${
-                                activeTab === "receiving" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground bg-transparent"
-                            }`}
+                            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all border-none cursor-pointer flex items-center gap-1.5 shrink-0 ${activeTab === "receiving" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground bg-transparent"
+                                }`}
                         >
                             <ArrowDownLeft className="h-4 w-4" /> Yield Receiving
                         </button>
@@ -876,7 +871,7 @@ export default function InventoryModule() {
                         >
                             <Sliders className="h-3.5 w-3.5" /> Post Adjustment
                         </button>
-                        <button 
+                        <button
                             onClick={loadInventoryData}
                             className="bg-muted hover:bg-muted/80 text-foreground border border-border text-xs font-bold px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-all cursor-pointer"
                             disabled={loading}
@@ -895,9 +890,8 @@ export default function InventoryModule() {
                                     setLedgerType("raw");
                                     setFilterProduct("all");
                                 }}
-                                className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all border-none cursor-pointer flex items-center gap-1.5 ${
-                                    ledgerType === "raw" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground bg-transparent"
-                                }`}
+                                className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all border-none cursor-pointer flex items-center gap-1.5 ${ledgerType === "raw" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground bg-transparent"
+                                    }`}
                             >
                                 <Boxes className="h-4 w-4" /> Raw Materials & Packaging Items
                             </button>
@@ -907,9 +901,8 @@ export default function InventoryModule() {
                                     setLedgerType("fg");
                                     setFilterProduct("all");
                                 }}
-                                className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all border-none cursor-pointer flex items-center gap-1.5 ${
-                                    ledgerType === "fg" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground bg-transparent"
-                                }`}
+                                className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all border-none cursor-pointer flex items-center gap-1.5 ${ledgerType === "fg" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground bg-transparent"
+                                    }`}
                             >
                                 <Layers className="h-4 w-4" /> Finished Goods
                             </button>
@@ -1029,7 +1022,7 @@ export default function InventoryModule() {
                             <span className="text-xs text-muted-foreground font-bold">Expiry Status:</span>
                             <select
                                 value={expiryFilter}
-// disabled-lint-next-line @typescript-eslint/no-explicit-any
+                                // disabled-lint-next-line @typescript-eslint/no-explicit-any
                                 onChange={(e: any) => setExpiryFilter(e.target.value)}
                                 className="bg-background border border-border rounded-lg px-2 py-1 text-xs text-foreground font-semibold outline-none"
                             >
@@ -1138,13 +1131,12 @@ export default function InventoryModule() {
                                                                                 const isExpanded = !!expandedProducts[Number(prod.product_id)];
 
                                                                                 const flash = flashStates[Number(prod.product_id)];
-                                                                                const trClass = `border-b border-border/40 last:border-b-0 hover:bg-muted/20 cursor-pointer select-none transition-all duration-300 ${
-                                                                                    flash === "up" ? "animate-flash-up" : flash === "down" ? "animate-flash-down" : ""
-                                                                                }`;
+                                                                                const trClass = `border-b border-border/40 last:border-b-0 hover:bg-muted/20 cursor-pointer select-none transition-all duration-300 ${flash === "up" ? "animate-flash-up" : flash === "down" ? "animate-flash-down" : ""
+                                                                                    }`;
 
                                                                                 return (
                                                                                     <React.Fragment key={prod.product_id || idx}>
-                                                                                        <tr 
+                                                                                        <tr
                                                                                             className={trClass}
                                                                                             onClick={() => toggleProductExpand(Number(prod.product_id))}
                                                                                         >
@@ -1173,13 +1165,12 @@ export default function InventoryModule() {
                                                                                             </td>
                                                                                             <td className="py-3 px-4 text-right font-bold text-foreground hidden md:table-cell">₱{assetVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                                                                                             <td className="py-3 px-4">
-                                                                                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold border ${
-                                                                                                    prod.currentStock < 0
+                                                                                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold border ${prod.currentStock < 0
                                                                                                         ? "bg-red-500/10 text-red-500 border-red-500/20"
-                                                                                                        : isLow 
-                                                                                                        ? "bg-amber-500/10 text-amber-500 border-amber-500/20" 
-                                                                                                        : "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
-                                                                                                }`}>
+                                                                                                        : isLow
+                                                                                                            ? "bg-amber-500/10 text-amber-500 border-amber-500/20"
+                                                                                                            : "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
+                                                                                                    }`}>
                                                                                                     {prod.currentStock < 0 ? "Stock Deficit" : isLow ? "Low Stock" : "Optimal"}
                                                                                                 </span>
                                                                                             </td>
@@ -1252,7 +1243,7 @@ export default function InventoryModule() {
 
                                     return (
                                         <React.Fragment key={prod.product_id || idx}>
-                                            <tr 
+                                            <tr
                                                 className="border-b border-input/60 hover:bg-muted/10 cursor-pointer select-none"
                                                 onClick={() => toggleBatchExpand(Number(prod.product_id))}
                                             >
@@ -1336,18 +1327,17 @@ export default function InventoryModule() {
                                                                                             {batch.expiration_date || <span className="italic text-[10px]">Static (No Expiration)</span>}
                                                                                         </td>
                                                                                         <td className="py-2 px-3 text-center">
-                                                                                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold border ${
-                                                                                                batch.expiryStatus === "expired"
+                                                                                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold border ${batch.expiryStatus === "expired"
                                                                                                     ? "bg-rose-500/10 text-rose-500 border-rose-500/20"
                                                                                                     : batch.expiryStatus === "soon"
-                                                                                                    ? "bg-amber-500/10 text-amber-500 border-amber-500/20"
-                                                                                                    : "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
-                                                                                            }`}>
-                                                                                                {batch.expiryStatus === "expired" 
-                                                                                                    ? "EXPIRED" 
+                                                                                                        ? "bg-amber-500/10 text-amber-500 border-amber-500/20"
+                                                                                                        : "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"
+                                                                                                }`}>
+                                                                                                {batch.expiryStatus === "expired"
+                                                                                                    ? "EXPIRED"
                                                                                                     : batch.expiryStatus === "soon"
-                                                                                                    ? `Expiring in ${batch.daysToExpiry} days`
-                                                                                                    : "Active Safe"}
+                                                                                                        ? `Expiring in ${batch.daysToExpiry} days`
+                                                                                                        : "Active Safe"}
                                                                                             </span>
                                                                                         </td>
                                                                                     </tr>
@@ -1397,7 +1387,7 @@ export default function InventoryModule() {
 
                                     return (
                                         <React.Fragment key={log.id || idx}>
-                                            <tr 
+                                            <tr
                                                 className="border-b border-input/60 hover:bg-muted/10 cursor-pointer select-none"
                                                 onClick={() => toggleLedgerExpand(Number(log.id))}
                                             >
@@ -1493,9 +1483,9 @@ export default function InventoryModule() {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {pickingList.filter(jo => 
-                                            searchQuery ? jo.jo_id.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                                            (jo.product_name || "").toLowerCase().includes(searchQuery.toLowerCase()) : true
+                                        {pickingList.filter(jo =>
+                                            searchQuery ? jo.jo_id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                                                (jo.product_name || "").toLowerCase().includes(searchQuery.toLowerCase()) : true
                                         ).map((jo) => (
                                             <tr key={jo.jo_id} className="border-b border-input/60 hover:bg-muted/10">
                                                 <td className="py-3.5 px-4 font-extrabold text-foreground">{jo.jo_id}</td>
@@ -1503,11 +1493,10 @@ export default function InventoryModule() {
                                                 <td className="py-3.5 px-4 font-bold text-foreground">{(jo.quantity || 0).toLocaleString()} units</td>
                                                 <td className="py-3.5 px-4 font-semibold text-muted-foreground">{data?.branches?.find(b => Number(b.id) === Number(jo.branch_id))?.branch_name || `Branch #${jo.branch_id}`}</td>
                                                 <td className="py-3.5 px-4">
-                                                    <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                                                        jo.isPicked
+                                                    <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${jo.isPicked
                                                             ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
                                                             : "bg-amber-500/10 text-amber-600 dark:text-amber-400"
-                                                    }`}>
+                                                        }`}>
                                                         {jo.isPicked ? "Picked (In WIP)" : "Pending Pick"}
                                                     </span>
                                                 </td>
@@ -1518,11 +1507,10 @@ export default function InventoryModule() {
                                                             setSelectedPickingJO(jo);
                                                             setIsPickingModalOpen(true);
                                                         }}
-                                                        className={`text-xs font-bold px-3 py-1.5 rounded-lg border cursor-pointer transition-all ${
-                                                            jo.isPicked
+                                                        className={`text-xs font-bold px-3 py-1.5 rounded-lg border cursor-pointer transition-all ${jo.isPicked
                                                                 ? "bg-muted text-foreground border-border hover:bg-muted/20"
                                                                 : "bg-primary text-primary-foreground border-transparent hover:bg-primary/95 shadow-sm"
-                                                        }`}
+                                                            }`}
                                                     >
                                                         {jo.isPicked ? "View Pick Sheet" : "Generate Pick Sheet"}
                                                     </button>
@@ -1562,9 +1550,9 @@ export default function InventoryModule() {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {receivingJOs.filter(jo => 
-                                            searchQuery ? jo.jo_id.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                                            (jo.product_name || "").toLowerCase().includes(searchQuery.toLowerCase()) : true
+                                        {receivingJOs.filter(jo =>
+                                            searchQuery ? jo.jo_id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                                                (jo.product_name || "").toLowerCase().includes(searchQuery.toLowerCase()) : true
                                         ).map((jo) => (
                                             <tr key={jo.jo_id} className="border-b border-input/60 hover:bg-muted/10">
                                                 <td className="py-3.5 px-4 font-extrabold text-foreground">{jo.jo_id}</td>
@@ -1572,11 +1560,10 @@ export default function InventoryModule() {
                                                 <td className="py-3.5 px-4 font-bold text-foreground">{(jo.quantity || 0).toLocaleString()} units</td>
                                                 <td className="py-3.5 px-4 font-semibold text-muted-foreground">{data?.branches?.find(b => Number(b.id) === Number(jo.branch_id))?.branch_name || `Branch #${jo.branch_id}`}</td>
                                                 <td className="py-3.5 px-4">
-                                                    <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                                                        jo.status === "Finished"
+                                                    <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${jo.status === "Finished"
                                                             ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
                                                             : "bg-blue-500/10 text-blue-600 dark:text-blue-400"
-                                                    }`}>
+                                                        }`}>
                                                         {jo.status === "Finished" ? "Closed (Finished)" : "In Production"}
                                                     </span>
                                                 </td>
@@ -1821,9 +1808,8 @@ export default function InventoryModule() {
                                 <div>
                                     <span className="text-[9px] text-muted-foreground uppercase font-bold">Pick Status</span>
                                     <div className="text-xs font-bold mt-0.5">
-                                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${
-                                            selectedPickingJO.isPicked ? "bg-emerald-500/10 text-emerald-600" : "bg-amber-500/10 text-amber-600"
-                                        }`}>
+                                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${selectedPickingJO.isPicked ? "bg-emerald-500/10 text-emerald-600" : "bg-amber-500/10 text-amber-600"
+                                            }`}>
                                             {selectedPickingJO.isPicked ? "Picked" : "Pending"}
                                         </span>
                                     </div>
@@ -2125,11 +2111,10 @@ export default function InventoryModule() {
                                 <div className="space-y-3">
                                     <div className="flex justify-between items-center">
                                         <h4 className="text-[11px] font-black uppercase tracking-wider text-primary">Material Cost Variance Analysis</h4>
-                                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${
-                                            receivingResult.materialCostVariances.total_variance <= 0 
-                                                ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" 
+                                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${receivingResult.materialCostVariances.total_variance <= 0
+                                                ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
                                                 : "bg-rose-500/10 text-rose-600 dark:text-rose-400"
-                                        }`}>
+                                            }`}>
                                             {receivingResult.materialCostVariances.total_variance <= 0 ? "Favorable Variance" : "Unfavorable Variance"}
                                         </span>
                                     </div>
@@ -2150,9 +2135,8 @@ export default function InventoryModule() {
                                         </div>
                                         <div className="p-3 bg-muted/15 border border-border rounded-xl">
                                             <span className="text-[9px] text-muted-foreground uppercase font-black tracking-wider block">Material Cost Variance</span>
-                                            <h4 className={`text-sm font-black mt-1 ${
-                                                receivingResult.materialCostVariances.total_variance <= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
-                                            }`}>
+                                            <h4 className={`text-sm font-black mt-1 ${receivingResult.materialCostVariances.total_variance <= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"
+                                                }`}>
                                                 {receivingResult.materialCostVariances.total_variance > 0 ? "+" : ""}
                                                 PHP {receivingResult.materialCostVariances.total_variance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                             </h4>
@@ -2188,9 +2172,8 @@ export default function InventoryModule() {
                                                         <td className="p-2.5 text-foreground font-semibold">
                                                             PHP {detail.actualTotalCost.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                                                         </td>
-                                                        <td className={`p-2.5 text-right font-bold ${
-                                                            detail.variance <= 0 ? "text-emerald-500" : "text-rose-500"
-                                                        }`}>
+                                                        <td className={`p-2.5 text-right font-bold ${detail.variance <= 0 ? "text-emerald-500" : "text-rose-500"
+                                                            }`}>
                                                             {detail.variance > 0 ? "+" : ""}
                                                             PHP {detail.variance.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                                                         </td>

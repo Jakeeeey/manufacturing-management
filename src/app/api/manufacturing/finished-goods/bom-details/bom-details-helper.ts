@@ -24,7 +24,7 @@ export async function saveActiveBOMDetails(versionId: number, expectedYield: num
         const res = await fetch(url, {
             method: "PATCH",
             headers,
-            body: JSON.stringify({ 
+            body: JSON.stringify({
                 expected_yield_percentage: expectedYield,
                 base_quantity: baseQuantity
             })
@@ -105,7 +105,7 @@ export async function syncRoutesAndBOM(versionId: number, routes: any[], userId:
 
             // Sync BOM items under this route step
             const uiBomItems = step.bom_items || step.ingredients || [];
-            
+
             // Get existing BOM items for this route in DB
             const bomsGetUrl = `${DIRECTUS_URL}/items/manufacturing_routes_bom?filter[route_id][_eq]=${finalRouteId}&limit=-1`;
             const resBomGet = await fetch(bomsGetUrl, { headers, cache: "no-store" });

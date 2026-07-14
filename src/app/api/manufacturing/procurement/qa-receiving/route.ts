@@ -64,7 +64,7 @@ export async function GET(request: Request) {
             );
             if (!res.ok) throw new Error(`Directus error loading product receiving logs: ${res.status}`);
             const json = await res.json();
-            
+
             const rawLogs = (json.data || []) as DirectusLotLog[];
             const productIds = rawLogs.map((r) => typeof r.product_id === "object" && r.product_id ? r.product_id.product_id : r.product_id).filter(Boolean);
             let products: DirectusProductMin[] = [];
@@ -76,6 +76,11 @@ export async function GET(request: Request) {
                 }
             }
 
+            interface DirectusBranch {
+                id: number;
+                branch_name: string;
+                branch_code?: string;
+            }
             const poMap: Record<string, DirectusPurchaseOrderMin> = {};
             const branchMap: Record<number, any> = {};
             if (rawLogs.length > 0) {
@@ -103,7 +108,7 @@ export async function GET(request: Request) {
                     product_name: `Product ID: ${rawProdId}`,
                     product_code: `ID-${rawProdId}`
                 };
-                
+
                 const poRef = r.source_reference || "";
                 let cleanPoRef = poRef;
                 if (poRef.startsWith("PO-")) {
@@ -174,7 +179,7 @@ export async function GET(request: Request) {
                     product_name: `Product ID: ${rawProdId}`,
                     product_code: `ID-${rawProdId}`
                 };
-                
+
                 const poRef = r.source_reference || "";
                 let cleanPoRef = poRef;
                 if (poRef.startsWith("PO-")) {

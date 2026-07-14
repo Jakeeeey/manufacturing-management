@@ -17,6 +17,7 @@ import {
     Popover,
     PopoverContent,
     PopoverTrigger,
+    PopoverAnchor,
 } from "@/components/ui/popover";
 
 export interface CreatableSelectProps {
@@ -27,12 +28,10 @@ export interface CreatableSelectProps {
     disabled?: boolean;
     className?: string;
     onCreateOption?: (name: string) => Promise<void> | void;
-    onKeyDown?: React.KeyboardEventHandler<HTMLButtonElement>;
+    onKeyDown?: React.KeyboardEventHandler<HTMLElement>;
     "data-index"?: number;
     popoverClassName?: string;
-    "aria-label"?: string;
-    "aria-invalid"?: boolean;
-    "aria-describedby"?: string;
+    variant?: "popover" | "inline";
 }
 
 export function CreatableSelect({
@@ -46,9 +45,7 @@ export function CreatableSelect({
     onKeyDown,
     "data-index": dataIndex,
     popoverClassName,
-    "aria-label": ariaLabel,
-    "aria-invalid": ariaInvalid,
-    "aria-describedby": ariaDescribedBy,
+    variant = "popover",
 }: CreatableSelectProps) {
     const [open, setOpen] = React.useState(false);
     const [searchQuery, setSearchQuery] = React.useState("");
@@ -74,36 +71,67 @@ export function CreatableSelect({
 
     return (
         <Popover open={open} onOpenChange={setOpen}>
-            <PopoverTrigger asChild>
-                <Button
-                    variant="outline"
-                    role="combobox"
-                    aria-expanded={open}
-                    className={cn("w-full justify-between", !value && "text-muted-foreground", className)}
-                    disabled={disabled}
-                    onKeyDown={onKeyDown}
-                    data-index={dataIndex}
-                    aria-label={ariaLabel}
-                    aria-invalid={ariaInvalid}
-                    aria-describedby={ariaDescribedBy}
-                >
-                    <span className="truncate">{selectedLabel || placeholder}</span>
-                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                </Button>
-            </PopoverTrigger>
+            {variant === "inline" ? (
+                <PopoverAnchor asChild>
+                    <input
+                        type="text"
+                        disabled={disabled}
+                        placeholder={placeholder}
+                        value={open ? searchQuery : (selectedLabel || "")}
+                        onChange={(e) => {
+                            setSearchQuery(e.target.value);
+                            setOpen(true);
+                        }}
+                        onFocus={() => {
+                            setOpen(true);
+                        }}
+                        onKeyDown={(e) => {
+                            if (e.key === "Escape") {
+                                setOpen(false);
+                            }
+                            if (onKeyDown) {
+                                onKeyDown(e);
+                            }
+                        }}
+                        className={cn(
+                            "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-xs shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
+                            className
+                        )}
+                        data-index={dataIndex}
+                    />
+                </PopoverAnchor>
+            ) : (
+                <PopoverTrigger asChild>
+                    <Button
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={open}
+                        className={cn("w-full justify-between", !value && "text-muted-foreground", className)}
+                        disabled={disabled}
+                        onKeyDown={onKeyDown}
+                        data-index={dataIndex}
+                    >
+                        <span className="truncate">{selectedLabel || placeholder}</span>
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                </PopoverTrigger>
+            )}
             <PopoverContent className={cn("w-[--radix-popover-trigger-width] p-0", popoverClassName)} align="start">
                 <Command shouldFilter={false}>
-                    <CommandInput
-                        placeholder={`Search ${placeholder.toLowerCase()}...`}
-                        value={searchQuery}
-                        onValueChange={setSearchQuery}
-                    />
+                    {variant !== "inline" && (
+                        <CommandInput
+                            placeholder={`Search ${placeholder.toLowerCase()}...`}
+                            value={searchQuery}
+                            onValueChange={setSearchQuery}
+                        />
+                    )}
                     <CommandList>
                         {filteredOptions.length === 0 && (
                             <CommandEmpty className="py-2 px-3 text-xs flex flex-col gap-2">
                                 <span>No results found.</span>
                                 {onCreateOption && searchQuery.trim() !== "" && (
                                     <Button
+                                        type="button"
                                         size="sm"
                                         variant="secondary"
                                         className="w-full text-[10px] inline-flex items-center gap-1 justify-center py-1 h-auto"

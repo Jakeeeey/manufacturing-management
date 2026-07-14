@@ -57,7 +57,7 @@ export default function ProcurementModule({ initialTab = "suppliers" }: Procurem
         handleToggleSupplierActive
     } = useProcurement(initialTab);
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const handleTriggerExpenseAllocation = (shipment: any) => {
         setSelectedShipment(shipment);
         setIsExpenseModalOpen(true);
@@ -160,8 +160,8 @@ export default function ProcurementModule({ initialTab = "suppliers" }: Procurem
                 )}
 
                 {activeTab === "raw-materials" && (
-                    <RawMaterialsMaster 
-                        rawMaterials={rawMaterials} 
+                    <RawMaterialsMaster
+                        rawMaterials={rawMaterials}
                         suppliers={suppliers}
                         onRegisterRawMaterial={handleRegisterRawMaterial}
                         onUpdateRawMaterial={handleUpdateRawMaterial}

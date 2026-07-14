@@ -1,13 +1,10 @@
 /* eslint-disable */
-import { 
-    Product, 
-    Brand, 
-    Category, 
-    Unit, 
-    ProductVersion, 
-    BOMItem, 
-    RoutingStep,
-    ProductOverhead,
+import {
+    Product,
+    Brand,
+    Category,
+    Unit,
+    ProductVersion,
     BFFCatalogProduct,
     ProductClass,
     ProductSegment,
@@ -33,14 +30,14 @@ export async function fetchProducts(search?: string, limit: number = 100): Promi
     const res = await fetch(`/api/manufacturing/finished-goods/products?${query.toString()}`);
     if (!res.ok) throw new Error("Failed to fetch products from BFF");
     const data = await res.json();
-    
+
     // Map Directus model to local Product interface
     return data.map((p: BFFCatalogProduct) => {
         const parentId = p.parent_id && typeof p.parent_id === "object"
-// disabled-lint-next-line @typescript-eslint/no-explicit-any
+            // disabled-lint-next-line @typescript-eslint/no-explicit-any
             ? Number((p.parent_id as any).product_id)
             : (p.parent_id ? Number(p.parent_id) : null);
-            
+
         return {
             id: String(p.product_id),
             sku: p.product_code || `SKU-${p.product_id}`,
@@ -167,7 +164,7 @@ export async function saveBOMDetails(
         try {
             const errJson = await res.json();
             if (errJson && errJson.error) msg = errJson.error;
-        } catch {}
+        } catch { }
         throw new Error(msg);
     }
     return res.json();
@@ -210,7 +207,7 @@ export async function registerProduct(
         try {
             const errJson = await res.json();
             if (errJson && errJson.error) msg = errJson.error;
-        } catch {}
+        } catch { }
         throw new Error(msg);
     }
     return res.json();
@@ -294,7 +291,7 @@ export async function activateVersion(productId: number, versionId?: number, dea
         try {
             const errJson = await res.json();
             if (errJson && errJson.error) msg = errJson.error;
-        } catch {}
+        } catch { }
         throw new Error(msg);
     }
     return res.json();
