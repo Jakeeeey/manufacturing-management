@@ -2,6 +2,20 @@ import React, { useState, useEffect } from "react";
 import { X, CheckCircle2, ShieldAlert, Package, Calendar, Tag, Trash2, Camera, AlertCircle, FileText, Loader2 } from "lucide-react";
 import { JobOrder, QALog } from "../types";
 
+interface RoutingTask {
+    id: number;
+    name: string;
+    sequence_order: number;
+    status: string;
+    requires_qa?: boolean;
+}
+
+interface ProductItem {
+    product_id: number | string;
+    product_name: string;
+    quantity: number;
+}
+
 interface JobOrderQAAuditModalProps {
     isOpen: boolean;
     onClose: () => void;
@@ -55,7 +69,7 @@ export function JobOrderQAAuditModal({
     const [lotNumbers, setLotNumbers] = useState<Record<number, string>>({});
     const [expiryDates, setExpiryDates] = useState<Record<number, string>>({});
 
-    const handleCompleteNonQATask = async (task: any) => {
+    const handleCompleteNonQATask = async (task: RoutingTask) => {
         if (!jo) return;
         await handleVerifyQATask(
             task.id,
@@ -94,7 +108,7 @@ export function JobOrderQAAuditModal({
                 quantity: jo.quantity
             }];
 
-        innerProductsList.forEach((p: any) => {
+        innerProductsList.forEach((p: ProductItem) => {
             const pId = Number(p.product_id);
             // Default yield is original quantity
             initialYields[pId] = p.quantity;
@@ -113,12 +127,12 @@ export function JobOrderQAAuditModal({
 
     if (!isOpen || !jo) return null;
 
-    const routingTasks = [...(jo.routing_tasks || jo.routingTasks || [])].sort((a: any, b: any) => a.sequence_order - b.sequence_order);
+    const routingTasks = [...(jo.routing_tasks || jo.routingTasks || [])].sort((a: RoutingTask, b: RoutingTask) => a.sequence_order - b.sequence_order);
     
     // Determine overall completion
     const allTasksCompleted = routingTasks.length > 0 && routingTasks.every(t => t.status === "Completed");
 
-    const handleSelectTaskForAudit = (task: any) => {
+    const handleSelectTaskForAudit = (task: RoutingTask) => {
         setEditingTaskId(task.id);
         // Default expected qty to the JO quantity or previous stage actual yield if we want,
         // but default to JO quantity for ease.
@@ -139,7 +153,7 @@ export function JobOrderQAAuditModal({
         setPhotos(photos.filter(p => p !== url));
     };
 
-    const submitTaskAudit = async (task: any) => {
+    const submitTaskAudit = async (task: RoutingTask) => {
         if (actualQty > expectedQty) {
             alert("Passed quantity cannot exceed expected quantity.");
             return;
@@ -455,7 +469,7 @@ export function JobOrderQAAuditModal({
                             </div>
 
                             <div className="space-y-4">
-                                {productsList.map((prod: any) => {
+                                {productsList.map((prod: ProductItem) => {
                                     const pId = Number(prod.product_id);
                                     return (
                                         <div key={pId} className="bg-card border rounded-xl p-4 grid grid-cols-1 md:grid-cols-3 gap-4.5 text-xs">
