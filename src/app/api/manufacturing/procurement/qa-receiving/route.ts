@@ -64,7 +64,7 @@ export async function GET(request: Request) {
             );
             if (!res.ok) throw new Error(`Directus error loading product receiving logs: ${res.status}`);
             const json = await res.json();
-            
+
             const rawLogs = (json.data || []) as DirectusLotLog[];
             const productIds = rawLogs.map((r) => typeof r.product_id === "object" && r.product_id ? r.product_id.product_id : r.product_id).filter(Boolean);
             let products: DirectusProductMin[] = [];
@@ -76,6 +76,11 @@ export async function GET(request: Request) {
                 }
             }
 
+            interface DirectusBranch {
+                id: number;
+                branch_name: string;
+                branch_code?: string;
+            }
             const poMap: Record<string, DirectusPurchaseOrderMin> = {};
             const branchMap: Record<number, any> = {};
             if (rawLogs.length > 0) {
@@ -103,7 +108,7 @@ export async function GET(request: Request) {
                     product_name: `Product ID: ${rawProdId}`,
                     product_code: `ID-${rawProdId}`
                 };
-                
+
                 const poRef = r.source_reference || "";
                 let cleanPoRef = poRef;
                 if (poRef.startsWith("PO-")) {
@@ -174,7 +179,7 @@ export async function GET(request: Request) {
                     product_name: `Product ID: ${rawProdId}`,
                     product_code: `ID-${rawProdId}`
                 };
-                
+
                 const poRef = r.source_reference || "";
                 let cleanPoRef = poRef;
                 if (poRef.startsWith("PO-")) {
@@ -359,6 +364,24 @@ export async function POST(request: Request) {
                 if (!ledgerRes.ok) {
                     console.error(`Ledger record failed for product ID ${pId}:`, await ledgerRes.text());
                 }
+
+                // Write to purchase_order_receiving for Good Stock
+                await fetch(`${DIRECTUS_URL}/items/purchase_order_receiving`, {
+                    method: "POST",
+                    headers,
+                    body: JSON.stringify({
+                        purchase_order_id: poId,
+                        product_id: pId,
+                        received_quantity: qtyAccepted,
+                        unit_price: pop.unit_price,
+                        total_amount: qtyAccepted * Number(pop.unit_price || 0),
+                        branch_id: branchIdNum,
+                        receipt_no: `REC-${poId}-${Date.now()}`,
+                        received_date: new Date().toISOString(),
+                        isPosted: 1,
+                        qa_status: item.qa_status || "Passed"
+                    })
+                }).catch(err => console.error("Failed to write Good Stock purchase_order_receiving log:", err));
             }
 
             // Save bad order stock to Bad Order branch

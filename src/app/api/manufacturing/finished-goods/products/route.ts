@@ -40,7 +40,7 @@ export async function GET(request: Request) {
         if (search && search.trim()) {
             url += `&search=${encodeURIComponent(search.trim())}`;
         }
-        
+
         const [prodRes, versionsRes, profilesRes] = await Promise.all([
             fetch(url, { headers, cache: "no-store" }),
             fetch(`${DIRECTUS_URL}/items/product_manufacturing_version?limit=-1&fields=product_id`, { headers, cache: "no-store" }),
@@ -81,7 +81,7 @@ export async function GET(request: Request) {
             const productCopy = { ...p };
             productCopy.has_versions = versionProductIds.has(Number(p.product_id));
             productCopy.currency_profile = profilesMap.get(Number(p.product_id)) || null;
-            
+
             if (excludeRollup) {
                 productCopy.has_cogs = false;
                 return productCopy;
@@ -215,7 +215,7 @@ export async function POST(request: Request) {
         });
         if (!verRes.ok) {
             // Rollback product
-            await fetch(`${DIRECTUS_URL}/items/products/${productId}`, { method: "DELETE", headers }).catch(() => {});
+            await fetch(`${DIRECTUS_URL}/items/products/${productId}`, { method: "DELETE", headers }).catch(() => { });
             throw new Error(`Directus failed to create product version: ${verRes.status}`);
         }
         const verJson = await verRes.json();
@@ -253,18 +253,18 @@ export async function PATCH(request: Request) {
         if (!product_id) {
             return NextResponse.json({ error: "Missing product_id" }, { status: 400 });
         }
-        
+
         const res = await fetch(`${DIRECTUS_URL}/items/products/${product_id}`, {
             method: "PATCH",
             headers,
             body: JSON.stringify({ production_capacity_per_hour: Number(production_capacity_per_hour) })
         });
-        
+
         if (!res.ok) {
             const errText = await res.text();
             throw new Error(`Directus PATCH failed: ${res.status} - ${errText}`);
         }
-        
+
         const json = await res.json();
         return NextResponse.json({ success: true, data: json.data });
     } catch (e) {

@@ -182,7 +182,11 @@ export function useQAReceiving() {
                 if (recVal !== "" && accVal !== "") {
                     // BO qty = shortfall only — never negative.
                     // If accepted > received, BO = 0 (over-acceptance; all received plus extras are logged as accepted)
-                    updatedRow.boQty = Math.max(0, Number(recVal) - Number(accVal));
+                    const newBoQty = Math.max(0, Number(recVal) - Number(accVal));
+                    updatedRow.boQty = newBoQty;
+                    if (newBoQty === 0) {
+                        updatedRow.rejectionReason = "";
+                    }
                 } else {
                     updatedRow.boQty = "";
                 }
@@ -256,6 +260,15 @@ export function useQAReceiving() {
                 return;
             }
 
+            // Warning when received qty exceeds ordered qty
+            if (received > ordered) {
+                if (!row.rejectionReason || !row.rejectionReason.trim()) {
+                    toast.error(`Over-shipment detected: Received (${received}) > Ordered (${ordered}) for ${name}. Remarks are required.`);
+                    return;
+                }
+                toast.warning(`Over-shipment: ${received} units received vs ${ordered} ordered.`);
+            }
+
             // Remarks validation:
             // 1. If BO Qty > 0, remarks field is mandatory
             if (bo > 0 && (!row.rejectionReason || !row.rejectionReason.trim())) {
@@ -263,13 +276,7 @@ export function useQAReceiving() {
                 return;
             }
 
-            // 2. If Received Qty !== Ordered Qty (Shortage or Over-shipment), remarks field is mandatory
-            if (received !== ordered && (!row.rejectionReason || !row.rejectionReason.trim())) {
-                toast.error(`Remarks are mandatory for ${name} due to logistics discrepancy (Received: ${received}, Ordered: ${ordered}).`);
-                return;
-            }
-
-            // 3. If Accepted Qty > Received Qty (over-acceptance / bonus stock), remarks field is mandatory
+            // 2. If Accepted Qty > Received Qty (over-acceptance / bonus stock), remarks field is mandatory
             if (accepted > received && (!row.rejectionReason || !row.rejectionReason.trim())) {
                 toast.error(`Remarks are mandatory for ${name} because Accepted Qty (${accepted}) exceeds Received Qty (${received}). Please document the source of extra units.`);
                 return;

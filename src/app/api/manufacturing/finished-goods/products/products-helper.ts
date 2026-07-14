@@ -1,6 +1,6 @@
 import { DIRECTUS_URL, headers } from "@/app/api/manufacturing/directus-api";
-import { 
-    DirectusProduct, 
+import {
+    DirectusProduct,
     DirectusProductCurrencyProfile,
     CostRollupResult,
     CostNode
@@ -11,7 +11,7 @@ import { getActiveVersionForProduct, getBOMDetailsForVersion } from "../versions
  * Fetches the latest landed unit cost for a raw ingredient based on recent shipment logs.
  */
 export async function getLatestLandedCost(
-    productId: number, 
+    productId: number,
     forexRate: number = 58.00,
     profilesMap?: Map<number, DirectusProductCurrencyProfile>,
     productsMap?: Map<number, DirectusProduct>
@@ -38,10 +38,10 @@ export async function getLatestLandedCost(
                 { quantity: { _gt: 0 } }
             ]
         }));
-        
+
         const url = `${DIRECTUS_URL}/items/inventory_lots?filter=${query}&fields=*&sort=-created_on&limit=1`;
         const res = await fetch(url, { headers, cache: "no-store" });
-        
+
         if (res.ok) {
             const json = await res.json();
             const latest = json.data?.[0];
@@ -49,7 +49,7 @@ export async function getLatestLandedCost(
                 return Number(latest.unit_cost || 0);
             }
         }
-        
+
         if (productsMap) {
             const cachedProd = productsMap.get(productId);
             if (cachedProd) {
@@ -80,7 +80,7 @@ export async function fetchAllProducts(search?: string, limit: number = -1): Pro
         if (search && search.trim()) {
             url += `&search=${encodeURIComponent(search.trim())}`;
         }
-        
+
         const [prodRes, versionsRes, profilesRes] = await Promise.all([
             fetch(url, { headers, cache: "no-store" }),
             fetch(`${DIRECTUS_URL}/items/product_manufacturing_version?limit=-1&fields=product_id`, { headers, cache: "no-store" }),
@@ -174,7 +174,7 @@ export async function calculateRollupCost(
     }
 
     const currentProduct = productsMap.get(productId)!;
-    const { version, routes } = versionId 
+    const { version, routes } = versionId
         ? await getBOMDetailsForVersion(productId, versionId)
         : await getActiveVersionForProduct(productId);
     if (!version) {
@@ -222,7 +222,7 @@ export async function calculateRollupCost(
     for (const r of routes) {
         const workCenter = r.work_center_id ? workCentersMap.get(r.work_center_id) : null;
         const opName = r.operation_id ? (operationsMap.get(r.operation_id) || `Operation #${r.operation_id}`) : `Operation Step`;
-        
+
         // Routing Step Cost (Setup hours and flat labor are amortized by the version's base quantity)
         const baseQty = Number(version?.base_quantity) || 1;
         const laborCost = Number(r.estimated_labor_cost || 0) / baseQty;
@@ -232,7 +232,7 @@ export async function calculateRollupCost(
         const totalHours = setupHoursPerUnit + runHoursPerUnit;
         const overheadCost = wcOverheadRate * totalHours;
         const stepCost = laborCost + overheadCost;
-        
+
         routingsSubtotal += stepCost;
 
         const childrenNodes: CostNode[] = [];
@@ -257,7 +257,7 @@ export async function calculateRollupCost(
 
                 const wastageFactor = 1 - (Number(bomItem.wastage_factor_percentage || 0) / 100);
                 const lineCost = (bomItem.quantity_required * compUnitCost) / (wastageFactor > 0 ? wastageFactor : 1);
-                
+
                 materialsSubtotal += lineCost;
 
                 const ingName = compProduct ? compProduct.product_name : `Component #${bomItem.product_id}`;
@@ -297,7 +297,7 @@ export async function calculateRollupCost(
 
     const yieldFactor = (version.expected_yield_percentage || 100) / 100;
     const rolledCost = (materialsSubtotal + routingsSubtotal) / (yieldFactor > 0 ? yieldFactor : 1);
-    
+
     const targetPrice = currentProduct.price_per_unit || 0;
     const marginPhp = targetPrice - rolledCost;
     const marginPercent = targetPrice > 0 ? (marginPhp / targetPrice) * 100 : 0;
@@ -366,7 +366,7 @@ export async function getProductOverheads(productId: number, versionId: number):
         const res = await fetch(url, { headers, cache: "no-store" });
         const json = res.ok ? await res.json() : { data: [] };
         let data = json.data || [];
-        
+
         if (data.length === 0) {
             const latestUrl = `${DIRECTUS_URL}/items/product_overheads?filter[product_id][_eq]=${productId}&sort=-date_created&fields=*,overhead_id.*&limit=100`;
             const resLatest = await fetch(latestUrl, { headers, cache: "no-store" });
@@ -402,12 +402,12 @@ export async function syncProductOverheads(
         const resGet = await fetch(url, { headers, cache: "no-store" });
         const existing: { id: number }[] = resGet.ok ? (await resGet.json()).data || [] : [];
         const uiIds = new Set(validOverheads.map(o => String(o.id)));
-        
+
         const toDelete = existing.filter(e => !uiIds.has(String(e.id)));
         for (const item of toDelete) {
             await fetch(`${DIRECTUS_URL}/items/product_overheads/${item.id}`, { method: "DELETE", headers });
         }
-        
+
         for (const item of validOverheads) {
             const payload = {
                 product_id: productId,

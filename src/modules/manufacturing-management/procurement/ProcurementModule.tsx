@@ -21,6 +21,7 @@ export default function ProcurementModule({ initialTab = "suppliers" }: Procurem
     const {
         activeTab,
         loading,
+        submittingExpenses,
         suppliers,
         shipments,
         rawMaterials,
@@ -56,7 +57,7 @@ export default function ProcurementModule({ initialTab = "suppliers" }: Procurem
         handleToggleSupplierActive
     } = useProcurement(initialTab);
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const handleTriggerExpenseAllocation = (shipment: any) => {
         setSelectedShipment(shipment);
         setIsExpenseModalOpen(true);
@@ -115,7 +116,7 @@ export default function ProcurementModule({ initialTab = "suppliers" }: Procurem
                                     <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block">Active Cargo Shipment</label>
                                     <CreatableSelect
                                         options={shipments.map(s => {
-                                            const poNo = s.purchase_order_no ? ` / ${s.purchase_order_no}` : "";
+                                            const poNo = (s as { purchase_order_no?: string }).purchase_order_no ? ` / ${(s as { purchase_order_no?: string }).purchase_order_no}` : "";
                                             return {
                                                 value: String(s.shipment_id),
                                                 label: `BL/PO: ${s.reference_number}${poNo} (${s.status})`
@@ -141,6 +142,7 @@ export default function ProcurementModule({ initialTab = "suppliers" }: Procurem
                                         allocationForm={expenseAllocationForm}
                                         setAllocationForm={setExpenseAllocationForm}
                                         onAllocate={handleAllocateExpenses}
+                                        submitting={submittingExpenses}
                                     />
                                 ) : (
                                     <div className="p-4 bg-amber-500/5 border border-amber-500/10 rounded-xl text-xs text-amber-600 font-semibold">
@@ -158,8 +160,8 @@ export default function ProcurementModule({ initialTab = "suppliers" }: Procurem
                 )}
 
                 {activeTab === "raw-materials" && (
-                    <RawMaterialsMaster 
-                        rawMaterials={rawMaterials} 
+                    <RawMaterialsMaster
+                        rawMaterials={rawMaterials}
                         suppliers={suppliers}
                         onRegisterRawMaterial={handleRegisterRawMaterial}
                         onUpdateRawMaterial={handleUpdateRawMaterial}

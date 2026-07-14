@@ -2,14 +2,14 @@ import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { Supplier, SupplierRepresentative, IncomingShipment, ShipmentLineItem, ShipmentExpense, RawMaterial, LinkedProduct, RegisterRawMaterialPayload, PackagingVariant, ShipmentData, LineItem } from "../types";
 import type { ShipmentFormState, ManifestLineFormItem } from "../components/IncomingShipments";
-import { 
-    fetchSuppliers, 
-    createSupplier, 
-    fetchShipments, 
-    fetchShipmentLineItems, 
-    createShipment, 
-    fetchShipmentExpenses, 
-    saveAndAllocateExpenses, 
+import {
+    fetchSuppliers,
+    createSupplier,
+    fetchShipments,
+    fetchShipmentLineItems,
+    createShipment,
+    fetchShipmentExpenses,
+    saveAndAllocateExpenses,
     fetchRawMaterials,
     updateShipmentStatus,
     registerRawMaterial,
@@ -21,6 +21,7 @@ import {
 export function useProcurement(defaultTab: string = "suppliers") {
     const [activeTab, setActiveTab] = useState(defaultTab);
     const [loading, setLoading] = useState(false);
+    const [submittingExpenses, setSubmittingExpenses] = useState(false);
 
     // Data lists
     const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -75,14 +76,14 @@ export function useProcurement(defaultTab: string = "suppliers") {
     const [shipmentForm, setShipmentForm] = useState<ShipmentFormState>({
         reference_number: "",
         supplier_id: "",
-        exchange_rate: "58.00",
+        exchange_rate: "",
         total_foreign_currency: "0",
         total_php_value: "0",
         status: "Ordered",
         date_received: new Date().toISOString().split("T")[0],
-        branch_id: 183,
-        payment_type: 3,
-        price_type: "Internal"
+        branch_id: null,
+        payment_type: null,
+        price_type: ""
     });
 
     const [shipmentLinesForm, setShipmentLinesForm] = useState<ManifestLineFormItem[]>([{ parent_product_id: "", product_id: "", quantity_ordered: "", base_unit_cost_php: "" }]);
@@ -108,7 +109,7 @@ export function useProcurement(defaultTab: string = "suppliers") {
             const year = new Date().getFullYear();
             const randomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
             
-            let activeRate = "58.00";
+            let activeRate = "";
             if (typeof window !== "undefined") {
                 const useLive = localStorage.getItem("vos_use_live_forex") === "true";
                 if (useLive) {
@@ -117,10 +118,10 @@ export function useProcurement(defaultTab: string = "suppliers") {
                         if (historyJson) {
                             const history = JSON.parse(historyJson);
                             if (Array.isArray(history) && history.length > 0) {
-                                activeRate = String(history[0].rate || "58.00");
+                                activeRate = String(history[0].rate || "");
                             }
                         }
-                    } catch {}
+                    } catch { }
                 } else {
                     const locked = localStorage.getItem("vos_locked_forex_rate");
                     if (locked) {
@@ -138,14 +139,14 @@ export function useProcurement(defaultTab: string = "suppliers") {
             setShipmentForm({
                 reference_number: "",
                 supplier_id: "",
-                exchange_rate: "58.00",
+                exchange_rate: "",
                 total_foreign_currency: "0",
                 total_php_value: "0",
                 status: "Ordered" as const,
                 date_received: new Date().toISOString().split("T")[0],
-                branch_id: 183,
-                payment_type: 3,
-                price_type: "Internal"
+                branch_id: null,
+                payment_type: null,
+                price_type: ""
             });
             setShipmentLinesForm([{ parent_product_id: "", product_id: "", quantity_ordered: "", base_unit_cost_php: "" }]);
         }
@@ -175,11 +176,11 @@ export function useProcurement(defaultTab: string = "suppliers") {
         if (selectedShipmentExpenses && selectedShipmentExpenses.length > 0) {
             setExpenseAllocationForm({
                 allocation_method: selectedShipmentExpenses[0].allocation_method === "By Weight" ? "Weight" :
-                                   selectedShipmentExpenses[0].allocation_method === "By Volume" ? "Volume" : "Value",
+                    selectedShipmentExpenses[0].allocation_method === "By Volume" ? "Volume" : "Value",
                 expenses: selectedShipmentExpenses.map(x => ({
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     overhead_id: x.overhead_id ? String(typeof x.overhead_id === "object" ? (x.overhead_id as any).id : x.overhead_id) : "",
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     expense_type: x.expense_type || (x.overhead_id && typeof x.overhead_id === "object" ? (x.overhead_id as any).overhead_name : ""),
                     amount_php: String(x.amount_php || "")
                 }))
@@ -314,7 +315,7 @@ export function useProcurement(defaultTab: string = "suppliers") {
         }
 
         // Check for duplicates
-        const isDuplicateName = suppliers.some(s => 
+        const isDuplicateName = suppliers.some(s =>
             s.id !== editingSupplierId &&
             s.supplier_name.trim().toLowerCase() === supplierForm.supplier_name.trim().toLowerCase()
         );
@@ -324,7 +325,7 @@ export function useProcurement(defaultTab: string = "suppliers") {
             return;
         }
 
-        const isDuplicateCode = suppliers.some(s => 
+        const isDuplicateCode = suppliers.some(s =>
             s.id !== editingSupplierId &&
             s.supplier_shortcut?.trim().toLowerCase() === supplierForm.supplier_shortcut.trim().toLowerCase()
         );
@@ -340,7 +341,7 @@ export function useProcurement(defaultTab: string = "suppliers") {
             const notes = restOfSupplier.notes_or_comments || "";
             const currencyTag = `[Currency: ${currency || "PHP"}]`;
             const finalNotes = notes.trim() ? `${notes.trim()}\n\n${currencyTag}` : currencyTag;
-            
+
             const payload = {
                 ...restOfSupplier,
                 notes_or_comments: finalNotes
@@ -426,6 +427,23 @@ export function useProcurement(defaultTab: string = "suppliers") {
             toast.error("Supplier is required");
             return;
         }
+        if (!shipmentForm.branch_id) {
+            toast.error("Destination branch is required");
+            return;
+        }
+        if (!shipmentForm.payment_type) {
+            toast.error("Payment type is required");
+            return;
+        }
+        if (!shipmentForm.price_type) {
+            toast.error("Price type is required");
+            return;
+        }
+        const rateVal = parseFloat(shipmentForm.exchange_rate);
+        if (isNaN(rateVal) || rateVal <= 0) {
+            toast.error("Exchange rate required — check forex settings in header");
+            return;
+        }
 
         const hasBlankProduct = shipmentLinesForm.some(l => !l.product_id);
         if (hasBlankProduct) {
@@ -455,7 +473,7 @@ export function useProcurement(defaultTab: string = "suppliers") {
             }));
 
             const totalPhp = linesPayload.reduce((acc, curr) => acc + (curr.quantity_ordered * curr.base_unit_cost_php), 0);
-            const rate = parseFloat(shipmentForm.exchange_rate) || 58.00;
+            const rate = rateVal;
 
             const shipmentPayload = {
                 reference_number: shipmentForm.reference_number,
@@ -476,14 +494,14 @@ export function useProcurement(defaultTab: string = "suppliers") {
             setShipmentForm({
                 reference_number: "",
                 supplier_id: "",
-                exchange_rate: "58.00",
+                exchange_rate: "",
                 total_foreign_currency: "0",
                 total_php_value: "0",
                 status: "Ordered",
                 date_received: new Date().toISOString().split("T")[0],
-                branch_id: 183,
-                payment_type: 3,
-                price_type: "Internal"
+                branch_id: null,
+                payment_type: null,
+                price_type: ""
             });
             setShipmentLinesForm([{ parent_product_id: "", product_id: "", quantity_ordered: "", base_unit_cost_php: "" }]);
             loadShipments();
@@ -496,16 +514,17 @@ export function useProcurement(defaultTab: string = "suppliers") {
     };
 
     const handleAllocateExpenses = async (
-        e: React.FormEvent, 
-        shipmentId: number, 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+        e: React.FormEvent,
+        shipmentId: number,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         targetStatus: any,
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         lineItemUpdates?: any[]
     ) => {
         e.preventDefault();
         const validExps = expenseAllocationForm.expenses.filter(x => x.overhead_id && x.amount_php);
         
+        setSubmittingExpenses(true);
         try {
             const expsPayload = validExps.map(x => ({
                 overhead_id: parseInt(x.overhead_id),
@@ -514,9 +533,9 @@ export function useProcurement(defaultTab: string = "suppliers") {
             }));
 
             // Map UI allocation method to DB ENUM values ('By Value', 'By Weight', 'By Volume')
-            const dbAllocationMethod = 
+            const dbAllocationMethod =
                 expenseAllocationForm.allocation_method === "Weight" ? "By Weight" :
-                expenseAllocationForm.allocation_method === "Volume" ? "By Volume" : "By Value";
+                    expenseAllocationForm.allocation_method === "Volume" ? "By Volume" : "By Value";
 
             await saveAndAllocateExpenses(
                 shipmentId,
@@ -526,8 +545,27 @@ export function useProcurement(defaultTab: string = "suppliers") {
                 lineItemUpdates
             );
             toast.success("Landed costs calculated and updated successfully");
+            
+            setExpenseAllocationForm({
+                allocation_method: expenseAllocationForm.allocation_method,
+                expenses: validExps.map(x => ({
+                    overhead_id: String(x.overhead_id),
+                    expense_type: x.expense_type,
+                    amount_php: String(x.amount_php)
+                }))
+            });
             setIsExpenseModalOpen(false);
             
+            setExpenseAllocationForm({
+                allocation_method: expenseAllocationForm.allocation_method,
+                expenses: validExps.map(x => ({
+                    overhead_id: String(x.overhead_id),
+                    expense_type: x.expense_type,
+                    amount_php: String(x.amount_php)
+                }))
+            });
+            setIsExpenseModalOpen(false);
+
             // Reload active selections
             const freshShipments = await loadShipments();
             await loadRawMaterials();
@@ -543,6 +581,8 @@ export function useProcurement(defaultTab: string = "suppliers") {
         } catch (e: unknown) {
             console.error(e);
             toast.error((e as Error).message || "Failed to allocate expenses");
+        } finally {
+            setSubmittingExpenses(false);
         }
     };
 
@@ -551,9 +591,16 @@ export function useProcurement(defaultTab: string = "suppliers") {
         try {
             await updateShipmentStatus(shipmentId, status);
             toast.success(`Shipment status updated to ${status}`);
-            await Promise.all([loadShipments(), loadRawMaterials()]);
+            const freshShipments = await loadShipments();
+            await loadRawMaterials();
             if (selectedShipment && selectedShipment.shipment_id === shipmentId) {
-                setSelectedShipment(null);
+                const updatedShip = freshShipments.find(s => s.shipment_id === shipmentId);
+                if (updatedShip) {
+                    setSelectedShipment(updatedShip);
+                    await loadShipmentDetails(shipmentId);
+                } else {
+                    setSelectedShipment(null);
+                }
             }
         } catch (e: unknown) {
             console.error(e);
@@ -657,6 +704,7 @@ export function useProcurement(defaultTab: string = "suppliers") {
         activeTab,
         setActiveTab,
         loading,
+        submittingExpenses,
         suppliers,
         shipments,
         rawMaterials,
@@ -690,6 +738,7 @@ export function useProcurement(defaultTab: string = "suppliers") {
         handleUpdateShipmentStatus,
         handleRegisterRawMaterial,
         handleUpdateRawMaterial,
-        handleToggleSupplierActive
+        handleToggleSupplierActive,
+        loadShipments
     };
 }

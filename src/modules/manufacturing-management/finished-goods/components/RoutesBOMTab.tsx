@@ -59,7 +59,7 @@ export const RoutesBOMTab: React.FC<RoutesBOMTabProps> = ({
                 if (data.success && data.operation) {
                     const newOp = data.operation;
                     handleUpdateRoute(routeId, "operation_id", newOp.id);
-                    
+
                     // Refresh operations types list in the parent hook
                     const refreshRes = await fetch("/api/manufacturing/finished-goods/operations");
                     if (refreshRes.ok && setOperationTypes) {
@@ -160,7 +160,7 @@ export const RoutesBOMTab: React.FC<RoutesBOMTabProps> = ({
                     <h3 className="text-lg font-medium text-foreground">Routing Steps &amp; BOM Ingredients</h3>
                     <p className="text-xs text-muted-foreground">Configure the sequence of operations, setup times, work centers, and assign raw materials directly under each step.</p>
                 </div>
-                <Button 
+                <Button
                     onClick={handleAddRoute}
                     className="inline-flex items-center gap-1.5 h-9 text-xs rounded-lg"
                 >
@@ -237,7 +237,7 @@ export const RoutesBOMTab: React.FC<RoutesBOMTabProps> = ({
                     {editedRoutes.map((r, index) => {
                         const stepNum = index + 1;
                         return (
-                            <div 
+                            <div
                                 key={r.route_id}
                                 className="rounded-xl border bg-card text-card-foreground shadow-sm overflow-hidden border-muted/50"
                             >
@@ -252,7 +252,7 @@ export const RoutesBOMTab: React.FC<RoutesBOMTabProps> = ({
                                     <div className="flex items-center gap-3">
                                         <div className="flex items-center gap-1 text-xs">
                                             <span className="text-muted-foreground">Seq:</span>
-                                            <input 
+                                            <input
                                                 type="number"
                                                 value={r.sequence_order}
                                                 onChange={(e) => handleUpdateRoute(r.route_id, "sequence_order", parseInt(e.target.value) || 0)}
@@ -461,10 +461,10 @@ export const RoutesBOMTab: React.FC<RoutesBOMTabProps> = ({
                                     {(r.bom_items || []).length === 0 ? (
                                         <div className="text-center py-6 border border-dashed rounded-lg border-muted bg-card">
                                             <p className="text-xs text-muted-foreground">No ingredients linked to this routing step yet.</p>
-                                            <Button 
-                                                onClick={() => handleAddIngredient(r.route_id)} 
-                                                variant="outline" 
-                                                size="sm" 
+                                            <Button
+                                                onClick={() => handleAddIngredient(r.route_id)}
+                                                variant="outline"
+                                                size="sm"
                                                 className="mt-2 h-7 text-[10px]"
                                             >
                                                 <Plus className="h-3 w-3 mr-1" /> Add First Ingredient
@@ -503,7 +503,7 @@ export const RoutesBOMTab: React.FC<RoutesBOMTabProps> = ({
                                                                     />
                                                                 </td>
                                                                 <td className="p-1.5 align-middle">
-                                                                    <input 
+                                                                    <input
                                                                         type="number"
                                                                         step="0.0001"
                                                                         value={b.quantity_required}
@@ -527,7 +527,7 @@ export const RoutesBOMTab: React.FC<RoutesBOMTabProps> = ({
                                                                     })()}
                                                                 </td>
                                                                 <td className="p-1.5 align-middle">
-                                                                    <input 
+                                                                    <input
                                                                         type="number"
                                                                         value={b.wastage_factor_percentage}
                                                                         onChange={(e) => handleUpdateIngredient(r.route_id, b.id, "wastage_factor_percentage", parseFloat(e.target.value) || 0)}
@@ -535,7 +535,7 @@ export const RoutesBOMTab: React.FC<RoutesBOMTabProps> = ({
                                                                     />
                                                                 </td>
                                                                 <td className="p-1.5 align-middle">
-                                                                    <input 
+                                                                    <input
                                                                         type="number"
                                                                         step="0.01"
                                                                         value={b.cost_per_unit || 0}
@@ -562,10 +562,10 @@ export const RoutesBOMTab: React.FC<RoutesBOMTabProps> = ({
                                                 </tbody>
                                             </table>
                                             <div className="p-2 border-t border-muted/50 bg-muted/5 flex justify-end">
-                                                <Button 
-                                                    onClick={() => handleAddIngredient(r.route_id)} 
-                                                    variant="ghost" 
-                                                    size="sm" 
+                                                <Button
+                                                    onClick={() => handleAddIngredient(r.route_id)}
+                                                    variant="ghost"
+                                                    size="sm"
                                                     className="h-8 text-[11px] font-bold text-primary hover:bg-primary/10 rounded-md inline-flex items-center gap-1"
                                                 >
                                                     <Plus className="h-3.5 w-3.5" /> Add Ingredient

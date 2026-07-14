@@ -225,7 +225,7 @@ export interface BFFCatalogProduct {
     density_factor?: number | string | null;
     price_per_unit?: number | string | null;
     cost_per_unit?: number | string | null;
-    parent_id?: number | null;
+    parent_id?: number | { product_id: number | string } | null;
     product_brand?: number | null;
     product_category?: number | null;
     product_class?: number | null;

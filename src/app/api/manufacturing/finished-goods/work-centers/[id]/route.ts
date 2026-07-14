@@ -28,12 +28,12 @@ export async function PATCH(
             headers,
             body: JSON.stringify(payload)
         });
-        
+
         if (!res.ok) {
             const errText = await res.text();
             throw new Error(`Directus failed to update work center: ${res.status} - ${errText}`);
         }
-        
+
         const json = await res.json();
         const updatedWc = json.data;
         if (updatedWc && updatedWc.is_active !== undefined) updatedWc.is_active = Boolean(Number(updatedWc.is_active));

@@ -61,27 +61,27 @@ export async function getBOMDetailsForVersion(productId: number, versionId: numb
 
             return { version: null, routes: [] };
         }
-        
+
         const routesFilter = encodeURIComponent(JSON.stringify({ version_id: { _eq: version.version_id } }));
         const resRoutes = await fetch(`${DIRECTUS_URL}/items/manufacturing_routes?filter=${routesFilter}&sort=sequence_order&limit=-1`, { headers, cache: "no-store" });
         const routesJson = await resRoutes.json();
         const routes: RouteStep[] = routesJson.data || [];
-        
+
         if (routes.length === 0) {
             version.routes = [];
             return { version, routes: [] };
         }
-        
+
         const routeIds = routes.map(r => r.route_id);
         const bomFilter = encodeURIComponent(JSON.stringify({ route_id: { _in: routeIds } }));
         const resBom = await fetch(`${DIRECTUS_URL}/items/manufacturing_routes_bom?filter=${bomFilter}&limit=-1`, { headers, cache: "no-store" });
         const bomJson = await resBom.json();
         const bomItems: RouteBOMItem[] = bomJson.data || [];
-        
+
         routes.forEach(r => {
             r.bom_items = bomItems.filter(b => b.route_id === r.route_id);
         });
-        
+
         version.routes = routes;
         return { version, routes };
     } catch (e) {
@@ -173,10 +173,10 @@ export async function getActiveVersionForProduct(productId: number, customerId?:
 }
 
 export async function createProductVersion(
-    productId: number, 
-    versionName: string, 
-    expectedYield: number = 100, 
-    baseQuantity: number = 1, 
+    productId: number,
+    versionName: string,
+    expectedYield: number = 100,
+    baseQuantity: number = 1,
     uomId?: number | null
 ): Promise<number | null> {
     try {

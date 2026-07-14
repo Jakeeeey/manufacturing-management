@@ -2,21 +2,21 @@
 import { useState, useEffect, useMemo } from "react";
 import { useDebounce } from "use-debounce";
 import { toast } from "sonner";
-import { 
-    Product, 
-    ProductVersion, 
-    Brand, 
-    Category, 
-    Unit, 
-    BOMItem, 
-    RoutingStep, 
-    ProductOverhead, 
-    BFFCatalogProduct, 
-    OperationType, 
-    OverheadType, 
-    Supplier, 
-    ProductClass, 
-    ProductSegment, 
+import {
+    Product,
+    ProductVersion,
+    Brand,
+    Category,
+    Unit,
+    BOMItem,
+    RoutingStep,
+    ProductOverhead,
+    BFFCatalogProduct,
+    OperationType,
+    OverheadType,
+    Supplier,
+    ProductClass,
+    ProductSegment,
     ProductSection,
     WorkCenter,
     QATemplate,
@@ -401,7 +401,7 @@ export function useFinishedGoods(initialTab: string = "details") {
                     // Format routes as ingredients and routings for older tabs
                     const ingredients: BOMItem[] = [];
                     const routings: RoutingStep[] = [];
-                    
+
                     if (versionObj.routes) {
                         versionObj.routes.forEach(r => {
                             routings.push({
@@ -414,7 +414,7 @@ export function useFinishedGoods(initialTab: string = "details") {
                                 durationHours: r.run_time_hours,
                                 requiresQA: !!r.qa_template_id
                             });
-                            
+
                             if (r.bom_items) {
                                 r.bom_items.forEach(b => {
                                     const foundUnit = units.find(u => u.unit_id === b.unit_of_measurement || u.unit_shortcut === b.unit_of_measurement);
@@ -460,7 +460,7 @@ export function useFinishedGoods(initialTab: string = "details") {
     // Handlers
     const handleRegisterProduct = async (e: React.FormEvent) => {
         e.preventDefault();
-        
+
         // Validate required fields
         if (!registerForm.title.trim()) {
             toast.error("Product Name is required.");
@@ -603,7 +603,7 @@ export function useFinishedGoods(initialTab: string = "details") {
                     supplierIds: [] as string[]
                 });
 
-                 // Reload products list
+                // Reload products list
                 const resList = await fetch("/api/manufacturing/finished-goods/products?limit=-1");
                 const dataList = await resList.json();
                 setAllCatalogProducts(dataList);
@@ -775,7 +775,7 @@ export function useFinishedGoods(initialTab: string = "details") {
                 status: editedVersionDetails.status || "For Approval",
                 valid_from: editedVersionDetails.valid_from || null,
                 valid_to: editedVersionDetails.valid_to || null,
-                
+
                 title: editedDetails.title || "",
                 sku: editedDetails.sku || "",
                 barcode: editedDetails.barcode || "",
@@ -803,7 +803,7 @@ export function useFinishedGoods(initialTab: string = "details") {
                 detailsPayload,
                 editedRoutes
             );
- 
+
             if (res.success) {
                 clearInterval(interval);
                 setSaveProgress(100);
