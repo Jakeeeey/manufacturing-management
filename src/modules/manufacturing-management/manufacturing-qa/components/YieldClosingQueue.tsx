@@ -8,8 +8,7 @@ import { Button } from "@/components/ui/button";
 import { JobOrder } from "../types";
 
 interface PendingHold {
-    jo_id: number;
-    [key: string]: unknown;
+    jo_id: string | number;
 }
 
 interface YieldClosingQueueProps {
@@ -101,7 +100,7 @@ export function YieldClosingQueue({
                                         </TableCell>
                                         <TableCell>
                                             {(() => {
-                                                const isHeld = pendingHolds.some((h: PendingHold) => h.jo_id === jo.jo_id);
+                                                const isHeld = pendingHolds.some((h: PendingHold) => String(h.jo_id) === String(jo.jo_id));
                                                 return (
                                                     <Badge 
                                                         variant={
@@ -119,7 +118,7 @@ export function YieldClosingQueue({
                                         </TableCell>
                                         <TableCell className="text-right">
                                             {(() => {
-                                                const isHeld = pendingHolds.some((h: PendingHold) => h.jo_id === jo.jo_id);
+                                                const isHeld = pendingHolds.some((h: PendingHold) => String(h.jo_id) === String(jo.jo_id));
                                                 return (
                                                     <Button 
                                                         variant="default" 

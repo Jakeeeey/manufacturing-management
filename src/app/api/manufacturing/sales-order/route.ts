@@ -223,18 +223,31 @@ async function rollbackQuantityUpdate(
         }
     }
 
-        let queryParams = `?page=${page}&limit=${limit}&meta=filter_count&sort=-created_date`;
-        
-        const filterParts: string[] = [];
-        if (status) {
-            filterParts.push(`filter[order_status][_eq]=${encodeURIComponent(status)}`);
-        }
-        if (excludeHasJo) {
-            filterParts.push(`filter[order_status][_eq]=For Picking`);
-        }
-        if (search) {
-            filterParts.push(`filter[_or][0][order_no][_icontains]=${encodeURIComponent(search)}`);
-            filterParts.push(`filter[_or][1][customer_code][_icontains]=${encodeURIComponent(search)}`);
+    return { failures, unresolvedDetailIds: [...new Set(unresolvedDetailIds)], headerUnresolved };
+}
+
+async function compensateSalesOrder(orderId: number, knownDetailIds: number[] = []) {
+    const failures: string[] = [];
+    const detailIds = new Set(knownDetailIds);
+
+    try {
+        const params = new URLSearchParams({
+            "filter[order_id][_eq]": String(orderId),
+            fields: "detail_id",
+            limit: "-1"
+        });
+        const response = await fetch(`${DIRECTUS_URL}/items/sales_order_details?${params.toString()}`, {
+            headers,
+            cache: "no-store"
+        });
+        if (!response.ok) {
+            failures.push(`detail discovery returned ${response.status}`);
+        } else {
+            const rows = (await response.json()).data || [];
+            rows.forEach((row: any) => {
+                const detailId = Number(row.detail_id);
+                if (Number.isSafeInteger(detailId) && detailId > 0) detailIds.add(detailId);
+            });
         }
     } catch (error) {
         failures.push(`detail discovery failed: ${error instanceof Error ? error.message : "unknown error"}`);
@@ -370,23 +383,86 @@ export async function GET(request: Request) {
                 }
             };
 
-                for (const det of allDetails) {
-                    const detailIdVal = Number(det.detail_id || det.id);
-                    const ordered = Number(det.ordered_quantity || 0);
-                    const alloc = Number(det.allocated_quantity || 0);
-                    
-                    if (excludeHasJo) {
-                        if (alloc >= ordered) continue; // Skip already fully allocated detail lines!
-                        
-                        if (links.length > 0) {
-                            const isScheduled = links.some((link: any) => 
-                                Number(link.sales_order_detail_id) === detailIdVal && 
-                                joMap.has(Number(link.job_order_id)) && 
-                                joMap.get(Number(link.job_order_id))?.status !== "Cancelled"
-                            );
-                            if (isScheduled) continue; // Skip already scheduled detail lines!
-                        }
-                    }
+            const [customerResult, productResult] = await Promise.all([
+                read("customer", new URLSearchParams({
+                    fields: "id,customer_name,customer_code,payment_term",
+                    limit: "-1",
+                    sort: "customer_name"
+                })),
+                read("products", new URLSearchParams({
+                    "filter[product_type][_eq]": "388",
+                    fields: "product_id,product_name,product_code,product_type,price_per_unit,cost_per_unit,parent_id,parent_id.product_id,unit_of_measurement.unit_id,unit_of_measurement.unit_name,unit_of_measurement.unit_shortcut,unit_of_measurement_count",
+                    limit: "-1",
+                    sort: "product_name"
+                }))
+            ]);
+
+            const [branchResult, paymentTermResult, salesmanResult, supplierResult] = await Promise.all([
+                optionalRead("branches", new URLSearchParams({
+                    "filter[isActive][_eq]": "1",
+                    fields: "id,branch_name",
+                    limit: "100",
+                    sort: "branch_name"
+                })),
+                optionalRead("payment_terms", new URLSearchParams({
+                    fields: "id,payment_name,payment_days",
+                    limit: "-1",
+                    sort: "payment_name"
+                })),
+                optionalRead("salesman", new URLSearchParams({
+                    "filter[isActive][_eq]": "true",
+                    fields: "id,salesman_name",
+                    limit: "-1",
+                    sort: "salesman_name"
+                })),
+                optionalRead("suppliers", new URLSearchParams({
+                    "filter[isActive][_eq]": "true",
+                    fields: "id,supplier_name",
+                    limit: "-1",
+                    sort: "supplier_name"
+                }))
+            ]);
+
+            const customers = (customerResult.data || []).map((customer: any) => {
+                const rawPaymentTerm = customer.payment_term;
+                const paymentTermId = Number(
+                    rawPaymentTerm && typeof rawPaymentTerm === "object"
+                        ? rawPaymentTerm.id
+                        : rawPaymentTerm
+                );
+                return {
+                    id: customer.id,
+                    customer_name: customer.customer_name,
+                    customer_code: customer.customer_code,
+                    payment_term_id: Number.isSafeInteger(paymentTermId) && paymentTermId > 0
+                        ? paymentTermId
+                        : null
+                };
+            });
+            const products = (productResult.data || []).map((product: any) => {
+                const rawParent = product.parent_id;
+                const parentId = Number(
+                    rawParent && typeof rawParent === "object"
+                        ? rawParent.product_id
+                        : rawParent
+                );
+                const productId = Number(product.product_id);
+                const unit = product.unit_of_measurement;
+                return {
+                    product_id: productId,
+                    parent_product_id: Number.isSafeInteger(parentId) && parentId > 0 ? parentId : productId,
+                    is_parent: !(Number.isSafeInteger(parentId) && parentId > 0),
+                    product_name: product.product_name,
+                    product_code: product.product_code,
+                    product_type: product.product_type,
+                    price_per_unit: product.price_per_unit,
+                    cost_per_unit: product.cost_per_unit,
+                    unit_id: Number(unit?.unit_id) || null,
+                    unit_name: unit?.unit_name || "Unit",
+                    unit_shortcut: unit?.unit_shortcut || "UNIT",
+                    unit_count: Number(product.unit_of_measurement_count) || 1
+                };
+            });
 
             return NextResponse.json({
                 customers,
@@ -425,7 +501,13 @@ export async function GET(request: Request) {
         const dateFrom = searchParams.get("dateFrom") || "";
         const dateTo = searchParams.get("dateTo") || "";
 
-        const filters = { search, status, customerCode, dateFrom, dateTo };
+        const filters = {
+            search,
+            status: excludeHasJo ? "For Picking" : status,
+            customerCode,
+            dateFrom,
+            dateTo
+        };
         let salesOrders: any[] = [];
         let prefetchedDetails: any[] = [];
         let scheduledDetailIds = new Set<number>();
@@ -467,7 +549,12 @@ export async function GET(request: Request) {
                 }
                 for (const candidate of candidates) {
                     const orderDetails = detailsByOrder.get(Number(candidate.order_id)) || [];
-                    const unscheduled = orderDetails.filter((detail) => !chunkScheduledIds.has(Number(detail.detail_id || detail.id)));
+                    const unscheduled = orderDetails.filter((detail) => {
+                        const isScheduled = chunkScheduledIds.has(Number(detail.detail_id || detail.id));
+                        const ordered = Number(detail.ordered_quantity || 0);
+                        const alloc = Number(detail.allocated_quantity || 0);
+                        return !isScheduled && alloc < ordered;
+                    });
                     if (orderDetails.length === 0 || unscheduled.length > 0) {
                         eligibleOrders.push(candidate);
                         eligibleDetails.push(...unscheduled);
@@ -517,9 +604,16 @@ export async function GET(request: Request) {
             }))).data || [];
         }
         const contextOrders = [...salesOrders, ...selectedOrders];
-        const details = excludeHasJo
+        let details = excludeHasJo
             ? [...prefetchedDetails, ...(missingSelectedIds.length > 0 ? await fetchDetailsForOrders(read, missingSelectedIds) : [])]
             : await fetchDetailsForOrders(read, [...orderIdsToFetch]);
+        if (excludeHasJo) {
+            details = details.filter((detail: any) => {
+                const ordered = Number(detail.ordered_quantity || 0);
+                const alloc = Number(detail.allocated_quantity || 0);
+                return alloc < ordered;
+            });
+        }
         if (excludeHasJo && missingSelectedIds.length > 0) {
             scheduledDetailIds = await findScheduledDetailIds(read, details);
         }
