@@ -4,7 +4,6 @@ import React, { useState, useMemo, useEffect, useRef } from "react";
 import { Sliders, RefreshCw, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { fetchProducts, fetchVersions, fetchBOMDetails } from "@/modules/manufacturing-management/finished-goods/services/finished-goods-api";
-import { RouteStep, RouteBOMItem } from "@/modules/manufacturing-management/finished-goods/types";
 
 // Re-using mock product model internally
 interface BOMItem {

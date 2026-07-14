@@ -89,6 +89,7 @@ export default function FinishedGoodsModule() {
         hasUnsavedChanges,
         setHasUnsavedChanges,
         operationTypes,
+        setOperationTypes,
         simulatedForexRate,
         setSimulatedForexRate,
         handleRegisterProduct,

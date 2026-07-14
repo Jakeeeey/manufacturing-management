@@ -11,7 +11,6 @@ import ShipmentExpenses from "./components/ShipmentExpenses";
 import RawMaterialsMaster from "./components/RawMaterialsMaster";
 import { useProcurement } from "./hooks/useProcurement";
 import { CreatableSelect } from "../finished-goods/components/CreatableSelect";
-import { IncomingShipment } from "./types";
 
 interface ProcurementModuleProps {
     initialTab?: string;
