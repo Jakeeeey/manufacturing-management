@@ -7,6 +7,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { JobOrder } from "../types";
 
+interface PendingHold {
+    jo_id: number;
+    [key: string]: unknown;
+}
+
 interface YieldClosingQueueProps {
     loadingJobOrders: boolean;
     activeJobOrders: JobOrder[];
@@ -14,6 +19,7 @@ interface YieldClosingQueueProps {
     setJoSearch: (q: string) => void;
     getBranchName: (branchId?: number | null) => string;
     handleOpenYieldDialog: (jo: JobOrder) => void;
+    pendingHolds?: PendingHold[];
 }
 
 export function YieldClosingQueue({
@@ -22,7 +28,8 @@ export function YieldClosingQueue({
     joSearch,
     setJoSearch,
     getBranchName,
-    handleOpenYieldDialog
+    handleOpenYieldDialog,
+    pendingHolds = []
 }: YieldClosingQueueProps) {
     return (
         <Card>
@@ -93,29 +100,40 @@ export function YieldClosingQueue({
                                             {jo.due_date ? new Date(jo.due_date).toLocaleDateString() : "N/A"}
                                         </TableCell>
                                         <TableCell>
-                                            <Badge 
-                                                variant={
-                                                    jo.status === "Proceed" || jo.status === "Released" ? "secondary" :
-                                                    jo.status === "Ongoing" || jo.status === "In Progress" ? "default" :
-                                                    jo.status === "On Hold" || jo.status === "QA Hold" ? "destructive" :
-                                                    "outline"
-                                                }
-                                            >
-                                                {jo.status}
-                                            </Badge>
+                                            {(() => {
+                                                const isHeld = pendingHolds.some((h: PendingHold) => h.jo_id === jo.jo_id);
+                                                return (
+                                                    <Badge 
+                                                        variant={
+                                                            isHeld ? "destructive" :
+                                                            jo.status === "Proceed" || jo.status === "Released" ? "secondary" :
+                                                            jo.status === "Ongoing" || jo.status === "In Progress" ? "default" :
+                                                            jo.status === "On Hold" || jo.status === "QA Hold" ? "destructive" :
+                                                            "outline"
+                                                        }
+                                                    >
+                                                        {isHeld ? "QA Quarantine" : jo.status}
+                                                    </Badge>
+                                                );
+                                            })()}
                                         </TableCell>
                                         <TableCell className="text-right">
-                                            <Button 
-                                                variant="default" 
-                                                size="sm" 
-                                                className="h-8 font-semibold text-xs transition-all"
-                                                onClick={() => handleOpenYieldDialog(jo)}
-                                                disabled={jo.status === "On Hold" || jo.status === "QA Hold"}
-                                                title={jo.status === "On Hold" || jo.status === "QA Hold" ? "Unlock override hold first" : ""}
-                                            >
-                                                <TrendingUp className="h-3.5 w-3.5 mr-1" />
-                                                Close Yield
-                                            </Button>
+                                            {(() => {
+                                                const isHeld = pendingHolds.some((h: PendingHold) => h.jo_id === jo.jo_id);
+                                                return (
+                                                    <Button 
+                                                        variant="default" 
+                                                        size="sm" 
+                                                        className="h-8 font-semibold text-xs transition-all"
+                                                        onClick={() => handleOpenYieldDialog(jo)}
+                                                        disabled={isHeld || jo.status === "On Hold" || jo.status === "QA Hold"}
+                                                        title={isHeld ? "Unlock quarantine hold first" : jo.status === "On Hold" || jo.status === "QA Hold" ? "Unlock override hold first" : ""}
+                                                    >
+                                                        <TrendingUp className="h-3.5 w-3.5 mr-1" />
+                                                        Close Yield
+                                                    </Button>
+                                                );
+                                            })()}
                                         </TableCell>
                                     </TableRow>
                                 ))}

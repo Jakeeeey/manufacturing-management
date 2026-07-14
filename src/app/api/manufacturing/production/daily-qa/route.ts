@@ -141,6 +141,96 @@ export async function POST(request: Request) {
         let finalLedgerStatus = "Pending";
         if (hasFailedInspection) {
             finalLedgerStatus = "QA Hold";
+            
+            // 1. Update the Job Order status to "On Hold"
+            try {
+                await fetch(`${DIRECTUS_URL}/items/manufacturing_job_orders/${jobOrderId}`, {
+                    method: "PATCH",
+                    headers,
+                    body: JSON.stringify({ status: "On Hold" })
+                });
+            } catch (joHoldErr) {
+                console.error("Failed to patch Job Order to On Hold:", joHoldErr);
+            }
+
+            // 2. Alert supervisor disposition dashboard by creating a pending disposition entry
+            try {
+                const fs = require("fs");
+                const path = require("path");
+                const DISPOSITIONS_FILE = path.join(process.cwd(), "src/app/api/manufacturing/qa/dispositions.json");
+                
+                let dispositions = [];
+                if (fs.existsSync(DISPOSITIONS_FILE)) {
+                    dispositions = JSON.parse(fs.readFileSync(DISPOSITIONS_FILE, "utf-8") || "[]");
+                }
+
+                // Get Job Order details to resolve product name and target quantity
+                let productName = "Unknown Product";
+                let expectedQty = 0;
+                let jobOrderNo = `JO-${jobOrderId}`;
+                const joFetch = await fetch(`${DIRECTUS_URL}/items/manufacturing_job_orders/${jobOrderId}`, { headers, cache: "no-store" });
+                if (joFetch.ok) {
+                    const joData = (await joFetch.json()).data;
+                    if (joData) {
+                        productName = joData.product_name || productName;
+                        expectedQty = Number(joData.target_quantity || 0);
+                        jobOrderNo = joData.job_order_no || jobOrderNo;
+                    }
+                }
+
+                // Filter failed inspections from this ledgerId
+                const failedInps = inspections.filter((ins: any) => 
+                    ins.sensory_status === "Failed" || ins.lab_status === "Failed" || ins.action_taken === "Quarantined"
+                );
+
+                for (const ins of failedInps) {
+                    // Gather failed parameters from qaParameters in inspectionsList
+                    const matchingPayloadEntry = inspectionsList.find((p: any) => Number(p.joRouteId) === Number(ins.jo_route_id));
+                    const failedParams = (matchingPayloadEntry?.qaParameters || [])
+                        .filter((p: any) => p.is_failed)
+                        .map((p: any) => ({
+                            parameter_id: p.parameter_id,
+                            test_name: p.test_name || "Check",
+                            value: p.value,
+                            is_failed: true,
+                            is_critical: true
+                        }));
+
+                    if (failedParams.length === 0) {
+                        failedParams.push({
+                            parameter_id: 999,
+                            test_name: ins.sensory_status === "Failed" ? "Sensory Inspection" : "Lab Test Check",
+                            value: ins.remarks || "Out of Spec",
+                            is_failed: true,
+                            is_critical: true
+                        });
+                    }
+
+                    const newDisp = {
+                        id: `DISP-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+                        jo_id: jobOrderNo,
+                        task_id: ins.jo_route_id,
+                        task_name: ins.remarks ? ins.remarks.substring(0, 50) : "Daily Yield QA Check Failure",
+                        product_name: productName,
+                        expected_quantity: expectedQty,
+                        actual_quantity: expectedQty,
+                        failed_parameters: failedParams,
+                        disposition_status: "Pending",
+                        decision: null,
+                        supervisor_comments: "",
+                        recorded_at: new Date().toISOString(),
+                        resolved_at: null,
+                        resolved_by: null
+                    };
+                    dispositions.push(newDisp);
+                }
+
+                const dir = path.dirname(DISPOSITIONS_FILE);
+                if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+                fs.writeFileSync(DISPOSITIONS_FILE, JSON.stringify(dispositions, null, 2));
+            } catch (dispErr) {
+                console.error("Failed to write supervisor quarantine disposition:", dispErr);
+            }
         } else {
             const allStepsAudited = routes.length === 0 || routes.every((r: any) => {
                 return inspections.some((ins: any) => Number(ins.jo_route_id) === Number(r.jo_route_id));

@@ -180,6 +180,9 @@ export async function GET(request: Request) {
         if (status) {
             filterParts.push(`filter[order_status][_eq]=${encodeURIComponent(status)}`);
         }
+        if (excludeHasJo) {
+            filterParts.push(`filter[order_status][_eq]=For Picking`);
+        }
         if (search) {
             filterParts.push(`filter[_or][0][order_no][_icontains]=${encodeURIComponent(search)}`);
             filterParts.push(`filter[_or][1][customer_code][_icontains]=${encodeURIComponent(search)}`);
@@ -271,13 +274,20 @@ export async function GET(request: Request) {
 
                 for (const det of allDetails) {
                     const detailIdVal = Number(det.detail_id || det.id);
-                    if (excludeHasJo && links.length > 0) {
-                        const isScheduled = links.some((link: any) => 
-                            Number(link.sales_order_detail_id) === detailIdVal && 
-                            joMap.has(Number(link.job_order_id)) && 
-                            joMap.get(Number(link.job_order_id))?.status !== "Cancelled"
-                        );
-                        if (isScheduled) continue; // Skip already scheduled detail lines!
+                    const ordered = Number(det.ordered_quantity || 0);
+                    const alloc = Number(det.allocated_quantity || 0);
+                    
+                    if (excludeHasJo) {
+                        if (alloc >= ordered) continue; // Skip already fully allocated detail lines!
+                        
+                        if (links.length > 0) {
+                            const isScheduled = links.some((link: any) => 
+                                Number(link.sales_order_detail_id) === detailIdVal && 
+                                joMap.has(Number(link.job_order_id)) && 
+                                joMap.get(Number(link.job_order_id))?.status !== "Cancelled"
+                            );
+                            if (isScheduled) continue; // Skip already scheduled detail lines!
+                        }
                     }
 
                     const rawId = Number(det.product_id);

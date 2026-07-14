@@ -93,13 +93,16 @@ export async function handleGET(request: Request) {
             const joId = searchParams.get("joId");
             const res = await fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_materials?filter[job_order_id][_eq]=${joId}&limit=-1`, { headers, cache: "no-store" });
             const mData = res.ok ? (await res.json()).data || [] : [];
-            const pIds = mData.map((d: any) => d.product_id);
+            const pIds = mData.map((d: any) => Number(d.product_id?.product_id || d.product_id)).filter(Boolean);
             const pMap = new Map<number, any>();
             
-            // Also get Job Order branch
+            // Get Job Order branch
             const joRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_job_orders/${joId}`, { headers, cache: "no-store" });
             const joData = joRes.ok ? (await joRes.json()).data : null;
-            const branchId = joData?.branch_id || 1;
+            if (!joData?.branch_id) {
+                return NextResponse.json({ error: "Job Order has no branch assigned" }, { status: 400 });
+            }
+            const branchId = Number(joData.branch_id);
 
             if (pIds.length > 0) {
                 const pRes = await fetch(`${DIRECTUS_URL}/items/products?filter[product_id][_in]=${pIds.join(",")}&fields=product_id,product_name,unit_of_measurement.unit_shortcut&limit=-1`, { headers });
@@ -109,38 +112,294 @@ export async function handleGET(request: Request) {
                 }
             }
 
-            // Fetch inventory lots to calculate available stock per product
-            const stockMap = new Map<number, number>();
+            // Fetch inventory lots to resolve QA status metadata
+            const lotStatusMap = new Map<string, string>(); // "product_id:lot_number" -> qa_status
+            const lotExpiryMap = new Map<string, string>(); // "product_id:lot_number" -> expiry_date
+            const lotCreatedMap = new Map<string, string>(); // "product_id:lot_number" -> created_on
+
             if (pIds.length > 0) {
                 const lotFilter = encodeURIComponent(JSON.stringify({
                     _and: [
                         { product_id: { _in: pIds } },
-                        { branch_id: { _eq: branchId } },
-                        { qa_status: { _eq: "Passed" } },
-                        { quantity: { _gt: 0 } }
+                        { branch_id: { _eq: branchId } }
                     ]
                 }));
                 const lotsRes = await fetch(`${DIRECTUS_URL}/items/inventory_lots?filter=${lotFilter}&limit=-1`, { headers, cache: "no-store" });
                 if (lotsRes.ok) {
                     const lots = (await lotsRes.json()).data || [];
                     lots.forEach((lot: any) => {
-                        const prodId = Number(lot.product_id);
-                        const qty = Number(lot.quantity || 0);
-                        stockMap.set(prodId, (stockMap.get(prodId) || 0) + qty);
+                        const prodId = Number(lot.product_id?.product_id || lot.product_id);
+                        const lotNum = lot.lot_number || "LOT-N/A";
+                        const key = `${prodId}:${lotNum}`;
+                        lotStatusMap.set(key, lot.qa_status || "Pending");
+                        if (lot.expiry_date) lotExpiryMap.set(key, lot.expiry_date);
+                        if (lot.created_on) lotCreatedMap.set(key, lot.created_on);
                     });
                 }
             }
 
-            const enriched = mData.map((d: any) => {
-                const prod = pMap.get(Number(d.product_id));
-                const availableStock = stockMap.get(Number(d.product_id)) || 0;
+            // Fetch inventory movements to calculate the true ledger stock
+            const stockMap = new Map<number, number>(); // product_id -> sum of passed stock
+            const pendingQaMap = new Map<number, number>(); // product_id -> sum of pending QA stock
+            const qaHoldMap = new Map<number, number>(); // product_id -> sum of QA hold stock
+            const movementStockMap = new Map<string, number>(); // "product_id:batch_no" -> sum of quantity
+
+            if (pIds.length > 0) {
+                const movFilter = encodeURIComponent(JSON.stringify({
+                    _and: [
+                        { product_id: { _in: pIds } },
+                        { branch_id: { _eq: branchId } }
+                    ]
+                }));
+                const movRes = await fetch(`${DIRECTUS_URL}/items/inventory_movements?filter=${movFilter}&limit=-1`, { headers, cache: "no-store" });
+                if (movRes.ok) {
+                    const movements = (await movRes.json()).data || [];
+                    movements.forEach((mov: any) => {
+                        const prodId = Number(mov.product_id?.product_id || mov.product_id);
+                        const batchNo = mov.batch_no || "LOT-N/A";
+                        const qty = Number(mov.quantity || 0);
+
+                        const key = `${prodId}:${batchNo}`;
+                        movementStockMap.set(key, (movementStockMap.get(key) || 0) + qty);
+                    });
+
+                    // Aggregate stock maps based on QA Status
+                    movementStockMap.forEach((qty, key) => {
+                        if (qty > 0) {
+                            const [prodIdStr] = key.split(":");
+                            const prodId = Number(prodIdStr);
+                            const status = lotStatusMap.get(key) || "Pending";
+
+                            if (status === "Passed") {
+                                stockMap.set(prodId, (stockMap.get(prodId) || 0) + qty);
+                            } else if (status === "Pending") {
+                                pendingQaMap.set(prodId, (pendingQaMap.get(prodId) || 0) + qty);
+                            } else if (status === "QA Hold") {
+                                qaHoldMap.set(prodId, (qaHoldMap.get(prodId) || 0) + qty);
+                            }
+                        }
+                    });
+                }
+            }
+
+            // Fetch reservations linked to these Job Order materials
+            const jomIds = mData.map((d: any) => d.jo_material_id || d.id);
+            const reservationsMap = new Map<number, any[]>();
+            if (jomIds.length > 0) {
+                try {
+                    const reservationsUrl = `${DIRECTUS_URL}/items/manufacturing_job_order_materials_reservations?filter[jo_material_id][_in]=${jomIds.join(",")}&fields=jo_material_id,reserved_quantity,purchase_order_receiving_id.lot_no,purchase_order_receiving_id.batch_no,purchase_order_receiving_id.receipt_no&limit=-1`;
+                    const resRes = await fetch(reservationsUrl, { headers });
+                    if (resRes.ok) {
+                        const reservations = (await resRes.json()).data || [];
+                        reservations.forEach((r: any) => {
+                            const jomId = Number(r.jo_material_id);
+                            if (jomId) {
+                                if (!reservationsMap.has(jomId)) {
+                                    reservationsMap.set(jomId, []);
+                                }
+                                reservationsMap.get(jomId)!.push(r);
+                            }
+                        });
+                    }
+                } catch (resErr) {
+                    console.error("Error looking up material reservations in get.ts:", resErr);
+                }
+            }
+
+            const enriched = await Promise.all(mData.map(async (d: any) => {
+                const compProductId = Number(d.product_id?.product_id || d.product_id);
+                const prod = pMap.get(compProductId);
+                const availableStock = stockMap.get(compProductId) || 0;
+                
+                const jomId = Number(d.jo_material_id || d.id);
+                const matReservations = reservationsMap.get(jomId) || [];
+
+                // Check if sub assembly (either has a manufacturing version or has yield-ledger/manufacturing lots)
+                const activeVer = await getActiveVersionForProduct(compProductId);
+                let isSubAssembly = !!(activeVer && activeVer.version);
+
+                if (!isSubAssembly) {
+                    // Fallback 1: check if any version exists (regardless of status)
+                    const verFilter = encodeURIComponent(JSON.stringify({ product_id: { _eq: compProductId } }));
+                    const verRes = await fetch(`${DIRECTUS_URL}/items/product_manufacturing_version?filter=${verFilter}&limit=1`, { headers });
+                    if (verRes.ok) {
+                        const verData = await verRes.json();
+                        if (verData.data && verData.data.length > 0) {
+                            isSubAssembly = true;
+                        }
+                    }
+                }
+
+                if (!isSubAssembly) {
+                    // Fallback 2: check if any manufacturing/yield lots exist in the system
+                    const mfgFilter = encodeURIComponent(JSON.stringify({
+                        _and: [
+                            { product_id: { _eq: compProductId } },
+                            { source_type: { _in: ["yield_ledger", "manufacturing"] } }
+                        ]
+                    }));
+                    const mfgRes = await fetch(`${DIRECTUS_URL}/items/inventory_lots?filter=${mfgFilter}&limit=1`, { headers });
+                    if (mfgRes.ok) {
+                        const mfgData = await mfgRes.json();
+                        if (mfgData.data && mfgData.data.length > 0) {
+                            isSubAssembly = true;
+                        }
+                    }
+                }
+
+                let candidateLots: any[] = [];
+                let lotNo: string | null = null;
+                let receiptNo: string | null = null;
+
+                if (isSubAssembly) {
+                    // Fetch Passed inventory lots (which could be manufactured/seeded/procured)
+                    const subAssemblyLotsFilter = encodeURIComponent(JSON.stringify({
+                        _and: [
+                            { product_id: { _eq: compProductId } },
+                            { branch_id: { _eq: branchId } },
+                            { qa_status: { _eq: "Passed" } }
+                        ]
+                    }));
+                    const subLotsRes = await fetch(`${DIRECTUS_URL}/items/inventory_lots?filter=${subAssemblyLotsFilter}&limit=-1`, { headers });
+                    const subLots = subLotsRes.ok ? (await subLotsRes.json()).data || [] : [];
+
+                    // Calculate active reservations by other JOs on this sub-assembly
+                    const activeReservedFilter = encodeURIComponent(JSON.stringify({
+                        _and: [
+                            { product_id: { _eq: compProductId } },
+                            { job_order_id: { _and: [
+                                { status: { _in: ["Proceed", "Ongoing", "On Hold", "Released", "In Progress"] } },
+                                { job_order_id: { _ne: Number(searchParams.get("joId")) } }
+                            ] } }
+                        ]
+                    }));
+                    const activeReservedRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_materials?filter=${activeReservedFilter}&fields=reserved_quantity&limit=-1`, { headers });
+                    const activeReservedData = activeReservedRes.ok ? (await activeReservedRes.json()).data || [] : [];
+                    const totalReservedByOthers = activeReservedData.reduce((sum: number, r: any) => sum + Number(r.reserved_quantity || 0), 0);
+
+                    let remainingReserved = totalReservedByOthers;
+
+                    // Enrich subLots with true physical quantity from inventory_movements ledger
+                    const subLotsEnriched = subLots.map((lot: any) => {
+                        const lotNum = lot.lot_number || "LOT-N/A";
+                        const ledgerQty = movementStockMap.get(`${compProductId}:${lotNum}`) || 0;
+                        return {
+                            ...lot,
+                            quantity: ledgerQty
+                        };
+                    }).filter((lot: any) => lot.quantity > 0);
+
+                    candidateLots = subLotsEnriched.map((lot: any) => {
+                        const qty = Number(lot.quantity || 0);
+                        const allocatedToOthers = Math.min(qty, remainingReserved);
+                        remainingReserved -= allocatedToOthers;
+                        const available = Math.max(0, qty - allocatedToOthers);
+
+                        const isReservedForThisJo = Number(d.reserved_quantity || 0) > 0;
+
+                        return {
+                            receipt_id: lot.id,
+                            receipt_no: "MANUFACTURING",
+                            lot_no: lot.lot_number || "LOT-N/A",
+                            received_quantity: qty,
+                            physical_quantity: qty,
+                            available: available,
+                            expiry_date: lot.expiry_date || null,
+                            reservation_id: isReservedForThisJo ? "sub-assembly-reserved" : null,
+                            reserved_qty_for_this_lot: isReservedForThisJo ? Number(d.reserved_quantity) : 0
+                        };
+                    }).filter((c: any) => c.available > 0 || Number(d.reserved_quantity || 0) > 0);
+
+                    if (Number(d.reserved_quantity || 0) > 0) {
+                        lotNo = `MFG-STOCK (${Number(d.reserved_quantity).toFixed(0)})`;
+                        receiptNo = "MANUFACTURING";
+                    }
+                } else {
+                    // Fetch candidate lots from purchase_order_receiving
+                    const receiptsUrl = `${DIRECTUS_URL}/items/purchase_order_receiving?filter[product_id][_eq]=${compProductId}&filter[qa_status][_eq]=Passed&filter[is_reverted][_eq]=0&filter[received_quantity][_gt]=0&filter[branch_id][_eq]=${branchId}&sort=expiry_date`;
+                    const receiptsRes = await fetch(receiptsUrl, { headers });
+                    const validReceipts = receiptsRes.ok ? (await receiptsRes.json()).data || [] : [];
+
+                    const receiptIds = validReceipts.map((r: any) => r.purchase_order_product_id).filter(Boolean);
+                    const lotReservationsMap: Record<number, number> = {};
+                    if (receiptIds.length > 0) {
+                        try {
+                            const resFilter = encodeURIComponent(JSON.stringify({
+                                _and: [
+                                    { purchase_order_receiving_id: { _in: receiptIds } },
+                                    { jo_material_id: { job_order_id: { status: { _in: ["Proceed", "Ongoing", "On Hold"] } } } }
+                                ]
+                            }));
+                            const resRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_materials_reservations?filter=${resFilter}&fields=purchase_order_receiving_id,reserved_quantity&limit=-1`, { headers });
+                            if (resRes.ok) {
+                                const resData = (await resRes.json()).data || [];
+                                resData.forEach((r: any) => {
+                                    const porId = Number(r.purchase_order_receiving_id);
+                                    if (porId) {
+                                        lotReservationsMap[porId] = (lotReservationsMap[porId] || 0) + Number(r.reserved_quantity || 0);
+                                    }
+                                });
+                            }
+                        } catch (err) {
+                            console.error("Error fetching lot reservations:", err);
+                        }
+                    }
+
+                    candidateLots = validReceipts.map((rec: any) => {
+                        const lotNum = rec.lot_no || rec.batch_no || "LOT-N/A";
+                        const physicalQty = movementStockMap.get(`${compProductId}:${lotNum}`) || 0;
+                        const recId = Number(rec.purchase_order_product_id);
+                        const alreadyReserved = lotReservationsMap[recId] || 0;
+                        const netAvailable = Math.max(0, physicalQty - alreadyReserved);
+
+                        const matchedRes = matReservations.find((mr: any) => {
+                            const mrPorId = Number(mr.purchase_order_receiving_id?.purchase_order_product_id || mr.purchase_order_receiving_id?.id || mr.purchase_order_receiving_id || 0);
+                            return mrPorId === recId;
+                        });
+                        const reservationId = matchedRes ? (matchedRes.id || matchedRes.jo_material_reservation_id) : null;
+                        const reservedQtyForThisLot = matchedRes ? Number(matchedRes.reserved_quantity || 0) : 0;
+
+                        return {
+                            receipt_id: recId,
+                            receipt_no: rec.receipt_no || "N/A",
+                            lot_no: lotNum,
+                            received_quantity: Number(rec.received_quantity || 0),
+                            physical_quantity: physicalQty,
+                            available: netAvailable,
+                            expiry_date: rec.expiry_date || null,
+                            reservation_id: reservationId,
+                            reserved_qty_for_this_lot: reservedQtyForThisLot
+                        };
+                    }).filter((c: any) => c.available > 0 || matReservations.some((mr: any) => {
+                        const mrPorId = Number(mr.purchase_order_receiving_id?.purchase_order_product_id || mr.purchase_order_receiving_id?.id || mr.purchase_order_receiving_id || 0);
+                        return mrPorId === c.receipt_id;
+                    }));
+
+                    // Format multi-lot text if reservations exist
+                    if (matReservations.length > 0) {
+                        lotNo = matReservations.map((r: any) => {
+                            const por = r.purchase_order_receiving_id;
+                            const lNo = por?.lot_no || por?.batch_no || "N/A";
+                            return `${lNo} (${Number(r.reserved_quantity || 0).toFixed(0)})`;
+                        }).join(", ");
+
+                        receiptNo = matReservations.map((r: any) => r.purchase_order_receiving_id?.receipt_no).filter(Boolean).join(", ");
+                    }
+                }
+
                 return {
                     ...d,
                     product_name: prod?.product_name || `Product #${d.product_id}`,
                     unit_shortcut: prod?.unit_of_measurement?.unit_shortcut || "units",
-                    available_stock: availableStock
+                    available_stock: availableStock,
+                    pending_qa_stock: pendingQaMap.get(Number(d.product_id)) || 0,
+                    qa_hold_stock: qaHoldMap.get(Number(d.product_id)) || 0,
+                    lot_no: lotNo,
+                    receipt_no: receiptNo,
+                    candidate_lots: candidateLots,
+                    is_sub_assembly: isSubAssembly
                 };
-            });
+            }));
             return NextResponse.json(enriched);
         }
 
@@ -199,6 +458,14 @@ export async function handleGET(request: Request) {
             });
 
             return NextResponse.json(mapped);
+        }
+
+        if (action === "lots") {
+            const url = `${DIRECTUS_URL}/items/lots?limit=-1`;
+            const res = await fetch(url, { headers, cache: "no-store" });
+            if (!res.ok) throw new Error("Failed to fetch lots");
+            const data = await res.json();
+            return NextResponse.json(data.data || []);
         }
 
         if (action === "users") {
@@ -411,6 +678,7 @@ export async function handleGET(request: Request) {
                 sequence_order: r.sequence_order,
                 setup_time_hours: r.setup_time_hours,
                 run_time_hours: r.run_time_hours,
+                duration_hours: Number(r.setup_time_hours || 0) + Number(r.run_time_hours || 0),
                 estimated_labor_cost: r.estimated_labor_cost,
                 operation_id: r.operation_id,
                 work_center_id: r.work_center_id,
@@ -439,6 +707,8 @@ export async function handleGET(request: Request) {
                 status: item.status,
                 is_batched: !!item.is_batched,
                 bom: item.bom,
+                version_id: item.version_id,
+                recipe_version_name: item.recipe_version_name,
                 components: item.components,
                 routings: item.routings,
                 allocationResults: item.allocation_results,
@@ -452,7 +722,8 @@ export async function handleGET(request: Request) {
                 createdAt: item.created_at || null,
                 createdBy: item.created_by || null,
                 parentJobOrderId: item.parent_job_order_id || null,
-                producedQty: item.produced_quantity || 0
+                producedQty: item.produced_quantity || 0,
+                yield_logs: item.yield_logs || []
             }));
             return NextResponse.json(camelCaseList);
         }

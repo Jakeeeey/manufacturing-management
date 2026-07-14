@@ -154,6 +154,7 @@ export async function saveBOMDetails(
         productImage?: string;
         parent_id?: number | null;
         productionCapacityPerHour?: number;
+        unit_of_measurement?: number | null;
     },
     routes: RouteStep[]
 ): Promise<{ success: boolean; rollup?: unknown }> {

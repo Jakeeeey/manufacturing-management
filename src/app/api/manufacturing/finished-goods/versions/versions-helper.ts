@@ -6,18 +6,29 @@ export async function getBOMDetailsForVersion(productId: number, versionId: numb
     routes: RouteStep[];
 }> {
     try {
-        const filter = encodeURIComponent(JSON.stringify({
-            _and: [
-                { product_id: { _eq: productId } },
-                { version_id: { _eq: versionId } }
-            ]
-        }));
+        let version: ProductVersion | null = null;
         
-        const resVer = await fetch(`${DIRECTUS_URL}/items/product_manufacturing_version?filter=${filter}&limit=1`, { headers, cache: "no-store" });
-        if (!resVer.ok) return { version: null, routes: [] };
+        // 1. Try to fetch the version directly by ID (fastest, bypasses recursive fallbacks)
+        const resVerDirect = await fetch(`${DIRECTUS_URL}/items/product_manufacturing_version/${versionId}`, { headers, cache: "no-store" });
+        if (resVerDirect.ok) {
+            const verData = await resVerDirect.json();
+            version = verData.data || null;
+        }
         
-        const verData = await resVer.json();
-        const version: ProductVersion = verData.data?.[0];
+        // 2. Fall back to filtered query if direct fetch did not find the version
+        if (!version) {
+            const filter = encodeURIComponent(JSON.stringify({
+                _and: [
+                    { product_id: { _eq: productId } },
+                    { version_id: { _eq: versionId } }
+                ]
+            }));
+            const resVer = await fetch(`${DIRECTUS_URL}/items/product_manufacturing_version?filter=${filter}&limit=1`, { headers, cache: "no-store" });
+            if (resVer.ok) {
+                const verData = await resVer.json();
+                version = verData.data?.[0] || null;
+            }
+        }
         
         if (!version) {
             try {
