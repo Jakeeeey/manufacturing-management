@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { X, CheckCircle2, ShieldAlert, Package, Calendar, Tag, Trash2, Camera, AlertCircle, FileText, Loader2 } from "lucide-react";
-import { JobOrder, JobOrderRoutingTask, QALogEntry } from "../types";
+import { JobOrder, QALog } from "../types";
 
 interface JobOrderQAAuditModalProps {
     isOpen: boolean;
     onClose: () => void;
     jo: JobOrder | null;
-    qaHistory: QALogEntry[];
+    qaHistory: QALog[];
     submittingAudit: boolean;
     releasingGoods: boolean;
     handleVerifyQATask: (
@@ -55,7 +55,7 @@ export function JobOrderQAAuditModal({
     const [lotNumbers, setLotNumbers] = useState<Record<number, string>>({});
     const [expiryDates, setExpiryDates] = useState<Record<number, string>>({});
 
-    const handleCompleteNonQATask = async (task: JobOrderRoutingTask) => {
+    const handleCompleteNonQATask = async (task: any) => {
         if (!jo) return;
         await handleVerifyQATask(
             task.id,
@@ -94,7 +94,7 @@ export function JobOrderQAAuditModal({
                 quantity: jo.quantity
             }];
 
-        innerProductsList.forEach(p => {
+        innerProductsList.forEach((p: any) => {
             const pId = Number(p.product_id);
             // Default yield is original quantity
             initialYields[pId] = p.quantity;
@@ -113,12 +113,12 @@ export function JobOrderQAAuditModal({
 
     if (!isOpen || !jo) return null;
 
-    const routingTasks = [...(jo.routing_tasks || [])].sort((a, b) => a.sequence_order - b.sequence_order);
+    const routingTasks = [...(jo.routing_tasks || jo.routingTasks || [])].sort((a: any, b: any) => a.sequence_order - b.sequence_order);
     
     // Determine overall completion
     const allTasksCompleted = routingTasks.length > 0 && routingTasks.every(t => t.status === "Completed");
 
-    const handleSelectTaskForAudit = (task: JobOrderRoutingTask) => {
+    const handleSelectTaskForAudit = (task: any) => {
         setEditingTaskId(task.id);
         // Default expected qty to the JO quantity or previous stage actual yield if we want,
         // but default to JO quantity for ease.
@@ -139,7 +139,7 @@ export function JobOrderQAAuditModal({
         setPhotos(photos.filter(p => p !== url));
     };
 
-    const submitTaskAudit = async (task: JobOrderRoutingTask) => {
+    const submitTaskAudit = async (task: any) => {
         if (actualQty > expectedQty) {
             alert("Passed quantity cannot exceed expected quantity.");
             return;
@@ -203,7 +203,10 @@ export function JobOrderQAAuditModal({
                                     const isLocked = !previousCompleted && task.status !== "Completed";
                                     
                                     // Match historic log if completed
-                                    const logEntry = qaHistory.find(log => Number(log.task_id) === Number(task.id));
+                                    const logEntry = qaHistory.find(log => {
+                                        const logTaskId = typeof log.task_id === "object" ? log.task_id?.jo_route_id : log.task_id;
+                                        return Number(logTaskId) === Number(task.id);
+                                    });
 
                                     return (
                                         <div 
@@ -290,17 +293,14 @@ export function JobOrderQAAuditModal({
                                                     {logEntry.comments && (
                                                         <p className="italic text-muted-foreground mt-1">&quot; {logEntry.comments} &quot;</p>
                                                     )}
-                                                    {logEntry.photos && logEntry.photos.length > 0 && (
+                                                    {logEntry.photos && (
                                                         <div className="flex gap-1.5 overflow-x-auto pt-1.5">
-                                                            {logEntry.photos.map((p, pIdx) => (
-                                                                /* eslint-disable-next-line @next/next/no-img-element */
-                                                                <img 
-                                                                    key={pIdx} 
-                                                                    src={p} 
-                                                                    alt="Audit attachment" 
-                                                                    className="h-10 w-10 object-cover rounded-md border border-muted"
-                                                                />
-                                                            ))}
+                                                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                            <img 
+                                                                src={logEntry.photos} 
+                                                                alt="Audit attachment" 
+                                                                className="h-10 w-10 object-cover rounded-md border border-muted"
+                                                            />
                                                         </div>
                                                     )}
                                                 </div>
@@ -455,7 +455,7 @@ export function JobOrderQAAuditModal({
                             </div>
 
                             <div className="space-y-4">
-                                {productsList.map(prod => {
+                                {productsList.map((prod: any) => {
                                     const pId = Number(prod.product_id);
                                     return (
                                         <div key={pId} className="bg-card border rounded-xl p-4 grid grid-cols-1 md:grid-cols-3 gap-4.5 text-xs">
