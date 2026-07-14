@@ -13,6 +13,7 @@ import {
     Layers,
     PackageCheck,
     Play,
+    Printer,
     RotateCcw,
     Search,
     ShieldCheck,
@@ -23,6 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { InvoiceConsolidation } from "../types";
+import { generateConsolidationPDF } from "../utils/ConsolidationSummaryPrint";
 
 type DetailAction = "revert" | "audit" | "start-picking";
 
@@ -31,6 +33,27 @@ interface Props {
     submitting: boolean;
     onClose: () => void;
     onRequestAction: (type: DetailAction, batchId: number) => void;
+}
+
+async function handlePrint(c: InvoiceConsolidation) {
+    await generateConsolidationPDF({
+        consolidatorNo: c.consolidatorNo,
+        branchName: c.branchName,
+        status: c.status,
+        createdAt: c.createdAt,
+        details: c.details.map((d) => ({
+            productName: d.productName,
+            productCode: d.productCode,
+            productId: d.productId,
+            orderedQuantity: d.orderedQuantity,
+            pickedQuantity: d.pickedQuantity,
+            appliedQuantity: d.appliedQuantity,
+        })),
+        invoices: c.invoices.map((inv) => ({
+            invoiceNo: inv.invoiceNo,
+            invoiceId: inv.invoiceId,
+        })),
+    });
 }
 
 export default function ConsolidationDetailSheet({ consolidation, submitting, onClose, onRequestAction }: Props) {
@@ -147,7 +170,8 @@ export default function ConsolidationDetailSheet({ consolidation, submitting, on
                 </Tabs>
 
                 <div className="z-30 flex shrink-0 items-center gap-3 border-t border-border/50 bg-card/50 p-6">
-                    <Button variant="outline" className="h-12 flex-1 rounded-xl text-[10px] font-black uppercase tracking-widest" onClick={onClose}>Close Details</Button>
+                    <Button variant="outline" className="h-12 rounded-xl text-[10px] font-black uppercase tracking-widest shrink-0" onClick={onClose}>Close</Button>
+                    <Button variant="outline" onClick={() => handlePrint(consolidation)} className="h-12 w-12 shrink-0 rounded-xl p-0" title="Print Summary"><Printer className="h-4 w-4" /></Button>
                     {consolidation.status === "Pending" && <Button disabled={submitting} onClick={() => onRequestAction("start-picking", consolidation.id)} className="h-12 flex-1 rounded-xl text-[10px] font-black uppercase tracking-widest"><Play className="mr-2 h-4 w-4" />Initialize Picking</Button>}
                     {consolidation.status === "Picking" && <Button asChild className="h-12 flex-1 rounded-xl bg-blue-600 text-[10px] font-black uppercase tracking-widest hover:bg-blue-700"><Link href={`/mm/consolidation/picking/${encodeURIComponent(consolidation.consolidatorNo)}`}><Play className="mr-2 h-4 w-4" />Picking Active</Link></Button>}
                     {consolidation.status === "Picked" && <Button disabled={submitting} onClick={() => onRequestAction("audit", consolidation.id)} className="h-12 flex-1 rounded-xl bg-emerald-600 text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700"><ShieldCheck className="mr-2 h-4 w-4" />Verify Batch</Button>}

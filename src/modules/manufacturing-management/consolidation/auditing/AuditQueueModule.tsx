@@ -25,11 +25,7 @@ export default function AuditQueueModule() {
     useEffect(() => {
         fetchBranches().then((data) => {
             setBranches(data || []);
-            if (data && data.length > 0 && !selectedBranchId) {
-                setSelectedBranchId(data[0].id);
-            }
         }).catch(() => {});
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const loadBatches = useCallback(async () => {

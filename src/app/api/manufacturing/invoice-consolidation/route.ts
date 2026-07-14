@@ -30,6 +30,23 @@ function requireAuth(userId: number | null): NextResponse | null {
     return null;
 }
 
+let branchesCache: Map<number, { branchName: string; branchCode: string }> | null = null;
+
+async function getBranchesMap(): Promise<Map<number, { branchName: string; branchCode: string }>> {
+    if (branchesCache) return branchesCache;
+    const res = await fetch(
+        `${DIRECTUS_URL}/items/branches?filter[isActive][_eq]=1&limit=-1&fields=id,branch_name,branch_code`,
+        { headers: directusHeaders, cache: "no-store" }
+    );
+    if (res.ok) {
+        const data = (await res.json()).data || [];
+        branchesCache = new Map(data.map((b: { id: number; branch_name: string; branch_code: string }) => [b.id, { branchName: b.branch_name, branchCode: b.branch_code }]));
+    } else {
+        branchesCache = new Map();
+    }
+    return branchesCache;
+}
+
 async function generateConsolidatorNo(): Promise<string> {
     const today = new Date().toISOString().slice(0, 10).replace(/-/g, "");
     const prefix = `CLINV-${today}-`;
@@ -155,6 +172,7 @@ export async function GET(req: NextRequest) {
             }
         }
 
+        const branchMap = await getBranchesMap();
         const enriched = items.map((c: { id: number; consolidator_no: string; status: string; created_by: number; checked_by: number | null; branch_id: number; created_at: string; updated_at: string }) => {
             const junctions = junctionMap.get(c.id) || [];
             const invoices = junctions.map((j) => {
@@ -196,7 +214,7 @@ export async function GET(req: NextRequest) {
                 createdBy: c.created_by,
                 checkedBy: c.checked_by,
                 branchId: c.branch_id,
-                branchName: `Branch #${c.branch_id}`,
+                branchName: branchMap.get(c.branch_id)?.branchName || `Branch #${c.branch_id}`,
                 totalSalesOrderAmount: totalAmount,
                 createdAt: c.created_at,
                 updatedAt: c.updated_at,
@@ -381,6 +399,7 @@ export async function POST(req: NextRequest) {
                 };
             });
 
+            const branchMap = await getBranchesMap();
             return NextResponse.json({
                 id: newId,
                 consolidatorNo,
@@ -388,7 +407,7 @@ export async function POST(req: NextRequest) {
                 createdBy: userId,
                 checkedBy: null,
                 branchId: Number(branchId),
-                branchName: `Branch #${branchId}`,
+                branchName: branchMap.get(Number(branchId))?.branchName || `Branch #${branchId}`,
                 totalSalesOrderAmount: siData.reduce((sum, s) => sum + Number(s.total_amount || 0), 0),
                 createdAt: newConsolidator.created_at,
                 updatedAt: newConsolidator.updated_at,

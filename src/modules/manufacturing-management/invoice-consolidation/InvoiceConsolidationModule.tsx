@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useEffect, useCallback } from "react";
+import React, { useEffect, useCallback } from "react";
 import { useInvoiceConsolidation } from "./hooks/useInvoiceConsolidation";
 import CreateConsolidationModal from "./components/CreateConsolidationModal";
 import ConsolidationDetailSheet from "./components/ConsolidationDetailSheet";
@@ -10,7 +10,7 @@ import {
     Plus,
     Loader2,
     Search,
-    SlidersHorizontal,
+
     Play,
     SquarePen,
     AlertTriangle,
@@ -21,6 +21,16 @@ import {
     RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 type ConfirmAction = "revert" | "audit" | "start-picking" | null;
 
@@ -62,20 +72,6 @@ export default function InvoiceConsolidationModule() {
             loadCandidates(branchId);
         }
     }, [showCreateModal, loadCandidates, branchId]);
-
-    const filteredConsolidations = useMemo(() => {
-        return consolidations.filter((c) => {
-            const matchesSearch =
-                !searchQuery ||
-                c.consolidatorNo.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                c.invoices?.some(
-                    (inv) =>
-                        inv.invoiceNo.toLowerCase().includes(searchQuery.toLowerCase())
-                );
-            const matchesStatus = statusFilter === "All" || c.status === statusFilter;
-            return matchesSearch && matchesStatus;
-        });
-    }, [consolidations, searchQuery, statusFilter]);
 
     const toggleExpand = (e: React.MouseEvent, id: number) => {
         e.stopPropagation();
@@ -233,61 +229,6 @@ export default function InvoiceConsolidationModule() {
         return (
             <div className="flex min-h-0 min-w-0 flex-1 flex-col space-y-6 bg-background p-1 pb-20 text-foreground sm:p-4 md:space-y-8 md:p-6">
                 {dashboardHeader}
-                {statusOverview}
-                {/* Summary Cards — zeros */}
-                <div className="hidden grid-cols-2 gap-4 sm:grid-cols-5">
-                    {summaryCards.map((card) => (
-                        <div key={card.label} className="border bg-card rounded-xl p-4 flex items-center gap-3.5 shadow-sm">
-                            <div className={`p-2.5 rounded-xl ${card.color}`}>{card.icon}</div>
-                            <div>
-                                <span className="text-[10px] text-muted-foreground font-bold uppercase block">{card.label}</span>
-                                <h4 className="text-base font-black text-foreground mt-0.5">0</h4>
-                            </div>
-                        </div>
-                    ))}
-                    <div className="border bg-card rounded-xl p-4 flex items-center gap-3.5 shadow-sm">
-                        <div className="p-2.5 rounded-xl bg-slate-500/10 border border-slate-500/20 text-slate-500">
-                            <SlidersHorizontal className="h-5 w-5" />
-                        </div>
-                        <div>
-                            <span className="text-[10px] text-muted-foreground font-bold uppercase block">Total</span>
-                            <h4 className="text-base font-black text-foreground mt-0.5">0</h4>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="hidden flex-col items-center gap-3 sm:flex-row">
-                    <div className="relative w-full sm:flex-1" />
-                    <select
-                        value=""
-                        onChange={(e) => {
-                            const b = branches.find((br) => br.id === Number(e.target.value));
-                            if (b) handleBranchChange(b);
-                        }}
-                        className="bg-card border border-input rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 outline-none w-full sm:w-44"
-                        suppressHydrationWarning
-                    >
-                        <option value="" disabled>Select a branch...</option>
-                        {branches.map((b) => (
-                            <option key={b.id} value={b.id}>{b.branchName}</option>
-                        ))}
-                    </select>
-                    <div className="flex items-center gap-2 w-full sm:w-auto opacity-40 pointer-events-none">
-                        <SlidersHorizontal className="h-3.5 w-3.5 text-muted-foreground" />
-                        <select className="bg-card border border-input rounded-xl px-3 py-2 text-xs outline-none w-full sm:w-32" suppressHydrationWarning>
-                            <option>All Status</option>
-                        </select>
-                    </div>
-                    <button
-                        disabled
-                        className="opacity-40 cursor-not-allowed bg-primary text-primary-foreground px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 shrink-0"
-                        suppressHydrationWarning
-                    >
-                        <Plus className="h-3.5 w-3.5" />
-                        New Consolidation
-                    </button>
-                </div>
-
                 <div className="flex min-h-[360px] flex-1 flex-col overflow-hidden rounded-xl border border-border/30 bg-card/20 shadow-[0_16px_40px_-12px_rgba(0,0,0,0.1)] backdrop-blur-sm sm:rounded-[2rem]">
                     <div className="flex flex-1 flex-col items-center justify-center px-4 py-32 text-center">
                         <Building2 className="mb-4 h-12 w-12 animate-bounce text-muted-foreground" />
@@ -314,118 +255,27 @@ export default function InvoiceConsolidationModule() {
         <div className="flex min-h-0 min-w-0 flex-1 flex-col space-y-6 bg-background p-1 pb-20 text-foreground sm:p-4 md:space-y-8 md:p-6">
             {dashboardHeader}
             {statusOverview}
-            {/* Summary Cards */}
-            <div className="hidden grid-cols-2 gap-4 sm:grid-cols-5">
-                {summaryCards.map((card) => (
-                    <div key={card.label} className="border bg-card rounded-xl p-4 flex items-center gap-3.5 shadow-sm">
-                        <div className={`p-2.5 rounded-xl ${card.color}`}>{card.icon}</div>
-                        <div>
-                            <span className="text-[10px] text-muted-foreground font-bold uppercase block">{card.label}</span>
-                            <h4 className="text-base font-black text-foreground mt-0.5">{card.value}</h4>
-                        </div>
-                    </div>
-                ))}
-                <div className="border bg-card rounded-xl p-4 flex items-center gap-3.5 shadow-sm">
-                    <div className="p-2.5 rounded-xl bg-slate-500/10 border border-slate-500/20 text-slate-500">
-                        <SlidersHorizontal className="h-5 w-5" />
-                    </div>
-                    <div>
-                        <span className="text-[10px] text-muted-foreground font-bold uppercase block">Total</span>
-                        <h4 className="text-base font-black text-foreground mt-0.5">{summary.All}</h4>
-                    </div>
-                </div>
-            </div>
-
-            {/* Actions & Filters */}
-            <div className="hidden flex-col items-center gap-3 sm:flex-row">
-                <div className="relative w-full sm:flex-1">
-                    <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <input
-                        type="text"
-                        placeholder="Search by consolidator no or invoice no..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="pl-9 w-full bg-card border border-input rounded-xl px-3.5 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
-                        suppressHydrationWarning
-                    />
-                </div>
-                <select
-                    value={selectedBranch.id}
-                    onChange={(e) => {
-                        const b = branches.find((br) => br.id === Number(e.target.value));
-                        if (b) handleBranchChange(b);
-                    }}
-                    className="bg-card border border-input rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 outline-none w-full sm:w-44"
-                    suppressHydrationWarning
-                >
-                    <option value={selectedBranch.id}>{selectedBranch.branchName}</option>
-                    {branches.filter((b) => b.id !== selectedBranch.id).map((b) => (
-                        <option key={b.id} value={b.id}>{b.branchName}</option>
-                    ))}
-                </select>
-                <div className="flex items-center gap-2 w-full sm:w-auto">
-                    <SlidersHorizontal className="h-3.5 w-3.5 text-muted-foreground" />
-                    <select
-                        value={statusFilter}
-                        onChange={(e) => setStatusFilter(e.target.value)}
-                        className="bg-card border border-input rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-primary/20 outline-none w-full sm:w-32"
-                        suppressHydrationWarning
-                    >
-                        <option value="All">All Status</option>
-                        <option value="Pending">Pending</option>
-                        <option value="Picking">Picking</option>
-                        <option value="Picked">Picked</option>
-                        <option value="Audited">Audited</option>
-                    </select>
-                </div>
-                <button
-                    onClick={() => setShowCreateModal(true)}
-                    className="bg-primary hover:bg-primary/90 text-primary-foreground px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
-                    suppressHydrationWarning
-                >
-                    <Plus className="h-3.5 w-3.5" />
-                    New Consolidation
-                </button>
-            </div>
 
             {/* Confirmation Dialog */}
-            {(() => {
-                const ca = confirmAction;
-                if (!ca) return null;
-                const info = confirmLabels[ca.type as Exclude<ConfirmAction, null>];
-                return (
-                    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-                        <div className="bg-card border rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
-                            <div className="flex items-center gap-3">
-                                <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-500">
-                                    <AlertTriangle className="h-5 w-5" />
-                                </div>
-                                <div>
-                                    <h3 className="text-sm font-bold text-foreground">{info.title}</h3>
-                                    <p className="text-[11px] text-muted-foreground mt-0.5">{info.description}</p>
-                                </div>
+            <AlertDialog open={confirmAction !== null} onOpenChange={(open) => { if (!open) setConfirmAction(null); }}>
+                <AlertDialogContent size="sm">
+                    <AlertDialogHeader>
+                        <div className="flex items-center gap-3">
+                            <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-500">
+                                <AlertTriangle className="h-5 w-5" />
                             </div>
-                            <div className="flex items-center justify-end gap-2 pt-2">
-                                <button
-                                    onClick={() => setConfirmAction(null)}
-                                    className="px-3.5 py-1.5 text-xs font-bold bg-muted hover:bg-muted/80 rounded-lg transition-colors cursor-pointer"
-                                    suppressHydrationWarning
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={executeConfirmed}
-                                    disabled={submitting}
-                                    className="px-3.5 py-1.5 text-xs font-bold bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg transition-colors cursor-pointer disabled:opacity-50"
-                                    suppressHydrationWarning
-                                >
-                                    Confirm
-                                </button>
+                            <div>
+                                <AlertDialogTitle className="text-sm font-bold">{confirmAction ? confirmLabels[confirmAction.type as Exclude<ConfirmAction, null>]?.title : ""}</AlertDialogTitle>
+                                <AlertDialogDescription className="text-[11px] mt-0.5">{confirmAction ? confirmLabels[confirmAction.type as Exclude<ConfirmAction, null>]?.description : ""}</AlertDialogDescription>
                             </div>
                         </div>
-                    </div>
-                );
-            })()}
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel disabled={submitting}>Cancel</AlertDialogCancel>
+                        <AlertDialogAction disabled={submitting} onClick={executeConfirmed}>Confirm</AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
 
             {/* Main Table */}
             <div className="relative flex min-h-[420px] flex-1 flex-col overflow-hidden rounded-xl border border-border/30 bg-card/20 shadow-[0_16px_40px_-12px_rgba(0,0,0,0.1)] backdrop-blur-sm sm:rounded-[2rem] sm:shadow-[0_32px_64px_-12px_rgba(0,0,0,0.2)]">
@@ -436,7 +286,7 @@ export default function InvoiceConsolidationModule() {
                     </div>
                 )}
 
-                {filteredConsolidations.length === 0 && !loading ? (
+                {consolidations.length === 0 && !loading ? (
                     <div className="text-center py-12">
                         <Package className="h-10 w-10 text-muted-foreground/30 mx-auto" />
                         <h5 className="font-bold text-foreground text-xs uppercase tracking-wide mt-2">
@@ -460,7 +310,7 @@ export default function InvoiceConsolidationModule() {
                                 </tr>
                             </thead>
                             <tbody className="divide-y">
-                                {filteredConsolidations.map((c) => (
+                                {consolidations.map((c) => (
                                     <React.Fragment key={c.id}>
                                         <tr
                                             onClick={() => handleRowClick(c)}

@@ -28,6 +28,12 @@ export function useInvoiceConsolidation() {
     const [totalPages, setTotalPages] = useState(0);
     const [statusFilter, setStatusFilter] = useState("All");
     const [searchQuery, setSearchQuery] = useState("");
+    const [debouncedSearch, setDebouncedSearch] = useState("");
+
+    useEffect(() => {
+        const handler = setTimeout(() => setDebouncedSearch(searchQuery), 400);
+        return () => clearTimeout(handler);
+    }, [searchQuery]);
     const [selectedBranch, setSelectedBranch] = useState<Branch | null>(null);
     const [selectedConsolidation, setSelectedConsolidation] = useState<InvoiceConsolidation | null>(null);
     const [showCreateModal, setShowCreateModal] = useState(false);
@@ -48,7 +54,7 @@ export function useInvoiceConsolidation() {
         setLoading(true);
         try {
             const [consRes, sumRes] = await Promise.all([
-                fetchConsolidations({ branchId, page, size: 50, status: statusFilter, search: searchQuery }),
+                fetchConsolidations({ branchId, page, size: 50, status: statusFilter, search: debouncedSearch }),
                 fetchSummary(branchId),
             ]);
             setConsolidations(consRes.content || []);
@@ -60,7 +66,7 @@ export function useInvoiceConsolidation() {
         } finally {
             setLoading(false);
         }
-    }, [branchId, page, statusFilter, searchQuery]);
+    }, [branchId, page, statusFilter, debouncedSearch]);
 
     useEffect(() => {
         loadData();
