@@ -91,10 +91,11 @@ export default function FIFOInventoryList({
                         return (
                             <div key={item.product.product_id} className="border rounded-xl overflow-hidden transition-all bg-muted/5">
                                 {/* Product header info */}
-                                <div 
-                                    onClick={() => toggleProductExpand(item.product.product_id)}
-                                    className="p-4 bg-card hover:bg-muted/10 transition-all cursor-pointer flex items-center justify-between gap-4"
-                                >
+                            <button 
+                                type="button"
+                                onClick={() => toggleProductExpand(item.product.product_id)}
+                                className="w-full text-left p-4 bg-card hover:bg-muted/10 transition-all cursor-pointer flex items-center justify-between gap-4"
+                            >
                                     <div className="space-y-1 min-w-0">
                                         <span className="font-extrabold text-xs text-foreground block truncate">{item.product.product_name}</span>
                                         <div className="flex gap-2 text-[10px]">
@@ -117,7 +118,7 @@ export default function FIFOInventoryList({
                                         </div>
                                         {isExpanded ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
                                     </div>
-                                </div>
+                                </button>
 
                                 {/* Expandable FIFO batches table */}
                                 {isExpanded && (
