@@ -555,6 +555,16 @@ export function useProcurement(defaultTab: string = "suppliers") {
                 }))
             });
             setIsExpenseModalOpen(false);
+            
+            setExpenseAllocationForm({
+                allocation_method: expenseAllocationForm.allocation_method,
+                expenses: validExps.map(x => ({
+                    overhead_id: String(x.overhead_id),
+                    expense_type: x.expense_type,
+                    amount_php: String(x.amount_php)
+                }))
+            });
+            setIsExpenseModalOpen(false);
 
             // Reload active selections
             const freshShipments = await loadShipments();
