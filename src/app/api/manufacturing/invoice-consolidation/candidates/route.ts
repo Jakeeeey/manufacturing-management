@@ -1,8 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DIRECTUS_URL, headers as directusHeaders } from "../../directus-api";
+import { resolveVersions } from "../version-resolver";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+interface CandidateProductLineResolved {
+    productId: number;
+    productName: string;
+    productCode: string;
+    quantity: number;
+    versionId: number | null;
+    versionName: string | null;
+}
 
 export async function GET(req: NextRequest) {
     try {
@@ -67,15 +77,15 @@ export async function GET(req: NextRequest) {
         invoices = invoices.filter((inv) => !linkedIds.has(inv.invoice_id));
 
         const customerCodes = [...new Set(invoices.map((inv) => inv.customer_code).filter(Boolean))];
-        let customerMap = new Map<string, { customer_name: string; business_name?: string }>();
+        let customerMap = new Map<string, { id: number; customer_name: string }>();
         if (customerCodes.length > 0) {
             const custRes = await fetch(
-                `${DIRECTUS_URL}/items/customer?filter[customer_code][_in]=${customerCodes.map((c) => encodeURIComponent(c)).join(",")}&limit=-1&fields=customer_code,customer_name,business_name`,
+                `${DIRECTUS_URL}/items/customer?filter[customer_code][_in]=${customerCodes.map((c) => encodeURIComponent(c)).join(",")}&limit=-1&fields=id,customer_code,customer_name`,
                 { headers: directusHeaders, cache: "no-store" }
             );
             if (custRes.ok) {
                 const custData = (await custRes.json()).data || [];
-                customerMap = new Map(custData.map((c: { customer_code: string; customer_name: string; business_name?: string }) => [c.customer_code, c]));
+                customerMap = new Map(custData.map((c: { id: number; customer_code: string; customer_name: string }) => [c.customer_code, c]));
             }
         }
 
@@ -99,19 +109,50 @@ export async function GET(req: NextRequest) {
             }
         }
 
-        const detailsByInvoice = new Map<number, { productId: number; productName: string; productCode: string; quantity: number }[]>();
+        // Build unique (customer_id, product_id) pairs for version resolution
+        const versionPairs = new Map<string, { customerId: number; productId: number }>();
+        for (const inv of invoices) {
+            const cust = customerMap.get(inv.customer_code);
+            if (!cust) continue;
+            const invDetails = detsData.filter((d) => d.invoice_no === inv.invoice_id);
+            for (const d of invDetails) {
+                const key = `${cust.id}:${d.product_id}`;
+                if (!versionPairs.has(key)) {
+                    versionPairs.set(key, { customerId: cust.id, productId: d.product_id });
+                }
+            }
+        }
+
+        const versionMap = await resolveVersions(Array.from(versionPairs.values()));
+
+        // Aggregate detail rows within each invoice by product_id, attach version
+        const detailsByInvoice = new Map<number, CandidateProductLineResolved[]>();
         for (const d of detsData) {
             const invId = d.invoice_no;
             if (!detailsByInvoice.has(invId)) detailsByInvoice.set(invId, []);
-            const prod = prodMap.get(d.product_id);
-            detailsByInvoice.get(invId)!.push({
-                productId: d.product_id,
-                productName: prod?.product_name || `Product #${d.product_id}`,
-                productCode: prod?.product_code || "",
-                quantity: Number(d.quantity || 0),
-            });
+            const existingLines = detailsByInvoice.get(invId)!;
+            const existing = existingLines.find((l) => l.productId === d.product_id);
+            const qty = Number(d.quantity || 0);
+            if (existing) {
+                existing.quantity += qty;
+            } else {
+                const prod = prodMap.get(d.product_id);
+                const inv = invoices.find((i) => i.invoice_id === invId);
+                const cust = inv ? customerMap.get(inv.customer_code) : undefined;
+                const versionKey = cust ? `${cust.id}:${d.product_id}` : "";
+                const version = versionMap.get(versionKey);
+                existingLines.push({
+                    productId: d.product_id,
+                    productName: prod?.product_name || `Product #${d.product_id}`,
+                    productCode: prod?.product_code || "",
+                    quantity: qty,
+                    versionId: version?.versionId ?? null,
+                    versionName: version?.versionName ?? null,
+                });
+            }
         }
 
+        // Build each candidate invoice entry
         const enriched = invoices.map((inv) => {
             const cust = customerMap.get(inv.customer_code);
             return {
@@ -123,7 +164,6 @@ export async function GET(req: NextRequest) {
                 branchId: inv.branch_id,
                 customerCode: inv.customer_code,
                 customerName: cust?.customer_name || inv.customer_code,
-                businessName: cust?.business_name || "",
                 products: detailsByInvoice.get(inv.invoice_id) || [],
             };
         });

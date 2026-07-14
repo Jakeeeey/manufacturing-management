@@ -1,5 +1,14 @@
 export type ConsolidationStatus = "Pending" | "Picking" | "Picked" | "Audited";
 
+export interface ConsolidatorInvoiceProduct {
+    productId: number;
+    productName: string;
+    productCode: string;
+    quantity: number;
+    versionId: number | null;
+    versionName: string | null;
+}
+
 export interface ConsolidatorInvoice {
     id: number;
     consolidatorId: number;
@@ -7,6 +16,7 @@ export interface ConsolidatorInvoice {
     invoiceNo: string;
     branchId: number;
     createdAt: string;
+    products?: ConsolidatorInvoiceProduct[];
 }
 
 export interface ConsolidatorDetail {
@@ -43,6 +53,8 @@ export interface CandidateProductLine {
     productName: string;
     productCode: string;
     quantity: number;
+    versionId: number | null;
+    versionName: string | null;
 }
 
 export interface CandidateInvoice {
@@ -54,7 +66,7 @@ export interface CandidateInvoice {
     branchId: number;
     customerCode: string;
     customerName: string;
-    businessName: string;
+    businessName?: string;
     products: CandidateProductLine[];
 }
 

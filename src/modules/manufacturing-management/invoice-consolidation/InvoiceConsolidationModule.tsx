@@ -3,6 +3,7 @@
 import React, { useMemo, useEffect, useCallback } from "react";
 import { useInvoiceConsolidation } from "./hooks/useInvoiceConsolidation";
 import CreateConsolidationModal from "./components/CreateConsolidationModal";
+import ConsolidationDetailSheet from "./components/ConsolidationDetailSheet";
 import {
     Package,
     ClipboardCheck,
@@ -12,11 +13,14 @@ import {
     SlidersHorizontal,
     Play,
     SquarePen,
-    CheckCircle,
-    RotateCcw,
     AlertTriangle,
     Building2,
+    Layers,
+    ListOrdered,
+    ArrowUpRight,
+    RefreshCw,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 type ConfirmAction = "revert" | "audit" | "start-picking" | null;
 
@@ -46,15 +50,11 @@ export default function InvoiceConsolidationModule() {
         handleAudit,
         handleRevert,
         handleStartPicking,
-        handleCompletePicking,
-        handleSaveQuantities,
         loadCandidates,
         openDetail,
     } = useInvoiceConsolidation();
 
     const [expandedId, setExpandedId] = React.useState<number | null>(null);
-    const [editingDetailId, setEditingDetailId] = React.useState<number | null>(null);
-    const [editQuantity, setEditQuantity] = React.useState<number>(0);
     const [confirmAction, setConfirmAction] = React.useState<{ type: ConfirmAction; batchId: number } | null>(null);
 
     useEffect(() => {
@@ -83,7 +83,6 @@ export default function InvoiceConsolidationModule() {
     };
 
     const handleRowClick = (c: typeof consolidations[number]) => {
-        setEditingDetailId(null);
         openDetail(c);
     };
 
@@ -122,11 +121,107 @@ export default function InvoiceConsolidationModule() {
     };
 
     const summaryCards = [
+        { label: "All", value: summary.All, color: "text-zinc-400", icon: <ListOrdered className="h-4 w-4" /> },
         { label: "Pending", value: summary.Pending, color: "bg-amber-500/10 border-amber-500/20 text-amber-500", icon: <Package className="h-5 w-5" /> },
         { label: "Picking", value: summary.Picking, color: "bg-blue-500/10 border-blue-500/20 text-blue-500", icon: <Play className="h-5 w-5" /> },
         { label: "Picked", value: summary.Picked, color: "bg-purple-500/10 border-purple-500/20 text-purple-500", icon: <SquarePen className="h-5 w-5" /> },
         { label: "Audited", value: summary.Audited, color: "bg-emerald-500/10 border-emerald-500/20 text-emerald-500", icon: <ClipboardCheck className="h-5 w-5" /> },
     ];
+
+    const dashboardHeader = (
+        <div className="sticky top-0 z-30 flex flex-col gap-4 border-b border-border/40 bg-background/90 py-2 backdrop-blur-md xl:flex-row xl:items-center xl:justify-between xl:border-transparent sm:py-4">
+            <div className="flex w-full shrink-0 flex-col gap-4 sm:flex-row sm:items-center sm:gap-5 xl:w-auto">
+                <div className="hidden rotate-3 rounded-2xl bg-primary p-3 shadow-xl shadow-primary/20 sm:flex">
+                    <Layers className="h-6 w-6 text-primary-foreground stroke-[2.5px] lg:h-8 lg:w-8" />
+                </div>
+                <div className="w-full space-y-2 sm:w-auto sm:space-y-0.5">
+                    <h2 className="flex items-center gap-2 whitespace-nowrap text-2xl font-black uppercase italic leading-none tracking-tighter sm:text-3xl md:text-4xl">
+                        <Layers className="h-5 w-5 text-primary stroke-[3px] sm:hidden" />
+                        Invoice <span className="text-primary">Consolidation</span>
+                    </h2>
+                    <select
+                        value={selectedBranch?.id ?? ""}
+                        onChange={(e) => {
+                            const branch = branches.find((item) => item.id === Number(e.target.value));
+                            handleBranchChange(branch ?? null);
+                        }}
+                        className="h-11 w-full rounded-xl border border-border/40 bg-card/40 px-3 text-sm font-bold shadow-inner outline-none backdrop-blur-md focus:ring-2 focus:ring-primary/20 sm:w-[260px]"
+                        suppressHydrationWarning
+                    >
+                        <option value="" disabled>Select Branch...</option>
+                        {branches.map((branch) => (
+                            <option key={branch.id} value={branch.id}>{branch.branchName} ({branch.branchCode})</option>
+                        ))}
+                    </select>
+                </div>
+            </div>
+
+            <div className="flex w-full flex-col items-stretch gap-3 sm:flex-row sm:items-center xl:w-auto">
+                <div className="group relative w-full sm:w-64 md:w-72">
+                    <div className="absolute -inset-0.5 rounded-xl bg-gradient-to-r from-primary/30 to-blue-500/30 opacity-0 blur transition duration-500 group-focus-within:opacity-100" />
+                    <Search className="absolute left-3.5 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-muted-foreground opacity-50" />
+                    <input
+                        type="text"
+                        placeholder="Find batch or invoice..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        disabled={!selectedBranch}
+                        className="relative z-10 h-10 w-full rounded-xl border border-border/40 bg-card/50 pl-10 pr-3 text-xs font-bold shadow-inner outline-none backdrop-blur-sm placeholder:font-medium focus:ring-2 focus:ring-primary/20 disabled:opacity-50 sm:h-12 sm:text-sm"
+                        suppressHydrationWarning
+                    />
+                </div>
+                <button
+                    onClick={() => setShowCreateModal(true)}
+                    disabled={!selectedBranch}
+                    className="flex h-10 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-[10px] font-black uppercase tracking-widest text-primary-foreground shadow-lg shadow-primary/20 transition-all hover:scale-[1.02] hover:bg-primary/90 active:scale-95 disabled:pointer-events-none disabled:opacity-40 sm:h-12 sm:px-8 sm:text-xs"
+                    suppressHydrationWarning
+                >
+                    <Plus className="h-4 w-4 stroke-[3.5px]" />
+                    Generate Batch
+                </button>
+            </div>
+        </div>
+    );
+
+    const statusOverview = (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-5">
+            {summaryCards.map((card) => {
+                const active = statusFilter === card.label;
+                return (
+                    <button
+                        key={card.label}
+                        type="button"
+                        onClick={() => {
+                            setStatusFilter(card.label);
+                            setPage(0);
+                        }}
+                        disabled={!selectedBranch}
+                        className={cn(
+                            "group relative overflow-hidden rounded-xl border-none p-3 text-left transition-all duration-500 sm:rounded-2xl sm:p-4",
+                            active
+                                ? "scale-[1.02] bg-card shadow-[0_15px_30px_-10px_rgba(0,0,0,0.3)] ring-1 ring-primary/40"
+                                : "bg-card/40 backdrop-blur-sm hover:bg-card/60",
+                            !selectedBranch && "pointer-events-none opacity-60"
+                        )}
+                        suppressHydrationWarning
+                    >
+                        {active && <div className="absolute inset-x-0 top-0 h-[1.5px] bg-gradient-to-r from-transparent via-primary to-transparent" />}
+                        <div className="flex items-center justify-between">
+                            <div className={cn("rounded-lg bg-muted/50 p-2 transition-transform group-hover:rotate-12", active && "rotate-6 bg-primary text-primary-foreground", !active && card.color)}>
+                                {card.icon}
+                            </div>
+                            {active && <ArrowUpRight className="h-3 w-3 text-primary" />}
+                        </div>
+                        <p className={cn("mt-3 text-[9px] font-black uppercase tracking-[0.2em]", active ? "text-primary" : "text-muted-foreground/50")}>{card.label}</p>
+                        <div className="flex items-baseline gap-1">
+                            <strong className="text-2xl font-black tracking-tighter tabular-nums">{selectedBranch ? card.value : 0}</strong>
+                            <span className="hidden text-[8px] font-bold uppercase text-muted-foreground/40 sm:inline">Batches</span>
+                        </div>
+                    </button>
+                );
+            })}
+        </div>
+    );
 
     const confirmLabels: Record<string, { title: string; description: string }> = {
         audit: { title: "Audit this batch?", description: "This will mark the batch as audited and dispatch all linked invoices." },
@@ -136,9 +231,11 @@ export default function InvoiceConsolidationModule() {
 
     if (!selectedBranch) {
         return (
-            <div className="flex flex-col min-h-0 min-w-0 flex-1 space-y-4">
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col space-y-6 bg-background p-1 pb-20 text-foreground sm:p-4 md:space-y-8 md:p-6">
+                {dashboardHeader}
+                {statusOverview}
                 {/* Summary Cards — zeros */}
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 shrink-0">
+                <div className="hidden grid-cols-2 gap-4 sm:grid-cols-5">
                     {summaryCards.map((card) => (
                         <div key={card.label} className="border bg-card rounded-xl p-4 flex items-center gap-3.5 shadow-sm">
                             <div className={`p-2.5 rounded-xl ${card.color}`}>{card.icon}</div>
@@ -159,7 +256,7 @@ export default function InvoiceConsolidationModule() {
                     </div>
                 </div>
 
-                <div className="flex flex-col sm:flex-row gap-3 items-center shrink-0">
+                <div className="hidden flex-col items-center gap-3 sm:flex-row">
                     <div className="relative w-full sm:flex-1" />
                     <select
                         value=""
@@ -191,15 +288,10 @@ export default function InvoiceConsolidationModule() {
                     </button>
                 </div>
 
-                <div className="flex-1 min-h-0 relative bg-background border rounded-xl p-4 md:p-6 shadow-sm flex flex-col">
-                    <div className="text-center py-16">
-                        <Building2 className="h-10 w-10 text-muted-foreground/30 mx-auto" />
-                        <h5 className="font-bold text-foreground text-xs uppercase tracking-wide mt-3">
-                            Select a Branch
-                        </h5>
-                        <p className="text-[10px] text-muted-foreground mt-1">
-                            Choose your active warehouse branch to view and manage invoice consolidation batches.
-                        </p>
+                <div className="flex min-h-[360px] flex-1 flex-col overflow-hidden rounded-xl border border-border/30 bg-card/20 shadow-[0_16px_40px_-12px_rgba(0,0,0,0.1)] backdrop-blur-sm sm:rounded-[2rem]">
+                    <div className="flex flex-1 flex-col items-center justify-center px-4 py-32 text-center">
+                        <Building2 className="mb-4 h-12 w-12 animate-bounce text-muted-foreground" />
+                        <p className="text-sm font-black uppercase tracking-widest text-muted-foreground">Select Branch to Stream Data</p>
                     </div>
                 </div>
 
@@ -219,9 +311,11 @@ export default function InvoiceConsolidationModule() {
     }
 
     return (
-        <div className="flex flex-col min-h-0 min-w-0 flex-1 space-y-4">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col space-y-6 bg-background p-1 pb-20 text-foreground sm:p-4 md:space-y-8 md:p-6">
+            {dashboardHeader}
+            {statusOverview}
             {/* Summary Cards */}
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 shrink-0">
+            <div className="hidden grid-cols-2 gap-4 sm:grid-cols-5">
                 {summaryCards.map((card) => (
                     <div key={card.label} className="border bg-card rounded-xl p-4 flex items-center gap-3.5 shadow-sm">
                         <div className={`p-2.5 rounded-xl ${card.color}`}>{card.icon}</div>
@@ -243,7 +337,7 @@ export default function InvoiceConsolidationModule() {
             </div>
 
             {/* Actions & Filters */}
-            <div className="flex flex-col sm:flex-row gap-3 items-center shrink-0">
+            <div className="hidden flex-col items-center gap-3 sm:flex-row">
                 <div className="relative w-full sm:flex-1">
                     <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                     <input
@@ -334,10 +428,11 @@ export default function InvoiceConsolidationModule() {
             })()}
 
             {/* Main Table */}
-            <div className="flex-1 min-h-0 relative bg-background border rounded-xl p-4 md:p-6 shadow-sm flex flex-col">
+            <div className="relative flex min-h-[420px] flex-1 flex-col overflow-hidden rounded-xl border border-border/30 bg-card/20 shadow-[0_16px_40px_-12px_rgba(0,0,0,0.1)] backdrop-blur-sm sm:rounded-[2rem] sm:shadow-[0_32px_64px_-12px_rgba(0,0,0,0.2)]">
                 {loading && (
-                    <div className="absolute inset-0 bg-background/50 backdrop-blur-sm z-40 flex items-center justify-center rounded-xl">
-                        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                    <div className="absolute inset-0 z-40 flex flex-col items-center justify-center gap-5 bg-background/70 backdrop-blur-sm">
+                        <div className="rounded-3xl border border-border/50 bg-card p-5 shadow-2xl"><Loader2 className="h-10 w-10 animate-spin text-primary" /></div>
+                        <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.25em] text-muted-foreground"><RefreshCw className="h-3 w-3 animate-spin" /> Syncing Consolidations</div>
                     </div>
                 )}
 
@@ -352,9 +447,9 @@ export default function InvoiceConsolidationModule() {
                         </p>
                     </div>
                 ) : (
-                    <div className="flex-1 overflow-auto min-h-0">
-                        <table className="w-full text-left border-collapse text-xs">
-                            <thead>
+                    <div className="min-h-0 flex-1 overflow-auto custom-scrollbar">
+                        <table className="min-w-[760px] w-full border-collapse text-left text-xs">
+                            <thead className="sticky top-0 z-10 border-b border-border/50 bg-muted/50 backdrop-blur-xl">
                                 <tr className="border-b bg-muted/20">
                                     <th className="p-3 font-semibold text-muted-foreground uppercase">Consolidator No</th>
                                     <th className="p-3 font-semibold text-muted-foreground uppercase">Branch</th>
@@ -371,9 +466,9 @@ export default function InvoiceConsolidationModule() {
                                             onClick={() => handleRowClick(c)}
                                             onKeyDown={(e) => handleRowKeyDown(e, c)}
                                             tabIndex={0}
-                                            className="hover:bg-muted/10 transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary/30"
+                                            className="group cursor-pointer border-border/30 transition-all hover:bg-primary/[0.02] focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary/30"
                                         >
-                                            <td className="p-3 font-bold text-foreground">{c.consolidatorNo}</td>
+                                             <td className="p-3"><span className="rounded bg-muted/50 px-2 py-1 font-mono font-black tracking-tight text-foreground/90">{c.consolidatorNo}</span></td>
                                             <td className="p-3 text-muted-foreground">{c.branchName || selectedBranch.branchName}</td>
                                             <td className="p-3 text-muted-foreground">
                                                 <button
@@ -422,16 +517,15 @@ export default function InvoiceConsolidationModule() {
                 )}
 
                 {/* Pagination */}
-                {totalPages > 1 && (
-                    <div className="shrink-0 flex items-center justify-between pt-4 border-t mt-4">
-                        <span className="text-[10px] text-muted-foreground">
-                            Page {page + 1} of {totalPages}
+                <div className="flex shrink-0 flex-col items-center justify-between gap-4 border-t border-border/50 bg-muted/30 px-4 py-4 backdrop-blur-md sm:flex-row sm:px-8">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                            Page {page + 1} of {Math.max(1, totalPages)} <span className="mx-2 opacity-20">|</span> {summary.All} Total Entries
                         </span>
                         <div className="flex items-center gap-2">
                             <button
                                 onClick={() => setPage(Math.max(0, page - 1))}
                                 disabled={page === 0}
-                                className="px-3 py-1.5 text-xs font-bold rounded-lg border hover:bg-muted transition-colors cursor-pointer disabled:opacity-30"
+                                className="rounded-lg border px-4 py-2 text-[10px] font-black uppercase tracking-widest transition-colors hover:bg-background disabled:opacity-30"
                                 suppressHydrationWarning
                             >
                                 Previous
@@ -439,223 +533,21 @@ export default function InvoiceConsolidationModule() {
                             <button
                                 onClick={() => setPage(Math.min(totalPages - 1, page + 1))}
                                 disabled={page >= totalPages - 1}
-                                className="px-3 py-1.5 text-xs font-bold rounded-lg border hover:bg-muted transition-colors cursor-pointer disabled:opacity-30"
+                                className="rounded-lg border px-4 py-2 text-[10px] font-black uppercase tracking-widest transition-colors hover:bg-background disabled:opacity-30"
                                 suppressHydrationWarning
                             >
                                 Next
                             </button>
                         </div>
                     </div>
-                )}
             </div>
 
-            {/* Detail Modal */}
-            {selectedConsolidation && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-                    <div className="bg-card border rounded-2xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col">
-                        <div className="flex items-center justify-between px-6 py-4 border-b shrink-0">
-                            <h2 className="text-sm font-bold text-foreground">{selectedConsolidation.consolidatorNo}</h2>
-                            <button
-                                onClick={() => setSelectedConsolidation(null)}
-                                className="p-1 rounded-lg hover:bg-muted transition-colors cursor-pointer"
-                                suppressHydrationWarning
-                            >
-                                <svg className="h-4 w-4 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                            </button>
-                        </div>
-                        <div className="flex-1 overflow-y-auto p-6 space-y-4">
-                            <div className="grid grid-cols-2 gap-4 text-xs">
-                                <div>
-                                    <span className="text-muted-foreground block">Status</span>
-                                    <span className="font-bold text-foreground">{getStatusBadge(selectedConsolidation.status)}</span>
-                                </div>
-                                <div>
-                                    <span className="text-muted-foreground block">Branch</span>
-                                    <span className="font-bold text-foreground">{selectedConsolidation.branchName || selectedBranch.branchName}</span>
-                                </div>
-                                <div>
-                                    <span className="text-muted-foreground block">Created</span>
-                                    <span className="font-bold text-foreground">{selectedConsolidation.createdAt ? new Date(selectedConsolidation.createdAt).toLocaleString() : "—"}</span>
-                                </div>
-                                <div>
-                                    <span className="text-muted-foreground block">Checked By</span>
-                                    <span className="font-bold text-foreground">{selectedConsolidation.checkedBy ? `User #${selectedConsolidation.checkedBy}` : "Not yet"}</span>
-                                </div>
-                            </div>
-
-                            {/* Product Details */}
-                            {selectedConsolidation.details && selectedConsolidation.details.length > 0 && (
-                                <div>
-                                    <span className="text-xs text-muted-foreground font-semibold uppercase block mb-2">
-                                        Products ({selectedConsolidation.details.length})
-                                    </span>
-                                    <table className="w-full text-left border-collapse text-xs">
-                                        <thead>
-                                            <tr className="border-b bg-muted/20">
-                                                <th className="p-2 font-semibold text-muted-foreground">Product</th>
-                                                <th className="p-2 font-semibold text-muted-foreground text-right">Ordered</th>
-                                                <th className="p-2 font-semibold text-muted-foreground text-right">Picked</th>
-                                                <th className="p-2 font-semibold text-muted-foreground text-right">Short</th>
-                                                <th className="p-2 font-semibold text-muted-foreground text-right">Applied</th>
-                                                {selectedConsolidation.status === "Picking" && (
-                                                    <th className="p-2 font-semibold text-muted-foreground text-right">Update</th>
-                                                )}
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y">
-                                            {selectedConsolidation.details.map((d) => {
-                                                const short = d.orderedQuantity - d.pickedQuantity;
-                                                return (
-                                                    <tr key={d.id}>
-                                                        <td className="p-2 font-medium text-foreground">
-                                                            {d.productName || d.productCode || `Product #${d.productId}`}
-                                                        </td>
-                                                        <td className="p-2 text-right font-bold text-foreground">{d.orderedQuantity}</td>
-                                                        <td className="p-2 text-right font-bold text-foreground">{d.pickedQuantity}</td>
-                                                        <td className="p-2 text-right font-bold">
-                                                            <span className={short > 0 ? "text-amber-600" : "text-muted-foreground"}>
-                                                                {short}
-                                                            </span>
-                                                        </td>
-                                                        <td className="p-2 text-right font-bold text-muted-foreground">{d.appliedQuantity}</td>
-                                                        {selectedConsolidation.status === "Picking" && (
-                                                            <td className="p-2 text-right">
-                                                                {editingDetailId === d.id ? (
-                                                                    <div className="flex items-center justify-end gap-1">
-                                                                        <input
-                                                                            type="number"
-                                                                            min={0}
-                                                                            max={d.orderedQuantity}
-                                                                            value={editQuantity}
-                                                                            onChange={(e) => setEditQuantity(Math.min(d.orderedQuantity, Math.max(0, Number(e.target.value))))}
-                                                                            className="w-16 border border-input rounded px-1.5 py-0.5 text-xs text-right"
-                                                                            suppressHydrationWarning
-                                                                        />
-                                                                        <button
-                                                                            onClick={async () => {
-                                                                                const ok = await handleSaveQuantities({
-                                                                                    batchId: selectedConsolidation.id,
-                                                                                    quantities: [{ detailId: d.id, pickedQuantity: editQuantity }],
-                                                                                });
-                                                                                if (ok) {
-                                                                                    setEditingDetailId(null);
-                                                                                    setEditQuantity(0);
-                                                                                }
-                                                                            }}
-                                                                            disabled={submitting}
-                                                                            className="bg-primary text-primary-foreground px-1.5 py-0.5 rounded text-[10px] font-bold cursor-pointer"
-                                                                            suppressHydrationWarning
-                                                                        >
-                                                                            Save
-                                                                        </button>
-                                                                        <button
-                                                                            onClick={() => setEditingDetailId(null)}
-                                                                            className="px-1.5 py-0.5 rounded text-[10px] font-bold text-muted-foreground hover:bg-muted cursor-pointer"
-                                                                            suppressHydrationWarning
-                                                                        >
-                                                                            X
-                                                                        </button>
-                                                                    </div>
-                                                                ) : (
-                                                                    <button
-                                                                        onClick={() => { setEditingDetailId(d.id); setEditQuantity(d.pickedQuantity); }}
-                                                                        className="text-primary font-semibold hover:underline cursor-pointer text-[10px]"
-                                                                        suppressHydrationWarning
-                                                                    >
-                                                                        Edit
-                                                                    </button>
-                                                                )}
-                                                            </td>
-                                                        )}
-                                                    </tr>
-                                                );
-                                            })}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            )}
-
-                            {/* Invoices */}
-                            <div>
-                                <span className="text-xs text-muted-foreground font-semibold uppercase block mb-2">
-                                    Invoices ({selectedConsolidation.invoices?.length || 0})
-                                </span>
-                                <table className="w-full text-left border-collapse text-xs">
-                                    <thead>
-                                        <tr className="border-b bg-muted/20">
-                                            <th className="p-2 font-semibold text-muted-foreground">Invoice No</th>
-                                            <th className="p-2 font-semibold text-muted-foreground text-right">Invoice ID</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y">
-                                        {selectedConsolidation.invoices?.map((inv) => (
-                                            <tr key={inv.id}>
-                                                <td className="p-2 font-medium text-foreground">{inv.invoiceNo}</td>
-                                                <td className="p-2 text-right text-muted-foreground">#{inv.invoiceId}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                        <div className="px-6 py-4 border-t shrink-0 flex items-center justify-between rounded-b-2xl">
-                            <div className="flex items-center gap-2">
-                                {selectedConsolidation.status === "Pending" && (
-                                    <button
-                                        onClick={() => setConfirmAction({ type: "start-picking", batchId: selectedConsolidation.id })}
-                                        disabled={submitting}
-                                        className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer disabled:opacity-50 flex items-center gap-1"
-                                        suppressHydrationWarning
-                                    >
-                                        <Play className="h-3.5 w-3.5" />
-                                        Start Picking
-                                    </button>
-                                )}
-                                {selectedConsolidation.status === "Picking" && (
-                                    <button
-                                        onClick={() => handleCompletePicking(selectedConsolidation.id)}
-                                        disabled={submitting}
-                                        className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer disabled:opacity-50 flex items-center gap-1"
-                                        suppressHydrationWarning
-                                    >
-                                        <SquarePen className="h-3.5 w-3.5" />
-                                        Complete Picking
-                                    </button>
-                                )}
-                                {selectedConsolidation.status === "Picked" && (
-                                    <button
-                                        onClick={() => setConfirmAction({ type: "audit", batchId: selectedConsolidation.id })}
-                                        disabled={submitting}
-                                        className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer disabled:opacity-50 flex items-center gap-1"
-                                        suppressHydrationWarning
-                                    >
-                                        <CheckCircle className="h-3.5 w-3.5" />
-                                        Audit
-                                    </button>
-                                )}
-                                {selectedConsolidation.status === "Audited" && (
-                                    <button
-                                        onClick={() => setConfirmAction({ type: "revert", batchId: selectedConsolidation.id })}
-                                        disabled={submitting}
-                                        className="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer disabled:opacity-50 flex items-center gap-1"
-                                        suppressHydrationWarning
-                                    >
-                                        <RotateCcw className="h-3.5 w-3.5" />
-                                        Revert to Pending
-                                    </button>
-                                )}
-                            </div>
-                            <button
-                                onClick={() => setSelectedConsolidation(null)}
-                                className="px-4 py-2 text-xs font-bold bg-muted hover:bg-muted/80 rounded-lg transition-colors cursor-pointer"
-                                suppressHydrationWarning
-                            >
-                                Close
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            <ConsolidationDetailSheet
+                consolidation={selectedConsolidation}
+                submitting={submitting}
+                onClose={() => setSelectedConsolidation(null)}
+                onRequestAction={(type, batchId) => setConfirmAction({ type, batchId })}
+            />
 
             {/* Create Modal */}
             {selectedBranch && (
@@ -669,6 +561,7 @@ export default function InvoiceConsolidationModule() {
                     onSubmit={handleCreate}
                 />
             )}
+
         </div>
     );
 }

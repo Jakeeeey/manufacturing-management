@@ -8,19 +8,47 @@ import type { NavItem } from "@/types/navigation";
 export async function AppSidebar(props: ComponentProps<typeof Sidebar>) {
   const items = await getSidebarNavigation("mm");
 
-  const invoiceConsolidationItem: NavItem = {
-    title: "Invoice Consolidation",
-    url: "/mm/invoice-consolidation",
-    slug: "invoice-consolidation",
+  const consolidationParent: NavItem = {
+    title: "Consolidation",
+    url: "#",
+    slug: "consolidation",
     status: "active",
     iconName: "FileText",
+    items: [
+      {
+        title: "Creation",
+        url: "/mm/consolidation/creation",
+        slug: "consolidation-creation",
+        status: "active",
+        iconName: "FileText",
+      },
+      {
+        title: "Picking",
+        url: "/mm/consolidation/picking",
+        slug: "consolidation-picking",
+        status: "active",
+        iconName: "SquarePen",
+      },
+      {
+        title: "Auditing",
+        url: "/mm/consolidation/auditing",
+        slug: "consolidation-auditing",
+        status: "active",
+        iconName: "Shield",
+      },
+    ],
   };
 
-  const enhancedItems = items.some(
-    (i) => i.slug === "invoice-consolidation"
+  // Replace old invoice-consolidation with new consolidation nav
+  const filtered = items.filter(
+    (i) => i.slug !== "invoice-consolidation"
+  );
+
+  const enhancedItems = filtered.some(
+    (i) => i.slug === "consolidation"
   )
-    ? items
-    : [...items, invoiceConsolidationItem];
+    ? filtered
+    : [...filtered, consolidationParent];
 
   return (
     <AppSidebarClient
@@ -30,4 +58,3 @@ export async function AppSidebar(props: ComponentProps<typeof Sidebar>) {
     />
   );
 }
-

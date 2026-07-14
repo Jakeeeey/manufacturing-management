@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
-export default function OldInvoiceConsolidationPage() {
+export default function ConsolidationPage() {
     redirect("/mm/consolidation/creation");
 }

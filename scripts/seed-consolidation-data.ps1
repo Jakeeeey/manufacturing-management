@@ -9,7 +9,7 @@ $customerCode = "CUST-OSA-888"
 $paymentTerms = 12
 $salesmanId = 1041
 
-Write-Host "=== Seeding 5 Sales Orders + Invoices for Consolidation ===" -ForegroundColor Cyan
+Write-Host "=== Seeding 10 Sales Orders + Invoices for Consolidation ===" -ForegroundColor Cyan
 Write-Host ""
 
 function CreateOrderAndInvoice {
@@ -153,11 +153,40 @@ function CreateOrderAndInvoice {
     }
 }
 
-# ---- Seed 5 Orders ----
+# ---- Seed 10 Orders ----
 $results = @()
 
 $r = CreateOrderAndInvoice -poNo "PO-TEST-1001" -products @(
     @{ product_id = 25532; product_name = "Canton Noodles 300g Pack"; qty = 500; unit_price = 35.00 }
+)
+if ($r) { $results += $r }
+
+$r = CreateOrderAndInvoice -poNo "PO-TEST-1006" -products @(
+    @{ product_id = 25533; product_name = "Canton Noodles 300g Box (18 Packs)"; qty = 20; unit_price = 630.00 },
+    @{ product_id = 25542; product_name = "Bihon 454g Pack"; qty = 150; unit_price = 35.00 }
+)
+if ($r) { $results += $r }
+
+$r = CreateOrderAndInvoice -poNo "PO-TEST-1007" -products @(
+    @{ product_id = 25543; product_name = "Bihon 454g Mother Bag (20 Packs)"; qty = 12; unit_price = 700.00 }
+)
+if ($r) { $results += $r }
+
+$r = CreateOrderAndInvoice -poNo "PO-TEST-1008" -products @(
+    @{ product_id = 25565; product_name = "Palm Oil 1L SWAK"; qty = 250; unit_price = 75.60 }
+)
+if ($r) { $results += $r }
+
+$r = CreateOrderAndInvoice -poNo "PO-TEST-1009" -products @(
+    @{ product_id = 25563; product_name = "Palm Oil 500ml SWAK"; qty = 180; unit_price = 37.85 },
+    @{ product_id = 25532; product_name = "Canton Noodles 300g Pack"; qty = 300; unit_price = 35.00 }
+)
+if ($r) { $results += $r }
+
+$r = CreateOrderAndInvoice -poNo "PO-TEST-1010" -products @(
+    @{ product_id = 25532; product_name = "Canton Noodles 300g Pack"; qty = 400; unit_price = 35.00 },
+    @{ product_id = 25542; product_name = "Bihon 454g Pack"; qty = 400; unit_price = 35.00 },
+    @{ product_id = 25565; product_name = "Palm Oil 1L SWAK"; qty = 100; unit_price = 75.60 }
 )
 if ($r) { $results += $r }
 
@@ -191,4 +220,4 @@ foreach ($c in $results) {
     Write-Host "  $line" -ForegroundColor White
 }
 Write-Host ""
-Write-Host "Open /mm/invoice-consolidation, select Main branch, the 5 invoices appear as candidates." -ForegroundColor Cyan
+Write-Host "Open /mm/consolidation/creation, select Main branch, the 10 invoices appear as candidates." -ForegroundColor Cyan

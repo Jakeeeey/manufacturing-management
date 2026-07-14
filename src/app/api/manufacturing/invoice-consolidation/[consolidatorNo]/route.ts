@@ -1,8 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DIRECTUS_URL, headers as directusHeaders } from "../../directus-api";
+import { resolveVersions } from "../version-resolver";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+interface InvoiceProduct {
+    productId: number;
+    productName: string;
+    productCode: string;
+    quantity: number;
+    versionId: number | null;
+    versionName: string | null;
+}
 
 export async function GET(
     _req: NextRequest,
@@ -47,17 +57,17 @@ export async function GET(
         const detJunctions: Array<{ id: number; consolidator_id: number; product_id: number; ordered_quantity: number; picked_quantity: number; applied_quantity: number; picked_by: number | null; picked_at: string | null }> = (await detRes.json()).data || [];
 
         const invoiceIds = invJunctions.map((j) => j.invoice_id);
-        let invoiceMap = new Map<number, { invoice_no: string; branch_id: number; total_amount: number }>();
+        let invoiceMap = new Map<number, { invoice_id: number; invoice_no: string; branch_id: number; total_amount: number; customer_code: string }>();
         if (invoiceIds.length > 0) {
             const siRes = await fetch(
-                `${DIRECTUS_URL}/items/sales_invoice?filter[invoice_id][_in]=${invoiceIds.join(",")}&fields=invoice_id,invoice_no,branch_id,total_amount&limit=-1`,
+                `${DIRECTUS_URL}/items/sales_invoice?filter[invoice_id][_in]=${invoiceIds.join(",")}&fields=invoice_id,invoice_no,branch_id,total_amount,customer_code&limit=-1`,
                 { headers: directusHeaders, cache: "no-store" }
             );
             if (!siRes.ok) {
                 return NextResponse.json({ message: `Directus error (HTTP ${siRes.status})` }, { status: siRes.status });
             }
             const siData = (await siRes.json()).data || [];
-            invoiceMap = new Map(siData.map((s: { invoice_id: number; invoice_no: string; branch_id: number; total_amount: number }) => [s.invoice_id, s]));
+            invoiceMap = new Map(siData.map((s: { invoice_id: number; invoice_no: string; branch_id: number; total_amount: number; customer_code: string }) => [s.invoice_id, s]));
         }
 
         const productIds = [...new Set(detJunctions.map((d) => d.product_id))];
@@ -73,6 +83,74 @@ export async function GET(
             }
         }
 
+        // Load per-invoice product details with version resolution
+        const invoiceNos = invoiceIds;
+        let invDetailsRaw: { invoice_no: number; product_id: number; quantity: number }[] = [];
+        if (invoiceNos.length > 0) {
+            const siDetRes = await fetch(
+                `${DIRECTUS_URL}/items/sales_invoice_details?filter[invoice_no][_in]=${invoiceNos.join(",")}&limit=-1&fields=invoice_no,product_id,quantity`,
+                { headers: directusHeaders, cache: "no-store" }
+            );
+            if (siDetRes.ok) {
+                invDetailsRaw = (await siDetRes.json()).data || [];
+            }
+        }
+
+        // Load customer info for version resolution
+        const customerCodes = [...new Set(Array.from(invoiceMap.values()).map((s) => s.customer_code).filter(Boolean))];
+        let customerMap = new Map<string, { id: number }>();
+        if (customerCodes.length > 0) {
+            const custRes = await fetch(
+                `${DIRECTUS_URL}/items/customer?filter[customer_code][_in]=${customerCodes.map((c) => encodeURIComponent(c)).join(",")}&limit=-1&fields=id,customer_code`,
+                { headers: directusHeaders, cache: "no-store" }
+            );
+            if (custRes.ok) {
+                const custData = (await custRes.json()).data || [];
+                customerMap = new Map(custData.map((c: { id: number; customer_code: string }) => [c.customer_code, c]));
+            }
+        }
+
+        // Build version pairs from linked invoices
+        const versionPairs: { customerId: number; productId: number }[] = [];
+        for (const j of invJunctions) {
+            const si = invoiceMap.get(j.invoice_id);
+            if (!si) continue;
+            const cust = customerMap.get(si.customer_code);
+            if (!cust) continue;
+            const invDetails = invDetailsRaw.filter((d) => d.invoice_no === j.invoice_id);
+            for (const d of invDetails) {
+                versionPairs.push({ customerId: cust.id, productId: d.product_id });
+            }
+        }
+        const versionMap = await resolveVersions(versionPairs);
+
+        // Aggregate invoice products by invoice_id
+        const invoiceProductsMap = new Map<number, InvoiceProduct[]>();
+        for (const d of invDetailsRaw) {
+            const invId = d.invoice_no;
+            if (!invoiceProductsMap.has(invId)) invoiceProductsMap.set(invId, []);
+            const list = invoiceProductsMap.get(invId)!;
+            const existing = list.find((p) => p.productId === d.product_id);
+            const qty = Number(d.quantity || 0);
+            if (existing) {
+                existing.quantity += qty;
+            } else {
+                const si = invoiceMap.get(invId);
+                const cust = si ? customerMap.get(si.customer_code) : undefined;
+                const versionKey = cust ? `${cust.id}:${d.product_id}` : "";
+                const version = versionMap.get(versionKey);
+                const prod = productMap.get(d.product_id);
+                list.push({
+                    productId: d.product_id,
+                    productName: prod?.product_name || `Product #${d.product_id}`,
+                    productCode: prod?.product_code || "",
+                    quantity: qty,
+                    versionId: version?.versionId ?? null,
+                    versionName: version?.versionName ?? null,
+                });
+            }
+        }
+
         const invoices = invJunctions.map((j) => {
             const si = invoiceMap.get(j.invoice_id);
             return {
@@ -82,6 +160,7 @@ export async function GET(
                 invoiceNo: si?.invoice_no || `#${j.invoice_id}`,
                 branchId: si?.branch_id ?? c.branch_id,
                 createdAt: j.created_at,
+                products: invoiceProductsMap.get(j.invoice_id) || [],
             };
         });
 
