@@ -1,7 +1,7 @@
 /* eslint-disable */
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { DIRECTUS_URL, headers } from "@/app/api/manufacturing/directus-api";
+import { DIRECTUS_URL, headers } from "../_directus";
 
 export async function GET(request: Request) {
     try {

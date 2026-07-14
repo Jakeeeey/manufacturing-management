@@ -42,7 +42,7 @@ export interface IncomingShipment {
     total_foreign_currency: number;
     exchange_rate: number;
     total_php_value: number;
-    status: "Ordered" | "Approved" | "En Route" | "Receiving (QA)" | "Received" | "Rejected";
+    status: "Ordered" | "Approved" | "Cancelled" | "For Pickup" | "En Route" | "Receiving (QA)" | "Partially Received" | "Received" | "Rejected";
     remark?: string;
     created_at?: string;
     branch_id?: number | null;
@@ -157,7 +157,7 @@ export interface DirectusShipment {
     total_foreign_currency: number;
     exchange_rate: number;
     total_php_value: number;
-    status: "Ordered" | "Approved" | "En Route" | "Receiving (QA)" | "Received";
+    status: "Ordered" | "Approved" | "Cancelled" | "For Pickup" | "En Route" | "Receiving (QA)" | "Partially Received" | "Received" | "Rejected";
     created_at?: string;
 }
 
@@ -182,6 +182,11 @@ export interface DirectusShipmentExpense {
 export interface DirectusProductPerSupplier {
     id: number;
     supplier_id: number;
+    discount_type?: {
+        id: number;
+        discount_type: string;
+        total_percent: number;
+    } | null;
     product_id: {
         product_id: number;
         product_name: string;
@@ -224,7 +229,7 @@ export interface ShipmentData {
     exchange_rate: string;
     total_foreign_currency: string;
     total_php_value: string;
-    status: "Ordered" | "Approved" | "En Route" | "Receiving (QA)" | "Received" | "Rejected";
+    status: "Ordered" | "Approved" | "Cancelled" | "For Pickup" | "En Route" | "Receiving (QA)" | "Partially Received" | "Received" | "Rejected";
     date_received: string;
     branch_id: number | null;
     payment_type: number | null;

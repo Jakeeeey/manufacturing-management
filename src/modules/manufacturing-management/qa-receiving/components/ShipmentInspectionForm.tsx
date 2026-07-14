@@ -1,12 +1,13 @@
 import React from "react";
 import Image from "next/image";
 import { ArrowLeft, MapPin, AlertTriangle, CheckCircle2, Search, ChevronDown, Image as ImageIcon, Plus, Minus, Loader2 } from "lucide-react";
-import { Shipment, ShipmentLineItem, Branch, InspectionRow } from "../types";
+import { Shipment, ShipmentLineItem, Branch, InspectionRow, StorageLot } from "../types";
 
 interface ShipmentInspectionFormProps {
     selectedShipment: Shipment;
     lineItems: ShipmentLineItem[];
     branches: Branch[];
+    storageLots: StorageLot[];
     selectedBranchId: string;
     setSelectedBranchId: (val: string) => void;
     inspectionRows: Record<number, InspectionRow>;
@@ -20,6 +21,7 @@ export default function ShipmentInspectionForm({
     selectedShipment,
     lineItems,
     branches,
+    storageLots,
     selectedBranchId,
     setSelectedBranchId,
     inspectionRows,
@@ -189,7 +191,8 @@ export default function ShipmentInspectionForm({
                             receivedQty: "",
                             acceptedQty: "",
                             boQty: "",
-                            lotNumber: "",
+                            batchNumber: "",
+                            lotId: "",
                             expirationDate: "",
                             rejectionReason: "",
                             qaStatus: "",
@@ -206,8 +209,8 @@ export default function ShipmentInspectionForm({
                         const boVal = row.receivedQty !== "" && row.acceptedQty !== "" ? Math.max(0, receivedVal - acceptedVal) : (row.boQty !== "" ? Number(row.boQty) : 0);
                         const isOverAcceptance = row.acceptedQty !== "" && row.receivedQty !== "" && acceptedVal > receivedVal;
 
-                        // Remarks mandatory rule: BO Qty > 0, Received > Ordered, OR over-acceptance
-                        const isRemarksMandatory = boVal > 0 || (row.receivedQty !== "" && receivedVal > orderedVal) || isOverAcceptance;
+                        // Remarks mandatory rule: BO Qty > 0, received quantity differs from ordered, or over-acceptance.
+                        const isRemarksMandatory = boVal > 0 || (row.receivedQty !== "" && receivedVal !== orderedVal) || isOverAcceptance;
 
                         return (
                             <div 
@@ -379,19 +382,38 @@ export default function ShipmentInspectionForm({
                                      );
                                  })()}
 
-                                <div className="grid gap-4 grid-cols-1 sm:grid-cols-3 pt-1">
+                                <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 pt-1">
                                     <div className="space-y-1">
                                         <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">
-                                            Lot / Batch ID <span className="text-red-500">*</span>
+                                            Supplier Batch Number <span className="text-red-500">*</span>
                                         </label>
                                         <input
                                             type="text"
                                             required
-                                            placeholder="Batch lot tag"
-                                            value={row.lotNumber}
-                                            onChange={e => handleUpdateRow(line.line_id, "lotNumber", e.target.value)}
+                                            placeholder="Supplier batch number"
+                                            value={row.batchNumber}
+                                            onChange={e => handleUpdateRow(line.line_id, "batchNumber", e.target.value)}
                                             className="w-full h-10 bg-background border text-foreground rounded-lg px-3 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-primary"
                                         />
+                                    </div>
+
+                                    <div className="space-y-1">
+                                        <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">
+                                            Storage Lot <span className="text-red-500">*</span>
+                                        </label>
+                                        <select
+                                            required
+                                            value={row.lotId}
+                                            onChange={e => handleUpdateRow(line.line_id, "lotId", e.target.value)}
+                                            className="w-full h-10 bg-background border text-foreground rounded-lg px-3 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-primary"
+                                        >
+                                            <option value="">Select storage lot...</option>
+                                            {storageLots.map(lot => (
+                                                <option key={lot.lot_id} value={lot.lot_id}>
+                                                    {lot.lot_name} (capacity {lot.max_batch_capacity})
+                                                </option>
+                                            ))}
+                                        </select>
                                     </div>
 
                                     <div className="space-y-1">
@@ -451,20 +473,19 @@ export default function ShipmentInspectionForm({
                                 </div>
 
                                 {/* Remarks field */}
-                                {isRemarksMandatory && (
-                                    <div className="space-y-1 pt-1 animate-in fade-in duration-200">
-                                        <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">
-                                            Remarks / Rejection Notes <span className="text-red-500">*</span>
-                                        </label>
-                                        <input
-                                            type="text"
-                                            placeholder={boVal > 0 ? "Bad order explanation is mandatory" : isOverAcceptance ? "Document source of extra units" : "Reason for over-shipment"}
-                                            value={row.rejectionReason}
-                                            onChange={e => handleUpdateRow(line.line_id, "rejectionReason", e.target.value)}
-                                            className="w-full h-10 bg-background border text-foreground rounded-lg px-3 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-primary"
-                                        />
-                                    </div>
-                                )}
+                                <div className="space-y-1 pt-1">
+                                    <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">
+                                        Remarks / Rejection Notes {isRemarksMandatory && <span className="text-red-500">*</span>}
+                                    </label>
+                                    <input
+                                        type="text"
+                                        required={isRemarksMandatory}
+                                        placeholder={isRemarksMandatory ? "Logistics discrepancy or bad order explanation is mandatory" : "Reason for discrepancy or failure"}
+                                        value={row.rejectionReason}
+                                        onChange={e => handleUpdateRow(line.line_id, "rejectionReason", e.target.value)}
+                                        className="w-full h-10 bg-background border text-foreground rounded-lg px-3 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-primary"
+                                    />
+                                </div>
 
                                 {/* Discrepancy warnings */}
                                 {row.receivedQty !== "" && receivedVal !== orderedVal && !isOverAcceptance && (

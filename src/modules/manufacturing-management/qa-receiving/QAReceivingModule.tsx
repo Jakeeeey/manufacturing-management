@@ -13,6 +13,7 @@ export default function QAReceivingModule() {
         activeTab,
         setActiveTab,
         branches,
+        storageLots,
         loadingShipments,
         selectedShipment,
         setSelectedShipment,
@@ -129,6 +130,7 @@ export default function QAReceivingModule() {
                                 selectedShipment={selectedShipment}
                                 lineItems={lineItems}
                                 branches={branches}
+                                storageLots={storageLots}
                                 selectedBranchId={selectedBranchId}
                                 setSelectedBranchId={setSelectedBranchId}
                                 inspectionRows={inspectionRows}

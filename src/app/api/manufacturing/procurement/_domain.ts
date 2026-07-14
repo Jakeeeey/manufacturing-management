@@ -1,0 +1,144 @@
+export const INVENTORY_STATUS = {
+    REQUESTED: 1,
+    APPROVED: 3,
+    RECEIVED: 6,
+    CANCELLED: 7,
+    PARTIALLY_RECEIVED: 9,
+    FOR_PICKUP: 11,
+    EN_ROUTE: 12,
+    REJECTED: 13
+} as const;
+
+export const PAYMENT_STATUS = {
+    PENDING: 1,
+    PARTIALLY_PAID: 3,
+    PAID: 4,
+    OVERDUE: 5,
+    PROCESSING: 8
+} as const;
+
+export type InventoryStatusId = typeof INVENTORY_STATUS[keyof typeof INVENTORY_STATUS];
+
+export const INVENTORY_STATUS_LABELS: Record<InventoryStatusId, string> = {
+    [INVENTORY_STATUS.REQUESTED]: "Requested",
+    [INVENTORY_STATUS.APPROVED]: "Approved",
+    [INVENTORY_STATUS.RECEIVED]: "Received",
+    [INVENTORY_STATUS.CANCELLED]: "Cancelled",
+    [INVENTORY_STATUS.PARTIALLY_RECEIVED]: "Partially Received",
+    [INVENTORY_STATUS.FOR_PICKUP]: "For Pickup",
+    [INVENTORY_STATUS.EN_ROUTE]: "En Route",
+    [INVENTORY_STATUS.REJECTED]: "Rejected"
+};
+
+const ALLOWED_TRANSITIONS: Record<InventoryStatusId, readonly InventoryStatusId[]> = {
+    [INVENTORY_STATUS.REQUESTED]: [INVENTORY_STATUS.APPROVED, INVENTORY_STATUS.CANCELLED],
+    [INVENTORY_STATUS.APPROVED]: [INVENTORY_STATUS.FOR_PICKUP, INVENTORY_STATUS.EN_ROUTE],
+    [INVENTORY_STATUS.FOR_PICKUP]: [INVENTORY_STATUS.EN_ROUTE],
+    [INVENTORY_STATUS.EN_ROUTE]: [INVENTORY_STATUS.PARTIALLY_RECEIVED, INVENTORY_STATUS.RECEIVED, INVENTORY_STATUS.REJECTED],
+    [INVENTORY_STATUS.PARTIALLY_RECEIVED]: [INVENTORY_STATUS.RECEIVED],
+    [INVENTORY_STATUS.RECEIVED]: [],
+    [INVENTORY_STATUS.CANCELLED]: [],
+    [INVENTORY_STATUS.REJECTED]: []
+};
+
+export function isInventoryStatusId(value: number): value is InventoryStatusId {
+    return Object.prototype.hasOwnProperty.call(INVENTORY_STATUS_LABELS, value);
+}
+
+export function canTransitionInventoryStatus(current: number, target: number): boolean {
+    return isInventoryStatusId(current)
+        && isInventoryStatusId(target)
+        && ALLOWED_TRANSITIONS[current].includes(target);
+}
+
+export type ShipmentStatusLabel = "Ordered" | "Approved" | "Cancelled" | "For Pickup" | "En Route" | "Receiving (QA)" | "Partially Received" | "Received" | "Rejected";
+
+export function inventoryStatusToShipmentStatus(statusId?: number | null): ShipmentStatusLabel {
+    switch (statusId) {
+        case INVENTORY_STATUS.APPROVED: return "Approved";
+        case INVENTORY_STATUS.CANCELLED: return "Cancelled";
+        case INVENTORY_STATUS.FOR_PICKUP: return "For Pickup";
+        case INVENTORY_STATUS.EN_ROUTE: return "En Route";
+        // Existing screens use this label; the canonical lookup label remains Partially Received.
+        case INVENTORY_STATUS.PARTIALLY_RECEIVED: return "Receiving (QA)";
+        case INVENTORY_STATUS.RECEIVED: return "Received";
+        case INVENTORY_STATUS.REJECTED: return "Rejected";
+        default: return "Ordered";
+    }
+}
+
+export function shipmentStatusToInventoryStatus(status: string): InventoryStatusId {
+    switch (status) {
+        case "Approved": return INVENTORY_STATUS.APPROVED;
+        case "Cancelled": return INVENTORY_STATUS.CANCELLED;
+        case "For Pickup": return INVENTORY_STATUS.FOR_PICKUP;
+        case "En Route": return INVENTORY_STATUS.EN_ROUTE;
+        case "Receiving (QA)":
+        case "Partially Received": return INVENTORY_STATUS.PARTIALLY_RECEIVED;
+        case "Received": return INVENTORY_STATUS.RECEIVED;
+        case "Rejected": return INVENTORY_STATUS.REJECTED;
+        default: return INVENTORY_STATUS.REQUESTED;
+    }
+}
+
+export function canonicalBatchNumber(batchNo?: unknown, legacyLotNumber?: unknown): string | null {
+    const canonical = typeof batchNo === "string" ? batchNo.trim() : "";
+    if (canonical) return canonical;
+    const legacy = typeof legacyLotNumber === "string" ? legacyLotNumber.trim() : "";
+    return legacy || null;
+}
+
+function roundMoney(value: number): number {
+    return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+export function calculatePurchaseLineAmounts(quantity: number, unitPrice: number, discountPercent = 0) {
+    if (![quantity, unitPrice, discountPercent].every(Number.isFinite)) {
+        throw new Error("Quantity, unit price, and discount percent must be finite numbers.");
+    }
+    if (quantity < 0 || unitPrice < 0 || discountPercent < 0 || discountPercent > 100) {
+        throw new Error("Quantity and unit price cannot be negative, and discount percent must be between 0 and 100.");
+    }
+
+    const grossAmount = roundMoney(quantity * unitPrice);
+    const discountedAmount = roundMoney(grossAmount * discountPercent / 100);
+    const netAmount = roundMoney(grossAmount - discountedAmount);
+    const discountedPrice = quantity > 0 ? roundMoney(netAmount / quantity) : roundMoney(unitPrice);
+    return { grossAmount, discountedAmount, netAmount, discountedPrice };
+}
+
+function parseDateOnly(value: string): number {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    if (!match) throw new Error("Dates must use YYYY-MM-DD format.");
+    const timestamp = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+    const date = new Date(timestamp);
+    if (date.getUTCFullYear() !== Number(match[1]) || date.getUTCMonth() !== Number(match[2]) - 1 || date.getUTCDate() !== Number(match[3])) {
+        throw new Error("Invalid calendar date.");
+    }
+    return timestamp;
+}
+
+export function evaluateShelfLife(receiptDate: string, expiryDate: string, shelfLifeDays?: number | null) {
+    const receipt = parseDateOnly(receiptDate);
+    const expiry = parseDateOnly(expiryDate);
+    const remainingDays = Math.floor((expiry - receipt) / 86_400_000);
+    if (remainingDays <= 0) {
+        return { valid: false, warning: false, remainingDays, remainingRatio: 0 };
+    }
+    if (!shelfLifeDays || shelfLifeDays <= 0) {
+        return { valid: true, warning: false, remainingDays, remainingRatio: null };
+    }
+    const remainingRatio = remainingDays / shelfLifeDays;
+    return { valid: true, warning: remainingRatio < 0.25, remainingDays, remainingRatio };
+}
+
+export function todayInManila(now = new Date()): string {
+    const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone: "Asia/Manila",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit"
+    }).formatToParts(now);
+    const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+    return `${values.year}-${values.month}-${values.day}`;
+}
