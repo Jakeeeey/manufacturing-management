@@ -59,6 +59,8 @@ export default function FinishedGoodsModule() {
         loadingProducts,
         loadingBOM,
         savingBOM,
+        saveProgress,
+        saveStatus,
         products,
         selectedProductId,
         setSelectedProductId,
@@ -893,7 +895,13 @@ export default function FinishedGoodsModule() {
 
                     {/* Tab Contents */}
                     <div className="flex-1 overflow-y-auto p-6 min-h-0 relative">
-                        {selectedProduct ? (
+                        {loadingProducts && !selectedProduct ? (
+                            <div className="flex flex-col items-center justify-center p-20 text-muted-foreground h-full">
+                                <Loader2 className="h-10 w-10 animate-spin text-primary mb-3" />
+                                <span className="text-sm font-semibold">Loading product database...</span>
+                                <span className="text-xs text-muted-foreground mt-1">Please wait while we retrieve finished goods and configuration options.</span>
+                            </div>
+                        ) : selectedProduct ? (
                             <>
                                 {activeTab === "details" && (
                                     <ProductDetailsTab
@@ -1031,10 +1039,21 @@ export default function FinishedGoodsModule() {
                                 )}
                                 {savingBOM && (
                                     <div className="absolute inset-0 bg-background/55 backdrop-blur-xs flex items-center justify-center z-50 animate-in fade-in duration-150">
-                                        <div className="bg-card border rounded-xl shadow-lg p-5 flex flex-col items-center gap-2 max-w-xs text-center border-primary/20">
-                                            <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                                            <h4 className="text-xs font-bold text-foreground">Saving Changes...</h4>
-                                            <p className="text-[10px] text-muted-foreground">Uploading ingredients, routing configurations and updating cost rollups.</p>
+                                        <div className="bg-card border rounded-xl shadow-lg p-6 flex flex-col gap-4 w-80 text-center border-primary/20">
+                                            <div className="flex flex-col items-center gap-1">
+                                                <h4 className="text-xs font-bold text-foreground uppercase tracking-wider">Processing Request</h4>
+                                                <p className="text-[10px] text-muted-foreground font-mono">{saveStatus}</p>
+                                            </div>
+                                            <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden relative">
+                                                <div 
+                                                    className="bg-primary h-full rounded-full transition-all duration-300 ease-out"
+                                                    style={{ width: `${saveProgress}%` }}
+                                                />
+                                            </div>
+                                            <div className="flex justify-between items-center text-[10px] font-mono font-bold text-muted-foreground">
+                                                <span>PROGRESS</span>
+                                                <span className="text-primary">{saveProgress}%</span>
+                                            </div>
                                         </div>
                                     </div>
                                 )}

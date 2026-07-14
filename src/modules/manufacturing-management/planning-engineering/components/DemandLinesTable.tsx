@@ -1,5 +1,5 @@
-import React from "react";
-import { Loader2, Plus } from "lucide-react";
+import React, { useState, useMemo } from "react";
+import { Loader2, Plus, Search } from "lucide-react";
 import {
     Card,
     CardContent,
@@ -8,6 +8,7 @@ import {
     CardTitle
 } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import {
     Table,
     TableBody,
@@ -22,7 +23,6 @@ interface DemandLinesTableProps {
     loadingOrders: boolean;
     salesOrderLines: SalesOrderDetail[];
     selectedDetailIds: number[];
-    handleSelectAll: (checked: boolean) => void;
     handleSelectLine: (detailId: number, checked: boolean) => void;
 }
 
@@ -30,19 +30,43 @@ export function DemandLinesTable({
     loadingOrders,
     salesOrderLines,
     selectedDetailIds,
-    handleSelectAll,
     handleSelectLine
 }: DemandLinesTableProps) {
+    const [searchQuery, setSearchQuery] = useState("");
+
+    // Filter lines based on search query (by product name, SO number, or customer name)
+    const filteredLines = useMemo(() => {
+        if (!searchQuery.trim()) return salesOrderLines;
+        const q = searchQuery.toLowerCase();
+        return salesOrderLines.filter(line => 
+            (line.product_id?.product_name || "").toLowerCase().includes(q) ||
+            (line.order_no || "").toLowerCase().includes(q) ||
+            (line.customer_name || "").toLowerCase().includes(q) ||
+            (line.product_id?.product_code || "").toLowerCase().includes(q)
+        );
+    }, [salesOrderLines, searchQuery]);
+
     return (
         <Card className="shadow-sm">
-            <CardHeader className="pb-3 border-b bg-muted/10">
-                <CardTitle className="text-base font-bold flex items-center gap-2">
-                    <Plus className="h-5 w-5 text-primary" />
-                    Unfulfilled Demand Lines
-                </CardTitle>
-                <CardDescription className="text-xs">
-                    Sales Order items awaiting production scheduling.
-                </CardDescription>
+            <CardHeader className="pb-3 border-b bg-muted/10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                    <CardTitle className="text-base font-bold flex items-center gap-2">
+                        <Plus className="h-5 w-5 text-primary" />
+                        Unfulfilled Demand Lines
+                    </CardTitle>
+                    <CardDescription className="text-xs">
+                        Sales Order items awaiting production scheduling.
+                    </CardDescription>
+                </div>
+                <div className="relative w-full md:w-60 shrink-0">
+                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                        placeholder="Search product or SO #..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="pl-9 h-9 text-xs"
+                    />
+                </div>
             </CardHeader>
             <CardContent className="p-0">
                 {loadingOrders ? (
@@ -52,9 +76,9 @@ export function DemandLinesTable({
                             Loading lines...
                         </span>
                     </div>
-                ) : salesOrderLines.length === 0 ? (
+                ) : filteredLines.length === 0 ? (
                     <div className="p-12 text-center text-xs text-muted-foreground font-semibold">
-                        No unfulfilled demand found.
+                        No matching unfulfilled demand found.
                     </div>
                 ) : (
                     <div className="overflow-x-auto max-h-[50vh] overflow-y-auto">
@@ -64,10 +88,26 @@ export function DemandLinesTable({
                                     <TableHead className="w-[40px] text-center">
                                         <Checkbox
                                             checked={
-                                                salesOrderLines.length > 0 &&
-                                                selectedDetailIds.length === salesOrderLines.length
+                                                filteredLines.length > 0 &&
+                                                filteredLines.every(l => selectedDetailIds.includes(l.detail_id))
                                             }
-                                            onCheckedChange={(checked) => handleSelectAll(!!checked)}
+                                            onCheckedChange={(checked) => {
+                                                if (checked) {
+                                                    // Select only the filtered lines
+                                                    filteredLines.forEach(l => {
+                                                        if (!selectedDetailIds.includes(l.detail_id)) {
+                                                            handleSelectLine(l.detail_id, true);
+                                                        }
+                                                    });
+                                                } else {
+                                                    // Deselect only the filtered lines
+                                                    filteredLines.forEach(l => {
+                                                        if (selectedDetailIds.includes(l.detail_id)) {
+                                                            handleSelectLine(l.detail_id, false);
+                                                        }
+                                                    });
+                                                }
+                                            }}
                                         />
                                     </TableHead>
                                     <TableHead className="font-bold text-xs">SO No.</TableHead>
@@ -76,7 +116,7 @@ export function DemandLinesTable({
                                 </TableRow>
                             </TableHeader>
                             <TableBody className="divide-y divide-border">
-                                {salesOrderLines.map((line) => (
+                                {filteredLines.map((line) => (
                                     <TableRow key={line.detail_id} className="hover:bg-muted/5">
                                         <TableCell className="py-2 text-center">
                                             <Checkbox
@@ -95,7 +135,7 @@ export function DemandLinesTable({
                                             </div>
                                         </TableCell>
                                         <TableCell className="py-2 text-xs">
-                                            <div className="font-semibold text-foreground truncate max-w-[150px]">
+                                            <div className="font-semibold text-foreground">
                                                 {line.product_id?.product_name}
                                             </div>
                                             <div className="text-[10px] font-medium text-primary">
@@ -103,7 +143,10 @@ export function DemandLinesTable({
                                             </div>
                                         </TableCell>
                                         <TableCell className="py-2 text-right font-bold text-xs">
-                                            {line.ordered_quantity.toLocaleString()}
+                                            <span>{line.ordered_quantity.toLocaleString()}</span>
+                                            <span className="text-[10px] text-muted-foreground font-normal ml-1 lowercase">
+                                                {line.product_id?.uom || "pcs"}
+                                            </span>
                                         </TableCell>
                                     </TableRow>
                                 ))}

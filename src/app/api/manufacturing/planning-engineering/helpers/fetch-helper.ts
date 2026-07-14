@@ -16,35 +16,89 @@ interface DirectusMfgRouting {
     name?: string;
 }
 
+// Global in-memory cache for static master data
+let masterDataCache: {
+    mfgRoutings: any[];
+    mfgBoms: any[];
+    productsList: any[];
+    operations: any[];
+    mfgRoutesBom: any[];
+    timestamp: number;
+} | null = null;
+
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes TTL
+
 export async function fetchJobOrders(): Promise<DirectusJobOrder[]> {
     try {
-        const [joRes, josoRes, tasksRes, assignsRes, qaRes, mfgRoutingsRes, mfgBomsRes, prodRes, operationsRes, materialsRes, mfgRoutesBomRes, mfgYieldLedgerRes] = await Promise.all([
+        const now = Date.now();
+        const useCache = masterDataCache && (now - masterDataCache.timestamp < CACHE_TTL_MS);
+
+        const fetchList = [
             fetch(`${DIRECTUS_URL}/items/manufacturing_job_orders?limit=-1&sort=-job_order_id`, { headers: headersNoCache }),
             fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_allocations?limit=-1`, { headers: headersNoCache }),
             fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_routes?limit=-1&fields=jo_route_id,job_order_id,sequence_order,work_center_id,operation_id,planned_setup_hours,planned_run_hours,actual_setup_hours,actual_run_hours,estimated_labor_cost,actual_labor_cost`, { headers: headersNoCache }),
             fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_route_operators?limit=-1`, { headers: headersNoCache }),
             fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_qa_records?limit=-1`, { headers: headersNoCache }),
-            fetch(`${DIRECTUS_URL}/items/manufacturing_routes?limit=-1`, { headers: headersNoCache }),
-            fetch(`${DIRECTUS_URL}/items/manufacturing_boms?limit=-1`, { headers: headersNoCache }),
-            fetch(`${DIRECTUS_URL}/items/products?limit=-1&fields=product_id,product_name,unit_of_measurement.unit_shortcut`, { headers: headersNoCache }),
-            fetch(`${DIRECTUS_URL}/items/manufacturing_operations?limit=-1`, { headers: headersNoCache }),
             fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_materials?limit=-1`, { headers: headersNoCache }),
-            fetch(`${DIRECTUS_URL}/items/manufacturing_routes_bom?limit=-1`, { headers: headersNoCache }),
-            fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_yield_ledger?limit=-1`, { headers: headersNoCache })
-        ]);
+            fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_yield_ledger?limit=-1`, { headers: headersNoCache }),
+            fetch(`${DIRECTUS_URL}/items/product_manufacturing_version?limit=-1&fields=version_id,version_name`, { headers: headersNoCache })
+        ];
 
-        const jos = joRes.ok ? (await joRes.json()).data || [] : [];
-        const josos = josoRes.ok ? (await josoRes.json()).data || [] : [];
-        const tasks = tasksRes.ok ? (await tasksRes.json()).data || [] : [];
-        const assigns = assignsRes.ok ? (await assignsRes.json()).data || [] : [];
-        const qaLogs = qaRes.ok ? (await qaRes.json()).data || [] : [];
-        const mfgRoutings = mfgRoutingsRes && mfgRoutingsRes.ok ? (await mfgRoutingsRes.json()).data || [] : [];
-        const mfgBoms = mfgBomsRes && mfgBomsRes.ok ? (await mfgBomsRes.json()).data || [] : [];
-        const productsList = prodRes.ok ? (await prodRes.json()).data || [] : [];
-        const operations = operationsRes.ok ? (await operationsRes.json()).data || [] : [];
-        const materialsList = materialsRes && materialsRes.ok ? (await materialsRes.json()).data || [] : [];
-        const mfgRoutesBom = mfgRoutesBomRes.ok ? (await mfgRoutesBomRes.json()).data || [] : [];
-        const mfgYieldLedger = mfgYieldLedgerRes.ok ? (await mfgYieldLedgerRes.json()).data || [] : [];
+        if (!useCache) {
+            fetchList.push(
+                fetch(`${DIRECTUS_URL}/items/manufacturing_routes?limit=-1`, { headers: headersNoCache }),
+                fetch(`${DIRECTUS_URL}/items/manufacturing_boms?limit=-1`, { headers: headersNoCache }),
+                fetch(`${DIRECTUS_URL}/items/products?limit=-1&fields=product_id,product_name,unit_of_measurement.unit_shortcut`, { headers: headersNoCache }),
+                fetch(`${DIRECTUS_URL}/items/manufacturing_operations?limit=-1`, { headers: headersNoCache }),
+                fetch(`${DIRECTUS_URL}/items/manufacturing_routes_bom?limit=-1`, { headers: headersNoCache })
+            );
+        }
+
+        const responses = await Promise.all(fetchList);
+
+        const jos = responses[0].ok ? (await responses[0].json()).data || [] : [];
+        const josos = responses[1].ok ? (await responses[1].json()).data || [] : [];
+        const tasks = responses[2].ok ? (await responses[2].json()).data || [] : [];
+        const assigns = responses[3].ok ? (await responses[3].json()).data || [] : [];
+        const qaLogs = responses[4].ok ? (await responses[4].json()).data || [] : [];
+        const materialsList = responses[5].ok ? (await responses[5].json()).data || [] : [];
+        const mfgYieldLedger = responses[6].ok ? (await responses[6].json()).data || [] : [];
+        const mfgVersions = responses[7].ok ? (await responses[7].json()).data || [] : [];
+
+        let mfgRoutings = [];
+        let mfgBoms = [];
+        let productsList = [];
+        let operations = [];
+        let mfgRoutesBom = [];
+
+        if (useCache && masterDataCache) {
+            mfgRoutings = masterDataCache.mfgRoutings;
+            mfgBoms = masterDataCache.mfgBoms;
+            productsList = masterDataCache.productsList;
+            operations = masterDataCache.operations;
+            mfgRoutesBom = masterDataCache.mfgRoutesBom;
+        } else {
+            const mfgRoutingsRes = responses[8];
+            const mfgBomsRes = responses[9];
+            const prodRes = responses[10];
+            const operationsRes = responses[11];
+            const mfgRoutesBomRes = responses[12];
+
+            mfgRoutings = mfgRoutingsRes && mfgRoutingsRes.ok ? (await mfgRoutingsRes.json()).data || [] : [];
+            mfgBoms = mfgBomsRes && mfgBomsRes.ok ? (await mfgBomsRes.json()).data || [] : [];
+            productsList = prodRes && prodRes.ok ? (await prodRes.json()).data || [] : [];
+            operations = operationsRes && operationsRes.ok ? (await operationsRes.json()).data || [] : [];
+            mfgRoutesBom = mfgRoutesBomRes && mfgRoutesBomRes.ok ? (await mfgRoutesBomRes.json()).data || [] : [];
+
+            masterDataCache = {
+                mfgRoutings,
+                mfgBoms,
+                productsList,
+                operations,
+                mfgRoutesBom,
+                timestamp: now
+            };
+        }
 
         const getObjId = (obj: any): number => {
             if (!obj) return 0;
@@ -54,24 +108,28 @@ export async function fetchJobOrders(): Promise<DirectusJobOrder[]> {
             return Number(obj);
         };
 
+        const versionMap = new Map<number, string>();
+        mfgVersions.forEach((v: any) => {
+            versionMap.set(Number(v.version_id || v.id), v.version_name);
+        });
+
         // Map them together
         return jos.map((jo: any) => {
             const joNo = jo.job_order_no;
             jo.jo_id = joNo;
             jo.quantity = Number(jo.target_quantity || 0);
             jo.due_date = jo.end_date || null;
+            jo.recipe_version_name = versionMap.get(Number(jo.version_id)) || (jo.version_id ? `Version #${jo.version_id}` : null);
 
             const joIdInt = Number(jo.job_order_id || jo.id || 0);
 
             let mappedStatus = jo.status;
             if (jo.status === "Draft") {
-                const joMaterials = materialsList.filter((m: any) => m.jo_id === joNo || getObjId(m.job_order_id) === joIdInt);
-                if (joMaterials.length > 0) {
-                    const hasShortage = joMaterials.some((m: any) => Number(m.quantity_allocated || m.allocated_quantity || 0) < Number(m.quantity_required || m.allocated_quantity || 0));
-                    mappedStatus = hasShortage ? "Shortage" : "Proceed";
-                } else {
-                    mappedStatus = "Draft";
-                }
+                mappedStatus = "Draft";
+            } else if (jo.status === "Planned") {
+                mappedStatus = "Planned";
+            } else if (jo.status === "Planning") {
+                mappedStatus = "Planning";
             } else if (jo.status === "Released") {
                 mappedStatus = "Proceed";
             } else if (jo.status === "In Progress") {
@@ -165,6 +223,7 @@ export async function fetchJobOrders(): Promise<DirectusJobOrder[]> {
                         status: task.status,
                         planned_setup_hours: Number(task.planned_setup_hours || 0),
                         planned_run_hours: Number(task.planned_run_hours || 0),
+                        duration_hours: Number(task.planned_setup_hours || 0) + Number(task.planned_run_hours || 0),
                         actual_setup_hours: Number(task.actual_setup_hours || 0),
                         actual_run_hours: totalHours > 0 ? totalHours : Number(task.actual_run_hours || 0),
                         estimated_labor_cost: Number(task.estimated_labor_cost || 0),
@@ -185,6 +244,7 @@ export async function fetchJobOrders(): Promise<DirectusJobOrder[]> {
                 operation_name: t.name,
                 setup_time_hours: t.planned_setup_hours,
                 run_time_hours: t.planned_run_hours,
+                duration_hours: t.duration_hours,
                 estimated_labor_cost: t.estimated_labor_cost,
                 status: t.status
             }));
@@ -230,7 +290,8 @@ export async function fetchJobOrders(): Promise<DirectusJobOrder[]> {
                 sales_orders: salesOrders,
                 routing_tasks: routingTasks,
                 parent_job_order_id: resolvedParentId,
-                produced_quantity: totalProduced
+                produced_quantity: totalProduced,
+                yield_logs: joYieldLogs
             };
         });
     } catch (e) {

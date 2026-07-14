@@ -91,11 +91,147 @@ export async function createJobOrder(joData: Partial<DirectusJobOrder>, salesOrd
             versionId = activeVer.version?.version_id;
         }
 
+        // Dry-Run BOM Explosion & Raw Material Stock Verification
+        const shortfalls: Array<{ name: string; required: number; available: number; shortage: number }> = [];
+        
+        for (const p of finalProductsList) {
+            const pId = p.product_id;
+            let pVersionId = p.bom?.version_id;
+            if (!pVersionId) {
+                const activeVer = await getActiveVersionForProduct(pId);
+                pVersionId = activeVer.version?.version_id || null;
+            }
+
+            const { version, routes } = pVersionId 
+                ? await getBOMDetailsForVersion(pId, pVersionId)
+                : await getActiveVersionForProduct(pId);
+            
+            const components: any[] = [];
+            if (routes && routes.length > 0) {
+                for (const r of routes) {
+                    if (r.bom_items && r.bom_items.length > 0) {
+                        components.push(...r.bom_items);
+                    }
+                }
+            }
+            
+            let productionQty = Number(p.quantity);
+            if (version && version.product_id && Number(version.product_id) !== Number(pId)) {
+                const pCount = await getUomCountForProduct(pId);
+                if (pCount > 0) {
+                    productionQty = Math.ceil(productionQty / pCount);
+                }
+            }
+
+            if (components.length > 0) {
+                for (const bItem of components) {
+                    const compProductId = Number(bItem.product_id);
+                    const wastage = 1 + (Number(bItem.wastage_factor_percentage || 0) / 100);
+                    const baseQuantity = Number(version?.base_quantity || 1);
+                    const quantityRequired = (productionQty * Number(bItem.quantity_required || 0) * wastage) / baseQuantity;
+
+                    // Verify if it has an active version (making it a sub-assembly)
+                    const compActiveVer = await getActiveVersionForProduct(compProductId);
+                    const isSubAssembly = compActiveVer && compActiveVer.version;
+
+                    if (!isSubAssembly) {
+                        // This is a raw material! Verify its available stock in purchase_order_receiving
+                        const branchFilter = joData.branch_id ? `&filter[branch_id][_eq]=${Number(joData.branch_id)}` : "";
+                        const receiptsUrl = `${DIRECTUS_URL}/items/purchase_order_receiving?filter[product_id][_eq]=${compProductId}&filter[qa_status][_eq]=Passed&filter[is_reverted][_eq]=0&filter[received_quantity][_gt]=0${branchFilter}&sort=expiry_date`;
+                        
+                        const receiptsRes = await fetch(receiptsUrl, { headers, cache: "no-store" });
+                        const validReceipts = receiptsRes.ok ? (await receiptsRes.json()).data || [] : [];
+                        
+                        const receiptIds = validReceipts.map((r: any) => r.purchase_order_product_id).filter(Boolean);
+                        const reservationsMap: Record<number, number> = {};
+                        if (receiptIds.length > 0) {
+                            try {
+                                const resFilter = encodeURIComponent(JSON.stringify({
+                                    _and: [
+                                        { purchase_order_receiving_id: { _in: receiptIds } },
+                                        { jo_material_id: { job_order_id: { status: { _in: ["Proceed", "Ongoing", "On Hold"] } } } }
+                                    ]
+                                }));
+                                const resRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_materials_reservations?filter=${resFilter}&fields=purchase_order_receiving_id,reserved_quantity&limit=-1`, { headers, cache: "no-store" });
+                                if (resRes.ok) {
+                                    const resData = (await resRes.json()).data || [];
+                                    resData.forEach((r: any) => {
+                                        const porId = Number(r.purchase_order_receiving_id);
+                                        if (porId) {
+                                            reservationsMap[porId] = (reservationsMap[porId] || 0) + Number(r.reserved_quantity || 0);
+                                        }
+                                    });
+                                }
+                            } catch (err) {
+                                console.error("Error checking reservations in dry-run:", err);
+                            }
+                        }
+
+                        // Fetch physical inventory lots
+                        if (!joData.branch_id) {
+                            throw new Error("Cannot verify stock: Job Order is missing branch_id");
+                        }
+                        const branchId = Number(joData.branch_id);
+                        const lotQueryFilter = encodeURIComponent(JSON.stringify({
+                            _and: [
+                                { product_id: { _eq: compProductId } },
+                                { branch_id: { _eq: branchId } },
+                                { source_type: { _eq: "procurement" } }
+                            ]
+                        }));
+                        const physicalLotsRes = await fetch(`${DIRECTUS_URL}/items/inventory_lots?filter=${lotQueryFilter}&limit=-1`, { headers, cache: "no-store" });
+                        const physicalLots = physicalLotsRes.ok ? (await physicalLotsRes.json()).data || [] : [];
+
+                        let netAvailable = 0;
+                        for (const rec of validReceipts) {
+                            const matchedLot = physicalLots.find((l: any) => 
+                                String(l.source_reference) === String(rec.purchase_order_id) && 
+                                (l.lot_number === rec.lot_no || l.lot_number === rec.batch_no || (l.lot_number === "LOT-N/A" && !rec.lot_no && !rec.batch_no))
+                            );
+                            const physicalQty = matchedLot ? Number(matchedLot.quantity || 0) : 0;
+                            const recId = Number(rec.purchase_order_product_id);
+                            const alreadyReserved = reservationsMap[recId] || 0;
+                            netAvailable += Math.max(0, physicalQty - alreadyReserved);
+                        }
+
+                        if (netAvailable < quantityRequired) {
+                            const shortage = quantityRequired - netAvailable;
+                            let prodName = `Product #${compProductId}`;
+                            try {
+                                const prodRes = await fetch(`${DIRECTUS_URL}/items/products/${compProductId}?fields=product_name`, { headers });
+                                if (prodRes.ok) {
+                                    prodName = (await prodRes.json()).data?.product_name || prodName;
+                                }
+                            } catch (err) {
+                                console.error("Failed to fetch product name for shortfall error:", err);
+                            }
+                            shortfalls.push({
+                                name: prodName,
+                                required: quantityRequired,
+                                available: netAvailable,
+                                shortage
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
         let initialStatus = joData.status || "Draft";
         if (initialStatus === "Shortage") initialStatus = "Draft";
         else if (initialStatus === "Proceed") initialStatus = "Released";
         else if (initialStatus === "Ongoing") initialStatus = "In Progress";
         else if (initialStatus === "Finished") initialStatus = "Completed";
+
+        let forcedDraftRemarks = "";
+        if (shortfalls.length > 0) {
+            console.log("[createJobOrder] Shortfall detected. Forcing status to Draft. shortfalls:", shortfalls);
+            initialStatus = "Draft";
+            const shortfallMsg = shortfalls.map(s => 
+                `${s.name} (Shortfall: ${s.shortage.toFixed(2)} units)`
+            ).join("; ");
+            forcedDraftRemarks = ` | Saved as Draft due to raw material shortfalls: ${shortfallMsg}`;
+        }
 
         // 3. Insert header
         const headerPayload = {
@@ -107,10 +243,12 @@ export async function createJobOrder(joData: Partial<DirectusJobOrder>, salesOrd
             start_date: new Date().toISOString().split("T")[0],
             end_date: joData.due_date || null,
             status: initialStatus,
+            shift_option: joData.shift_option || "8",
             created_by: joData.created_by ? Number(joData.created_by) : null,
             created_at: new Date().toISOString(),
-            remarks: joData.remarks || `Consolidated production run. Shift: ${joData.shift_option || "8"}`,
-            parent_job_order_id: joData.parent_job_order_id ? Number(joData.parent_job_order_id) : null
+            remarks: (joData.remarks || `Consolidated production run. Shift: ${joData.shift_option || "8"}`) + forcedDraftRemarks,
+            parent_job_order_id: joData.parent_job_order_id ? Number(joData.parent_job_order_id) : null,
+            branch_id: joData.branch_id ? Number(joData.branch_id) : null
         };
 
         const headerRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_job_orders`, {
@@ -128,6 +266,7 @@ export async function createJobOrder(joData: Partial<DirectusJobOrder>, salesOrd
         const joNoStr = createdJo.job_order_no;
 
         // 4. Insert merged product(s) and explode BOM/routings
+        let totalEstimatedHours = 0;
         for (const p of finalProductsList) {
             const { version, routes } = versionId 
                 ? await getBOMDetailsForVersion(p.product_id, versionId)
@@ -148,14 +287,18 @@ export async function createJobOrder(joData: Partial<DirectusJobOrder>, salesOrd
 
             if (routes && routes.length > 0) {
                 for (const r of routes) {
+                    const plannedSetup = Number(r.setup_time_hours || 0);
+                    const plannedRun = (productionQty * Number(r.run_time_hours || 0)) / baseQuantity;
+                    totalEstimatedHours += (plannedSetup + plannedRun);
+
                     // Insert into JO routes table
                     const routePayload = {
                         job_order_id: joIdInt,
                         sequence_order: Number(r.sequence_order || 0),
                         work_center_id: Number(r.work_center_id || 1),
                         operation_id: Number((r as any).operation_id || (r as any).id || 1),
-                        planned_setup_hours: Number(r.setup_time_hours || 0),
-                        planned_run_hours: (productionQty * Number(r.run_time_hours || 0)) / baseQuantity,
+                        planned_setup_hours: plannedSetup,
+                        planned_run_hours: plannedRun,
                         actual_setup_hours: 0,
                         actual_run_hours: 0,
                         estimated_labor_cost: (productionQty * Number(r.estimated_labor_cost || 0)) / baseQuantity,
@@ -211,28 +354,118 @@ export async function createJobOrder(joData: Partial<DirectusJobOrder>, salesOrd
                             const baseQuantity = Number(version?.base_quantity || 1);
                             const quantityRequired = (productionQty * Number(bItem.quantity_required || 0) * wastage) / baseQuantity;
 
-                            // FIFO Allocation from inventory_lots
-                            const lotFilter = joData.branch_id ? `&filter[branch_id][_eq]=${joData.branch_id}` : "";
-                            const lotsRes = await fetch(`${DIRECTUS_URL}/items/inventory_lots?filter[product_id][_eq]=${compProductId}&filter[qa_status][_eq]=Passed&filter[quantity][_gt]=0${lotFilter}&sort=expiry_date`, { headers });
-                            const validLots = lotsRes.ok ? (await lotsRes.json()).data || [] : [];
+                             // Check if component is a sub-assembly
+                             const activeVer = await getActiveVersionForProduct(compProductId);
+                             const isSubAssembly = activeVer && activeVer.version;
 
-                            let allocatedQty = 0;
-                            for (const lot of validLots) {
-                                if (allocatedQty >= quantityRequired) break;
-                                const availableInLot = Number(lot.quantity || 0);
-                                const needed = quantityRequired - allocatedQty;
-                                const taken = Math.min(availableInLot, needed);
+                             let allocatedQty = 0;
+                             const allocations: { purchase_order_product_id: number; allocated: number }[] = [];
 
-                                allocatedQty += taken;
+                             if (isSubAssembly) {
+                                 // Fetch Passed inventory lots (which could be manufactured/seeded/procured)
+                                 if (!joData.branch_id) {
+                                     throw new Error("Cannot allocate sub-assembly: Job Order is missing branch_id");
+                                 }
+                                 const branchId = Number(joData.branch_id);
+                                 const lotQueryFilter = encodeURIComponent(JSON.stringify({
+                                     _and: [
+                                         { product_id: { _eq: compProductId } },
+                                         { branch_id: { _eq: branchId } },
+                                         { qa_status: { _eq: "Passed" } }
+                                     ]
+                                 }));
+                                 const physicalLotsRes = await fetch(`${DIRECTUS_URL}/items/inventory_lots?filter=${lotQueryFilter}&limit=-1`, { headers });
+                                 const physicalLots = physicalLotsRes.ok ? (await physicalLotsRes.json()).data || [] : [];
+                                 const totalAvailableStock = physicalLots.reduce((sum: number, l: any) => sum + Number(l.quantity || 0), 0);
 
-                                // Deduct from inventory_lots to hold the stock
-                                const newQty = availableInLot - taken;
-                                await fetch(`${DIRECTUS_URL}/items/inventory_lots/${lot.id}`, {
-                                    method: "PATCH",
-                                    headers,
-                                    body: JSON.stringify({ quantity: newQty })
-                                }).catch(err => console.error(`Failed to deduct inventory lot ${lot.id}:`, err));
-                            }
+                                 // Calculate active reservations by other JOs on this sub-assembly
+                                 const activeReservedFilter = encodeURIComponent(JSON.stringify({
+                                     _and: [
+                                         { product_id: { _eq: compProductId } },
+                                         { job_order_id: { status: { _in: ["Proceed", "Ongoing", "On Hold", "Released", "In Progress"] } } }
+                                     ]
+                                 }));
+                                 const activeReservedRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_materials?filter=${activeReservedFilter}&fields=reserved_quantity&limit=-1`, { headers, cache: 'no-store' });
+                                 const activeReservedData = activeReservedRes.ok ? (await activeReservedRes.json()).data || [] : [];
+                                 const totalReservedByOthers = activeReservedData.reduce((sum: number, r: any) => sum + Number(r.reserved_quantity || 0), 0);
+
+                                 const netAvailable = Math.max(0, totalAvailableStock - totalReservedByOthers);
+                                 allocatedQty = Math.min(quantityRequired, netAvailable);
+                             } else {
+                                 // FIFO/FEFO Allocation directly from purchase_order_receiving
+                                 const branchFilter = joData.branch_id ? `&filter[branch_id][_eq]=${Number(joData.branch_id)}` : "";
+                                 const receiptsUrl = `${DIRECTUS_URL}/items/purchase_order_receiving?filter[product_id][_eq]=${compProductId}&filter[qa_status][_eq]=Passed&filter[is_reverted][_eq]=0&filter[received_quantity][_gt]=0${branchFilter}&sort=expiry_date`;
+                                 
+                                 const receiptsRes = await fetch(receiptsUrl, { headers, cache: 'no-store' });
+                                 const validReceipts = receiptsRes.ok ? (await receiptsRes.json()).data || [] : [];
+                                 
+                                 const receiptIds = validReceipts.map((r: any) => r.purchase_order_product_id).filter(Boolean);
+                                 const reservationsMap: Record<number, number> = {};
+
+                                 if (receiptIds.length > 0) {
+                                     try {
+                                         const resFilter = encodeURIComponent(JSON.stringify({
+                                             _and: [
+                                                 { purchase_order_receiving_id: { _in: receiptIds } },
+                                                 { jo_material_id: { job_order_id: { status: { _in: ["Proceed", "Ongoing", "On Hold"] } } } }
+                                             ]
+                                         }));
+                                         const resRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_materials_reservations?filter=${resFilter}&fields=purchase_order_receiving_id,reserved_quantity&limit=-1`, { headers, cache: 'no-store' });
+                                         if (resRes.ok) {
+                                             const reservationsData = (await resRes.json()).data || [];
+                                             reservationsData.forEach((r: any) => {
+                                                 const porId = Number(r.purchase_order_receiving_id);
+                                                 if (porId) {
+                                                     reservationsMap[porId] = (reservationsMap[porId] || 0) + Number(r.reserved_quantity || 0);
+                                                 }
+                                             });
+                                         }
+                                     } catch (err) {
+                                         console.error("Error fetching material reservations:", err);
+                                     }
+                                 }
+
+                                 // Fetch physical inventory lots
+                                 if (!joData.branch_id) {
+                                     throw new Error("Cannot allocate raw materials: Job Order is missing branch_id");
+                                 }
+                                 const branchId = Number(joData.branch_id);
+                                 const lotQueryFilter = encodeURIComponent(JSON.stringify({
+                                     _and: [
+                                         { product_id: { _eq: compProductId } },
+                                         { branch_id: { _eq: branchId } },
+                                         { source_type: { _eq: "procurement" } }
+                                     ]
+                                 }));
+                                 const physicalLotsRes = await fetch(`${DIRECTUS_URL}/items/inventory_lots?filter=${lotQueryFilter}&limit=-1`, { headers, cache: 'no-store' });
+                                 const physicalLots = physicalLotsRes.ok ? (await physicalLotsRes.json()).data || [] : [];
+
+                                 for (const rec of validReceipts) {
+                                     if (allocatedQty >= quantityRequired) break;
+
+                                     const matchedLot = physicalLots.find((l: any) => 
+                                         String(l.source_reference) === String(rec.purchase_order_id) && 
+                                         (l.lot_number === rec.lot_no || l.lot_number === rec.batch_no || (l.lot_number === "LOT-N/A" && !rec.lot_no && !rec.batch_no))
+                                     );
+                                     const physicalQty = matchedLot ? Number(matchedLot.quantity || 0) : 0;
+                                     const recId = Number(rec.purchase_order_product_id);
+                                     const alreadyReserved = reservationsMap[recId] || 0;
+                                     const netAvailable = Math.max(0, physicalQty - alreadyReserved);
+
+                                     if (netAvailable <= 0) continue;
+
+                                     const needed = quantityRequired - allocatedQty;
+                                     const taken = Math.min(netAvailable, needed);
+
+                                     if (taken > 0) {
+                                         allocatedQty += taken;
+                                         allocations.push({
+                                             purchase_order_product_id: recId,
+                                             allocated: taken
+                                         });
+                                     }
+                                 }
+                             }
 
                             let uomId = Number((bItem as any).uom_id || 0);
                             if (!uomId) {
@@ -249,26 +482,50 @@ export async function createJobOrder(joData: Partial<DirectusJobOrder>, salesOrd
                                 }
                             }
 
-                            // Log Material Requirement
+                            // Log Material Requirement (Single Row)
                             const matPayload = {
                                 job_order_id: joIdInt,
-                                jo_id: joNoStr,
                                 product_id: compProductId,
                                 uom_id: uomId || 1,
                                 allocated_quantity: quantityRequired,
-                                quantity_required: quantityRequired,
-                                quantity_allocated: allocatedQty,
+                                reserved_quantity: allocatedQty,
                                 actual_consumed_quantity: 0,
                                 scrap_quantity: 0
                             };
-                            await fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_materials`, {
+                            
+                            const matRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_materials`, {
                                 method: "POST",
                                 headers,
                                 body: JSON.stringify(matPayload)
-                            }).catch(err => console.error("Error creating manufacturing_job_order_materials row:", err));
+                            });
+                            
+                            if (matRes.ok) {
+                                const createdMat = (await matRes.json()).data;
+                                const jomId = createdMat.jo_material_id || createdMat.id;
+                                
+                                // Now log specific lot allocations in the reservations junction table
+                                for (const alloc of allocations) {
+                                    const reservationPayload = {
+                                        product_id: compProductId,
+                                        jo_material_id: jomId,
+                                        purchase_order_receiving_id: alloc.purchase_order_product_id,
+                                        reserved_quantity: alloc.allocated,
+                                        actual_used_quantity: 0,
+                                        created_by: joData.created_by ? Number(joData.created_by) : null
+                                    };
+                                    await fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_materials_reservations`, {
+                                        method: "POST",
+                                        headers,
+                                        body: JSON.stringify(reservationPayload)
+                                    }).catch(err => console.error("Error creating materials reservation row:", err));
+                                }
+                            } else {
+                                console.error("Error creating manufacturing_job_order_materials row:", await matRes.text());
+                            }
+
+                            const shortfall = quantityRequired - allocatedQty;
 
                             // Auto-spawn child Job Orders for manufactured sub-assemblies with shortages
-                            const shortfall = quantityRequired - allocatedQty;
                             if (shortfall > 0) {
                                 try {
                                     const activeVer = await getActiveVersionForProduct(compProductId);
@@ -288,6 +545,7 @@ export async function createJobOrder(joData: Partial<DirectusJobOrder>, salesOrd
                                                 branch_id: joData.branch_id,
                                                 created_by: joData.created_by,
                                                 parent_job_order_id: joIdInt,
+                                                shift_option: joData.shift_option || "8",
                                                 remarks: `Auto-spawned sub-assembly run for parent Job Order ${joNoStr}`
                                             };
                                             await createJobOrder(childJoPayload, []);
@@ -301,6 +559,47 @@ export async function createJobOrder(joData: Partial<DirectusJobOrder>, salesOrd
                     }
                 }
             }
+        }
+
+        // Calculate and generate daily breakdown runs based on total planned hours and shift option
+        const shiftHours = Number(joData.shift_option || "8") || 8;
+        const numDays = Math.ceil(totalEstimatedHours / shiftHours) || 1;
+        const baseQtyPerDay = Math.floor(totalMergedQuantity / numDays);
+        const remainder = totalMergedQuantity % numDays;
+
+        const startDateStr = headerPayload.start_date || new Date().toISOString().split("T")[0];
+        const startDateParts = startDateStr.split("-");
+        const startYear = parseInt(startDateParts[0], 10);
+        const startMonth = parseInt(startDateParts[1], 10) - 1;
+        const startDay = parseInt(startDateParts[2], 10);
+
+        const dailyBreakdown = [];
+        for (let i = 1; i <= numDays; i++) {
+            const currentDate = new Date(startYear, startMonth, startDay + (i - 1));
+            const yyyy = currentDate.getFullYear();
+            const mm = String(currentDate.getMonth() + 1).padStart(2, "0");
+            const dd = String(currentDate.getDate()).padStart(2, "0");
+            const dateStr = `${yyyy}-${mm}-${dd}`;
+            const dayQty = baseQtyPerDay + (i <= remainder ? 1 : 0);
+            dailyBreakdown.push({
+                day: i,
+                date: dateStr,
+                status: "Pending",
+                quantity: dayQty
+            });
+        }
+
+        // Patch daily_breakdown to job order
+        try {
+            await fetch(`${DIRECTUS_URL}/items/manufacturing_job_orders/${joIdInt}`, {
+                method: "PATCH",
+                headers,
+                body: JSON.stringify({
+                    daily_breakdown: dailyBreakdown
+                })
+            });
+        } catch (dbErr) {
+            console.error("Error updating daily breakdown on Job Order:", dbErr);
         }
 
         // 5. Insert junction entries (Sales Order allocations)

@@ -87,7 +87,17 @@ export default function ShipmentInspectionForm({
 
     const originalBranchName = React.useMemo(() => {
         if (!selectedShipment.branch_id) return "N/A";
-        return branches.find(b => b.id === selectedShipment.branch_id)?.branch_name || `Branch ID ${selectedShipment.branch_id}`;
+        const found = branches.find(b => Number(b.id) === Number(selectedShipment.branch_id));
+        if (found) return found.branch_name;
+
+        switch (Number(selectedShipment.branch_id)) {
+            case 1:
+            case 183: return "Main Branch";
+            case 163: return "Urdaneta Branch";
+            case 181: return "Bihon Branch";
+            case 182: return "Bihon Bad Branch";
+            default: return `Branch ID ${selectedShipment.branch_id}`;
+        }
     }, [branches, selectedShipment.branch_id]);
 
     return (

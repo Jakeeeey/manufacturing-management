@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import { handleGET } from "./handlers/get";
 import { handlePOST } from "./handlers/post";
 import { handlePATCH } from "./handlers/patch";

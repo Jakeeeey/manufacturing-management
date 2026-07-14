@@ -501,7 +501,13 @@ export async function GET(request: Request) {
         const dateFrom = searchParams.get("dateFrom") || "";
         const dateTo = searchParams.get("dateTo") || "";
 
-        const filters = { search, status, customerCode, dateFrom, dateTo };
+        const filters = {
+            search,
+            status: excludeHasJo ? "For Picking" : status,
+            customerCode,
+            dateFrom,
+            dateTo
+        };
         let salesOrders: any[] = [];
         let prefetchedDetails: any[] = [];
         let scheduledDetailIds = new Set<number>();
@@ -543,7 +549,12 @@ export async function GET(request: Request) {
                 }
                 for (const candidate of candidates) {
                     const orderDetails = detailsByOrder.get(Number(candidate.order_id)) || [];
-                    const unscheduled = orderDetails.filter((detail) => !chunkScheduledIds.has(Number(detail.detail_id || detail.id)));
+                    const unscheduled = orderDetails.filter((detail) => {
+                        const isScheduled = chunkScheduledIds.has(Number(detail.detail_id || detail.id));
+                        const ordered = Number(detail.ordered_quantity || 0);
+                        const alloc = Number(detail.allocated_quantity || 0);
+                        return !isScheduled && alloc < ordered;
+                    });
                     if (orderDetails.length === 0 || unscheduled.length > 0) {
                         eligibleOrders.push(candidate);
                         eligibleDetails.push(...unscheduled);
@@ -593,9 +604,16 @@ export async function GET(request: Request) {
             }))).data || [];
         }
         const contextOrders = [...salesOrders, ...selectedOrders];
-        const details = excludeHasJo
+        let details = excludeHasJo
             ? [...prefetchedDetails, ...(missingSelectedIds.length > 0 ? await fetchDetailsForOrders(read, missingSelectedIds) : [])]
             : await fetchDetailsForOrders(read, [...orderIdsToFetch]);
+        if (excludeHasJo) {
+            details = details.filter((detail: any) => {
+                const ordered = Number(detail.ordered_quantity || 0);
+                const alloc = Number(detail.allocated_quantity || 0);
+                return alloc < ordered;
+            });
+        }
         if (excludeHasJo && missingSelectedIds.length > 0) {
             scheduledDetailIds = await findScheduledDetailIds(read, details);
         }

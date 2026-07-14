@@ -14,6 +14,8 @@ export function usePlanningEngineering() {
     const [versionStock, setVersionStock] = useState<number | null>(null);
     const [loadingVersionStock, setLoadingVersionStock] = useState(false);
     const [isDirectAllocDialogOpen, setIsDirectAllocDialogOpen] = useState(false);
+    const [allocationProgress, setAllocationProgress] = useState<number>(0);
+    const [allocationStatus, setAllocationStatus] = useState<string>("");
 
     // Master Data & Lists
     const [branches, setBranches] = useState<Branch[]>([]);
@@ -35,26 +37,107 @@ export function usePlanningEngineering() {
     const [joNumber, setJoNumber] = useState<string>("");
     const [assignments, setAssignments] = useState<Record<number, number[]>>({});
 
-    // Initial Fetch: Branches & unfulfilled Sales Orders
-    const loadInitialData = async () => {
-        setLoadingBranches(true);
-        setLoadingOrders(true);
+    const [unreleasedJobs, setUnreleasedJobs] = useState<any[]>([]);
+    const [loadingJobs, setLoadingJobs] = useState(false);
+    const [releasingDraftId, setReleasingDraftId] = useState<string | null>(null);
+
+    const loadUnreleasedJobs = async () => {
+        setLoadingJobs(true);
         try {
-            const activeBranches = await fetchBranches();
+            const res = await fetch("/api/manufacturing/planning-engineering");
+            if (res.ok) {
+                const data = await res.json();
+                const draftOrPlanned = data.filter((j: any) => j.status === "Draft" || j.status === "Planned" || j.status === "Planning");
+                setUnreleasedJobs(draftOrPlanned);
+            }
+        } catch (err) {
+            console.error("Error loading unreleased job orders:", err);
+        } finally {
+            setLoadingJobs(false);
+        }
+    };
+
+    const handleReleaseDraftFromPlanning = async (joId: string) => {
+        setReleasingDraftId(joId);
+        try {
+            const res = await fetch("/api/manufacturing/planning-engineering", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    action: "release-draft",
+                    joId
+                })
+            });
+            const data = await res.json();
+            if (!res.ok || data.success === false) {
+                const shortfallMsg = data.error || "Failed to release job order.";
+                if (window.confirm(`${shortfallMsg}\n\nDo you want to forcibly release this Job Order anyway?`)) {
+                    const forceRes = await fetch("/api/manufacturing/planning-engineering", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            action: "release-draft",
+                            joId,
+                            forceRelease: true
+                        })
+                    });
+                    const forceData = await forceRes.json();
+                    if (!forceRes.ok || forceData.success === false) {
+                        throw new Error(forceData.error || "Failed to forcibly release job order.");
+                    }
+                    toast.success("Job Order forcibly released successfully!");
+                    await loadInitialData(true);
+                    return;
+                }
+                return;
+            }
+            toast.success("Job Order released successfully!");
+            await loadInitialData(true);
+        } catch (err: any) {
+            console.error("Failed to release Draft JO:", err);
+            toast.error(err.message || "Failed to release job order.");
+        } finally {
+            setReleasingDraftId(null);
+        }
+    };
+
+    // Initial Fetch: Branches & unfulfilled Sales Orders
+    const loadInitialData = async (silent = false) => {
+        if (!silent) {
+            setLoadingBranches(true);
+            setLoadingOrders(true);
+            setLoadingJobs(true);
+        }
+        try {
+            const [activeBranches, soResult, draftOrPlanned] = await Promise.all([
+                fetchBranches(),
+                fetchSalesOrders(),
+                fetch("/api/manufacturing/planning-engineering").then(async (res) => {
+                    if (res.ok) {
+                        const data = await res.json();
+                        return data.filter((j: any) => j.status === "Draft" || j.status === "Planned" || j.status === "Planning");
+                    }
+                    return [];
+                }).catch(() => [])
+            ]);
+
             setBranches(activeBranches);
             if (activeBranches.length > 0) {
                 setSelectedBranchId((prev) => prev ?? activeBranches[0].id);
             }
 
-            const { data, detailsMap: dMap } = await fetchSalesOrders();
-            setSalesOrders(data);
-            setDetailsMap(dMap);
+            setSalesOrders(soResult.data || []);
+            setDetailsMap(soResult.detailsMap || {});
+            setUnreleasedJobs(draftOrPlanned);
         } catch (err: any) {
             console.error("Error loading initial data:", err);
             toast.error(err.message || "An error occurred while loading planning data.");
         } finally {
-            setLoadingBranches(false);
-            setLoadingOrders(false);
+            if (!silent) {
+                setLoadingBranches(false);
+                setLoadingOrders(false);
+                setLoadingJobs(false);
+            }
         }
     };
 
@@ -362,7 +445,7 @@ export function usePlanningEngineering() {
             setIsConfirmOpen(false);
             setSelectedDetailIds([]);
             // Reload data to show updated unfulfilled lines & requirements
-            loadInitialData();
+            loadInitialData(true);
         } catch (err: any) {
             console.error("Error releasing job order:", err);
             toast.error(err.message || "An error occurred during Job Order explosion & release.");
@@ -374,17 +457,19 @@ export function usePlanningEngineering() {
     // Direct Allocate Submit
     const handleConfirmDirectAllocate = async () => {
         if (!selectedBranchId || selectedLines.length === 0) return;
-
+ 
         setDirectAllocating(true);
+        setAllocationProgress(10);
+        setAllocationStatus("Step 1/4: Validating stock levels & sorting FIFO lots...");
         try {
             const firstLine = selectedLines[0];
             const targetProductId = firstLine.product_id?.product_id;
             const targetVersionId = firstLine.bom_version_id;
-
+ 
             if (!targetProductId || !targetVersionId) {
                 throw new Error("Invalid product or version ID.");
             }
-
+ 
             const payload = {
                 branchId: selectedBranchId,
                 productId: targetProductId,
@@ -394,18 +479,39 @@ export function usePlanningEngineering() {
                     ordered_quantity: l.ordered_quantity
                 }))
             };
+ 
+            await new Promise(r => setTimeout(r, 600));
+            setAllocationProgress(40);
+            setAllocationStatus("Step 2/4: Deducting physical inventory lots...");
 
-            await directAllocate(payload);
+            // Trigger allocation call
+            const callPromise = directAllocate(payload);
 
+            await new Promise(r => setTimeout(r, 600));
+            setAllocationProgress(70);
+            setAllocationStatus("Step 3/4: Writing inventory ledger movements...");
+
+            await new Promise(r => setTimeout(r, 600));
+            setAllocationProgress(90);
+            setAllocationStatus("Step 4/4: Updating Sales Order detail lines & transition statuses...");
+
+            await callPromise;
+
+            setAllocationProgress(100);
+            setAllocationStatus("Allocation Complete!");
+            await new Promise(r => setTimeout(r, 400));
+ 
             toast.success(`Direct allocation successful! Stock deducted and order lines ready for invoicing.`);
             setIsDirectAllocDialogOpen(false);
             setSelectedDetailIds([]);
-            loadInitialData();
+            loadInitialData(true);
         } catch (err: any) {
             console.error("Error during direct allocation:", err);
             toast.error(err.message || "An error occurred during direct allocation.");
         } finally {
             setDirectAllocating(false);
+            setAllocationProgress(0);
+            setAllocationStatus("");
         }
     };
 
@@ -458,6 +564,8 @@ export function usePlanningEngineering() {
         selectedBranchId,
         setSelectedBranchId,
         selectedDetailIds,
+        allocationProgress,
+        allocationStatus,
         isConfirmOpen,
         setIsConfirmOpen,
         targetQuantity,
@@ -485,6 +593,10 @@ export function usePlanningEngineering() {
         loadingVersionStock,
         isDirectAllocDialogOpen,
         setIsDirectAllocDialogOpen,
-        handleConfirmDirectAllocate
+        handleConfirmDirectAllocate,
+        unreleasedJobs,
+        loadingJobs,
+        releasingDraftId,
+        handleReleaseDraftFromPlanning
     };
 }

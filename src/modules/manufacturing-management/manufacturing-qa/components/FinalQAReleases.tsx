@@ -66,11 +66,8 @@ export function FinalQAReleases({
 
     // Filter to show only finished goods lots
     const fgLots = React.useMemo(() => {
-        return lots.filter(lot => {
-            const prod = lotsProducts.find(p => Number(p.product_id) === Number(lot.product_id));
-            return prod?.is_finished_good === true;
-        });
-    }, [lots, lotsProducts]);
+        return lots;
+    }, [lots]);
 
     const getProductName = (productId: number) => {
         const prod = lotsProducts.find(p => Number(p.product_id) === Number(productId));
@@ -89,13 +86,13 @@ export function FinalQAReleases({
         <div className="space-y-4">
             <div className="rounded-xl border bg-card shadow-sm">
                 <div className="p-4 border-b">
-                    <h3 className="font-bold text-base">Finished Goods Lot Releases</h3>
-                    <p className="text-xs text-muted-foreground">Perform microbiological analyses, packaging seal audits, and publish COAs to unlock stock lots for shipping.</p>
+                    <h3 className="font-bold text-base">Finished Goods & Sub-Assembly Lot Releases</h3>
+                    <p className="text-xs text-muted-foreground">Perform microbiological analyses, packaging seal audits, and publish COAs to unlock stock lots for shipping or production consumption.</p>
                 </div>
 
                 {fgLots.length === 0 ? (
                     <div className="text-center py-12 text-muted-foreground italic text-sm">
-                        No finished goods inventory lots found in the system.
+                        No inventory lots found in the system.
                     </div>
                 ) : (
                     <Table>
@@ -114,9 +111,31 @@ export function FinalQAReleases({
                                 const status = lot.qa_status || "Pending";
                                 return (
                                     <TableRow key={lot.line_id || lot.id || lot.lot_id}>
-                                        <TableCell className="text-xs font-semibold text-foreground">{getProductName(lot.product_id)}</TableCell>
+                                        <TableCell className="text-xs font-semibold text-foreground">
+                                            <div className="flex flex-col gap-1">
+                                                <span>{getProductName(lot.product_id)}</span>
+                                                {(() => {
+                                                    const prod = lotsProducts.find(p => Number(p.product_id) === Number(lot.product_id));
+                                                    return prod?.is_finished_good ? (
+                                                        <Badge variant="secondary" className="w-fit text-[8px] py-0 px-1 font-bold leading-none bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                                            Finished Good
+                                                        </Badge>
+                                                    ) : (
+                                                        <Badge variant="outline" className="w-fit text-[8px] py-0 px-1 font-bold leading-none border-blue-500/30 text-blue-400">
+                                                            Sub-Assembly
+                                                        </Badge>
+                                                    );
+                                                })()}
+                                            </div>
+                                        </TableCell>
                                         <TableCell className="font-mono text-xs text-muted-foreground font-bold">{lot.lot_number}</TableCell>
-                                        <TableCell className="text-xs font-mono font-bold">{Number(lot.quantity_received || lot.quantity || 0).toLocaleString()} packs</TableCell>
+                                        <TableCell className="text-xs font-mono font-bold">
+                                            {Number(lot.quantity_received || lot.quantity || 0).toLocaleString()}{" "}
+                                            {(() => {
+                                                const prod = lotsProducts.find(p => Number(p.product_id) === Number(lot.product_id));
+                                                return prod?.is_finished_good ? "packs" : "pcs";
+                                            })()}
+                                        </TableCell>
                                         <TableCell className="text-xs text-muted-foreground">{lot.expiration_date ? new Date(lot.expiration_date).toLocaleDateString() : "No Expiry"}</TableCell>
                                         <TableCell className="text-xs text-center">
                                             {status === "Passed" ? (
