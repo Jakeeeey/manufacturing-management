@@ -1,0 +1,79 @@
+export type ConsolidationStatus = "Pending" | "Picking" | "Picked" | "Audited";
+
+export interface ConsolidatorInvoice {
+    id: number;
+    consolidatorId: number;
+    invoiceId: number;
+    invoiceNo: string;
+    branchId: number;
+    createdAt: string;
+}
+
+export interface ConsolidatorDetail {
+    id: number;
+    consolidatorId: number;
+    productId: number;
+    productName: string;
+    productCode: string;
+    orderedQuantity: number;
+    pickedQuantity: number;
+    appliedQuantity: number;
+    pickedById: number | null;
+    pickedAt: string | null;
+}
+
+export interface InvoiceConsolidation {
+    id: number;
+    consolidatorNo: string;
+    status: ConsolidationStatus;
+    createdBy: number;
+    checkedBy: number | null;
+    branchId: number;
+    branchName: string;
+    totalSalesOrderAmount: number;
+    createdAt: string;
+    updatedAt: string;
+    details: ConsolidatorDetail[];
+    dispatches: unknown[];
+    invoices: ConsolidatorInvoice[];
+}
+
+export interface CandidateInvoice {
+    invoiceId: number;
+    invoiceNo: string;
+    invoiceDate: string;
+    grossAmount: number;
+    netAmount: number;
+    branchId: number;
+    customerCode: string;
+    customerName: string;
+    businessName: string;
+}
+
+export interface StatusSummary {
+    Pending: number;
+    Picking: number;
+    Picked: number;
+    Audited: number;
+    All: number;
+}
+
+export interface CreateConsolidationPayload {
+    branchId: number;
+    invoiceIds: number[];
+}
+
+export interface AuditPayload {
+    batchId: number;
+}
+
+export interface PickingSavePayload {
+    batchId: number;
+    quantities: { detailId: number; pickedQuantity: number }[];
+}
+
+export interface Branch {
+    id: number;
+    branchName: string;
+    branchCode: string;
+}

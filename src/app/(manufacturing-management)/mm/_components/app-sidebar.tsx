@@ -3,15 +3,29 @@ import { type ComponentProps } from "react";
 import { AppSidebarClient } from "@/components/shared/app-sidebar/app-sidebar-client";
 import { getSidebarNavigation } from "@/actions/app-sidebar";
 import { Sidebar } from "@/components/ui/sidebar";
+import type { NavItem } from "@/types/navigation";
 
 export async function AppSidebar(props: ComponentProps<typeof Sidebar>) {
-  // 1. Fetch data on the server using the shared action
   const items = await getSidebarNavigation("mm");
+
+  const invoiceConsolidationItem: NavItem = {
+    title: "Invoice Consolidation",
+    url: "/mm/invoice-consolidation",
+    slug: "invoice-consolidation",
+    status: "active",
+    iconName: "FileText",
+  };
+
+  const enhancedItems = items.some(
+    (i) => i.slug === "invoice-consolidation"
+  )
+    ? items
+    : [...items, invoiceConsolidationItem];
 
   return (
     <AppSidebarClient
       {...props}
-      initialItems={items}
+      initialItems={enhancedItems}
       subsystemTitle="Manufacturing Management"
     />
   );
