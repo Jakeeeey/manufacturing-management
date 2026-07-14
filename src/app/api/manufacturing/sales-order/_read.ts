@@ -4,11 +4,11 @@ type Row = Record<string, any>;
 export const SALES_ORDER_FIELDS = [
     "order_id", "order_no", "po_no", "customer_code", "order_date", "order_status",
     "total_amount", "net_amount", "remarks", "created_date", "discount_amount",
-    "delivery_date", "due_date", "payment_terms", "salesman_id"
+    "delivery_date", "due_date", "payment_terms", "salesman_id", "branch_id"
 ].join(",");
 
 export const SALES_ORDER_DETAIL_FIELDS = [
-    "detail_id", "order_id", "product_id", "unit_price", "ordered_quantity", "net_amount"
+    "detail_id", "order_id", "bom_version_id", "product_id", "unit_price", "ordered_quantity", "net_amount"
 ].join(",");
 
 export type DirectusReader = (collection: string, params: URLSearchParams) => Promise<{ data: Row[]; meta?: { filter_count?: number } }>;
@@ -105,7 +105,8 @@ async function fetchProductGraph(read: DirectusReader, initialProductIds: number
 async function resolveVersions(
     read: DirectusReader,
     products: Map<number, Row>,
-    customerIds: number[]
+    customerIds: number[],
+    extraVersionIds: number[] = []
 ) {
     const productIds = [...products.keys()];
     const overrideByPair = new Map<string, number>();
@@ -123,7 +124,10 @@ async function resolveVersions(
         }
     }
 
-    const overrideVersionIds = [...new Set(overrides.map((override) => Number(override.version_id)).filter(Boolean))];
+    const overrideVersionIds = [...new Set([
+        ...overrides.map((override) => Number(override.version_id)),
+        ...extraVersionIds
+    ].filter(Boolean))];
     const versionParams = new URLSearchParams({ fields: "version_id,product_id,version_name,status", limit: "-1" });
     if (overrideVersionIds.length > 0) {
         versionParams.set("filter[_or][0][version_id][_in]", overrideVersionIds.join(","));
@@ -176,7 +180,7 @@ async function resolveVersions(
         return null;
     };
 
-    return resolve;
+    return { resolve, versionById };
 }
 
 export async function enrichSalesOrderReadModel(
@@ -205,7 +209,8 @@ export async function enrichSalesOrderReadModel(
     const customersByCode = new Map(customerResult.data.map((customer) => [String(customer.customer_code), customer]));
     const customerIds = [...new Set(customerResult.data.map((customer) => Number(customer.id || customer.customer_id)).filter(Boolean))];
     const termsById = new Map(termsResult.data.map((term) => [Number(term.id), term]));
-    const resolveVersion = await resolveVersions(read, products, customerIds);
+    const extraVersionIds = details.map((detail) => Number(detail.bom_version_id)).filter(Boolean);
+    const { resolve: resolveVersion, versionById } = await resolveVersions(read, products, customerIds, extraVersionIds);
     const orderById = new Map(salesOrders.map((order) => [Number(order.order_id), order]));
 
     for (const order of salesOrders) {
@@ -248,7 +253,8 @@ export async function enrichSalesOrderReadModel(
         const order = orderById.get(orderId);
         const customer = order ? customersByCode.get(String(order.customer_code)) : undefined;
         const customerId = Number(customer?.id || customer?.customer_id) || undefined;
-        const version = resolveVersion(rawProductId, customerId);
+        const storedVersionId = detail.bom_version_id ? Number(detail.bom_version_id) : null;
+        const version = storedVersionId ? versionById.get(storedVersionId) : resolveVersion(rawProductId, customerId);
         detail.bom_version_id = version ? Number(version.version_id) : null;
         detail.bom_version_name = version?.version_name || "No Version";
         (detailsMap[orderId] ||= []).push(detail);

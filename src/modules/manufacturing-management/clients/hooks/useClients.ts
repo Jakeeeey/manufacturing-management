@@ -225,7 +225,8 @@ export function useClients() {
             const resProds = await fetch("/api/manufacturing/finished-goods/products?limit=250");
             if (resProds.ok) {
                 const prodsData = await resProds.json();
-                const mappedProds = prodsData.map((p: { product_id: number; product_name: string; product_code?: string }) => ({
+                const finishedGoods = (prodsData || []).filter((p: { product_type?: number }) => Number(p.product_type) === 388);
+                const mappedProds = finishedGoods.map((p: { product_id: number; product_name: string; product_code?: string }) => ({
                     id: p.product_id,
                     name: p.product_name,
                     code: p.product_code || `SKU-${p.product_id}`
