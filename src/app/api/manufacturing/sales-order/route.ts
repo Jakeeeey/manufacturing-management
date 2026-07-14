@@ -1,7 +1,18 @@
 /* eslint-disable */
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { getActiveVersionForProduct } from "../finished-goods/versions/versions-helper";
+import {
+    addSalesOrderFilters,
+    enrichSalesOrderReadModel,
+    fetchDetailsForOrders,
+    findScheduledDetailIds,
+    SALES_ORDER_FIELDS
+} from "./_read";
+import {
+    salesOrderPatchSchema,
+    salesOrderPostSchema,
+    validationIssues
+} from "./_validation";
 
 const DIRECTUS_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://vtc:8074";
 const DIRECTUS_STATIC_TOKEN = process.env.DIRECTUS_STATIC_TOKEN || "";
@@ -13,83 +24,470 @@ if (DIRECTUS_STATIC_TOKEN) {
     headers["Authorization"] = `Bearer ${DIRECTUS_STATIC_TOKEN}`;
 }
 
+class ApiError extends Error {
+    constructor(public status: number, message: string, public details?: Record<string, unknown>) {
+        super(message);
+    }
+}
+
+interface AuthenticatedUser {
+    id: number;
+    admin: boolean;
+}
+
+async function requireAuthenticatedUser(): Promise<AuthenticatedUser> {
+    const cookieStore = await cookies();
+    const token = cookieStore.get("vos_access_token")?.value;
+    if (!token) throw new ApiError(401, "Authentication is required.");
+
+    const springBase = process.env.SPRING_API_BASE_URL;
+    if (!springBase) throw new ApiError(500, "Authentication service is not configured.");
+
+    let response: Response;
+    try {
+        response = await fetch(`${springBase.replace(/\/$/, "")}/auth/me`, {
+            headers: {
+                Authorization: `Bearer ${token}`,
+                Accept: "application/json"
+            },
+            cache: "no-store"
+        });
+    } catch (error) {
+        console.error("Failed to verify sales-order user:", error);
+        throw new ApiError(503, "Authentication service is unavailable.");
+    }
+
+    if (response.status === 401 || response.status === 403) {
+        throw new ApiError(401, "Your session is invalid or has expired.");
+    }
+    if (!response.ok) throw new ApiError(503, "Authentication service is unavailable.");
+
+    const user = await response.json();
+    const id = Number(user?.id);
+    if (!Number.isSafeInteger(id) || id < 1) throw new ApiError(401, "Unable to verify the current user.");
+    return { id, admin: user?.admin === true };
+}
+
+async function canApproveSalesOrders(user: AuthenticatedUser) {
+    if (user.admin) return true;
+
+    const params = new URLSearchParams({
+        "filter[user_id][_eq]": String(user.id),
+        fields: "module_id.base_path",
+        limit: "-1"
+    });
+    const response = await fetch(`${DIRECTUS_URL}/items/user_access_modules?${params.toString()}`, {
+        headers,
+        cache: "no-store"
+    });
+    if (!response.ok) throw new ApiError(503, "Unable to verify sales-order approval access.");
+    const rows = (await response.json()).data || [];
+    return rows.some((row: any) => row.module_id?.base_path === "/mm/sales-order-approval");
+}
+
+function mutationError(error: unknown, fallback: string) {
+    if (error instanceof ApiError) {
+        return NextResponse.json({ error: error.message, ...error.details }, { status: error.status });
+    }
+    console.error(fallback, error);
+    return NextResponse.json({ error: error instanceof Error ? error.message : fallback }, { status: 500 });
+}
+
+const salesOrderMutationLocks = new Map<number, Promise<void>>();
+
+async function withSalesOrderMutationLock<T>(orderId: number, operation: () => Promise<T>): Promise<T> {
+    const previous = salesOrderMutationLocks.get(orderId) || Promise.resolve();
+    let release!: () => void;
+    const current = new Promise<void>((resolve) => {
+        release = resolve;
+    });
+    const queued = previous.then(() => current);
+    salesOrderMutationLocks.set(orderId, queued);
+
+    await previous;
+    try {
+        return await operation();
+    } finally {
+        release();
+        if (salesOrderMutationLocks.get(orderId) === queued) {
+            salesOrderMutationLocks.delete(orderId);
+        }
+    }
+}
+
+interface QuantityState {
+    [field: string]: unknown;
+    ordered_quantity: unknown;
+    net_amount: unknown;
+    gross_amount: unknown;
+}
+
+interface DetailQuantityMutation {
+    detailId: number;
+    original: QuantityState;
+    applied: QuantityState;
+}
+
+interface HeaderQuantityMutation {
+    original: Record<string, unknown>;
+    applied: Record<string, unknown>;
+}
+
+function statesMatch(current: Record<string, unknown>, expected: Record<string, unknown>) {
+    return Object.entries(expected).every(([field, value]) => {
+        if (typeof value === "number") return Number(current[field]) === value;
+        return current[field] === value;
+    });
+}
+
+async function rollbackQuantityUpdate(
+    orderId: number,
+    details: DetailQuantityMutation[],
+    headerMutation: HeaderQuantityMutation | null
+) {
+    const failures: string[] = [];
+    const unresolvedDetailIds: number[] = [];
+
+    for (const mutation of [...details].reverse()) {
+        try {
+            const response = await fetch(
+                `${DIRECTUS_URL}/items/sales_order_details/${mutation.detailId}?fields=detail_id,order_id,ordered_quantity,net_amount,gross_amount`,
+                { headers, cache: "no-store" }
+            );
+            if (!response.ok) {
+                failures.push(`detail ${mutation.detailId} read returned ${response.status}`);
+                unresolvedDetailIds.push(mutation.detailId);
+                continue;
+            }
+
+            const current = (await response.json()).data || {};
+            if (Number(current.order_id) !== orderId) {
+                failures.push(`detail ${mutation.detailId} no longer belongs to order ${orderId}`);
+                unresolvedDetailIds.push(mutation.detailId);
+                continue;
+            }
+            if (statesMatch(current, mutation.original)) continue;
+            if (!statesMatch(current, mutation.applied)) {
+                failures.push(`detail ${mutation.detailId} changed before rollback`);
+                unresolvedDetailIds.push(mutation.detailId);
+                continue;
+            }
+
+            const restoreResponse = await fetch(`${DIRECTUS_URL}/items/sales_order_details/${mutation.detailId}`, {
+                method: "PATCH",
+                headers,
+                body: JSON.stringify(mutation.original)
+            });
+            if (!restoreResponse.ok) {
+                failures.push(`detail ${mutation.detailId} restore returned ${restoreResponse.status}`);
+                unresolvedDetailIds.push(mutation.detailId);
+            }
+        } catch (error) {
+            failures.push(`detail ${mutation.detailId} restore failed: ${error instanceof Error ? error.message : "unknown error"}`);
+            unresolvedDetailIds.push(mutation.detailId);
+        }
+    }
+
+    let headerUnresolved = false;
+    if (headerMutation) {
+        try {
+            const response = await fetch(
+                `${DIRECTUS_URL}/items/sales_order/${orderId}?fields=order_id,total_amount,net_amount,order_status`,
+                { headers, cache: "no-store" }
+            );
+            if (!response.ok) {
+                failures.push(`header read returned ${response.status}`);
+                headerUnresolved = true;
+            } else {
+                const current = (await response.json()).data || {};
+                if (!statesMatch(current, headerMutation.original)) {
+                    if (!statesMatch(current, headerMutation.applied)) {
+                        failures.push(`header changed before rollback`);
+                        headerUnresolved = true;
+                    } else {
+                        const restoreResponse = await fetch(`${DIRECTUS_URL}/items/sales_order/${orderId}`, {
+                            method: "PATCH",
+                            headers,
+                            body: JSON.stringify(headerMutation.original)
+                        });
+                        if (!restoreResponse.ok) {
+                            failures.push(`header restore returned ${restoreResponse.status}`);
+                            headerUnresolved = true;
+                        }
+                    }
+                }
+            }
+        } catch (error) {
+            failures.push(`header restore failed: ${error instanceof Error ? error.message : "unknown error"}`);
+            headerUnresolved = true;
+        }
+    }
+
+    return { failures, unresolvedDetailIds: [...new Set(unresolvedDetailIds)], headerUnresolved };
+}
+
+async function compensateSalesOrder(orderId: number, knownDetailIds: number[] = []) {
+    const failures: string[] = [];
+    const detailIds = new Set(knownDetailIds);
+
+    try {
+        const params = new URLSearchParams({
+            "filter[order_id][_eq]": String(orderId),
+            fields: "detail_id",
+            limit: "-1"
+        });
+        const response = await fetch(`${DIRECTUS_URL}/items/sales_order_details?${params.toString()}`, {
+            headers,
+            cache: "no-store"
+        });
+        if (!response.ok) {
+            failures.push(`detail discovery returned ${response.status}`);
+        } else {
+            const rows = (await response.json()).data || [];
+            rows.forEach((row: any) => {
+                const detailId = Number(row.detail_id);
+                if (Number.isSafeInteger(detailId) && detailId > 0) detailIds.add(detailId);
+            });
+        }
+    } catch (error) {
+        failures.push(`detail discovery failed: ${error instanceof Error ? error.message : "unknown error"}`);
+    }
+
+    for (const detailId of detailIds) {
+        try {
+            const response = await fetch(`${DIRECTUS_URL}/items/sales_order_details/${detailId}`, {
+                method: "DELETE",
+                headers
+            });
+            if (!response.ok && response.status !== 404) {
+                failures.push(`detail ${detailId} delete returned ${response.status}`);
+            }
+        } catch (error) {
+            failures.push(`detail ${detailId} delete failed: ${error instanceof Error ? error.message : "unknown error"}`);
+        }
+    }
+
+    if (failures.length === 0) {
+        try {
+            const response = await fetch(`${DIRECTUS_URL}/items/sales_order/${orderId}`, {
+                method: "DELETE",
+                headers
+            });
+            if (!response.ok && response.status !== 404) {
+                failures.push(`header delete returned ${response.status}`);
+            }
+        } catch (error) {
+            failures.push(`header delete failed: ${error instanceof Error ? error.message : "unknown error"}`);
+        }
+    }
+
+    return failures;
+}
+
+async function createSalesOrderWithDetails(
+    headerPayload: Record<string, unknown>,
+    detailPayloads: Array<Record<string, unknown>>
+) {
+    let orderId: number | null = null;
+    let headerCreated = false;
+    const createdDetailIds: number[] = [];
+
+    try {
+        const headerResponse = await fetch(`${DIRECTUS_URL}/items/sales_order`, {
+            method: "POST",
+            headers,
+            body: JSON.stringify(headerPayload)
+        });
+        if (!headerResponse.ok) {
+            const errorText = await headerResponse.text();
+            console.error(`Failed to create the sales-order header: ${headerResponse.status} - ${errorText}`);
+            throw new ApiError(503, "Failed to create the sales-order header.");
+        }
+        headerCreated = true;
+
+        const createdOrder = (await headerResponse.json()).data;
+        orderId = Number(createdOrder?.order_id);
+        if (!Number.isSafeInteger(orderId) || orderId < 1) {
+            throw new ApiError(503, "Directus returned an invalid sales-order ID.");
+        }
+
+        for (const detailPayload of detailPayloads) {
+            const detailResponse = await fetch(`${DIRECTUS_URL}/items/sales_order_details`, {
+                method: "POST",
+                headers,
+                body: JSON.stringify({ ...detailPayload, order_id: orderId })
+            });
+            if (!detailResponse.ok) {
+                const errorText = await detailResponse.text();
+                console.error(`Failed to create a sales-order detail for order ${orderId}: ${detailResponse.status} - ${errorText}`);
+                throw new ApiError(503, "Failed to create a sales-order detail.");
+            }
+
+            const createdDetail = (await detailResponse.json()).data;
+            const detailId = Number(createdDetail?.detail_id);
+            if (!Number.isSafeInteger(detailId) || detailId < 1) {
+                throw new ApiError(503, "Directus returned an invalid sales-order detail ID.");
+            }
+            createdDetailIds.push(detailId);
+        }
+
+        return { orderId, createdDetailIds };
+    } catch (error) {
+        if (!orderId) {
+            if (headerCreated) {
+                console.error("Sales-order header was created but Directus returned no usable order ID.", error);
+                throw new ApiError(500, "Sales-order creation returned an invalid identifier and requires cleanup.", {
+                    cleanupRequired: true
+                });
+            }
+            throw error;
+        }
+
+        const cleanupFailures = await compensateSalesOrder(orderId, createdDetailIds);
+        if (cleanupFailures.length > 0) {
+            console.error(`Sales-order ${orderId} creation and compensation failed.`, { error, cleanupFailures });
+            throw new ApiError(500, "Sales-order creation failed and automatic cleanup was incomplete.", {
+                cleanupRequired: true,
+                order_id: orderId
+            });
+        }
+
+        console.error(`Sales-order ${orderId} creation failed; partial records were removed.`, error);
+        throw new ApiError(503, "Sales-order creation failed. Partial records were removed; please retry.");
+    }
+}
+
 
 export async function GET(request: Request) {
     try {
         const { searchParams } = new URL(request.url);
+        const action = searchParams.get("action");
         const orderId = searchParams.get("orderId");
+
+        const read = async (collection: string, params: URLSearchParams) => {
+            const response = await fetch(`${DIRECTUS_URL}/items/${collection}?${params.toString()}`, {
+                headers,
+                cache: "no-store"
+            });
+            if (!response.ok) throw new Error(`Failed to fetch ${collection}: ${response.status}`);
+            return response.json();
+        };
+
+        if (action === "create-lookups") {
+            const optionalRead = async (collection: string, params: URLSearchParams) => {
+                try {
+                    return await read(collection, params);
+                } catch (error) {
+                    console.error(`Failed to fetch optional sales-order lookup ${collection}:`, error);
+                    return { data: [] };
+                }
+            };
+
+            const [customerResult, productResult] = await Promise.all([
+                read("customer", new URLSearchParams({
+                    fields: "id,customer_name,customer_code,payment_term",
+                    limit: "-1",
+                    sort: "customer_name"
+                })),
+                read("products", new URLSearchParams({
+                    "filter[product_type][_eq]": "388",
+                    fields: "product_id,product_name,product_code,product_type,price_per_unit,cost_per_unit,parent_id,parent_id.product_id,unit_of_measurement.unit_id,unit_of_measurement.unit_name,unit_of_measurement.unit_shortcut,unit_of_measurement_count",
+                    limit: "-1",
+                    sort: "product_name"
+                }))
+            ]);
+
+            const [branchResult, paymentTermResult, salesmanResult, supplierResult] = await Promise.all([
+                optionalRead("branches", new URLSearchParams({
+                    "filter[isActive][_eq]": "1",
+                    fields: "id,branch_name",
+                    limit: "100",
+                    sort: "branch_name"
+                })),
+                optionalRead("payment_terms", new URLSearchParams({
+                    fields: "id,payment_name,payment_days",
+                    limit: "-1",
+                    sort: "payment_name"
+                })),
+                optionalRead("salesman", new URLSearchParams({
+                    "filter[isActive][_eq]": "true",
+                    fields: "id,salesman_name",
+                    limit: "-1",
+                    sort: "salesman_name"
+                })),
+                optionalRead("suppliers", new URLSearchParams({
+                    "filter[isActive][_eq]": "true",
+                    fields: "id,supplier_name",
+                    limit: "-1",
+                    sort: "supplier_name"
+                }))
+            ]);
+
+            const customers = (customerResult.data || []).map((customer: any) => {
+                const rawPaymentTerm = customer.payment_term;
+                const paymentTermId = Number(
+                    rawPaymentTerm && typeof rawPaymentTerm === "object"
+                        ? rawPaymentTerm.id
+                        : rawPaymentTerm
+                );
+                return {
+                    id: customer.id,
+                    customer_name: customer.customer_name,
+                    customer_code: customer.customer_code,
+                    payment_term_id: Number.isSafeInteger(paymentTermId) && paymentTermId > 0
+                        ? paymentTermId
+                        : null
+                };
+            });
+            const products = (productResult.data || []).map((product: any) => {
+                const rawParent = product.parent_id;
+                const parentId = Number(
+                    rawParent && typeof rawParent === "object"
+                        ? rawParent.product_id
+                        : rawParent
+                );
+                const productId = Number(product.product_id);
+                const unit = product.unit_of_measurement;
+                return {
+                    product_id: productId,
+                    parent_product_id: Number.isSafeInteger(parentId) && parentId > 0 ? parentId : productId,
+                    is_parent: !(Number.isSafeInteger(parentId) && parentId > 0),
+                    product_name: product.product_name,
+                    product_code: product.product_code,
+                    product_type: product.product_type,
+                    price_per_unit: product.price_per_unit,
+                    cost_per_unit: product.cost_per_unit,
+                    unit_id: Number(unit?.unit_id) || null,
+                    unit_name: unit?.unit_name || "Unit",
+                    unit_shortcut: unit?.unit_shortcut || "UNIT",
+                    unit_count: Number(product.unit_of_measurement_count) || 1
+                };
+            });
+
+            return NextResponse.json({
+                customers,
+                products,
+                branches: branchResult.data || [],
+                paymentTerms: paymentTermResult.data || [],
+                salesmen: salesmanResult.data || [],
+                suppliers: supplierResult.data || []
+            });
+        }
 
         // Fetch details for a specific order
         if (orderId) {
-            const res = await fetch(`${DIRECTUS_URL}/items/sales_order_details?filter[order_id][_eq]=${orderId}&limit=-1`, { headers, cache: "no-store" });
-            if (!res.ok) throw new Error(`Failed to fetch sales order details: ${res.status}`);
-            const json = await res.json();
-            const details = json.data || [];
-
-            // Resolve raw product_id integers into objects for frontend compatibility
-// disabled-lint-next-line @typescript-eslint/no-explicit-any
-            const productIds = [...new Set(details.map((d: any) => Number(d.product_id)).filter(Boolean))];
-            if (productIds.length > 0) {
-                try {
-                    // Fetch sales order to find customer_code
-                    const parentSoRes = await fetch(`${DIRECTUS_URL}/items/sales_order/${orderId}`, { headers, cache: "no-store" });
-                    let customerId: number | undefined;
-                    if (parentSoRes.ok) {
-                        const parentSo = (await parentSoRes.json()).data;
-                        const customerCode = parentSo?.customer_code;
-                        if (customerCode) {
-                            const custRes = await fetch(`${DIRECTUS_URL}/items/customer?filter[customer_code][_eq]=${encodeURIComponent(customerCode)}&limit=1`, { headers });
-                            if (custRes.ok) {
-                                const customer = (await custRes.json()).data?.[0];
-                                if (customer) {
-                                    customerId = customer.id || customer.customer_id;
-                                }
-                            }
-                        }
-                    }
-
-                    const prodRes = await fetch(`${DIRECTUS_URL}/items/products?filter[product_id][_in]=${productIds.join(",")}&limit=-1&fields=product_id,product_name,product_code,unit_of_measurement.unit_shortcut,unit_of_measurement_count,product_brand.brand_name,product_category.category_name`, { headers });
-                    if (prodRes.ok) {
-                        const prodData = (await prodRes.json()).data || [];
-// disabled-lint-next-line @typescript-eslint/no-explicit-any
-                        const prodMap = new Map<number, any>(prodData.map((p: any) => [p.product_id, p]));
-                        for (const det of details) {
-                            const rawId = Number(det.product_id);
-                            const matchedProd = prodMap.get(rawId);
-                            det.product_id = matchedProd ? {
-                                product_id: matchedProd.product_id,
-                                product_name: matchedProd.product_name,
-                                product_code: matchedProd.product_code,
-                                uom: matchedProd.unit_of_measurement?.unit_shortcut || "PCS",
-                                uom_count: matchedProd.unit_of_measurement_count ? Number(matchedProd.unit_of_measurement_count) : 1,
-                                brand: matchedProd.product_brand?.brand_name || "N/A",
-                                category: matchedProd.product_category?.category_name || "N/A"
-                            } : {
-                                product_id: rawId,
-                                product_name: `Product #${rawId}`,
-                                product_code: `CODE-${rawId}`,
-                                uom: "PCS",
-                                uom_count: 1,
-                                brand: "N/A",
-                                category: "N/A"
-                            };
-
-                            const { version } = await getActiveVersionForProduct(rawId, customerId);
-                            if (version) {
-                                det.bom_version_id = version.version_id;
-                                det.bom_version_name = version.version_name;
-                            } else {
-                                det.bom_version_id = null;
-                                det.bom_version_name = "No Version";
-                            }
-                        }
-                    }
-                } catch (err) {
-                    console.error("Error expanding products in sales-order details:", err);
-                }
-            }
-
-            return NextResponse.json(details);
+            const numericOrderId = Number(orderId);
+            const [details, orderResult] = await Promise.all([
+                fetchDetailsForOrders(read, [numericOrderId]),
+                read("sales_order", new URLSearchParams({
+                    "filter[order_id][_eq]": String(numericOrderId),
+                    fields: SALES_ORDER_FIELDS,
+                    limit: "1"
+                }))
+            ]);
+            const orders = orderResult.data || [];
+            const detailsMap = await enrichSalesOrderReadModel(read, orders, details);
+            return NextResponse.json(detailsMap[numericOrderId] || []);
         }
 
         // Paginated list of sales orders
@@ -103,111 +501,80 @@ export async function GET(request: Request) {
         const dateFrom = searchParams.get("dateFrom") || "";
         const dateTo = searchParams.get("dateTo") || "";
 
-        const fullyScheduledSoIds: number[] = [];
+        const filters = { search, status, customerCode, dateFrom, dateTo };
+        let salesOrders: any[] = [];
+        let prefetchedDetails: any[] = [];
+        let scheduledDetailIds = new Set<number>();
+        let totalCount = 0;
+        let countExact = true;
+        let hasMore = false;
+
         if (excludeHasJo) {
-            try {
-                // 1. Fetch all links from manufacturing_job_order_allocations
-                const josoRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_allocations?limit=-1`, { headers, cache: "no-store" });
-                const links = josoRes.ok ? ((await josoRes.json()).data || []) : [];
+            const candidateChunkSize = 100;
+            const candidateLimit = 1000;
+            const targetEligibleCount = page * limit;
+            const eligibleOrders: any[] = [];
+            const eligibleDetails: any[] = [];
+            let inspectedCount = 0;
+            let candidateCount = 0;
 
-                if (links.length > 0) {
-                    // 2. Fetch all manufacturing_job_orders to check status
-                    const joRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_job_orders?limit=-1`, { headers, cache: "no-store" });
-                    const jobOrders = joRes.ok ? ((await joRes.json()).data || []) : [];
-                    
-                    // Create a map of job_order_id -> JobOrder
-                    const joMap = new Map<number, Record<string, unknown> & { status?: string }>(
-                        jobOrders.map((jo: any) => [Number(jo.job_order_id), jo])
-                    );
+            while (inspectedCount < candidateLimit && eligibleOrders.length < targetEligibleCount) {
+                const candidateParams = new URLSearchParams({
+                    page: String(Math.floor(inspectedCount / candidateChunkSize) + 1),
+                    limit: String(Math.min(candidateChunkSize, candidateLimit - inspectedCount)),
+                    meta: "filter_count",
+                    sort: "-created_date",
+                    fields: SALES_ORDER_FIELDS
+                });
+                addSalesOrderFilters(candidateParams, filters);
+                const candidateResult = await read("sales_order", candidateParams);
+                const candidates = candidateResult.data || [];
+                if (inspectedCount === 0) candidateCount = Number(candidateResult.meta?.filter_count || candidates.length);
+                if (candidates.length === 0) break;
 
-                    // 3. Fetch all Sales Order Details
-                    const detailRes = await fetch(`${DIRECTUS_URL}/items/sales_order_details?limit=-1`, { headers, cache: "no-store" });
-                    const details = detailRes.ok ? ((await detailRes.json()).data || []) : [];
-
-                    // Group details by order_id
-                    const requiredDetailsMap = new Map<number, Set<number>>();
-                    details.forEach((d: any) => {
-                        const orderId = Number(d.order_id);
-                        const detailId = Number(d.detail_id || d.id);
-                        if (orderId && detailId) {
-                            if (!requiredDetailsMap.has(orderId)) {
-                                requiredDetailsMap.set(orderId, new Set<number>());
-                            }
-                            requiredDetailsMap.get(orderId)!.add(detailId);
-                        }
-                    });
-
-                    // Track scheduled detail IDs from non-cancelled Job Orders
-                    const scheduledDetailsMap = new Map<number, Set<number>>();
-                    links.forEach((link: any) => {
-                        const joId = Number(link.job_order_id);
-                        const detailId = Number(link.sales_order_detail_id);
-                        if (!joId || !detailId) return;
-
-                        const matchedJo = joMap.get(joId);
-                        if (!matchedJo || matchedJo.status === "Cancelled") return;
-
-                        // Find the orderId for this detailId
-                        const detailItem = details.find((d: any) => Number(d.detail_id || d.id) === detailId);
-                        const orderId = detailItem ? Number(detailItem.order_id) : null;
-                        if (orderId) {
-                            if (!scheduledDetailsMap.has(orderId)) {
-                                scheduledDetailsMap.set(orderId, new Set<number>());
-                            }
-                            scheduledDetailsMap.get(orderId)!.add(detailId);
-                        }
-                    });
-
-                    // 4. Determine which Sales Orders have ALL of their details scheduled
-                    for (const [orderId, reqSet] of requiredDetailsMap.entries()) {
-                        const schedSet = scheduledDetailsMap.get(orderId);
-                        if (schedSet) {
-                            const allScheduled = Array.from(reqSet).every(detailId => schedSet.has(detailId));
-                            if (allScheduled) {
-                                fullyScheduledSoIds.push(orderId);
-                            }
-                        }
+                const candidateDetails = await fetchDetailsForOrders(read, candidates.map((order: any) => Number(order.order_id)));
+                const chunkScheduledIds = await findScheduledDetailIds(read, candidateDetails);
+                const detailsByOrder = new Map<number, any[]>();
+                for (const detail of candidateDetails) {
+                    const detailOrderId = Number(detail.order_id);
+                    const orderDetails = detailsByOrder.get(detailOrderId) || [];
+                    orderDetails.push(detail);
+                    detailsByOrder.set(detailOrderId, orderDetails);
+                }
+                for (const candidate of candidates) {
+                    const orderDetails = detailsByOrder.get(Number(candidate.order_id)) || [];
+                    const unscheduled = orderDetails.filter((detail) => !chunkScheduledIds.has(Number(detail.detail_id || detail.id)));
+                    if (orderDetails.length === 0 || unscheduled.length > 0) {
+                        eligibleOrders.push(candidate);
+                        eligibleDetails.push(...unscheduled);
                     }
                 }
-            } catch (err) {
-                console.error("Error calculating excludeHasJo lists:", err);
+                inspectedCount += candidates.length;
+                if (candidates.length < candidateChunkSize) break;
             }
+
+            countExact = inspectedCount >= candidateCount;
+            const start = (page - 1) * limit;
+            salesOrders = eligibleOrders.slice(start, start + limit);
+            const pageOrderIds = new Set(salesOrders.map((order) => Number(order.order_id)));
+            prefetchedDetails = eligibleDetails.filter((detail) => pageOrderIds.has(Number(detail.order_id)));
+            totalCount = eligibleOrders.length;
+            hasMore = !countExact || eligibleOrders.length > start + salesOrders.length;
+        } else {
+            const orderParams = new URLSearchParams({
+                page: String(page),
+                limit: String(limit),
+                meta: "filter_count",
+                sort: "-created_date",
+                fields: SALES_ORDER_FIELDS
+            });
+            addSalesOrderFilters(orderParams, filters);
+            const orderResult = await read("sales_order", orderParams);
+            salesOrders = orderResult.data || [];
+            totalCount = Number(orderResult.meta?.filter_count || 0);
+            hasMore = page * limit < totalCount;
         }
 
-        let queryParams = `?page=${page}&limit=${limit}&meta=filter_count&sort=-created_date`;
-        
-        const filterParts: string[] = [];
-        if (status) {
-            filterParts.push(`filter[order_status][_eq]=${encodeURIComponent(status)}`);
-        }
-        if (search) {
-            filterParts.push(`filter[_or][0][order_no][_icontains]=${encodeURIComponent(search)}`);
-            filterParts.push(`filter[_or][1][customer_code][_icontains]=${encodeURIComponent(search)}`);
-        }
-        if (customerCode) {
-            filterParts.push(`filter[customer_code][_eq]=${encodeURIComponent(customerCode)}`);
-        }
-        if (dateFrom) {
-            filterParts.push(`filter[order_date][_gte]=${encodeURIComponent(dateFrom)}`);
-        }
-        if (dateTo) {
-            filterParts.push(`filter[order_date][_lte]=${encodeURIComponent(dateTo)}`);
-        }
-        if (excludeHasJo && fullyScheduledSoIds.length > 0) {
-            filterParts.push(`filter[order_id][_nin]=${fullyScheduledSoIds.join(",")}`);
-        }
-        if (filterParts.length > 0) {
-            queryParams += "&" + filterParts.join("&");
-        }
-
-        const res = await fetch(`${DIRECTUS_URL}/items/sales_order${queryParams}`, { headers, cache: "no-store" });
-        if (!res.ok) throw new Error(`Failed to fetch sales orders: ${res.status}`);
-        const json = await res.json();
-        const salesOrders = json.data || [];
-        const totalCount = json.meta?.filter_count || 0;
-        const totalPages = Math.ceil(totalCount / limit);
-
-// disabled-lint-next-line @typescript-eslint/no-explicit-any
         const orderIdsToFetch = new Set<number>(salesOrders.map((so: any) => Number(so.order_id)));
         if (selectedIdsParam) {
             selectedIdsParam.split(",").forEach(idStr => {
@@ -216,158 +583,25 @@ export async function GET(request: Request) {
             });
         }
 
-// disabled-lint-next-line @typescript-eslint/no-explicit-any
-        const detailsMap: Record<number, any[]> = {};
-        
-        if (orderIdsToFetch.size > 0) {
-            const orderIdsArray = Array.from(orderIdsToFetch);
-            const detailsRes = await fetch(`${DIRECTUS_URL}/items/sales_order_details?filter[order_id][_in]=${orderIdsArray.join(",")}&limit=-1`, { headers, cache: "no-store" });
-            if (detailsRes.ok) {
-                const detailsJson = await detailsRes.json();
-                const allDetails = detailsJson.data || [];
-
-                // Fetch allocations and job orders for detail-level filtering
-                let links: any[] = [];
-                let joMap = new Map<number, any>();
-                if (excludeHasJo) {
-                    try {
-                        const josoRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_allocations?limit=-1`, { headers, cache: "no-store" });
-                        links = josoRes.ok ? ((await josoRes.json()).data || []) : [];
-                        
-                        const joRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_job_orders?limit=-1`, { headers, cache: "no-store" });
-                        const jobOrders = joRes.ok ? ((await joRes.json()).data || []) : [];
-                        joMap = new Map(jobOrders.map((jo: any) => [Number(jo.job_order_id), jo]));
-                    } catch (e) {
-                        console.error("Error loading allocations for details filtering:", e);
-                    }
-                }
-
-                // Get customers mapping first
-                const custRes = await fetch(`${DIRECTUS_URL}/items/customer?limit=-1&fields=id,customer_code,customer_name`, { headers });
-                const customers = custRes.ok ? (await custRes.json()).data || [] : [];
-                const customerCodeToIdMap = new Map<string, number>();
-                customers.forEach((c: any) => {
-                    customerCodeToIdMap.set(c.customer_code, c.id);
-                });
-
-                const salesOrderMap = new Map<number, any>(salesOrders.map((so: any) => [Number(so.order_id), so]));
-
-// disabled-lint-next-line @typescript-eslint/no-explicit-any
-                const productIds = [...new Set(allDetails.map((d: any) => Number(d.product_id)).filter(Boolean))];
-// disabled-lint-next-line @typescript-eslint/no-explicit-any
-                let prodMap = new Map<number, any>();
-                if (productIds.length > 0) {
-                    try {
-                        const prodRes = await fetch(`${DIRECTUS_URL}/items/products?filter[product_id][_in]=${productIds.join(",")}&limit=-1&fields=product_id,product_name,product_code,unit_of_measurement.unit_shortcut,unit_of_measurement_count,product_brand.brand_name,product_category.category_name,parent_id`, { headers });
-                        if (prodRes.ok) {
-                            const prodData = (await prodRes.json()).data || [];
-// disabled-lint-next-line @typescript-eslint/no-explicit-any
-                            prodMap = new Map(prodData.map((p: any) => [p.product_id, p]));
-                        }
-                    } catch (err) {
-                        console.error("Error fetching products in bulk:", err);
-                    }
-                }
-
-                for (const det of allDetails) {
-                    const detailIdVal = Number(det.detail_id || det.id);
-                    if (excludeHasJo && links.length > 0) {
-                        const isScheduled = links.some((link: any) => 
-                            Number(link.sales_order_detail_id) === detailIdVal && 
-                            joMap.has(Number(link.job_order_id)) && 
-                            joMap.get(Number(link.job_order_id))?.status !== "Cancelled"
-                        );
-                        if (isScheduled) continue; // Skip already scheduled detail lines!
-                    }
-
-                    const rawId = Number(det.product_id);
-                    const matchedProd = prodMap.get(rawId);
-                    det.product_id = matchedProd ? {
-                        product_id: matchedProd.product_id,
-                        product_name: matchedProd.product_name,
-                        product_code: matchedProd.product_code,
-                        uom: matchedProd.unit_of_measurement?.unit_shortcut || "PCS",
-                        uom_count: matchedProd.unit_of_measurement_count ? Number(matchedProd.unit_of_measurement_count) : 1,
-                        parent_id: matchedProd.parent_id ? (typeof matchedProd.parent_id === 'object' ? Number(matchedProd.parent_id.product_id) : Number(matchedProd.parent_id)) : null,
-                        brand: matchedProd.product_brand?.brand_name || "N/A",
-                        category: matchedProd.product_category?.category_name || "N/A"
-                    } : {
-                        product_id: rawId,
-                        product_name: `Product #${rawId}`,
-                        product_code: `CODE-${rawId}`,
-                        uom: "PCS",
-                        uom_count: 1,
-                        parent_id: null,
-                        brand: "N/A",
-                        category: "N/A"
-                    };
-
-                    const orderIdNum = Number(det.order_id);
-                    const parentSo = salesOrderMap.get(orderIdNum);
-                    const customerCode = parentSo?.customer_code;
-                    const customerId = customerCode ? customerCodeToIdMap.get(customerCode) : undefined;
-
-                    let versionToUse = null;
-                    let versionName = "No Version";
-
-                    const { version } = await getActiveVersionForProduct(rawId, customerId);
-                    if (version) {
-                        versionToUse = version.version_id;
-                        versionName = version.version_name;
-                    } else if (matchedProd && matchedProd.parent_id) {
-                        const parentIdVal = typeof matchedProd.parent_id === 'object' ? Number(matchedProd.parent_id.product_id) : Number(matchedProd.parent_id);
-                        const { version: parentVersion } = await getActiveVersionForProduct(parentIdVal, customerId);
-                        if (parentVersion) {
-                            versionToUse = parentVersion.version_id;
-                            versionName = `${parentVersion.version_name} (via Parent)`;
-                        }
-                    }
-
-                    det.bom_version_id = versionToUse;
-                    det.bom_version_name = versionName;
-
-                    if (!detailsMap[orderIdNum]) {
-                        detailsMap[orderIdNum] = [];
-                    }
-                    detailsMap[orderIdNum].push(det);
-                }
-            }
+        const missingSelectedIds = [...orderIdsToFetch].filter((id) => !salesOrders.some((order) => Number(order.order_id) === id));
+        let selectedOrders: any[] = [];
+        if (missingSelectedIds.length > 0) {
+            selectedOrders = (await read("sales_order", new URLSearchParams({
+                "filter[order_id][_in]": missingSelectedIds.join(","),
+                fields: SALES_ORDER_FIELDS,
+                limit: "-1"
+            }))).data || [];
         }
-
-        try {
-            const custRes = await fetch(`${DIRECTUS_URL}/items/customer?limit=-1&fields=customer_code,customer_name`, { headers });
-            if (custRes.ok) {
-                const custData = (await custRes.json()).data || [];
-// disabled-lint-next-line @typescript-eslint/no-explicit-any
-                const custMap = new Map(custData.map((c: any) => [c.customer_code, c.customer_name]));
-                for (const so of salesOrders) {
-                    so.customer_name = custMap.get(so.customer_code) || so.customer_code;
-                }
-            }
-        } catch (err) {
-            console.error("Error joining customers in sales-order route:", err);
+        const contextOrders = [...salesOrders, ...selectedOrders];
+        const details = excludeHasJo
+            ? [...prefetchedDetails, ...(missingSelectedIds.length > 0 ? await fetchDetailsForOrders(read, missingSelectedIds) : [])]
+            : await fetchDetailsForOrders(read, [...orderIdsToFetch]);
+        if (excludeHasJo && missingSelectedIds.length > 0) {
+            scheduledDetailIds = await findScheduledDetailIds(read, details);
         }
+        const detailsMap = await enrichSalesOrderReadModel(read, contextOrders, details, scheduledDetailIds);
 
-        try {
-            const termsRes = await fetch(`${DIRECTUS_URL}/items/payment_terms?limit=-1&fields=id,payment_name,payment_days`, { headers });
-            if (termsRes.ok) {
-                const termsData = (await termsRes.json()).data || [];
-// disabled-lint-next-line @typescript-eslint/no-explicit-any
-                const termsMap = new Map<number, any>(termsData.map((t: any) => [Number(t.id), t]));
-                for (const so of salesOrders) {
-                    if (so.payment_terms) {
-                        const termId = Number(so.payment_terms);
-                        const matchedTerm = termsMap.get(termId);
-                        if (matchedTerm) {
-                            so.payment_term_name = matchedTerm.payment_name;
-                            so.payment_term_days = matchedTerm.payment_days;
-                        }
-                    }
-                }
-            }
-        } catch (err) {
-            console.error("Error joining payment terms in sales-order route:", err);
-        }
+        const totalPages = Math.ceil(totalCount / limit);
 
         return NextResponse.json({
             data: salesOrders,
@@ -376,7 +610,9 @@ export async function GET(request: Request) {
                 totalCount,
                 totalPages,
                 page,
-                limit
+                limit,
+                hasMore,
+                countExact
             }
         });
     } catch (e) {
@@ -387,66 +623,93 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
     try {
-        const body = await request.json();
-        const { quotationId, customerId, poNo, items, dueDate, deliveryDate, paymentTerms, remarks, discountAmount, salesmanId, supplierId, branchId } = body;
-
-        // Get logged in user ID from secure access token cookie
-        let encoderId: number | null = null;
-        try {
-            const cookieStore = await cookies();
-            const token = cookieStore.get("vos_access_token")?.value;
-            if (token) {
-                const parts = token.split(".");
-                if (parts.length >= 2) {
-                    const base64Url = parts[1];
-                    let base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
-                    while (base64.length % 4) base64 += "=";
-                    const jsonPayload = Buffer.from(base64, "base64").toString("utf8");
-                    const payload = JSON.parse(jsonPayload);
-                    const rawId = payload?.id || payload?.user_id || payload?.sub;
-                    if (rawId) {
-                        const parsed = Number(rawId);
-                        if (!isNaN(parsed)) {
-                            encoderId = parsed;
-                        }
-                    }
-                }
-            }
-        } catch (err) {
-            console.error("Error decoding user token in SO creation:", err);
+        const user = await requireAuthenticatedUser();
+        const rawBody = await request.json().catch(() => null);
+        const parsed = salesOrderPostSchema.safeParse(rawBody);
+        if (!parsed.success) {
+            return NextResponse.json({
+                error: "Invalid sales-order request.",
+                issues: validationIssues(parsed.error)
+            }, { status: 400 });
         }
+        const body = parsed.data;
+        const { quotationId, customerId, poNo, items, dueDate, deliveryDate, paymentTerms, remarks, discountAmount, salesmanId, supplierId, branchId } = body;
+        const encoderId = user.id;
 
         if (!quotationId) {
-            if (!customerId || !poNo || !items || items.length === 0) {
-                return NextResponse.json({ error: "Missing required fields for direct creation (customerId, poNo, items)" }, { status: 400 });
-            }
+            const directItems = items!;
 
             // 1. Fetch customer details
             const custRes = await fetch(`${DIRECTUS_URL}/items/customer/${customerId}`, { headers, cache: "no-store" });
-            if (!custRes.ok) throw new Error("Failed to fetch customer");
+            if (!custRes.ok) throw new ApiError(400, "The selected customer does not exist.");
             const cust = (await custRes.json()).data;
             const customerCode = cust.customer_code || cust.customer_name || "CUST-GEN";
 
-            // 2. Generate random SO number
-            const quoteNumberSeq = Math.floor(1000 + Math.random() * 9000);
-            const orderNo = `SO-${quoteNumberSeq}`;
+            const productIds = directItems.map((item) => item.product_id);
+            const productParams = new URLSearchParams({
+                "filter[product_id][_in]": productIds.join(","),
+                fields: "product_id,product_type",
+                limit: "-1"
+            });
+            const productRes = await fetch(`${DIRECTUS_URL}/items/products?${productParams.toString()}`, {
+                headers,
+                cache: "no-store"
+            });
+            if (!productRes.ok) throw new ApiError(503, "Unable to validate the selected products.");
+            const validProductIds = new Set(
+                ((await productRes.json()).data || [])
+                    .filter((product: any) => Number(product.product_type) === 388)
+                    .map((product: any) => Number(product.product_id))
+            );
+            const invalidProductIds = productIds.filter((id) => !validProductIds.has(id));
+            if (invalidProductIds.length > 0) {
+                throw new ApiError(400, `Unknown or non-finished-good product IDs: ${invalidProductIds.join(", ")}`);
+            }
+
+            // 2. Reserve a collision-safe number using the allocator's auto-increment key.
+            const allocationRes = await fetch(`${DIRECTUS_URL}/items/sales_order_number_allocations`, {
+                method: "POST",
+                headers,
+                body: JSON.stringify({
+                    created_at: new Date().toISOString(),
+                    created_by: encoderId
+                })
+            });
+            if (!allocationRes.ok) {
+                const allocationError = await allocationRes.text();
+                console.error(`Failed to allocate sales order number: ${allocationRes.status} - ${allocationError}`);
+                return NextResponse.json(
+                    { error: "Unable to allocate a sales order number. Please try again." },
+                    { status: 503 }
+                );
+            }
+            const allocation = (await allocationRes.json()).data;
+            const allocationId = Number(allocation?.id);
+            if (!Number.isSafeInteger(allocationId) || allocationId < 1) {
+                console.error("Sales order number allocator returned an invalid ID.", allocation);
+                return NextResponse.json(
+                    { error: "Unable to allocate a sales order number. Please try again." },
+                    { status: 503 }
+                );
+            }
+            const orderNo = `SO-DIR-${String(allocationId).padStart(6, "0")}`;
 
             // Calculate total amount
             // disabled-lint-next-line @typescript-eslint/no-explicit-any
-            const totalAmount = items.reduce((sum: number, it: any) => sum + (Number(it.unit_price || 0) * Number(it.quantity || 0)), 0);
+            const totalAmount = directItems.reduce((sum, item) => sum + item.unit_price * item.quantity, 0);
 
-            // 3. Create Sales Order
+            // 3. Create the header and all details as one compensated business action.
             const salesOrderPayload = {
                 order_no: orderNo,
                 po_no: poNo,
                 customer_code: customerCode,
                 order_status: "Draft",
                 total_amount: totalAmount,
-                discount_amount: discountAmount ? Number(discountAmount) : 0,
-                net_amount: totalAmount - (discountAmount ? Number(discountAmount) : 0),
+                discount_amount: discountAmount,
+                net_amount: totalAmount - discountAmount,
                 remarks: remarks || `Directly Created Sales Order.`,
                 created_date: new Date().toISOString(),
-                created_by: encoderId || null,
+                created_by: encoderId,
                 delivery_date: deliveryDate || null,
                 due_date: dueDate || null,
                 payment_terms: paymentTerms ? Number(paymentTerms) : null,
@@ -454,57 +717,25 @@ export async function POST(request: Request) {
                 supplier_id: supplierId ? Number(supplierId) : null,
                 branch_id: branchId ? Number(branchId) : null
             };
+            const detailPayloads = directItems.map((item) => ({
+                product_id: item.product_id,
+                unit_price: item.unit_price,
+                ordered_quantity: item.quantity,
+                allocated_quantity: 0,
+                served_quantity: 0,
+                allocated_amount: 0,
+                net_amount: item.unit_price * item.quantity,
+                gross_amount: item.unit_price * item.quantity,
+                created_date: new Date().toISOString()
+            }));
+            const created = await createSalesOrderWithDetails(salesOrderPayload, detailPayloads);
 
-            const createSoRes = await fetch(`${DIRECTUS_URL}/items/sales_order`, {
-                method: "POST",
-                headers,
-                body: JSON.stringify(salesOrderPayload)
-            });
-
-            if (!createSoRes.ok) {
-                const errText = await createSoRes.text();
-                throw new Error(`Failed to create sales order: ${createSoRes.status} - ${errText}`);
-            }
-
-            const newSo = (await createSoRes.json()).data;
-            const newOrderId = newSo.order_id;
-
-            // 4. Create Sales Order Details
-            for (const item of items) {
-                const detailPayload = {
-                    order_id: newOrderId,
-                    product_id: item.product_id,
-                    unit_price: Number(item.unit_price || 0),
-                    ordered_quantity: Number(item.quantity || 1),
-                    allocated_quantity: 0,
-                    served_quantity: 0,
-                    allocated_amount: 0,
-                    net_amount: Number(item.unit_price || 0) * Number(item.quantity || 1),
-                    gross_amount: Number(item.unit_price || 0) * Number(item.quantity || 1),
-                    created_date: new Date().toISOString()
-                };
-
-                const detailRes = await fetch(`${DIRECTUS_URL}/items/sales_order_details`, {
-                    method: "POST",
-                    headers,
-                    body: JSON.stringify(detailPayload)
-                });
-
-                if (!detailRes.ok) {
-                    console.error(`Failed to insert SO detail: ${detailRes.status}`);
-                }
-            }
-
-            return NextResponse.json({ success: true, order_id: newOrderId, order_no: orderNo });
-        }
-
-        if (!poNo) {
-            return NextResponse.json({ error: "Missing required field poNo" }, { status: 400 });
+            return NextResponse.json({ success: true, order_id: created.orderId, order_no: orderNo });
         }
 
         // 1. Fetch the quotation header
         const quoteRes = await fetch(`${DIRECTUS_URL}/items/quotation_header/${quotationId}`, { headers, cache: "no-store" });
-        if (!quoteRes.ok) throw new Error(`Failed to fetch quotation header: ${quoteRes.status}`);
+        if (!quoteRes.ok) throw new ApiError(404, "Quotation not found.");
         const quote = (await quoteRes.json()).data;
 
         // 2. Fetch the quotation snapshots
@@ -516,8 +747,25 @@ export async function POST(request: Request) {
 // disabled-lint-next-line @typescript-eslint/no-explicit-any
         const quoteItems = snapshots.filter((s: any) => s.node_type === "product_quota");
         if (quoteItems.length === 0) {
-            throw new Error("No finished goods found in this quotation.");
+            throw new ApiError(400, "No finished goods found in this quotation.");
         }
+
+        const quoteTotal = Number(quote.total_selling_price);
+        if (!Number.isFinite(quoteTotal) || quoteTotal < 0) {
+            throw new ApiError(409, "The quotation has an invalid selling total.");
+        }
+        if (discountAmount > quoteTotal) {
+            throw new ApiError(400, "Discount cannot exceed the quotation total.");
+        }
+        const invalidQuoteItem = quoteItems.some((item: any) => {
+            const productId = Number(item.product_id);
+            const quantity = Number(item.quantity);
+            const unitPrice = Number(item.frozen_total_cost_php);
+            return !Number.isSafeInteger(productId) || productId < 1
+                || !Number.isFinite(quantity) || quantity <= 0
+                || !Number.isFinite(unitPrice) || unitPrice < 0;
+        });
+        if (invalidQuoteItem) throw new ApiError(409, "The quotation contains invalid product quantities or prices.");
 
         // 3. Fetch customer details
         const custRes = await fetch(`${DIRECTUS_URL}/items/customer/${quote.customer_id}`, { headers, cache: "no-store" });
@@ -529,17 +777,31 @@ export async function POST(request: Request) {
 
         // 4. Create Sales Order
         const orderNo = `SO-${quote.quote_number.replace("QT-", "")}`;
+        const duplicateParams = new URLSearchParams({
+            "filter[order_no][_eq]": orderNo,
+            fields: "order_id",
+            limit: "1"
+        });
+        const duplicateRes = await fetch(`${DIRECTUS_URL}/items/sales_order?${duplicateParams.toString()}`, {
+            headers,
+            cache: "no-store"
+        });
+        if (!duplicateRes.ok) throw new ApiError(503, "Unable to verify whether this quotation was already converted.");
+        if (((await duplicateRes.json()).data || []).length > 0) {
+            throw new ApiError(409, `Sales order ${orderNo} already exists for this quotation.`);
+        }
+
         const salesOrderPayload = {
             order_no: orderNo,
             po_no: poNo,
             customer_code: customerCode,
             order_status: "Draft", // Start as Draft to edit quantities
-            total_amount: Number(quote.total_selling_price || 0),
-            discount_amount: discountAmount ? Number(discountAmount) : 0,
-            net_amount: Number(quote.total_selling_price || 0) - (discountAmount ? Number(discountAmount) : 0),
+            total_amount: quoteTotal,
+            discount_amount: discountAmount,
+            net_amount: quoteTotal - discountAmount,
             remarks: remarks || `Converted 1:1 from Quote ${quote.quote_number}.`,
             created_date: new Date().toISOString(),
-            created_by: encoderId || null,
+            created_by: encoderId,
             delivery_date: deliveryDate || null,
             due_date: dueDate || null,
             payment_terms: paymentTerms ? Number(paymentTerms) : null,
@@ -547,147 +809,250 @@ export async function POST(request: Request) {
             supplier_id: supplierId ? Number(supplierId) : null,
             branch_id: branchId ? Number(branchId) : null
         };
-
-        const createSoRes = await fetch(`${DIRECTUS_URL}/items/sales_order`, {
-            method: "POST",
-            headers,
-            body: JSON.stringify(salesOrderPayload)
-        });
-
-        if (!createSoRes.ok) {
-            const errText = await createSoRes.text();
-            throw new Error(`Failed to create sales order: ${createSoRes.status} - ${errText}`);
-        }
-
-        const newSo = (await createSoRes.json()).data;
-        const newOrderId = newSo.order_id;
-
-        // 5. Create Sales Order Details
-        for (const item of quoteItems) {
-            const detailPayload = {
-                order_id: newOrderId,
-                product_id: item.product_id,
-                unit_price: Number(item.frozen_total_cost_php || 0), // Agreed unit price
-                ordered_quantity: Number(item.quantity || 1),
+        const detailPayloads = quoteItems.map((item: any) => {
+            const unitPrice = Number(item.frozen_total_cost_php);
+            const quantity = Number(item.quantity);
+            return {
+                product_id: Number(item.product_id),
+                unit_price: unitPrice,
+                ordered_quantity: quantity,
                 allocated_quantity: 0,
                 served_quantity: 0,
                 allocated_amount: 0,
-                net_amount: Number(item.frozen_total_cost_php || 0) * Number(item.quantity || 1),
-                gross_amount: Number(item.frozen_total_cost_php || 0) * Number(item.quantity || 1),
+                net_amount: unitPrice * quantity,
+                gross_amount: unitPrice * quantity,
                 created_date: new Date().toISOString()
             };
+        });
+        const created = await createSalesOrderWithDetails(salesOrderPayload, detailPayloads);
 
-            const detailRes = await fetch(`${DIRECTUS_URL}/items/sales_order_details`, {
-                method: "POST",
+        // 5. Mark the quotation converted only after the complete order exists.
+        try {
+            const quoteUpdateRes = await fetch(`${DIRECTUS_URL}/items/quotation_header/${quotationId}`, {
+                method: "PATCH",
                 headers,
-                body: JSON.stringify(detailPayload)
+                body: JSON.stringify({
+                    status: "Converted to SO",
+                    remarks: `${quote.remarks || ""}\n[System: Converted to Sales Order ${orderNo}]`
+                })
             });
-
-            if (!detailRes.ok) {
-                console.error(`Failed to insert SO detail: ${detailRes.status}`);
+            if (!quoteUpdateRes.ok) {
+                throw new Error(`quotation update returned ${quoteUpdateRes.status}`);
             }
+        } catch (error) {
+            const cleanupFailures: string[] = [];
+            try {
+                const restoreRes = await fetch(`${DIRECTUS_URL}/items/quotation_header/${quotationId}`, {
+                    method: "PATCH",
+                    headers,
+                    body: JSON.stringify({
+                        status: quote.status ?? null,
+                        remarks: quote.remarks ?? null
+                    })
+                });
+                if (!restoreRes.ok) cleanupFailures.push(`quotation restore returned ${restoreRes.status}`);
+            } catch (restoreError) {
+                cleanupFailures.push(`quotation restore failed: ${restoreError instanceof Error ? restoreError.message : "unknown error"}`);
+            }
+            cleanupFailures.push(...await compensateSalesOrder(created.orderId, created.createdDetailIds));
+
+            if (cleanupFailures.length > 0) {
+                console.error(`Quotation ${quotationId} conversion and compensation failed.`, { error, cleanupFailures });
+                throw new ApiError(500, "Quotation conversion failed and automatic cleanup was incomplete.", {
+                    cleanupRequired: true,
+                    order_id: created.orderId
+                });
+            }
+
+            console.error(`Quotation ${quotationId} conversion failed; the new order was removed.`, error);
+            throw new ApiError(503, "Quotation conversion failed. Partial records were removed; please retry.");
         }
 
-        // 6. Update Quotation Status
-        await fetch(`${DIRECTUS_URL}/items/quotation_header/${quotationId}`, {
-            method: "PATCH",
-            headers,
-            body: JSON.stringify({
-                status: "Converted to SO",
-                remarks: `${quote.remarks || ""}\n[System: Converted to Sales Order ${orderNo}]`
-            })
-        });
-
-        return NextResponse.json({ success: true, order_id: newOrderId, order_no: orderNo });
+        return NextResponse.json({ success: true, order_id: created.orderId, order_no: orderNo });
     } catch (e) {
-        console.error("API Error in sales-order POST:", e);
-        return NextResponse.json({ error: (e as { message?: string }).message || "Failed to process quotation conversion" }, { status: 500 });
+        return mutationError(e, "Failed to process sales-order creation.");
     }
 }
 
 export async function PATCH(request: Request) {
     try {
-        const body = await request.json();
-        const { orderId, orderStatus, details } = body;
+        const user = await requireAuthenticatedUser();
+        const rawBody = await request.json().catch(() => null);
+        const parsed = salesOrderPatchSchema.safeParse(rawBody);
+        if (!parsed.success) {
+            return NextResponse.json({
+                error: "Invalid sales-order update.",
+                issues: validationIssues(parsed.error)
+            }, { status: 400 });
+        }
+        const body = parsed.data;
+        const orderId = body.orderId;
 
-        if (!orderId) {
-            return NextResponse.json({ error: "Missing orderId" }, { status: 400 });
+        return await withSalesOrderMutationLock(orderId, async () => {
+
+        const headerParams = new URLSearchParams({
+            fields: "order_id,order_status,discount_amount,total_amount,net_amount",
+            limit: "1"
+        });
+        const orderRes = await fetch(`${DIRECTUS_URL}/items/sales_order/${orderId}?${headerParams.toString()}`, {
+            headers,
+            cache: "no-store"
+        });
+        if (!orderRes.ok) throw new ApiError(404, "Sales order not found.");
+        const order = (await orderRes.json()).data;
+        const currentStatus = String(order.order_status || "");
+        const discount = Number(order.discount_amount || 0);
+        if (!Number.isFinite(discount) || discount < 0) {
+            throw new ApiError(409, "The sales order has an invalid discount amount.");
         }
 
-        // 1. If details array is provided, batch update quantities and totals
-        if (details && Array.isArray(details)) {
-            for (const item of details) {
-                const detailRes = await fetch(`${DIRECTUS_URL}/items/sales_order_details/${item.detail_id}`, { headers, cache: "no-store" });
-                if (detailRes.ok) {
-                    const detailData = (await detailRes.json()).data;
-                    const unitPrice = Number(detailData.unit_price || 0);
-                    const qty = Number(item.ordered_quantity || 0);
-                    const newNet = unitPrice * qty;
-                    
-                    // Update the detail record
-                    await fetch(`${DIRECTUS_URL}/items/sales_order_details/${item.detail_id}`, {
-                        method: "PATCH",
-                        headers,
-                        body: JSON.stringify({
-                            ordered_quantity: qty,
-                            net_amount: newNet,
-                            gross_amount: newNet
-                        })
-                    });
-                }
+        const detailParams = new URLSearchParams({
+            "filter[order_id][_eq]": String(orderId),
+            fields: "detail_id,order_id,unit_price,ordered_quantity,net_amount,gross_amount",
+            limit: "-1"
+        });
+        const allDetailsRes = await fetch(`${DIRECTUS_URL}/items/sales_order_details?${detailParams.toString()}`, {
+            headers,
+            cache: "no-store"
+        });
+        if (!allDetailsRes.ok) throw new ApiError(503, "Unable to validate sales-order details.");
+        const allDetails = (await allDetailsRes.json()).data || [];
+
+        if ("orderStatus" in body) {
+            const targetStatus = body.orderStatus;
+            if (!targetStatus) throw new ApiError(400, "A target sales-order status is required.");
+            if (targetStatus === currentStatus) {
+                return NextResponse.json({ success: true, order_status: currentStatus });
             }
 
-            // Recalculate total_amount from all details of this order
-            const allDetailsRes = await fetch(`${DIRECTUS_URL}/items/sales_order_details?filter[order_id][_eq]=${orderId}&limit=-1`, { headers, cache: "no-store" });
-            if (allDetailsRes.ok) {
-                const allDetails = (await allDetailsRes.json()).data || [];
-// disabled-lint-next-line @typescript-eslint/no-explicit-any
-                const sum = allDetails.reduce((acc: number, d: any) => acc + Number(d.net_amount || 0), 0);
-                
-                // Fetch current status and discount_amount to update net_amount
-                const soHeaderRes = await fetch(`${DIRECTUS_URL}/items/sales_order/${orderId}`, { headers, cache: "no-store" });
-                let discount = 0;
-                let currentStatus = "";
-                if (soHeaderRes.ok) {
-                    const soHeader = (await soHeaderRes.json()).data;
-                    discount = Number(soHeader.discount_amount || 0);
-                    currentStatus = soHeader.order_status;
-                }
-
-// disabled-lint-next-line @typescript-eslint/no-explicit-any
-                const headerPayload: any = {
-                    total_amount: sum,
-                    net_amount: sum - discount
-                };
-
-                // Auto transition Draft to Pending upon edit
-                if (currentStatus === "Draft") {
-                    headerPayload.order_status = "Pending";
-                }
-
-                // Update the sales order header with recalculated totals
-                await fetch(`${DIRECTUS_URL}/items/sales_order/${orderId}`, {
-                    method: "PATCH",
-                    headers,
-                    body: JSON.stringify(headerPayload)
-                });
+            const allowedTransitions: Record<string, string[]> = {
+                Draft: ["Pending", "For Approval"],
+                Pending: ["For Approval"],
+                "For Approval": ["Draft", "For Consolidation"]
+            };
+            if (!allowedTransitions[currentStatus]?.includes(targetStatus)) {
+                throw new ApiError(409, `Cannot transition sales order from ${currentStatus || "unknown"} to ${targetStatus}.`);
             }
-        }
 
-        // 2. If orderStatus is provided, update the status
-        if (orderStatus) {
+            const isApprovalDecision = currentStatus === "For Approval"
+                && (targetStatus === "For Consolidation" || targetStatus === "Draft");
+            if (isApprovalDecision && !(await canApproveSalesOrders(user))) {
+                throw new ApiError(403, "Sales-order approval access is required for this transition.");
+            }
+
+            if (targetStatus === "For Approval") {
+                if (allDetails.length === 0) throw new ApiError(409, "A sales order without details cannot be submitted for approval.");
+                const total = allDetails.reduce((sum: number, detail: any) => {
+                    const quantity = Number(detail.ordered_quantity);
+                    const unitPrice = Number(detail.unit_price);
+                    if (!Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(unitPrice) || unitPrice < 0) {
+                        throw new ApiError(409, "Sales-order details contain invalid quantities or prices.");
+                    }
+                    return sum + quantity * unitPrice;
+                }, 0);
+                if (discount > total) throw new ApiError(409, "The sales-order discount exceeds its total amount.");
+            }
+
             const updateRes = await fetch(`${DIRECTUS_URL}/items/sales_order/${orderId}`, {
                 method: "PATCH",
                 headers,
-                body: JSON.stringify({ order_status: orderStatus })
+                body: JSON.stringify({ order_status: targetStatus })
             });
-
-            if (!updateRes.ok) throw new Error(`Failed to update sales order status: ${updateRes.status}`);
+            if (!updateRes.ok) throw new ApiError(503, "Failed to update the sales-order status.");
+            return NextResponse.json({ success: true, order_status: targetStatus });
         }
 
-        return NextResponse.json({ success: true });
+        if (currentStatus !== "Draft" && currentStatus !== "Pending") {
+            throw new ApiError(409, `Quantities cannot be changed while the sales order is ${currentStatus || "in an unknown status"}.`);
+        }
+
+        const requestedDetails = new Map(body.details.map((detail) => [detail.detail_id, detail.ordered_quantity]));
+        const existingDetailIds = new Set(allDetails.map((detail: any) => Number(detail.detail_id)));
+        const foreignDetailIds = [...requestedDetails.keys()].filter((detailId) => !existingDetailIds.has(detailId));
+        if (foreignDetailIds.length > 0) {
+            throw new ApiError(404, `Sales-order detail IDs were not found on this order: ${foreignDetailIds.join(", ")}`);
+        }
+
+        const total = allDetails.reduce((sum: number, detail: any) => {
+            const detailId = Number(detail.detail_id);
+            const quantity = requestedDetails.get(detailId) ?? Number(detail.ordered_quantity);
+            const unitPrice = Number(detail.unit_price);
+            if (!Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(unitPrice) || unitPrice < 0) {
+                throw new ApiError(409, "Sales-order details contain invalid quantities or prices.");
+            }
+            return sum + quantity * unitPrice;
+        }, 0);
+        if (discount > total) throw new ApiError(400, "The sales-order discount cannot exceed the updated total.");
+
+        const nextStatus = currentStatus === "Draft" ? "Pending" : currentStatus;
+        const detailsById = new Map<number, any>(allDetails.map((detail: any) => [Number(detail.detail_id), detail]));
+        const attemptedMutations: DetailQuantityMutation[] = [];
+        let headerMutation: HeaderQuantityMutation | null = null;
+
+        try {
+            for (const [detailId, quantity] of requestedDetails) {
+                const detail = detailsById.get(detailId);
+                const newNet = Number(detail.unit_price) * quantity;
+                const mutation: DetailQuantityMutation = {
+                    detailId,
+                    original: {
+                        ordered_quantity: detail.ordered_quantity,
+                        net_amount: detail.net_amount,
+                        gross_amount: detail.gross_amount
+                    },
+                    applied: {
+                        ordered_quantity: quantity,
+                        net_amount: newNet,
+                        gross_amount: newNet
+                    }
+                };
+                attemptedMutations.push(mutation);
+
+                const detailRes = await fetch(`${DIRECTUS_URL}/items/sales_order_details/${detailId}`, {
+                    method: "PATCH",
+                    headers,
+                    body: JSON.stringify(mutation.applied)
+                });
+                if (!detailRes.ok) throw new Error(`detail ${detailId} update returned ${detailRes.status}`);
+            }
+
+            headerMutation = {
+                original: {
+                    total_amount: order.total_amount,
+                    net_amount: order.net_amount,
+                    order_status: currentStatus
+                },
+                applied: {
+                    total_amount: total,
+                    net_amount: total - discount,
+                    order_status: nextStatus
+                }
+            };
+            const headerUpdateRes = await fetch(`${DIRECTUS_URL}/items/sales_order/${orderId}`, {
+                method: "PATCH",
+                headers,
+                body: JSON.stringify(headerMutation.applied)
+            });
+            if (!headerUpdateRes.ok) throw new Error(`header update returned ${headerUpdateRes.status}`);
+        } catch (error) {
+            const rollback = await rollbackQuantityUpdate(orderId, attemptedMutations, headerMutation);
+            if (rollback.failures.length > 0) {
+                console.error(`Sales-order ${orderId} quantity update and rollback failed.`, { error, rollback });
+                throw new ApiError(500, "Sales-order quantity update failed and automatic restoration was incomplete.", {
+                    cleanupRequired: true,
+                    order_id: orderId,
+                    detail_ids: rollback.unresolvedDetailIds,
+                    header_cleanup_required: rollback.headerUnresolved
+                });
+            }
+
+            console.error(`Sales-order ${orderId} quantity update failed; prior values were restored.`, error);
+            throw new ApiError(503, "Sales-order quantity update failed. Prior values were restored; please retry.");
+        }
+
+        return NextResponse.json({ success: true, order_status: nextStatus });
+        });
     } catch (e) {
-        console.error("API Error in sales-order PATCH:", e);
-        return NextResponse.json({ error: (e as { message?: string }).message || "Failed to update sales order" }, { status: 500 });
+        return mutationError(e, "Failed to update the sales order.");
     }
 }

@@ -30,6 +30,9 @@ export interface CreatableSelectProps {
     onKeyDown?: React.KeyboardEventHandler<HTMLButtonElement>;
     "data-index"?: number;
     popoverClassName?: string;
+    "aria-label"?: string;
+    "aria-invalid"?: boolean;
+    "aria-describedby"?: string;
 }
 
 export function CreatableSelect({
@@ -43,6 +46,9 @@ export function CreatableSelect({
     onKeyDown,
     "data-index": dataIndex,
     popoverClassName,
+    "aria-label": ariaLabel,
+    "aria-invalid": ariaInvalid,
+    "aria-describedby": ariaDescribedBy,
 }: CreatableSelectProps) {
     const [open, setOpen] = React.useState(false);
     const [searchQuery, setSearchQuery] = React.useState("");
@@ -77,6 +83,9 @@ export function CreatableSelect({
                     disabled={disabled}
                     onKeyDown={onKeyDown}
                     data-index={dataIndex}
+                    aria-label={ariaLabel}
+                    aria-invalid={ariaInvalid}
+                    aria-describedby={ariaDescribedBy}
                 >
                     <span className="truncate">{selectedLabel || placeholder}</span>
                     <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
