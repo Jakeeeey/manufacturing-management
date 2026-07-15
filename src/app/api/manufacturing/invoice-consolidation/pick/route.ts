@@ -120,30 +120,37 @@ export async function POST(req: NextRequest) {
                 return NextResponse.json({ message: "Batch has no details" }, { status: 400 });
             }
 
-            // --- FEFO allocate & build movement payloads ---
-            const movementsToPost: PostMovementPayload[] = [];
+            // Allocate once per product so duplicate detail rows cannot reuse the same stock.
             const branchId = Number(consolidator.branch_id);
+            const productPickedMap = new Map<number, number>();
+            for (const d of details) {
+                const qty = Number(d.picked_quantity || 0);
+                if (qty <= 0) continue;
+                productPickedMap.set(d.product_id, (productPickedMap.get(d.product_id) || 0) + qty);
+            }
 
-            for (const detail of details) {
-                const pickedQty = Number(detail.picked_quantity || 0);
-                if (pickedQty <= 0) continue;
+            const movementsToPost: PostMovementPayload[] = [];
+            const productStocks = await Promise.all(
+                [...productPickedMap].map(async ([productId, pickedQuantity]) => ({
+                    productId,
+                    pickedQuantity,
+                    availableStock: await fetchAvailableStock(productId, branchId),
+                }))
+            );
 
-                const availableStock = await fetchAvailableStock(detail.product_id, branchId);
-                const { allocations, shortfall } = fefoAllocate(pickedQty, availableStock);
+            for (const { productId, pickedQuantity, availableStock } of productStocks) {
+                const { allocations, shortfall } = fefoAllocate(pickedQuantity, availableStock);
 
                 if (shortfall > 0) {
                     return NextResponse.json({
-                        message: "Insufficient stock to cover picked quantity",
-                        productId: detail.product_id,
-                        required: pickedQty,
-                        available: pickedQty - shortfall,
-                        shortfall,
+                        message: "Insufficient stock — reduce picked quantity for this product",
+                        productId,
                     }, { status: 422 });
                 }
 
                 for (const alloc of allocations) {
                     movementsToPost.push({
-                        product_id: detail.product_id,
+                        product_id: productId,
                         lot_id: alloc.lot_id,
                         branch_id: branchId,
                         transaction_type_id: TXN_TYPE_SALES_ISSUE,

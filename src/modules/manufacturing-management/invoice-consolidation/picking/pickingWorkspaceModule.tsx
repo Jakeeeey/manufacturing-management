@@ -74,7 +74,8 @@ export default function PickingWorkspaceModule({ batchNo }: PickingWorkspaceModu
     const {
         localItems, hasChanges, editingDetailId, editValue,
         showCompleteConfirm, showCloseConfirm, saving,
-        totals, shortProducts,
+        totals, shortProducts, validationErrors,
+        stockReady, stockChecking, stockError, completionBlocked,
         setEditValue, setShowCompleteConfirm, setShowCloseConfirm,
         increment, decrement, startEdit, commitEdit, cancelEdit,
         handleSave, handleComplete, handleConfirmShortComplete,
@@ -198,6 +199,33 @@ export default function PickingWorkspaceModule({ batchNo }: PickingWorkspaceModu
                 <span className="text-muted-foreground/30">|</span>
                 <kbd className="rounded border border-border/40 bg-background px-1.5 py-0.5 font-mono text-[9px] font-black text-foreground">Esc</kbd>
                 <span>Cancel edit</span>
+                {validationErrors.size > 0 && (
+                    <>
+                        <span className="text-muted-foreground/30">|</span>
+                        <span className="text-red-500 flex items-center gap-1">
+                            <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-500" />
+                            Resolve stock discrepancies to complete
+                        </span>
+                    </>
+                )}
+                {!stockReady && !stockError && (
+                    <>
+                        <span className="text-muted-foreground/30">|</span>
+                        <span className="flex items-center gap-1 text-blue-500">
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                            Checking stock
+                        </span>
+                    </>
+                )}
+                {stockError && (
+                    <>
+                        <span className="text-muted-foreground/30">|</span>
+                        <span className="flex items-center gap-1 text-red-500">
+                            <span className="inline-block h-1.5 w-1.5 rounded-full bg-red-500" />
+                            Stock check unavailable
+                        </span>
+                    </>
+                )}
             </div>
 
             {/* Product list */}
@@ -217,6 +245,7 @@ export default function PickingWorkspaceModule({ batchNo }: PickingWorkspaceModu
                         const isComplete = item.pickedQuantity >= item.orderedQuantity;
                         const isEditing = editingDetailId === item.detailId;
                         const inputId = `pick-qty-${item.detailId}`;
+                        const hasStockError = validationErrors.has(item.detailId);
                         return (
                             <div
                                 key={item.detailId}
@@ -234,7 +263,9 @@ export default function PickingWorkspaceModule({ batchNo }: PickingWorkspaceModu
                                 className={`border rounded-xl p-4 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
                                     isEditing ? "ring-2 ring-primary/30" : ""
                                 } ${
-                                    isComplete
+                                    hasStockError
+                                        ? "bg-red-500/5 border-red-500/40"
+                                        : isComplete
                                         ? "bg-emerald-500/5 border-emerald-500/20"
                                         : "bg-card border-border hover:border-primary/30"
                                 }`}
@@ -247,6 +278,12 @@ export default function PickingWorkspaceModule({ batchNo }: PickingWorkspaceModu
                                         <p className="text-[10px] font-mono text-muted-foreground mt-0.5">
                                             {item.productCode || `ID: ${item.productId}`}
                                         </p>
+                                        {hasStockError && (
+                                            <p className="text-[9px] font-bold text-red-500 mt-1 flex items-center gap-1">
+                                                <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
+                                                Stock discrepancy
+                                            </p>
+                                        )}
                                     </div>
 
                                     <div className="flex items-center gap-3 shrink-0">
@@ -328,9 +365,15 @@ export default function PickingWorkspaceModule({ batchNo }: PickingWorkspaceModu
                                         </div>
 
                                         <div className={`h-8 w-8 rounded-full flex items-center justify-center ${
-                                            isComplete ? "bg-emerald-500/10" : "bg-muted/30"
+                                            hasStockError
+                                                ? "bg-red-500/10"
+                                                : isComplete
+                                                ? "bg-emerald-500/10"
+                                                : "bg-muted/30"
                                         }`}>
-                                            {isComplete ? (
+                                            {hasStockError ? (
+                                                <span className="text-[8px] font-black text-red-500 leading-none text-center px-0.5">!</span>
+                                            ) : isComplete ? (
                                                 <Package className="h-4 w-4 text-emerald-500" />
                                             ) : (
                                                 <Keyboard className="h-4 w-4 text-muted-foreground/50" />
@@ -359,7 +402,7 @@ export default function PickingWorkspaceModule({ batchNo }: PickingWorkspaceModu
                         id="picking-save-btn"
                         variant="outline"
                         onClick={handleSave}
-                        disabled={!hasChanges || saving || submitting}
+                        disabled={!hasChanges || saving || submitting || editingDetailId != null}
                         className="flex items-center gap-1.5 text-xs font-bold"
                         suppressHydrationWarning
                     >
@@ -372,11 +415,11 @@ export default function PickingWorkspaceModule({ batchNo }: PickingWorkspaceModu
                     </Button>
                     <Button
                         onClick={handleComplete}
-                        disabled={saving || submitting}
-                        className="flex items-center gap-1.5 text-xs font-bold bg-purple-600 hover:bg-purple-700 text-white"
+                        disabled={saving || submitting || completionBlocked}
+                        className="flex items-center gap-1.5 text-xs font-bold bg-purple-600 hover:bg-purple-700 text-white disabled:opacity-40"
                         suppressHydrationWarning
                     >
-                        {saving ? (
+                        {saving || stockChecking ? (
                             <Loader2 className="h-3.5 w-3.5 animate-spin" />
                         ) : (
                             <SquarePen className="h-3.5 w-3.5" />
@@ -432,7 +475,7 @@ export default function PickingWorkspaceModule({ batchNo }: PickingWorkspaceModu
                                 </button>
                                 <button
                                     onClick={handleConfirmShortComplete}
-                                    disabled={saving}
+                                    disabled={saving || completionBlocked}
                                     className="px-3.5 py-1.5 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors cursor-pointer disabled:opacity-50"
                                     suppressHydrationWarning
                                 >

@@ -24,6 +24,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { InvoiceConsolidation } from "../types";
 import { generateConsolidationPDF } from "../utils/ConsolidationSummaryPrint";
+import { fetchAllocations } from "../services/invoice-consolidation-api";
 
 type DetailAction = "revert" | "audit" | "start-picking";
 
@@ -35,6 +36,9 @@ interface Props {
 }
 
 async function handlePrint(c: InvoiceConsolidation) {
+    const [allocations] = await Promise.all([
+        fetchAllocations(c.id).catch(() => []),
+    ]);
     await generateConsolidationPDF({
         consolidatorNo: c.consolidatorNo,
         branchName: c.branchName,
@@ -58,6 +62,7 @@ async function handlePrint(c: InvoiceConsolidation) {
             })),
         })),
         totalInvoices: c.invoices.length,
+        allocations,
     });
 }
 

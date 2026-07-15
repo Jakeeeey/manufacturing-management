@@ -16,6 +16,13 @@ export async function AppSidebar(props: ComponentProps<typeof Sidebar>) {
     iconName: "FileText",
     items: [
       {
+        title: "Summary",
+        url: "/mm/consolidation/summary",
+        slug: "consolidation-summary",
+        status: "active",
+        iconName: "ChartNoAxesCombined",
+      },
+      {
         title: "Creation",
         url: "/mm/consolidation/creation",
         slug: "consolidation-creation",

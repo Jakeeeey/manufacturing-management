@@ -89,11 +89,13 @@ export async function POST(req: NextRequest) {
         }
 
         if (compensations.length === 0) {
-            return NextResponse.json({ message: "No outstanding movements to compensate" }, { status: 400 });
+            // No negative movements found — batch may have been picked with zero quantities
+            // or net is already zero. Proceed with clearing details and reverting status.
+            console.warn(`Re-pick ${batchId}: no negative movements to compensate — clearing picking data only`);
+        } else {
+            // Post compensating movements
+            await postMovements(compensations);
         }
-
-        // Post compensating movements
-        await postMovements(compensations);
 
         // Clear picked quantities on all details
         const detRes = await fetch(
@@ -127,14 +129,14 @@ export async function POST(req: NextRequest) {
         });
 
         if (!patchRes.ok) {
-            return NextResponse.json({ message: "Compensation posted but status revert failed" }, { status: 502 });
+            return NextResponse.json({ message: "Status revert failed" }, { status: 502 });
         }
 
-        return NextResponse.json({
-            success: true,
-            message: `Batch reverted to Picking (${compensatedCount} movement(s) compensated)`,
-            compensatedCount,
-        });
+        const msg = compensatedCount > 0
+            ? `Batch reverted to Picking (${compensatedCount} movement(s) compensated)`
+            : "Batch reverted to Picking (no movements to compensate)";
+
+        return NextResponse.json({ success: true, message: msg, compensatedCount });
     } catch (e) {
         console.error("invoice-consolidation repick POST error:", e);
         return NextResponse.json({ message: "BFF Network Error" }, { status: 502 });

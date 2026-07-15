@@ -64,7 +64,7 @@ export async function fetchAvailableStock(
     const url = `${DIRECTUS_URL}/items/inventory_movements`
         + `?filter[product_id][_eq]=${productId}`
         + `&filter[branch_id][_eq]=${branchId}`
-        + `&sort=movement_id&limit=500`;
+        + `&sort=movement_id&limit=-1`;
 
     const res = await fetch(url, { headers, cache: "no-store" });
     if (!res.ok) {

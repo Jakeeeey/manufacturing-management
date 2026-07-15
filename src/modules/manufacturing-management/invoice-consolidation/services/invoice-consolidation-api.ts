@@ -92,6 +92,36 @@ export async function auditBatch(payload: AuditPayload): Promise<{ success: bool
     return handleResponse(res, "Failed to audit batch");
 }
 
+export interface ProductStockAvailability {
+    productId: number;
+    availableQuantity: number;
+}
+
+export async function fetchStockAvailability(batchId: number): Promise<ProductStockAvailability[]> {
+    const res = await fetchWithSessionRetry(
+        `/api/manufacturing/invoice-consolidation/validate-stock?batchId=${batchId}`
+    );
+    const data = await handleResponse(res, "Failed to validate stock");
+    return data.availability ?? [];
+}
+
+export interface LotAllocation {
+    productId: number;
+    productName: string;
+    lotId: number;
+    lotName: string;
+    batchNo: string;
+    expiryDate: string | null;
+    manufacturingDate: string | null;
+    quantity: number;
+}
+
+export async function fetchAllocations(batchId: number): Promise<LotAllocation[]> {
+    const res = await fetchWithSessionRetry(`/api/manufacturing/invoice-consolidation/allocations?batchId=${batchId}`);
+    const data = await handleResponse(res, "Failed to load allocations");
+    return data.allocations ?? [];
+}
+
 export async function repickBatch(batchId: number): Promise<{ success: boolean; message: string; compensatedCount?: number }> {
     const res = await fetchWithSessionRetry("/api/manufacturing/invoice-consolidation/audit/repick", {
         method: "POST",
