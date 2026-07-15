@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { DIRECTUS_URL, headers } from "../_directus";
-import { canTransitionInventoryStatus, calculatePurchaseLineAmounts, INVENTORY_STATUS, shipmentStatusToInventoryStatus } from "../_domain";
-import { 
+import { canTransitionInventoryStatus, INVENTORY_STATUS, shipmentStatusToInventoryStatus } from "../_domain";
+import {
     fetchIncomingShipments, 
     fetchShipmentLineItems, 
     createIncomingShipment,
@@ -15,10 +15,11 @@ import {
 import {
     modulesForStatus,
     purchaseOrderApprovalSchema,
-    purchaseOrderCreateSchema,
-    purchaseOrderEditSchema,
+    legacyPurchaseOrderCreateSchema,
+    legacyPurchaseOrderEditSchema,
     purchaseOrderStatusUpdateSchema
 } from "../../purchase-orders/_schemas";
+import { calculatePurchaseOrderTotals } from "../../purchase-orders/_domain";
 
 class InvalidTransitionError extends Error {}
 
@@ -65,7 +66,7 @@ export async function POST(request: Request) {
                 { status: 410 }
             );
         }
-        const parsed = purchaseOrderCreateSchema.safeParse(rawBody);
+        const parsed = legacyPurchaseOrderCreateSchema.safeParse(rawBody);
         if (!parsed.success) {
             return NextResponse.json({ error: "Invalid purchase order.", details: parsed.error.flatten() }, { status: 400 });
         }
@@ -189,31 +190,50 @@ export async function PATCH(request: Request) {
 
 export async function PUT(request: Request) {
     try {
-        const parsed = purchaseOrderEditSchema.safeParse(await request.json());
+        const parsed = legacyPurchaseOrderEditSchema.safeParse(await request.json());
         if (!parsed.success) return NextResponse.json({ error: "Invalid purchase-order edit.", details: parsed.error.flatten() }, { status: 400 });
         await requirePurchaseOrderModuleAccess({ modulePath: PURCHASE_ORDER_MODULE_PATHS.procurement });
         const { shipmentId, shipmentData, lineItems } = parsed.data;
 
+        const currentResponse = await fetch(
+            `${DIRECTUS_URL}/items/purchase_order/${shipmentId}?fields=inventory_status,currency_code,exchange_rate`,
+            { headers, cache: "no-store" }
+        );
+        if (!currentResponse.ok) throw new Error("Failed to validate the current purchase order.");
+        const currentOrder = (await currentResponse.json()).data || {};
+        if (Number(currentOrder.inventory_status) !== INVENTORY_STATUS.REQUESTED) {
+            return NextResponse.json({ error: "Only Requested purchase orders can be edited." }, { status: 409 });
+        }
+        const submittedCurrency = (shipmentData as { currency_code?: string }).currency_code;
+        if (submittedCurrency && submittedCurrency !== (currentOrder.currency_code || "PHP")) {
+            return NextResponse.json({ error: "Currency is locked after purchase-order submission." }, { status: 409 });
+        }
+        if (submittedCurrency && Math.abs(Number(shipmentData.exchange_rate) - Number(currentOrder.exchange_rate)) > 0.000001) {
+            return NextResponse.json({ error: "Exchange rate is locked after purchase-order submission." }, { status: 409 });
+        }
+
         // Recompute total from the actual submitted line items (quantity_ordered is the correct field
         // from ManifestLineFormItem; shipmentData.total_php_value may be stale)
-        const recomputedTotalPhp = (lineItems as Array<{ quantity_ordered?: number | string; base_unit_cost_php?: number | string }>).reduce((sum, item) => {
-            const qty = Number(item.quantity_ordered || 0);
-            const price = Number(item.base_unit_cost_php || 0);
-            return sum + qty * price;
-        }, 0);
-        const totalPhp = recomputedTotalPhp || Number(shipmentData.total_php_value || 0);
-        const exchangeRate = Number(shipmentData.exchange_rate) || 58.00;
+        const exchangeRate = Number(shipmentData.exchange_rate) || 1;
+        const calculated = calculatePurchaseOrderTotals(lineItems.map(item => ({
+            quantity: Number(item.quantity_ordered || 0),
+            unitPrice: Number(item.base_unit_cost_php || 0),
+            discountPercent: Number((item as { discount_percent?: number }).discount_percent || 0),
+            vatPercent: Number((item as { vat_percent?: number }).vat_percent || 0),
+            withholdingPercent: Number((item as { withholding_percent?: number }).withholding_percent || 0)
+        })), exchangeRate);
+        const totalPhp = calculated.netPhp;
 
         // 1. Update purchase_order header
         const poPayload = {
             reference: shipmentData.reference_number,
             remark: null, // Clear rejection remarks
             supplier_name: shipmentData.supplier_id,
-            gross_amount: totalPhp,
+            gross_amount: calculated.grossPhp,
             total_amount: totalPhp,
             inventory_status: 1, // Reset to Requested (Ordered)
             exchange_rate: exchangeRate,
-            total_foreign_currency: totalPhp / exchangeRate,
+            total_foreign_currency: calculated.netForeign,
             date_received: shipmentData.date_received || null,
             lead_time_receiving: null,
             approver_id: null,
@@ -235,23 +255,25 @@ export async function PUT(request: Request) {
         if (oldPopsRes.ok) {
             const oldPops = (await oldPopsRes.json()).data || [];
             for (const pop of oldPops) {
-                await fetch(`${DIRECTUS_URL}/items/purchase_order_products/${pop.purchase_order_product_id}`, {
+                const deleteResponse = await fetch(`${DIRECTUS_URL}/items/purchase_order_products/${pop.purchase_order_product_id}`, {
                     method: "DELETE",
                     headers
-                }).catch(err => console.error("Failed to delete PO product:", err));
+                });
+                if (!deleteResponse.ok) throw new Error(`Failed to replace purchase-order line ${pop.purchase_order_product_id}.`);
             }
         }
 
         // 3. Create new purchase_order_products
         // Note: lineItems come as ManifestLineFormItem from the frontend, which uses
         // `quantity_ordered` (not `ordered_quantity`) as the field name.
-        for (const item of lineItems) {
+        for (let index = 0; index < lineItems.length; index += 1) {
+            const item = lineItems[index];
             const qty = Number((item as { quantity_ordered?: number | string }).quantity_ordered || 0);
             const price = Number(item.base_unit_cost_php || 0);
             const discountPercent = Number((item as { discount_percent?: number }).discount_percent || 0);
-            const amounts = calculatePurchaseLineAmounts(qty, price, discountPercent);
+            const amounts = calculated.lines[index];
 
-            await fetch(`${DIRECTUS_URL}/items/purchase_order_products`, {
+            const createResponse = await fetch(`${DIRECTUS_URL}/items/purchase_order_products`, {
                 method: "POST",
                 headers,
                 body: JSON.stringify({
@@ -261,13 +283,22 @@ export async function PUT(request: Request) {
                     unit_price: price,
                     approved_price: price,
                     discount_type: (item as { discount_type?: number | null }).discount_type || null,
-                    gross_amount: amounts.grossAmount,
-                    discounted_price: amounts.discountedPrice,
-                    discounted_amount: amounts.discountedAmount,
-                    net_amount: amounts.netAmount,
-                    total_amount: amounts.netAmount
+                    gross_amount: amounts.grossPhp,
+                    discounted_price: (amounts.grossPhp - amounts.discountPhp) / qty,
+                    discounted_amount: amounts.discountPhp,
+                    net_amount: amounts.netPhp,
+                    total_amount: amounts.netPhp,
+                    purchase_intent: (item as { purchase_intent?: string }).purchase_intent || "Buffer_Stock",
+                    job_order_id: (item as { job_order_id?: number | null }).job_order_id || null,
+                    unit_price_foreign: price,
+                    gross_amount_foreign: amounts.grossForeign,
+                    net_amount_foreign: amounts.netForeign,
+                    discount_percent: discountPercent,
+                    vat_percent: Number((item as { vat_percent?: number }).vat_percent || 0),
+                    withholding_percent: Number((item as { withholding_percent?: number }).withholding_percent || 0)
                 })
-            }).catch(err => console.error("Failed to create PO product:", err));
+            });
+            if (!createResponse.ok) throw new Error(`Failed to create replacement purchase-order line ${index + 1}.`);
         }
 
         return NextResponse.json({ success: true });

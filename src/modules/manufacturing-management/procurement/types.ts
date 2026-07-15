@@ -36,18 +36,20 @@ export interface IncomingShipment {
     shipment_id: number;
     reference_number: string;
     purchase_order_no?: string;
-    supplier_id: number | Supplier;
+    supplier_id: number | Supplier | null;
     date_received: string | null;
     lead_time_receiving?: string | null;
     total_foreign_currency: number;
     exchange_rate: number;
     total_php_value: number;
-    status: "Ordered" | "Approved" | "Cancelled" | "For Pickup" | "En Route" | "Receiving (QA)" | "Partially Received" | "Received" | "Rejected";
+    status: "Requested" | "Ordered" | "Approved" | "Cancelled" | "For Pickup" | "En Route" | "Receiving (QA)" | "Partially Received" | "Received" | "Rejected";
     remark?: string;
     created_at?: string;
     branch_id?: number | null;
     payment_type?: number | null;
     price_type?: string | null;
+    currency_code?: "PHP" | "USD";
+    workflow_revision?: number;
 }
 
 export interface ShipmentLineItem {
@@ -68,6 +70,11 @@ export interface ShipmentLineItem {
     base_unit_cost_php: number;
     allocated_expense_php: number;
     final_landed_unit_cost: number;
+    purchase_intent?: "MRP_Demand" | "Buffer_Stock";
+    job_order_id?: number | null;
+    discount_percent?: number;
+    vat_percent?: number;
+    withholding_percent?: number;
 }
 
 export interface ShipmentExpense {
