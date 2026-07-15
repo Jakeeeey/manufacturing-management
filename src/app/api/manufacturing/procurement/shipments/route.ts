@@ -14,7 +14,6 @@ import {
 } from "../../purchase-orders/_auth";
 import {
     modulesForStatus,
-    purchaseOrderApprovalSchema,
     legacyPurchaseOrderCreateSchema,
     legacyPurchaseOrderEditSchema,
     purchaseOrderStatusUpdateSchema
@@ -84,96 +83,24 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
     try {
         const body = await request.json();
-        const { shipmentId, lead_time_receiving, approvedPrices, action } = body;
+        const { shipmentId, action } = body;
 
         if (!shipmentId) {
             return NextResponse.json({ error: "Missing required field (shipmentId)" }, { status: 400 });
         }
 
         if (action === "approve") {
-            const parsed = purchaseOrderApprovalSchema.safeParse(body);
-            if (!parsed.success) return NextResponse.json({ error: "Invalid approval request.", details: parsed.error.flatten() }, { status: 400 });
-            const actor = await requirePurchaseOrderModuleAccess({ modulePath: PURCHASE_ORDER_MODULE_PATHS.approval });
-            const userId = actor.userId;
-            await requireAllowedTransition(Number(shipmentId), INVENTORY_STATUS.APPROVED);
-            let approvedTotal = 0;
-            const popRes = await fetch(`${DIRECTUS_URL}/items/purchase_order_products?filter[purchase_order_id][_eq]=${shipmentId}&limit=-1`, { headers });
-            const pops = (await popRes.json()).data || [];
-            
-            for (const pop of pops) {
-                let price = pop.approved_price || pop.unit_price || 0;
-                if (approvedPrices && typeof approvedPrices === "object" && approvedPrices[pop.product_id] !== undefined) {
-                    const submittedPrice = Number(approvedPrices[pop.product_id]);
-                    const originalPrice = Number(pop.approved_price || pop.unit_price || 0);
-                    if (Math.abs(submittedPrice - originalPrice) > 0.0001) {
-                        return NextResponse.json({ error: "Modifications to PO items or prices are not allowed during the approval cycle. Please Reject and edit instead." }, { status: 400 });
-                    }
-                    price = approvedPrices[pop.product_id];
-                }
-                const totalAmt = pop.net_amount == null
-                    ? Number(price) * Number(pop.ordered_quantity || 0)
-                    : Number(pop.net_amount);
-                approvedTotal += totalAmt;
-
-                if (approvedPrices && typeof approvedPrices === "object" && approvedPrices[pop.product_id] !== undefined) {
-                    await fetch(`${DIRECTUS_URL}/items/purchase_order_products/${pop.purchase_order_product_id}`, {
-                        method: "PATCH",
-                        headers,
-                        body: JSON.stringify({
-                            approved_price: Number(price)
-                        })
-                    });
-                }
-            }
-
-            // Update PO header status to Approved (3) and ETA, plus approved/revised amount values
-            const poPayload = {
-                inventory_status: INVENTORY_STATUS.APPROVED,
-                lead_time_receiving: lead_time_receiving || null,
-                approver_id: userId || null,
-                date_approved: new Date().toISOString(),
-                approved_amount: approvedTotal,
-                revised_amount: approvedTotal,
-                total_amount: approvedTotal,
-                gross_amount: approvedTotal
-            };
-            const poRes = await fetch(`${DIRECTUS_URL}/items/purchase_order/${shipmentId}`, {
-                method: "PATCH",
-                headers,
-                body: JSON.stringify(poPayload)
-            });
-            if (!poRes.ok) throw new Error("Failed to update PO status to Approved");
-
-            return NextResponse.json({ success: true });
+            return NextResponse.json({ error: "Legacy approval is disabled. Use the revision-guarded purchase-order approval endpoint." }, { status: 410 });
         }
         if (action === "reject") {
-            const parsed = purchaseOrderApprovalSchema.safeParse(body);
-            if (!parsed.success) return NextResponse.json({ error: "Invalid rejection request.", details: parsed.error.flatten() }, { status: 400 });
-            await requirePurchaseOrderModuleAccess({ modulePath: PURCHASE_ORDER_MODULE_PATHS.approval });
-            const { remarks } = body;
-            if (!remarks || !remarks.trim()) {
-                return NextResponse.json({ error: "Remarks/Reason for rejection is mandatory." }, { status: 400 });
-            }
-
-            await requireAllowedTransition(Number(shipmentId), INVENTORY_STATUS.CANCELLED);
-            const poPayload = {
-                inventory_status: INVENTORY_STATUS.CANCELLED,
-                approver_id: null,
-                date_approved: null,
-                remark: `REJECTED: ${remarks}`
-            };
-            const poRes = await fetch(`${DIRECTUS_URL}/items/purchase_order/${shipmentId}`, {
-                method: "PATCH",
-                headers,
-                body: JSON.stringify(poPayload)
-            });
-            if (!poRes.ok) throw new Error("Failed to reject PO");
-
-            return NextResponse.json({ success: true });
+            return NextResponse.json({ error: "Legacy rejection is disabled. Use the revision-guarded purchase-order approval endpoint." }, { status: 410 });
         }
 
         const parsed = purchaseOrderStatusUpdateSchema.safeParse(body);
         if (!parsed.success) return NextResponse.json({ error: "Invalid status update.", details: parsed.error.flatten() }, { status: 400 });
+        if (parsed.data.status === "Approved" || parsed.data.status === "Rejected") {
+            return NextResponse.json({ error: "Approved and Rejected transitions must use their dedicated workflow endpoints." }, { status: 409 });
+        }
         const actor = await requirePurchaseOrderModuleAccess({ modulePaths: modulesForStatus(parsed.data.status) });
         await requireAllowedTransition(parsed.data.shipmentId, shipmentStatusToInventoryStatus(parsed.data.status));
 

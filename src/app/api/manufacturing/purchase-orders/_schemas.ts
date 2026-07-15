@@ -108,15 +108,12 @@ export const purchaseOrderStatusUpdateSchema = z.object({
 });
 
 export const purchaseOrderApprovalSchema = z.object({
-    shipmentId: positiveId,
     action: z.enum(["approve", "reject"]),
+    workflowRevision: z.coerce.number().int().nonnegative(),
+    expectedRuleId: positiveId.optional(),
     lead_time_receiving: dateOnly.nullable().optional(),
-    approvedPrices: z.record(z.string(), nonNegativeMoney).optional(),
     remarks: z.string().trim().min(1).max(1000).optional()
 }).superRefine((value, context) => {
-    if (value.action === "approve" && !value.lead_time_receiving) {
-        context.addIssue({ code: "custom", path: ["lead_time_receiving"], message: "ETA is required for approval." });
-    }
     if (value.action === "reject" && !value.remarks) {
         context.addIssue({ code: "custom", path: ["remarks"], message: "Remarks are required for rejection." });
     }

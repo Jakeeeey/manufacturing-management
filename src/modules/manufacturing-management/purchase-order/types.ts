@@ -64,3 +64,57 @@ export interface PurchaseOrderDraftPayload {
         withholdingPercent: number;
     }>;
 }
+
+export type PurchaseOrderApprovalStage = "Plant" | "Finance" | "Complete" | "Rejected";
+
+export interface PurchaseOrderApprovalHistory {
+    history_id: number;
+    action: string;
+    approval_stage: "Plant" | "Finance" | "System";
+    actor_id: number;
+    actor_role_id?: number | null;
+    remarks?: string | null;
+    from_inventory_status?: number | null;
+    to_inventory_status?: number | null;
+    revision_before: number;
+    revision_after: number;
+    created_at: string;
+}
+
+export interface PurchaseOrderApprovalDetail {
+    order: {
+        purchase_order_id: number;
+        purchase_order_no?: string | null;
+        reference?: string | null;
+        inventory_status: number;
+        total_amount?: number | string | null;
+        gross_amount?: number | string | null;
+        currency_code?: string | null;
+        exchange_rate?: number | string | null;
+        total_foreign_currency?: number | string | null;
+        workflow_revision?: number | null;
+        lead_time_receiving?: string | null;
+        approver_id?: number | null;
+        finance_id?: number | null;
+        date_approved?: string | null;
+        date_financed?: string | null;
+    };
+    stage: PurchaseOrderApprovalStage;
+    matchedRule: {
+        ruleId: number;
+        ruleName: string;
+        requiresFinance: boolean;
+        allowSelfApproval: boolean;
+        snapshot: boolean;
+    };
+    categoryIds: number[];
+    history: PurchaseOrderApprovalHistory[];
+}
+
+export interface PurchaseOrderApprovalCommand {
+    action: "approve" | "reject";
+    workflowRevision: number;
+    expectedRuleId?: number;
+    lead_time_receiving?: string;
+    remarks?: string;
+}

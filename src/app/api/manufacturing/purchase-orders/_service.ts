@@ -1,6 +1,6 @@
 import { INVENTORY_STATUS, PAYMENT_STATUS } from "../procurement/_domain";
 import { procurementDirectusFetch } from "../procurement/_directus";
-import { calculatePurchaseOrderTotals } from "./_domain";
+import { calculatePurchaseOrderTotals, selectPurchaseOrderApprovalRule, type PurchaseOrderApprovalRule } from "./_domain";
 import type { z } from "zod";
 import type { purchaseOrderCreateSchema } from "./_schemas";
 
@@ -15,6 +15,7 @@ export class PurchaseOrderDraftError extends Error {
 interface DirectusProduct {
     product_id: number;
     parent_id?: number | { product_id?: number } | null;
+    product_category?: number | { category_id?: number } | null;
 }
 
 interface DirectusPurchaseOrder {
@@ -25,6 +26,32 @@ interface DirectusPurchaseOrder {
 function relationId(value: DirectusProduct["parent_id"]): number | null {
     if (typeof value === "number") return value;
     return value && typeof value === "object" ? Number(value.product_id) || null : null;
+}
+
+function categoryId(value: DirectusProduct["product_category"]): number | null {
+    if (typeof value === "number") return value;
+    return value && typeof value === "object" ? Number(value.category_id) || null : null;
+}
+
+function approvalRule(row: Record<string, unknown>): PurchaseOrderApprovalRule {
+    return {
+        ruleId: Number(row.rule_id),
+        priority: Number(row.priority || 0),
+        minimumTotalPhp: Number(row.minimum_total_php || 0),
+        maximumTotalPhp: row.maximum_total_php == null ? null : Number(row.maximum_total_php),
+        currencyCode: typeof row.currency_code === "string" ? row.currency_code : null,
+        importScope: row.import_scope === "Domestic" || row.import_scope === "Import" ? row.import_scope : "Any",
+        productCategoryId: row.product_category_id == null
+            ? null
+            : Number(typeof row.product_category_id === "object"
+                ? (row.product_category_id as { category_id?: number }).category_id
+                : row.product_category_id) || null,
+        requiresFinance: row.requires_finance === true || Number(row.requires_finance) === 1,
+        allowSelfApproval: row.allow_self_approval === true || Number(row.allow_self_approval) === 1,
+        effectiveFrom: typeof row.effective_from === "string" ? row.effective_from : null,
+        effectiveTo: typeof row.effective_to === "string" ? row.effective_to : null,
+        isActive: row.is_active === true || Number(row.is_active) === 1
+    };
 }
 
 async function directusData<T>(path: string, message: string): Promise<T> {
@@ -60,7 +87,7 @@ async function validateDraft(order: PurchaseOrderDraft) {
             "Unable to validate the supplier."
         ),
         directusData<DirectusProduct[]>(
-            `/items/products?filter[product_id][_in]=${productIds.join(",")}&fields=product_id,parent_id.product_id&limit=${productIds.length}`,
+            `/items/products?filter[product_id][_in]=${productIds.join(",")}&fields=product_id,parent_id.product_id,product_category.category_id&limit=${productIds.length}`,
             "Unable to validate purchase-order products."
         ),
         directusData<Array<{ product_id: number | { product_id?: number } }>>(
@@ -99,6 +126,29 @@ async function validateDraft(order: PurchaseOrderDraft) {
             throw new PurchaseOrderDraftError(`Product ${line.productId} is not mapped to the selected supplier.`);
         }
     }
+
+    return [...new Set(order.lines.flatMap(line => {
+        const child = productsById.get(line.productId);
+        const parent = productsById.get(line.parentProductId);
+        const value = categoryId(child?.product_category) || categoryId(parent?.product_category);
+        return value ? [value] : [];
+    }))];
+}
+
+async function selectRuleForDraft(order: PurchaseOrderDraft, totalPhp: number, productCategoryIds: number[]) {
+    const rows = await directusData<Record<string, unknown>[]>(
+        "/items/purchase_order_approval_rules?filter[is_active][_eq]=1&fields=*&sort=-priority&limit=-1",
+        "Unable to load purchase-order approval rules."
+    );
+    const selected = selectPurchaseOrderApprovalRule(rows.map(approvalRule), {
+        totalPhp,
+        currencyCode: order.currencyCode,
+        isImport: order.currencyCode !== "PHP",
+        productCategoryIds,
+        businessDate: new Date().toISOString().slice(0, 10)
+    });
+    if (!selected) throw new PurchaseOrderDraftError("No active approval rule matches this purchase order.", 409);
+    return selected;
 }
 
 function nextSequence(rows: Array<{ purchase_order_no?: string }>, year: number): number {
@@ -149,9 +199,10 @@ async function deleteCreatedOrder(poId: number, lineIds: number[]) {
 }
 
 export async function createPurchaseOrderDraft(order: PurchaseOrderDraft, actorId: number) {
-    await validateDraft(order);
+    const productCategoryIds = await validateDraft(order);
     const totals = calculatePurchaseOrderTotals(order.lines, order.exchangeRate);
     assertExpectedTotals(order, totals);
+    const selectedRule = await selectRuleForDraft(order, totals.netPhp, productCategoryIds);
     const now = new Date();
     const header = await reservePurchaseOrderNumber(now.getFullYear(), {
         reference: order.externalReference || null,
@@ -176,6 +227,9 @@ export async function createPurchaseOrderDraft(order: PurchaseOrderDraft, actorI
         total_foreign_currency: totals.netForeign,
         is_import: order.currencyCode === "PHP" ? 0 : 1,
         workflow_revision: 0
+        ,approval_rule_id: selectedRule.ruleId
+        ,approval_requires_finance: selectedRule.requiresFinance ? 1 : 0
+        ,approval_allow_self_approval: 1
     });
 
     const createdLineIds: number[] = [];

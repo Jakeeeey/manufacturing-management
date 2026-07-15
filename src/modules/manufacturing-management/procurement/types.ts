@@ -50,6 +50,13 @@ export interface IncomingShipment {
     price_type?: string | null;
     currency_code?: "PHP" | "USD";
     workflow_revision?: number;
+    approver_id?: number | null;
+    finance_id?: number | null;
+    date_approved?: string | null;
+    date_financed?: string | null;
+    approval_rule_id?: number | null;
+    approval_requires_finance?: boolean | null;
+    approval_allow_self_approval?: boolean | null;
 }
 
 export interface ShipmentLineItem {
