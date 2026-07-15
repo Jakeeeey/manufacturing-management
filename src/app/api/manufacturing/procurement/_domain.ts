@@ -9,6 +9,12 @@ export const INVENTORY_STATUS = {
     REJECTED: 13
 } as const;
 
+export const RECEIVING_QUEUE_INVENTORY_STATUS_IDS = [
+    INVENTORY_STATUS.APPROVED,
+    INVENTORY_STATUS.EN_ROUTE,
+    INVENTORY_STATUS.PARTIALLY_RECEIVED
+] as const;
+
 export const PAYMENT_STATUS = {
     PENDING: 1,
     PARTIALLY_PAID: 3,
@@ -52,6 +58,20 @@ export function canTransitionInventoryStatus(current: number, target: number): b
 }
 
 export type ShipmentStatusLabel = "Ordered" | "Approved" | "Cancelled" | "For Pickup" | "En Route" | "Receiving (QA)" | "Partially Received" | "Received" | "Rejected";
+
+export function isReceivingQueueShipmentStatus(status: string): boolean {
+    return status === "Approved"
+        || status === "En Route"
+        || status === "Receiving (QA)"
+        || status === "Partially Received";
+}
+
+export function shipmentStatusMatchesFilter(status: string, filter: string): boolean {
+    if (filter === "Partially Received" || filter === "Receiving (QA)") {
+        return status === "Partially Received" || status === "Receiving (QA)";
+    }
+    return status === filter;
+}
 
 export function inventoryStatusToShipmentStatus(statusId?: number | null): ShipmentStatusLabel {
     switch (statusId) {

@@ -73,8 +73,9 @@ export default function InboundShipmentsList({
                             className="w-full h-7 rounded-lg border border-border bg-background text-foreground text-[11px] font-semibold px-2 py-0.5 outline-none focus:ring-1 focus:ring-primary cursor-pointer"
                         >
                             <option value="">All Statuses</option>
+                            <option value="Approved">Approved</option>
                             <option value="En Route">En Route</option>
-                            <option value="Receiving (QA)">Receiving (QA)</option>
+                            <option value="Partially Received">Partially Received / Receiving (QA)</option>
                             <option value="Received">Received</option>
                         </select>
                     </div>

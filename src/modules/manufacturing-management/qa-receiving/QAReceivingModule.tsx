@@ -18,11 +18,15 @@ export default function QAReceivingModule() {
         selectedShipment,
         lineItems,
         loadingLines,
+        receiptNumber,
+        setReceiptNumber,
         selectedBranchId,
         setSelectedBranchId,
         inspectionRows,
         qaSpecificationStates,
         qaReadings,
+        qaEvaluationResults,
+        validatingInspection,
         qaSubmissionBlockReason,
         handleSelectShipment,
         handleUpdateRow,
@@ -133,11 +137,15 @@ export default function QAReceivingModule() {
                                 lineItems={lineItems}
                                 branches={branches}
                                 storageLots={storageLots}
+                                receiptNumber={receiptNumber}
+                                setReceiptNumber={setReceiptNumber}
                                 selectedBranchId={selectedBranchId}
                                 setSelectedBranchId={setSelectedBranchId}
                                 inspectionRows={inspectionRows}
                                 qaSpecificationStates={qaSpecificationStates}
                                 qaReadings={qaReadings}
+                                qaEvaluationResults={qaEvaluationResults}
+                                validatingInspection={validatingInspection}
                                 qaSubmissionBlockReason={qaSubmissionBlockReason}
                                 loadingLines={loadingLines}
                                 handleUpdateRow={handleUpdateRow}

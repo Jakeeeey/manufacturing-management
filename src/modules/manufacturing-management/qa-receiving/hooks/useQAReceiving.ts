@@ -1,22 +1,24 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { toast } from "sonner";
-import { Shipment, Branch, ShipmentLineItem, Product, InspectionRow, StorageLot, QaSpecificationLoadState, QaSpecificationReadings } from "../types";
-import { 
+import { Shipment, Branch, ShipmentLineItem, Product, InspectionRow, StorageLot, QaSpecificationLoadState, QaSpecificationReadings, ReceivingQaEvaluation } from "../types";
+import {
     fetchActiveShipments, 
     fetchBranches, 
     fetchShipmentDetails, 
-    submitInspection, 
+    previewReceivingQa,
     fetchFifoInventory,
     fetchStorageLots,
     fetchProductQaSpecifications
 } from "../services/qa-api";
-
-const receivingQueueStatuses = new Set(["En Route", "Receiving (QA)", "Partially Received", "Received"]);
+import { isReceivingQueueShipmentStatus, shipmentStatusMatchesFilter } from "@/app/api/manufacturing/procurement/_domain";
+import { validateReceivingMetadata } from "../receiving-metadata";
+import { deriveReceivingDisposition } from "@/app/api/manufacturing/qa/_receiving-evaluation";
 
 export function useQAReceiving() {
     const listController = useRef<AbortController | null>(null);
     const detailController = useRef<AbortController | null>(null);
     const fifoController = useRef<AbortController | null>(null);
+    const previewController = useRef<AbortController | null>(null);
     const [activeTab, setActiveTab] = useState<"inbound" | "fifo">("inbound");
     
     // Core data lists
@@ -32,10 +34,27 @@ export function useQAReceiving() {
     const [loadingLines, setLoadingLines] = useState(false);
 
     // Inspection form state
+    const [receiptNumber, setReceiptNumber] = useState<string>("");
     const [selectedBranchId, setSelectedBranchId] = useState<string>("");
     const [inspectionRows, setInspectionRows] = useState<Record<number, InspectionRow>>({});
     const [qaSpecificationStates, setQaSpecificationStates] = useState<Record<number, QaSpecificationLoadState>>({});
     const [qaReadings, setQaReadings] = useState<QaSpecificationReadings>({});
+    const [qaEvaluationResults, setQaEvaluationResults] = useState<Record<number, ReceivingQaEvaluation>>({});
+    const [validatingInspection, setValidatingInspection] = useState(false);
+
+    const handleReceiptNumberChange = useCallback((value: string) => {
+        previewController.current?.abort();
+        setReceiptNumber(value);
+        setQaEvaluationResults({});
+        setValidatingInspection(false);
+    }, []);
+
+    const handleDestinationBranchChange = useCallback((value: string) => {
+        previewController.current?.abort();
+        setSelectedBranchId(value);
+        setQaEvaluationResults({});
+        setValidatingInspection(false);
+    }, []);
 
     // FIFO inventory screen states
     const [fifoBranchId, setFifoBranchId] = useState<string>("");
@@ -48,13 +67,17 @@ export function useQAReceiving() {
 
     const clearInspection = useCallback(() => {
         detailController.current?.abort();
+        previewController.current?.abort();
         setSelectedShipment(null);
         setLineItems([]);
         setLoadingLines(false);
         setInspectionRows({});
+        setReceiptNumber("");
         setSelectedBranchId("");
         setQaSpecificationStates({});
         setQaReadings({});
+        setQaEvaluationResults({});
+        setValidatingInspection(false);
     }, []);
 
     // Filter states for shipments queue
@@ -74,7 +97,7 @@ export function useQAReceiving() {
 
             // 2. Status filter
             if (searchStatus) {
-                if (s.status !== searchStatus) return false;
+                if (!shipmentStatusMatchesFilter(s.status, searchStatus)) return false;
             } else {
                 // If no specific status is selected, follow showReceived logic
                 if (!showReceived && s.status === "Received") return false;
@@ -120,6 +143,7 @@ export function useQAReceiving() {
             listController.current?.abort();
             detailController.current?.abort();
             fifoController.current?.abort();
+            previewController.current?.abort();
         };
     }, []);
 
@@ -165,7 +189,7 @@ export function useQAReceiving() {
     };
 
     const handleSelectShipment = async (shipment: Shipment) => {
-        if (!receivingQueueStatuses.has(shipment.status)) {
+        if (!isReceivingQueueShipmentStatus(shipment.status)) {
             toast.error("This purchase order is not eligible for receiving.");
             clearInspection();
             return;
@@ -174,33 +198,12 @@ export function useQAReceiving() {
         const controller = new AbortController();
         detailController.current = controller;
         setSelectedShipment(shipment);
+        setReceiptNumber("");
         setQaSpecificationStates({});
         setQaReadings({});
+        setQaEvaluationResults({});
         setLoadingLines(true);
         try {
-            // Auto transition status to "Receiving (QA)" when opened/inspected
-            if (shipment.status === "En Route") {
-                try {
-                    const transitionResponse = await fetch(`/api/manufacturing/purchase-orders/${shipment.shipment_id}/status`, {
-                        method: "PATCH",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ status: "Receiving (QA)" })
-                    });
-                    if (!transitionResponse.ok) {
-                        const error = await transitionResponse.json().catch(() => ({}));
-                        throw new Error(error.error || "Failed to start receiving inspection.");
-                    }
-                    // Update state locally
-                    setShipments(prev => prev.map(s => s.shipment_id === shipment.shipment_id ? { ...s, status: "Receiving (QA)" } : s));
-                    shipment.status = "Receiving (QA)";
-                } catch (err) {
-                    console.error("Failed to auto-transition shipment status to Receiving (QA):", err);
-                    toast.error((err as Error).message || "Failed to start receiving inspection.");
-                    clearInspection();
-                    return;
-                }
-            }
-
             const lines = await fetchShipmentDetails(shipment.shipment_id, controller.signal);
             setLineItems(lines);
 
@@ -214,12 +217,12 @@ export function useQAReceiving() {
                 rowsInit[l.line_id] = {
                     receivedQty: "",
                     acceptedQty: "",
-                    boQty: "",
+                    rejectedQty: "",
                     batchNumber: "",
                     lotId: "",
+                    manufacturingDate: "",
                     expirationDate: "",
                     rejectionReason: l.rejection_reason || "",
-                    qaStatus: "", // Must default to an unselected placeholder state
                     isPackaging: isPkg
                 };
             });
@@ -275,27 +278,19 @@ export function useQAReceiving() {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const handleUpdateRow = (lineId: number, field: string, value: any) => {
+        previewController.current?.abort();
+        setValidatingInspection(false);
+        setQaEvaluationResults(previous => {
+            if (!previous[lineId]) return previous;
+            const next = { ...previous };
+            delete next[lineId];
+            return next;
+        });
         setInspectionRows(prev => {
             const updatedRow = {
                 ...prev[lineId],
                 [field]: value
             };
-            
-            // If receivedQty or acceptedQty is updated, compute boQty dynamically
-            if (field === "receivedQty" || field === "acceptedQty") {
-                const recVal = field === "receivedQty" ? value : updatedRow.receivedQty;
-                const accVal = field === "acceptedQty" ? value : updatedRow.acceptedQty;
-                
-                if (recVal !== "" && accVal !== "") {
-                    // BO qty = shortfall only — never negative.
-                    // If accepted > received, BO = 0 (over-acceptance; all received plus extras are logged as accepted)
-                    const newBoQty = Math.max(0, Number(recVal) - Number(accVal));
-                    updatedRow.boQty = newBoQty;
-                } else {
-                    updatedRow.boQty = "";
-                }
-            }
-            
             return {
                 ...prev,
                 [lineId]: updatedRow
@@ -304,6 +299,14 @@ export function useQAReceiving() {
     };
 
     const handleUpdateQaReading = (lineId: number, specId: number, value: string) => {
+        previewController.current?.abort();
+        setValidatingInspection(false);
+        setQaEvaluationResults(previous => {
+            if (!previous[lineId]) return previous;
+            const next = { ...previous };
+            delete next[lineId];
+            return next;
+        });
         setQaReadings(previous => ({
             ...previous,
             [lineId]: {
@@ -321,15 +324,29 @@ export function useQAReceiving() {
             if (!state || state.status === "loading") return "Wait for all applicable QA checklists to finish loading.";
             if (state.status === "error") return "QA checklist configuration could not be verified. Receiving is blocked to protect inventory records.";
         }
-        if (productIds.some(productId => qaSpecificationStates[productId]?.specifications.length > 0)) {
-            return "This shipment uses dynamic QA specifications. Complete movement preview and transactional QA result persistence before posting it to inventory.";
-        }
         return null;
     }, [lineItems, qaSpecificationStates]);
 
     const handleSubmitInspection = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!selectedShipment) return;
+
+        const metadataError = validateReceivingMetadata(receiptNumber, selectedBranchId, lineItems.map(line => {
+            const row = inspectionRows[line.line_id];
+            return {
+                productName: line.product_id?.product_name || `Item ${line.line_id}`,
+                isPackaging: Boolean(row?.isPackaging),
+                receivedQuantity: Number(row?.receivedQty || 0),
+                batchNumber: row?.batchNumber || "",
+                lotId: row?.lotId || "",
+                manufacturingDate: row?.manufacturingDate || "",
+                expirationDate: row?.expirationDate || ""
+            };
+        }));
+        if (metadataError) {
+            toast.error(metadataError);
+            return;
+        }
         if (qaSubmissionBlockReason) {
             toast.error(qaSubmissionBlockReason);
             return;
@@ -346,50 +363,23 @@ export function useQAReceiving() {
 
             const name = line.product_id?.product_name || `Item ${line.product_id}`;
 
-            if (row.receivedQty === "" || isNaN(Number(row.receivedQty))) {
-                toast.error(`Please enter Received Quantity for: ${name}`);
-                return;
-            }
-
-            if (row.acceptedQty === "" || isNaN(Number(row.acceptedQty))) {
-                toast.error(`Please enter Accepted Quantity for: ${name}`);
-                return;
-            }
-
-            if (!row.qaStatus || row.qaStatus === "") {
-                toast.error(`Please select QA Status Decision for: ${name}`);
-                return;
-            }
-
-            if (!row.batchNumber || !row.batchNumber.trim()) {
-                toast.error(`Please enter Supplier Batch Number for: ${name}`);
-                return;
-            }
-
-            if (!row.lotId || !Number.isInteger(Number(row.lotId)) || Number(row.lotId) <= 0) {
-                toast.error(`Please select a Storage Lot for: ${name}`);
-                return;
-            }
-
             const received = Number(row.receivedQty);
             const accepted = Number(row.acceptedQty);
-            // BO is always the shortfall (non-negative). When accepted > received, BO = 0.
-            const bo = Math.max(0, received - accepted);
+            const rejected = Number(row.rejectedQty);
             const ordered = Number(line.quantity_ordered || 0);
 
-            if (received < 0 || accepted < 0) {
-                toast.error(`Quantities cannot be negative for: ${name}`);
+            try {
+                deriveReceivingDisposition({
+                    receivedQuantity: received,
+                    acceptedQuantity: accepted,
+                    rejectedQuantity: rejected
+                });
+            } catch (error) {
+                toast.error(`${name}: ${(error as Error).message}`);
                 return;
             }
 
-            // When accepted ≤ received: the standard reconciliation check applies.
-            // When accepted > received: this is an over-acceptance event (supplier delivered more
-            // than what was physically counted as "received", e.g., loose items found during inspection).
-            // We allow it but require remarks.
-            if (accepted <= received && received !== accepted + bo) {
-                toast.error(`Discrepancy for ${name}: Received Qty (${received}) must equal Accepted Qty (${accepted}) + BO Qty (${bo}).`);
-                return;
-            }
+            if (received === 0) continue;
 
             // Expiration rule for raw materials
             if (!row.isPackaging && !row.expirationDate && accepted > 0) {
@@ -406,69 +396,78 @@ export function useQAReceiving() {
                 toast.warning(`Over-shipment: ${received} units received vs ${ordered} ordered.`);
             }
 
-            // Remarks validation:
-            // 1. If BO Qty > 0, remarks field is mandatory
-            if (bo > 0 && (!row.rejectionReason || !row.rejectionReason.trim())) {
-                toast.error(`Remarks are mandatory for ${name} because there is a Bad Order quantity (${bo} units).`);
+            if (rejected > 0 && (!row.rejectionReason || !row.rejectionReason.trim())) {
+                toast.error(`Remarks are mandatory for ${name} because there is a rejected quantity (${rejected} units).`);
                 return;
             }
 
-            // 2. Any logistics discrepancy needs an audit explanation.
             if (received !== ordered && (!row.rejectionReason || !row.rejectionReason.trim())) {
                 toast.error(`Remarks are mandatory for ${name} due to logistics discrepancy (Received: ${received}, Ordered: ${ordered}).`);
                 return;
             }
-
-            // 3. If Accepted Qty > Received Qty (over-acceptance / bonus stock), remarks field is mandatory
-            if (accepted > received && (!row.rejectionReason || !row.rejectionReason.trim())) {
-                toast.error(`Remarks are mandatory for ${name} because Accepted Qty (${accepted}) exceeds Received Qty (${received}). Please document the source of extra units.`);
-                return;
-            }
         }
 
-        const branchIdNum = parseInt(selectedBranchId);
-        const branchName = branches.find(b => b.id === branchIdNum)?.branch_name || "Selected Branch";
+        if (!lineItems.some(line => Number(inspectionRows[line.line_id]?.receivedQty || 0) > 0)) {
+            toast.error("At least one line must have a positive received quantity.");
+            return;
+        }
 
-        setLoadingLines(true);
+        previewController.current?.abort();
+        const controller = new AbortController();
+        previewController.current = controller;
+        setValidatingInspection(true);
         try {
-            const lineItemUpdates = lineItems.map(line => {
+            const evaluationLines = lineItems.map(line => {
                 const row = inspectionRows[line.line_id]!;
-                const received = Number(row.receivedQty || 0);
-                const accepted = Number(row.acceptedQty || 0);
-                // BO = shortfall only — never negative. Over-accepted units are all written to accepted stock.
-                const bo = Math.max(0, received - accepted);
-
                 return {
-                    line_id: line.line_id,
-                    product_id: line.product_id.product_id,
-                    quantity_received: received,
-                    quantity_accepted: accepted,
-                    quantity_rejected: bo, // BO Qty (shortfall, non-negative)
-                    batch_no: row.batchNumber.trim(),
-                    lot_id: Number(row.lotId),
-                    expiration_date: row.expirationDate ? row.expirationDate.replace(/\//g, "-") : null,
-                    rejection_reason: row.rejectionReason || null,
-                    qa_status: row.qaStatus
+                    lineId: line.line_id,
+                    productId: line.product_id.product_id,
+                    receivedQuantity: Number(row.receivedQty || 0),
+                    acceptedQuantity: Number(row.acceptedQty || 0),
+                    rejectedQuantity: Number(row.rejectedQty || 0),
+                    storageLotId: row.lotId ? Number(row.lotId) : null,
+                    supplierBatchNumber: row.batchNumber.trim(),
+                    manufacturingDate: row.manufacturingDate || null,
+                    expiryDate: row.expirationDate || null,
+                    remarks: row.rejectionReason.trim() || null,
+                    isPackaging: row.isPackaging,
+                    readings: Object.entries(qaReadings[line.line_id] || {}).map(([specId, actualReading]) => ({
+                        specId: Number(specId),
+                        actualReading
+                    }))
                 };
             });
 
-            await submitInspection({
+            const results = await previewReceivingQa({
                 shipmentId: selectedShipment.shipment_id,
-                referenceNumber: selectedShipment.reference_number,
-                branchId: branchIdNum,
-                branchName,
-                lineItemUpdates
+                receiptNumber: receiptNumber.trim(),
+                destinationBranchId: Number(selectedBranchId),
+                lines: evaluationLines
+            }, controller.signal);
+            if (controller.signal.aborted) return;
+            setQaEvaluationResults(Object.fromEntries(results.map(result => [result.lineId, result])));
+            setInspectionRows(previous => {
+                const next = { ...previous };
+                for (const result of results) {
+                    if (!result.forceRejected || !next[result.lineId]) continue;
+                    next[result.lineId] = {
+                        ...next[result.lineId],
+                        acceptedQty: result.acceptedQuantity,
+                        rejectedQty: result.rejectedQuantity,
+                        rejectionReason: result.rejectionReason || next[result.lineId].rejectionReason
+                    };
+                }
+                return next;
             });
-
-            toast.success(`Shipment successfully logged to ${branchName} and transitioned to 'Received'.`);
-            clearInspection();
-            loadShipments();
+            toast.success("QA quantities and inventory routes were previewed. No inventory records were written.");
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
+            if (e.name === "AbortError") return;
             console.error(e);
-            toast.error(e.message || "An error occurred during inspection logging");
+            setQaEvaluationResults({});
+            toast.error(e.message || "Failed to generate receiving preview.");
         } finally {
-            setLoadingLines(false);
+            if (!controller.signal.aborted) setValidatingInspection(false);
         }
     };
 
@@ -585,10 +584,14 @@ export function useQAReceiving() {
         setLineItems,
         loadingLines,
         selectedBranchId,
-        setSelectedBranchId,
+        setSelectedBranchId: handleDestinationBranchChange,
+        receiptNumber,
+        setReceiptNumber: handleReceiptNumberChange,
         inspectionRows,
         qaSpecificationStates,
         qaReadings,
+        qaEvaluationResults,
+        validatingInspection,
         qaSubmissionBlockReason,
         handleSelectShipment,
         handleUpdateRow,
