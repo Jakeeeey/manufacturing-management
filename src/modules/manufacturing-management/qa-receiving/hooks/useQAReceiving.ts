@@ -1,20 +1,25 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { toast } from "sonner";
-import { Shipment, Branch, ShipmentLineItem, Product, InspectionRow } from "../types";
+import { Shipment, Branch, ShipmentLineItem, Product, InspectionRow, StorageLot } from "../types";
 import { 
     fetchActiveShipments, 
     fetchBranches, 
     fetchShipmentDetails, 
     submitInspection, 
-    fetchFifoInventory 
+    fetchFifoInventory,
+    fetchStorageLots
 } from "../services/qa-api";
 
 export function useQAReceiving() {
+    const listController = useRef<AbortController | null>(null);
+    const detailController = useRef<AbortController | null>(null);
+    const fifoController = useRef<AbortController | null>(null);
     const [activeTab, setActiveTab] = useState<"inbound" | "fifo">("inbound");
     
     // Core data lists
     const [shipments, setShipments] = useState<Shipment[]>([]);
     const [branches, setBranches] = useState<Branch[]>([]);
+    const [storageLots, setStorageLots] = useState<StorageLot[]>([]);
     const [loadingShipments, setLoadingShipments] = useState(false);
     const [loadingBranches, setLoadingBranches] = useState(false);
 
@@ -74,21 +79,43 @@ export function useQAReceiving() {
 
     // Load base data
     useEffect(() => {
-        loadShipments();
         loadBranches();
+        loadStorageLots();
+        return () => {
+            listController.current?.abort();
+            detailController.current?.abort();
+            fifoController.current?.abort();
+        };
     }, []);
 
-    const loadShipments = async () => {
+    useEffect(() => {
+        const timeout = window.setTimeout(() => {
+            void loadShipments({
+                search: searchPO.trim() || undefined,
+                status: searchStatus || undefined,
+                startDate: startDate || undefined,
+                endDate: endDate || undefined
+            });
+        }, 250);
+        return () => window.clearTimeout(timeout);
+    }, [searchPO, searchStatus, startDate, endDate]);
+
+    const loadShipments = async (filters: { search?: string; status?: string; startDate?: string; endDate?: string } = {}) => {
+        listController.current?.abort();
+        const controller = new AbortController();
+        listController.current = controller;
         setLoadingShipments(true);
         try {
-            const data = await fetchActiveShipments();
+            const data = await fetchActiveShipments(filters, controller.signal);
             setShipments(data || []);
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
-            console.error(e);
-            toast.error(e.message || "Failed to load active shipments");
+            if (e.name !== "AbortError") {
+                console.error(e);
+                toast.error(e.message || "Failed to load active shipments");
+            }
         } finally {
-            setLoadingShipments(false);
+            if (!controller.signal.aborted) setLoadingShipments(false);
         }
     };
 
@@ -106,18 +133,34 @@ export function useQAReceiving() {
         }
     };
 
+    const loadStorageLots = async () => {
+        try {
+            setStorageLots(await fetchStorageLots());
+        } catch (e) {
+            console.error(e);
+            toast.error("Failed to load storage lots");
+        }
+    };
+
     const handleSelectShipment = async (shipment: Shipment) => {
+        detailController.current?.abort();
+        const controller = new AbortController();
+        detailController.current = controller;
         setSelectedShipment(shipment);
         setLoadingLines(true);
         try {
             // Auto transition status to "Receiving (QA)" when opened/inspected
-            if (shipment.status !== "Receiving (QA)" && shipment.status !== "Received") {
+            if (shipment.status === "En Route") {
                 try {
-                    await fetch("/api/manufacturing/procurement/shipments", {
+                    const transitionResponse = await fetch(`/api/manufacturing/purchase-orders/${shipment.shipment_id}/status`, {
                         method: "PATCH",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ shipmentId: shipment.shipment_id, status: "Receiving (QA)" })
+                        body: JSON.stringify({ status: "Receiving (QA)" })
                     });
+                    if (!transitionResponse.ok) {
+                        const error = await transitionResponse.json().catch(() => ({}));
+                        throw new Error(error.error || "Failed to start receiving inspection.");
+                    }
                     // Update state locally
                     setShipments(prev => prev.map(s => s.shipment_id === shipment.shipment_id ? { ...s, status: "Receiving (QA)" } : s));
                     shipment.status = "Receiving (QA)";
@@ -126,7 +169,7 @@ export function useQAReceiving() {
                 }
             }
 
-            const lines = await fetchShipmentDetails(shipment.shipment_id);
+            const lines = await fetchShipmentDetails(shipment.shipment_id, controller.signal);
             setLineItems(lines);
 
             // Prepopulate form states
@@ -140,7 +183,8 @@ export function useQAReceiving() {
                     receivedQty: "",
                     acceptedQty: "",
                     boQty: "",
-                    lotNumber: "",
+                    batchNumber: "",
+                    lotId: "",
                     expirationDate: "",
                     rejectionReason: l.rejection_reason || "",
                     qaStatus: "", // Must default to an unselected placeholder state
@@ -159,10 +203,12 @@ export function useQAReceiving() {
             }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
-            console.error(e);
-            toast.error(e.message || "Failed to load shipment lines");
+            if (e.name !== "AbortError") {
+                console.error(e);
+                toast.error(e.message || "Failed to load shipment lines");
+            }
         } finally {
-            setLoadingLines(false);
+            if (!controller.signal.aborted) setLoadingLines(false);
         }
     };
 
@@ -184,9 +230,6 @@ export function useQAReceiving() {
                     // If accepted > received, BO = 0 (over-acceptance; all received plus extras are logged as accepted)
                     const newBoQty = Math.max(0, Number(recVal) - Number(accVal));
                     updatedRow.boQty = newBoQty;
-                    if (newBoQty === 0) {
-                        updatedRow.rejectionReason = "";
-                    }
                 } else {
                     updatedRow.boQty = "";
                 }
@@ -229,8 +272,13 @@ export function useQAReceiving() {
                 return;
             }
 
-            if (!row.lotNumber || !row.lotNumber.trim()) {
-                toast.error(`Please enter Lot / Batch ID for: ${name}`);
+            if (!row.batchNumber || !row.batchNumber.trim()) {
+                toast.error(`Please enter Supplier Batch Number for: ${name}`);
+                return;
+            }
+
+            if (!row.lotId || !Number.isInteger(Number(row.lotId)) || Number(row.lotId) <= 0) {
+                toast.error(`Please select a Storage Lot for: ${name}`);
                 return;
             }
 
@@ -276,7 +324,13 @@ export function useQAReceiving() {
                 return;
             }
 
-            // 2. If Accepted Qty > Received Qty (over-acceptance / bonus stock), remarks field is mandatory
+            // 2. Any logistics discrepancy needs an audit explanation.
+            if (received !== ordered && (!row.rejectionReason || !row.rejectionReason.trim())) {
+                toast.error(`Remarks are mandatory for ${name} due to logistics discrepancy (Received: ${received}, Ordered: ${ordered}).`);
+                return;
+            }
+
+            // 3. If Accepted Qty > Received Qty (over-acceptance / bonus stock), remarks field is mandatory
             if (accepted > received && (!row.rejectionReason || !row.rejectionReason.trim())) {
                 toast.error(`Remarks are mandatory for ${name} because Accepted Qty (${accepted}) exceeds Received Qty (${received}). Please document the source of extra units.`);
                 return;
@@ -301,7 +355,8 @@ export function useQAReceiving() {
                     quantity_received: received,
                     quantity_accepted: accepted,
                     quantity_rejected: bo, // BO Qty (shortfall, non-negative)
-                    lot_number: row.lotNumber || null,
+                    batch_no: row.batchNumber.trim(),
+                    lot_id: Number(row.lotId),
                     expiration_date: row.expirationDate ? row.expirationDate.replace(/\//g, "-") : null,
                     rejection_reason: row.rejectionReason || null,
                     qa_status: row.qaStatus
@@ -331,15 +386,18 @@ export function useQAReceiving() {
 
     // Load FIFO inventory breakdown
     const handleLoadFifoInventory = async (branchId: string) => {
+        fifoController.current?.abort();
         setFifoBranchId(branchId);
         if (!branchId) {
             setFifoInventory([]);
             return;
         }
 
+        const controller = new AbortController();
+        fifoController.current = controller;
         setLoadingFifo(true);
         try {
-            const items = await fetchFifoInventory(branchId);
+            const items = await fetchFifoInventory(branchId, controller.signal);
 
             // Group by product and create batches list
             const groupedMap: Record<number, {
@@ -399,10 +457,12 @@ export function useQAReceiving() {
             setFifoInventory(groupedList);
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
-            console.error(e);
-            toast.error(e.message || "Failed to load branch inventory ledger");
+            if (e.name !== "AbortError") {
+                console.error(e);
+                toast.error(e.message || "Failed to load branch inventory ledger");
+            }
         } finally {
-            setLoadingFifo(false);
+            if (!controller.signal.aborted) setLoadingFifo(false);
         }
     };
 
@@ -428,6 +488,7 @@ export function useQAReceiving() {
         setActiveTab,
         shipments,
         branches,
+        storageLots,
         loadingShipments,
         loadingBranches,
         selectedShipment,

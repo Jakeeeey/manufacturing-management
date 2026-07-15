@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { DIRECTUS_URL, headers } from "@/app/api/manufacturing/directus-api";
+import { canonicalBatchNumber } from "@/app/api/manufacturing/procurement/_domain";
 
 interface InventoryLot {
     id: number;
     product_id: number;
     branch_id: number;
     lot_number?: string;
+    batch_no?: string;
+    lot_id?: number | { lot_id: number; lot_name?: string } | null;
     expiry_date?: string | null;
     quantity?: string | number;
     unit_cost?: string | number;
@@ -20,7 +23,7 @@ export async function GET() {
     try {
         const [ledgerRes, batchesRes, productsRes, branchesRes] = await Promise.all([
             fetch(`${DIRECTUS_URL}/items/product_ledger?limit=100&sort=-id`, { headers, cache: "no-store" }),
-            fetch(`${DIRECTUS_URL}/items/inventory_lots?limit=500&sort=-id`, { headers, cache: "no-store" }),
+            fetch(`${DIRECTUS_URL}/items/inventory_lots?fields=*,lot_id.lot_id,lot_id.lot_name&limit=500&sort=-id`, { headers, cache: "no-store" }),
             fetch(`${DIRECTUS_URL}/items/products?limit=500&fields=product_id,product_name,product_code,product_brand.brand_id,product_brand.brand_name,product_category.category_id,product_category.category_name,unit_of_measurement.unit_shortcut,unit_of_measurement.unit_name,cost_per_unit,product_shelf_life,parent_id,product_type`, { headers, cache: "no-store" }),
             fetch(`${DIRECTUS_URL}/items/branches?limit=-1`, { headers, cache: "no-store" })
         ]);
@@ -51,18 +54,27 @@ export async function GET() {
         }));
 
         // Map inventory lots to the Batch format expected by the frontend
-        const batches = porData.map((b: InventoryLot) => ({
-            line_id: b.id,
-            product_id: b.product_id,
-            branch_id: b.branch_id,
-            lot_number: b.lot_number || "LOT-N/A",
-            expiration_date: b.expiry_date || null,
-            quantity_received: Number(b.quantity || 0),
-            base_unit_cost_php: Number(b.unit_cost || 0),
-            allocated_expense_php: 0,
-            final_landed_unit_cost: Number(b.unit_cost || 0),
-            qa_status: b.qa_status || "Passed"
-        }));
+        const batches = porData.map((b: InventoryLot) => {
+            const batchNo = canonicalBatchNumber(b.batch_no, b.lot_number);
+            const lotId = typeof b.lot_id === "object" ? b.lot_id?.lot_id || null : b.lot_id || null;
+            const lotName = typeof b.lot_id === "object" ? b.lot_id?.lot_name || null : null;
+            return {
+                line_id: b.id,
+                product_id: b.product_id,
+                branch_id: b.branch_id,
+                batch_no: batchNo,
+                lot_number: batchNo || "LOT-N/A",
+                lot_id: lotId,
+                lot_name: lotName,
+                storage_assignment_state: lotId ? "assigned" : "legacy_unassigned",
+                expiration_date: b.expiry_date || null,
+                quantity_received: Number(b.quantity || 0),
+                base_unit_cost_php: Number(b.unit_cost || 0),
+                allocated_expense_php: 0,
+                final_landed_unit_cost: Number(b.unit_cost || 0),
+                qa_status: b.qa_status || "Passed"
+            };
+        });
 
         return NextResponse.json({
             ledger,

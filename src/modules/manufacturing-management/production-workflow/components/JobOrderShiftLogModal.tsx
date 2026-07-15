@@ -6,7 +6,11 @@ import {
     DollarSign,
     AlertTriangle,
     ClipboardCheck,
-    Printer
+    Printer,
+    Tag,
+    MapPin,
+    Calendar,
+    Layers
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -41,6 +45,11 @@ export function JobOrderShiftLogModal({
     const [shiftName, setShiftName] = useState("Shift 1 - Day");
     const [productionDay, setProductionDay] = useState("1");
     const [shiftYieldQty, setShiftYieldQty] = useState("");
+    const [batchNo, setBatchNo] = useState("");
+    const [expiryDate, setExpiryDate] = useState("");
+    const [manufacturingDate, setManufacturingDate] = useState(new Date().toISOString().split("T")[0]);
+    const [lots, setLots] = useState<any[]>([]);
+    const [selectedLotId, setSelectedLotId] = useState<string>("");
     const [shiftQAStatus, setShiftQAStatus] = useState<"Passed" | "QA Hold" | "Pending">("Pending");
     const [shiftMaterials, setShiftMaterials] = useState<any[]>([]);
     const [submittingShiftLog, setSubmittingShiftLog] = useState(false);
@@ -77,17 +86,35 @@ export function JobOrderShiftLogModal({
         return options;
     }, [selectedJobOrder]);
 
-    // Fetch full Job Order BOM materials when shift log modal opens
+    // Fetch full Job Order BOM materials and physical lots when shift log modal opens
     useEffect(() => {
         if (open && selectedJobOrder && selectedJobOrder.order_id) {
             setShiftYieldQty("");
             setShiftQAStatus("Pending");
             setProductionDay("1");
+            
+            const todayStr = new Date().toISOString().split("T")[0];
+            setManufacturingDate(todayStr);
+            setBatchNo(`${selectedJobOrder.order_no || "JO"}-YLD-${todayStr.replace(/-/g, "")}`);
+            setExpiryDate(""); // Let operator enter it
 
             const available = getAvailableShifts();
             if (available.length > 0) {
                 setShiftName(available[0].value);
             }
+
+            // Fetch physical warehouse lots/locations
+            fetch(`/api/manufacturing/planning-engineering?action=lots&_t=${Date.now()}`)
+                .then((res) => res.json())
+                .then((data) => {
+                    setLots(data);
+                    if (data && data.length > 0) {
+                        // Find first lot representing finished goods or fallback to first
+                        const fgLot = data.find((l: any) => l.inventory_type_id === 2);
+                        setSelectedLotId(String(fgLot ? fgLot.lot_id : data[0].lot_id));
+                    }
+                })
+                .catch((err) => console.error("Error loading physical lots:", err));
 
             // Fetch all BOM materials for the whole Job Order
             fetch(`/api/manufacturing/planning-engineering?action=job-materials&joId=${selectedJobOrder.order_id}&_t=${Date.now()}`)
@@ -95,7 +122,7 @@ export function JobOrderShiftLogModal({
                 .then((data) => {
                     setShiftMaterials(data.map((m: any) => ({
                         ...m,
-                        actual_qty: "0"
+                        actual_qty: String((Number(m.allocated_quantity || 0) * 0.5).toFixed(2))
                     })));
                 })
                 .catch((err) => console.error("Error loading Job BOM materials for shift log:", err));
@@ -171,6 +198,26 @@ export function JobOrderShiftLogModal({
             toast.error("Please enter a valid yield quantity.");
             return;
         }
+        const targetQty = Number(selectedJobOrder.quantity || 0);
+        const alreadyProduced = Number(selectedJobOrder.producedQty || 0);
+        const newYield = Number(shiftYieldQty) || 0;
+
+        if (alreadyProduced + newYield > targetQty) {
+            toast.error(`Accumulated yield would exceed target! Already yielded: ${alreadyProduced.toLocaleString()} pcs. New yield: ${newYield.toLocaleString()} pcs. Target: ${targetQty.toLocaleString()} pcs.`);
+            return;
+        }
+        if (!batchNo.trim()) {
+            toast.error("Please enter a valid batch/lot number.");
+            return;
+        }
+        if (!selectedLotId || selectedLotId === "" || selectedLotId === "0") {
+            toast.error("Please select a warehouse location for the WIP Output.");
+            return;
+        }
+        if (!manufacturingDate) {
+            toast.error("Please select a manufacturing date.");
+            return;
+        }
 
         setSubmittingShiftLog(true);
         try {
@@ -186,12 +233,16 @@ export function JobOrderShiftLogModal({
                 shiftName: fullShiftName,
                 yieldQty: Number(shiftYieldQty),
                 inspectorId: activeUser ? activeUser.user_id : null,
-                qaStatus: "Pending",
+                qaStatus: shiftQAStatus,
                 qaParameters: [],
                 materialsConsumed: shiftMaterials.map((m) => ({
                     product_id: m.product_id,
                     actual_qty: Number(m.actual_qty || 0)
-                }))
+                })),
+                batchNo,
+                expiryDate: expiryDate || undefined,
+                manufacturingDate,
+                targetLotId: selectedLotId ? Number(selectedLotId) : undefined
             };
 
             const res = await submitShiftRunLog(payload);
@@ -411,18 +462,18 @@ export function JobOrderShiftLogModal({
     return (
         <>
             <Dialog open={open} onOpenChange={onOpenChange}>
-                <DialogContent className="sm:max-w-[1000px] bg-background border border-border/60 shadow-2xl rounded-2xl p-0 overflow-hidden">
-                    <div className="bg-gradient-to-r from-primary/15 via-primary/5 to-background p-6 border-b border-border/50">
+                <DialogContent className="w-[98vw] md:w-full md:max-w-[1200px] lg:max-w-[1400px] max-h-[96vh] md:max-h-[92vh] flex flex-col bg-background border border-border/60 shadow-2xl rounded-2xl p-0 overflow-hidden">
+                    <div className="bg-gradient-to-r from-primary/15 via-primary/5 to-background p-4 sm:p-6 border-b border-border/50 shrink-0">
                         <DialogHeader>
                             <div className="flex items-center gap-2.5">
-                                <div className="p-2 bg-primary/10 rounded-xl text-primary">
-                                    <ClipboardCheck className="h-6 w-6" />
+                                <div className="p-2 bg-primary/10 rounded-xl text-primary shrink-0">
+                                    <ClipboardCheck className="h-5 w-5 sm:h-6 sm:w-6" />
                                 </div>
-                                <div>
-                                    <DialogTitle className="font-bold text-lg tracking-tight text-foreground">
+                                <div className="min-w-0">
+                                    <DialogTitle className="font-bold text-sm sm:text-base md:text-lg tracking-tight text-foreground truncate">
                                         End-of-Shift & Daily Run Closure
                                     </DialogTitle>
-                                    <DialogDescription className="text-muted-foreground text-xs mt-0.5">
+                                    <DialogDescription className="text-muted-foreground text-[10px] sm:text-xs mt-0.5 line-clamp-2 sm:line-clamp-none">
                                         Verify shift parameters, reconcile material lot consumption ratios, and authorize quality release for Job Order #{selectedJobOrder?.order_no || selectedJobOrder?.jo_id}.
                                     </DialogDescription>
                                 </div>
@@ -430,14 +481,14 @@ export function JobOrderShiftLogModal({
                         </DialogHeader>
                     </div>
 
-                    <form onSubmit={handleShiftLogSubmit} className="p-6 space-y-6 text-xs">
-                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                            <div className="lg:col-span-6 space-y-5">
-                                <div className="bg-muted/30 border border-border/80 rounded-xl p-4 space-y-4">
+                    <form onSubmit={handleShiftLogSubmit} className="p-4 sm:p-6 flex-1 flex flex-col overflow-hidden min-h-0 text-xs">
+                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6 flex-1 overflow-y-auto pr-1 min-h-0">
+                            <div className="lg:col-span-6 space-y-4">
+                                <div className="bg-muted/30 border border-border/80 rounded-xl p-3 sm:p-4 space-y-3 sm:space-y-4">
                                     <h4 className="font-bold text-foreground/90 uppercase tracking-wider text-[10px]">
                                         Shift Yield Metrics
                                     </h4>
-                                    <div className="grid grid-cols-3 gap-3">
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                                         <div className="space-y-1.5">
                                             <Label htmlFor="productionDay" className="text-muted-foreground font-semibold">Production Day</Label>
                                             <select
@@ -478,9 +529,98 @@ export function JobOrderShiftLogModal({
                                             />
                                         </div>
                                     </div>
+
+                                    {/* Batch & Expiry Management */}
+                                    <div className="bg-emerald-50/10 dark:bg-emerald-950/5 border-l-4 border-emerald-500 border-t border-r border-b border-border/80 rounded-r-xl rounded-l-none p-3 sm:p-4 space-y-3 sm:space-y-4 mt-3 sm:mt-4 shadow-sm hover:shadow-md transition-all duration-300">
+                                        <div className="flex items-center gap-2 pb-1 border-b border-emerald-500/10">
+                                            <Layers className="h-4 w-4 text-emerald-500" />
+                                            <h4 className="font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider text-[11px]">
+                                                Batch & Lot Traceability Log (WIP Output)
+                                            </h4>
+                                        </div>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                                            <div className="space-y-1.5">
+                                                <Label htmlFor="batchNo" className="flex items-center gap-1.5 text-muted-foreground font-semibold text-[11px]">
+                                                    <Tag className="h-3.5 w-3.5 text-emerald-500" /> Batch / Lot No
+                                                </Label>
+                                                <Input
+                                                    id="batchNo"
+                                                    type="text"
+                                                    value={batchNo}
+                                                    onChange={(e) => setBatchNo(e.target.value)}
+                                                    className="h-9 bg-background border-input text-foreground text-xs font-bold font-mono focus-visible:ring-emerald-500 focus-visible:border-emerald-500 transition-all duration-200"
+                                                    placeholder="e.g. BATCH-001"
+                                                    required
+                                                />
+                                            </div>
+
+                                            <div className="space-y-1.5">
+                                                <Label htmlFor="targetLotSelect" className="flex items-center gap-1.5 text-muted-foreground font-semibold text-[11px]">
+                                                    <MapPin className="h-3.5 w-3.5 text-emerald-500" /> Warehouse Location
+                                                </Label>
+                                                <select
+                                                    id="targetLotSelect"
+                                                    value={selectedLotId}
+                                                    onChange={(e) => setSelectedLotId(e.target.value)}
+                                                    className="flex h-9 w-full rounded-lg border border-input bg-background text-foreground px-3 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 transition-all duration-200 cursor-pointer"
+                                                    required
+                                                >
+                                                    {lots.map((l) => (
+                                                        <option key={l.lot_id} value={l.lot_id}>
+                                                            {l.lot_name}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </div>
+
+                                            <div className="space-y-1.5">
+                                                <Label htmlFor="mfgDate" className="flex items-center gap-1.5 text-muted-foreground font-semibold text-[11px]">
+                                                    <Calendar className="h-3.5 w-3.5 text-emerald-500" /> Mfg Date
+                                                </Label>
+                                                <Input
+                                                    id="mfgDate"
+                                                    type="date"
+                                                    value={manufacturingDate}
+                                                    onChange={(e) => setManufacturingDate(e.target.value)}
+                                                    className="h-9 bg-background border-input text-foreground text-xs focus-visible:ring-emerald-500 transition-all duration-200"
+                                                    required
+                                                />
+                                            </div>
+
+                                            <div className="space-y-1.5">
+                                                <Label htmlFor="expDate" className="flex items-center gap-1.5 text-muted-foreground font-semibold text-[11px]">
+                                                    <Calendar className="h-3.5 w-3.5 text-emerald-500" /> Expiry Date
+                                                </Label>
+                                                <Input
+                                                    id="expDate"
+                                                    type="date"
+                                                    value={expiryDate}
+                                                    onChange={(e) => setExpiryDate(e.target.value)}
+                                                    className="h-9 bg-background border-input text-foreground text-xs focus-visible:ring-emerald-500 transition-all duration-200"
+                                                />
+                                            </div>
+
+                                            <div className="space-y-1.5">
+                                                <Label htmlFor="qaStatusSelect" className="flex items-center gap-1.5 text-muted-foreground font-semibold text-[11px]">
+                                                    <ClipboardCheck className="h-3.5 w-3.5 text-emerald-500" /> QA Status
+                                                </Label>
+                                                <select
+                                                    id="qaStatusSelect"
+                                                    value={shiftQAStatus}
+                                                    onChange={(e) => setShiftQAStatus(e.target.value as any)}
+                                                    className="flex h-9 w-full rounded-lg border border-input bg-background text-foreground px-3 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 transition-all duration-200 cursor-pointer"
+                                                    required
+                                                >
+                                                    <option value="Pending">Pending</option>
+                                                    <option value="Passed">Passed</option>
+                                                    <option value="QA Hold">QA Hold</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
 
-                                <div className="bg-muted/30 border border-border/80 rounded-xl p-4 space-y-3">
+                                <div className="bg-muted/30 border border-border/80 rounded-xl p-3 sm:p-4 space-y-3">
                                     <h4 className="font-bold text-foreground/90 uppercase tracking-wider text-[10px]">
                                         Personnel Present for Shift (Whole Job Order)
                                     </h4>
@@ -489,17 +629,15 @@ export function JobOrderShiftLogModal({
                                             No personnel logged on this shift.
                                         </div>
                                     ) : (
-                                        <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
+                                        <div className="flex flex-wrap gap-2 max-h-[120px] overflow-y-auto pr-1">
                                             {groupedJobOperators.map((op) => (
-                                                <div key={op.user_id} className="flex items-center justify-between p-2 bg-background border border-border rounded-lg">
-                                                    <div className="flex items-center gap-2">
-                                                        <div className="p-1 bg-primary/10 rounded-md text-primary">
-                                                            <User className="h-3.5 w-3.5" />
-                                                        </div>
-                                                        <div>
-                                                            <span className="font-bold text-foreground block text-xs">{getUserLabel(op.user_id)}</span>
-                                                            <span className="text-[10px] text-muted-foreground block">{op.user_position || "Shop Floor Tech"}</span>
-                                                        </div>
+                                                <div key={op.user_id} className="flex items-center gap-1.5 px-2.5 py-1 bg-background border border-border rounded-full shadow-sm">
+                                                    <div className="p-0.5 bg-primary/10 rounded-full text-primary shrink-0">
+                                                        <User className="h-3 w-3" />
+                                                    </div>
+                                                    <div className="flex items-center gap-1 min-w-0">
+                                                        <span className="font-bold text-foreground text-[10px] truncate">{getUserLabel(op.user_id)}</span>
+                                                        <span className="text-[9px] text-muted-foreground shrink-0">({op.user_position || "Tech"})</span>
                                                     </div>
                                                 </div>
                                             ))}
@@ -508,8 +646,8 @@ export function JobOrderShiftLogModal({
                                 </div>
                             </div>
 
-                            <div className="lg:col-span-6 space-y-5">
-                                <div className="bg-muted/30 border border-border/80 rounded-xl p-4 space-y-4 h-full flex flex-col">
+                            <div className="lg:col-span-6">
+                                <div className="bg-muted/30 border border-border/80 rounded-xl p-3 sm:p-4 space-y-3 sm:space-y-4 h-full flex flex-col">
                                     <h4 className="font-bold text-foreground/90 uppercase tracking-wider text-[10px]">
                                         Raw Material Consumption Reconciliation
                                     </h4>
@@ -519,52 +657,81 @@ export function JobOrderShiftLogModal({
                                             No raw materials pre-allocated for this workstation.
                                         </div>
                                     ) : (
-                                        <div className="space-y-3 flex-1 overflow-y-auto max-h-[360px] pr-1">
+                                        <div className="space-y-2 flex-1 overflow-y-auto max-h-[420px] lg:max-h-[520px] pr-1">
                                             {shiftMaterials.map((m, index) => {
                                                 const stdQty = Number(m.allocated_quantity || 0) / (Number(selectedJobOrder.quantity) || 1);
                                                 const theoretical = stdQty * (Number(shiftYieldQty) || 0);
                                                 const actual = Number(m.actual_qty || 0);
                                                 const deviationPercent = theoretical > 0 
-                                                    ? Math.min(Math.max((actual / theoretical) * 100, 0), 200) 
+                                                    ? (actual / theoretical) * 100 
                                                     : 100;
                                                 const isExceeded = actual > theoretical * 1.05;
                                                 const isInsufficient = actual > Number(m.available_stock || 0);
 
                                                 return (
-                                                    <div key={m.jo_material_id || m.id || index} className="p-3 bg-background rounded-lg border border-border/80 space-y-2">
-                                                        <div className="flex justify-between items-start gap-2">
-                                                            <div className="flex flex-col">
-                                                                <span className="font-bold text-foreground truncate max-w-[200px]" title={m.product_name}>
+                                                    <div key={m.jo_material_id || m.id || index} className="p-2.5 bg-background rounded-xl border border-border/80 hover:border-border transition-all duration-200 space-y-2">
+                                                        {/* Row 1: Material Name, Lot, Stock & Status Badge */}
+                                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
+                                                            <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                                                                <span className="font-bold text-foreground text-xs truncate" title={m.product_name}>
                                                                     {m.product_name}
                                                                 </span>
-                                                                <span className="text-[10px] text-muted-foreground mt-0.5">
-                                                                    Available Stock: <strong className={isInsufficient ? "text-red-500 font-bold" : "text-foreground font-mono font-bold"}>{Number(m.available_stock || 0).toLocaleString()} {m.unit_shortcut}</strong>
-                                                                </span>
+                                                                {m.lot_no && (
+                                                                    <span className="font-mono bg-primary/5 text-primary text-[9px] px-1.5 py-0.5 rounded border border-primary/15 shrink-0">
+                                                                        Lot: {m.lot_no}
+                                                                    </span>
+                                                                )}
                                                             </div>
-                                                            <Badge
-                                                                variant="outline"
-                                                                className={`font-semibold text-[10px] px-1.5 py-0 ${
-                                                                    isInsufficient
-                                                                        ? "bg-red-500/10 text-red-600 border-red-500/20"
-                                                                        : isExceeded 
-                                                                        ? "bg-amber-500/10 text-amber-600 border-amber-500/20" 
-                                                                        : "bg-emerald-500/10 text-emerald-600 border-emerald-500/20"
-                                                                }`}
-                                                            >
-                                                                {isInsufficient ? "Insufficient Stock" : isExceeded ? "Over-consumed" : "Normal Ratio"}
-                                                            </Badge>
+                                                            <div className="flex items-center gap-2 shrink-0">
+                                                                <span className="text-[10px] text-muted-foreground flex flex-wrap items-center gap-1.5 justify-end">
+                                                                    <span>Stock: <strong className={isInsufficient ? "text-red-500 font-bold" : "text-foreground font-mono font-semibold"}>{Number(m.available_stock || 0).toLocaleString()} {m.unit_shortcut}</strong></span>
+                                                                    {Number(m.pending_qa_stock || 0) > 0 && (
+                                                                        <span className="text-[8px] bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 px-1 py-0.5 rounded font-black uppercase tracking-wider shrink-0">
+                                                                            {Number(m.pending_qa_stock).toLocaleString()} Pending QA
+                                                                        </span>
+                                                                    )}
+                                                                    {Number(m.qa_hold_stock || 0) > 0 && (
+                                                                        <span className="text-[8px] bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 px-1 py-0.5 rounded font-black uppercase tracking-wider shrink-0">
+                                                                            {Number(m.qa_hold_stock).toLocaleString()} QA Hold
+                                                                        </span>
+                                                                    )}
+                                                                </span>
+                                                                <Badge
+                                                                    variant="outline"
+                                                                    className={`font-semibold text-[9px] px-1.5 py-0 shrink-0 border ${
+                                                                        isInsufficient
+                                                                            ? "bg-red-500/10 text-red-600 border-red-500/20"
+                                                                            : isExceeded 
+                                                                            ? "bg-amber-500/10 text-amber-600 border-amber-500/20" 
+                                                                            : "bg-emerald-500/10 text-emerald-600 border-emerald-500/20"
+                                                                    }`}
+                                                                >
+                                                                    {isInsufficient ? "Shortfall" : isExceeded ? "Over-limit" : "Normal"}
+                                                                </Badge>
+                                                            </div>
                                                         </div>
 
-                                                        <div className="grid grid-cols-2 gap-4 text-[11px] pt-1">
-                                                            <div>
-                                                                <span className="text-muted-foreground block text-[10px]">Theoretical Std Allocation</span>
-                                                                <span className="font-bold text-foreground/80 font-mono">
+                                                        {/* Row 2: Quantities & Deviation */}
+                                                        <div className="flex items-center justify-between gap-4 pt-1 border-t border-border/40">
+                                                            <div className="flex items-baseline gap-1.5">
+                                                                <span className="text-muted-foreground text-[10px]">Std Allocation:</span>
+                                                                <span className="font-bold text-foreground/80 font-mono text-xs">
                                                                     {theoretical.toFixed(2)} {m.unit_shortcut}
                                                                 </span>
                                                             </div>
-                                                            <div className="flex flex-col items-end">
-                                                                <span className="text-muted-foreground block text-[10px]">Actual Consumed Log</span>
+
+                                                            <div className="flex items-center gap-3">
+                                                                {/* Deviation Percent text */}
+                                                                {theoretical > 0 && (
+                                                                    <span className={`text-[10px] font-bold shrink-0 ${
+                                                                        isInsufficient ? "text-red-500" : isExceeded ? "text-amber-600" : "text-emerald-600"
+                                                                    }`}>
+                                                                        {deviationPercent.toFixed(0)}% std
+                                                                    </span>
+                                                                )}
+                                                                
                                                                 <div className="flex items-center gap-1.5">
+                                                                    <span className="text-muted-foreground text-[10px]">Actual:</span>
                                                                     <Input
                                                                         type="number"
                                                                         step="0.01"
@@ -575,33 +742,18 @@ export function JobOrderShiftLogModal({
                                                                                 prev.map((item, idx) => idx === index ? { ...item, actual_qty: val } : item)
                                                                             );
                                                                         }}
-                                                                        className={`h-6 w-20 text-right bg-background border-input px-1 py-0.5 font-bold font-mono text-[11px] ${
-                                                                            isInsufficient ? "border-red-500 text-red-500 focus-visible:ring-red-500 font-bold" : ""
+                                                                        className={`h-7 w-24 text-right bg-background px-2 py-0.5 font-bold font-mono text-xs transition-all ${
+                                                                            isInsufficient 
+                                                                                ? "border-red-500 text-red-500 focus-visible:ring-red-500 bg-red-50/20 dark:bg-red-950/10" 
+                                                                                : isExceeded
+                                                                                ? "border-amber-500 text-amber-600 focus-visible:ring-amber-500 bg-amber-50/20 dark:bg-amber-950/10"
+                                                                                : "border-input text-foreground focus-visible:ring-primary"
                                                                         }`}
                                                                     />
-                                                                    <span className="text-muted-foreground font-medium">{m.unit_shortcut}</span>
+                                                                    <span className="text-muted-foreground text-[10px] font-semibold">{m.unit_shortcut}</span>
                                                                 </div>
                                                             </div>
                                                         </div>
-
-                                                        {theoretical > 0 && (
-                                                            <div className="space-y-1 pt-1">
-                                                                <div className="flex justify-between text-[9px] text-muted-foreground font-semibold">
-                                                                    <span>Standard Variance Threshold Limit</span>
-                                                                    <span className={isExceeded ? "text-red-500 font-bold" : "text-emerald-500 font-bold"}>
-                                                                        {deviationPercent.toFixed(0)}%
-                                                                    </span>
-                                                                </div>
-                                                                <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                                                                    <div
-                                                                        className={`h-full transition-all duration-300 ${
-                                                                            isInsufficient ? "bg-red-500" : isExceeded ? "bg-red-500" : "bg-emerald-500"
-                                                                        }`}
-                                                                        style={{ width: `${deviationPercent}%` }}
-                                                                    />
-                                                                </div>
-                                                            </div>
-                                                        )}
                                                     </div>
                                                 );
                                             })}
@@ -611,31 +763,33 @@ export function JobOrderShiftLogModal({
                             </div>
                         </div>
 
-                        <DialogFooter className="pt-4 border-t border-border/50 gap-2 flex items-center justify-end">
-                            <Button
-                                type="button"
-                                variant="outline"
-                                disabled={isPrintDisabled}
-                                onClick={handlePrintShiftReport}
-                                className="border-border hover:bg-muted text-foreground h-9 text-xs font-semibold px-4 transition-all duration-200 flex items-center gap-1.5 disabled:opacity-50"
-                            >
-                                <Printer className="h-4 w-4" /> Print Report
-                            </Button>
-                            <Button
-                                type="button"
-                                variant="outline"
-                                onClick={() => onOpenChange(false)}
-                                className="border-border hover:bg-muted text-foreground h-9 text-xs font-semibold px-4 transition-all duration-200"
-                            >
-                                Cancel
-                            </Button>
+                        <DialogFooter className="pt-4 border-t border-border/50 flex flex-col sm:flex-row sm:items-center sm:justify-end gap-2.5 shrink-0">
                             <Button
                                 type="submit"
                                 disabled={isSubmitDisabled}
-                                className="bg-primary hover:bg-primary/95 text-white font-bold h-9 text-xs px-5 shadow-md shadow-primary/10 hover:shadow-primary/20 transition-all duration-200 disabled:opacity-50"
+                                className="bg-primary hover:bg-primary/95 text-white font-bold h-9 text-xs px-5 shadow-md shadow-primary/10 hover:shadow-primary/20 transition-all duration-200 disabled:opacity-50 w-full sm:w-auto order-1 sm:order-2"
                             >
                                 {submittingShiftLog ? "Submitting Logs..." : "Submit & Reconcile Inventory"}
                             </Button>
+                            <div className="grid grid-cols-2 gap-2 w-full sm:w-auto order-2 sm:order-1">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    disabled={isPrintDisabled}
+                                    onClick={handlePrintShiftReport}
+                                    className="border-border hover:bg-muted text-foreground h-9 text-xs font-semibold px-4 transition-all duration-200 flex items-center justify-center gap-1.5 disabled:opacity-50 w-full"
+                                >
+                                    <Printer className="h-4 w-4" /> Print Report
+                                </Button>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={() => onOpenChange(false)}
+                                    className="border-border hover:bg-muted text-foreground h-9 text-xs font-semibold px-4 transition-all duration-200 w-full"
+                                >
+                                    Cancel
+                                </Button>
+                            </div>
                         </DialogFooter>
                     </form>
                 </DialogContent>

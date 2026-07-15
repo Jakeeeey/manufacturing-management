@@ -18,6 +18,179 @@ import {
     postFinalQARelease
 } from "../services/qa-api";
 
+export interface PrintReceiptData {
+    jo_no: string;
+    product_code: string;
+    product_name: string;
+    recipe_version: string;
+    yield_qty: number;
+    lot_number: string;
+    expiry_date: string;
+    branch_name: string;
+    unit_cost: number;
+}
+
+export const printYieldClosingReceipt = (data: PrintReceiptData) => {
+    if (typeof window === "undefined") return;
+    const printWindow = window.open("", "_blank", "width=600,height=750");
+    if (!printWindow) {
+        toast.error("Popup blocker prevented auto-printing the receipt. Please enable popups.");
+        return;
+    }
+
+    const totalCost = data.yield_qty * data.unit_cost;
+
+    printWindow.document.write(`
+        <html>
+        <head>
+            <title>FG Receipt - ${data.jo_no}</title>
+            <style>
+                body {
+                    font-family: 'Courier New', Courier, monospace;
+                    font-size: 12px;
+                    color: #000;
+                    margin: 0;
+                    padding: 20px;
+                    line-height: 1.4;
+                }
+                .receipt {
+                    border: 1px dashed #000;
+                    padding: 15px;
+                    max-width: 450px;
+                    margin: 0 auto;
+                }
+                .header {
+                    text-align: center;
+                    border-bottom: 2px double #000;
+                    padding-bottom: 10px;
+                    margin-bottom: 15px;
+                }
+                .header h1 {
+                    font-size: 16px;
+                    margin: 0 0 5px 0;
+                    text-transform: uppercase;
+                }
+                .header p {
+                    margin: 0;
+                    font-size: 10px;
+                }
+                .row {
+                    display: flex;
+                    justify-content: space-between;
+                    margin-bottom: 6px;
+                }
+                .row.total {
+                    border-top: 1px dashed #000;
+                    border-bottom: 1px dashed #000;
+                    padding: 8px 0;
+                    font-weight: bold;
+                    font-size: 14px;
+                    margin-top: 15px;
+                }
+                .label {
+                    font-weight: bold;
+                }
+                .value {
+                    text-align: right;
+                }
+                .footer {
+                    margin-top: 30px;
+                    text-align: center;
+                    font-size: 10px;
+                }
+                .sig-box {
+                    margin-top: 25px;
+                    display: flex;
+                    justify-content: space-between;
+                }
+                .sig {
+                    border-top: 1px solid #000;
+                    width: 45%;
+                    text-align: center;
+                    padding-top: 5px;
+                    font-size: 9px;
+                    margin-top: 20px;
+                }
+                @media print {
+                    body { padding: 0; }
+                    .receipt { border: none; }
+                }
+            </style>
+        </head>
+        <body>
+            <div class="receipt">
+                <div class="header">
+                    <h1>Finished Goods Receipt</h1>
+                    <p>WMS LEDGER & RUN CLOSURE SLIP</p>
+                    <p>Printed: ${new Date().toLocaleString()}</p>
+                </div>
+
+                <div class="row">
+                    <span class="label">Job Order No:</span>
+                    <span class="value">${data.jo_no}</span>
+                </div>
+                <div class="row">
+                    <span class="label">Target Branch:</span>
+                    <span class="value">${data.branch_name}</span>
+                </div>
+                <div class="row">
+                    <span class="label">Product Code:</span>
+                    <span class="value">${data.product_code}</span>
+                </div>
+                <div class="row" style="margin-bottom: 10px;">
+                    <span class="label">Product Name:</span>
+                    <span class="value" style="display: block; max-width: 250px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${data.product_name}</span>
+                </div>
+                <div class="row">
+                    <span class="label">Recipe Version:</span>
+                    <span class="value">${data.recipe_version}</span>
+                </div>
+                
+                <hr style="border: none; border-top: 1px dashed #000; margin: 12px 0;" />
+
+                <div class="row">
+                    <span class="label">Lot/Batch Number:</span>
+                    <span class="value">${data.lot_number}</span>
+                </div>
+                <div class="row">
+                    <span class="label">Expiration Date:</span>
+                    <span class="value">${data.expiry_date}</span>
+                </div>
+                <div class="row">
+                    <span class="label">Yield Produced:</span>
+                    <span class="value" style="font-size: 13px; font-weight: bold;">${data.yield_qty.toLocaleString()} units</span>
+                </div>
+                <div class="row">
+                    <span class="label">Landed Unit Cost:</span>
+                    <span class="value">PHP ${data.unit_cost.toFixed(2)}</span>
+                </div>
+
+                <div class="row total">
+                    <span class="label">TOTAL LOGGED COST:</span>
+                    <span class="value">PHP ${totalCost.toFixed(2)}</span>
+                </div>
+
+                <div class="sig-box">
+                    <div class="sig">QA Inspector Signature</div>
+                    <div class="sig">Supervisor Authorization</div>
+                </div>
+
+                <div class="footer">
+                    <p>*** End of Receipt ***</p>
+                </div>
+            </div>
+            <script>
+                window.onload = function() {
+                    window.print();
+                    window.onafterprint = function() { window.close(); };
+                };
+            </script>
+        </body>
+        </html>
+    `);
+    printWindow.document.close();
+};
+
 export function useManufacturingQA() {
     // Tab State
     const [activeTab, setActiveTab] = useState("holds");
@@ -198,7 +371,16 @@ export function useManufacturingQA() {
     const getBranchName = (branchId?: number | null) => {
         if (!branchId) return "Main Branch";
         const found = branches.find(b => Number(b.branch_id || b.id) === Number(branchId));
-        return found?.branch_name || found?.name || `Branch #${branchId}`;
+        if (found) return found.branch_name || found.name || `Branch #${branchId}`;
+        
+        switch (Number(branchId)) {
+            case 1:
+            case 183: return "Main Branch";
+            case 163: return "Urdaneta Branch";
+            case 181: return "Bihon Branch";
+            case 182: return "Bihon Bad Branch";
+            default: return `Branch #${branchId}`;
+        }
     };
 
     // Filtered QA Logs
@@ -225,10 +407,21 @@ export function useManufacturingQA() {
     const activeJobOrders = useMemo(() => {
         return jobOrders.filter(jo => {
             const status = jo.status?.toLowerCase();
-            const isCompleted = status === "finished" || status === "completed" || status === "cancelled";
+            const isCompleted = status === "finished" || status === "completed" || status === "cancelled" || status === "closed";
             const matchesSearch = jo.jo_id.toLowerCase().includes(joSearch.toLowerCase()) || 
                                   jo.product_name.toLowerCase().includes(joSearch.toLowerCase());
             return !isCompleted && matchesSearch;
+        });
+    }, [jobOrders, joSearch]);
+
+    // Filtered Closed Job Orders (Completed/Closed runs)
+    const closedJobOrders = useMemo(() => {
+        return jobOrders.filter(jo => {
+            const status = jo.status?.toLowerCase();
+            const isCompleted = status === "finished" || status === "completed" || status === "closed";
+            const matchesSearch = jo.jo_id.toLowerCase().includes(joSearch.toLowerCase()) || 
+                                  jo.product_name.toLowerCase().includes(joSearch.toLowerCase());
+            return isCompleted && matchesSearch;
         });
     }, [jobOrders, joSearch]);
 
@@ -244,6 +437,32 @@ export function useManufacturingQA() {
         
         setUnitCost("0");
         setIsYieldDialogOpen(true);
+    };
+
+    const handleReprintReceipt = (jo: JobOrder) => {
+        if (!jo) return;
+        const log = jo.yield_logs && jo.yield_logs.length > 0 ? jo.yield_logs[0] : null;
+        
+        const branchName = getBranchName(jo.branch_id);
+        const verName = jo.recipe_version_name || 
+                        jo.recipeVersionName || 
+                        jo.version_name || 
+                        jo.versionName || 
+                        ((jo.version_id || jo.versionId || jo.bom?.version_id) 
+                            ? `Version #${jo.version_id || jo.versionId || jo.bom?.version_id}` 
+                            : 'Active');
+
+        printYieldClosingReceipt({
+            jo_no: jo.jo_id,
+            product_code: jo.product_code || `PROD-${jo.product_id}`,
+            product_name: jo.product_name,
+            recipe_version: verName,
+            yield_qty: log ? Number(log.yield_quantity || jo.producedQty || jo.produced_quantity || 0) : Number(jo.producedQty || jo.produced_quantity || jo.quantity || 0),
+            lot_number: log ? (log.lot_number || log.lot_no || `MFG-${jo.jo_id}`) : `MFG-${jo.jo_id}`,
+            expiry_date: log ? (log.expiry_date || "N/A") : "N/A",
+            branch_name: branchName,
+            unit_cost: log ? Number(log.unit_cost || 0) : 0
+        });
     };
 
     // Submit Finished Goods Yield closing
@@ -289,6 +508,33 @@ export function useManufacturingQA() {
 
             toast.success(`Job Order ${selectedJO.jo_id} successfully completed and WMS ledger receipted!`);
             setIsYieldDialogOpen(false);
+            
+            // Trigger auto print
+            try {
+                const branchName = getBranchName(selectedJO.branch_id);
+                const verName = selectedJO.recipe_version_name || 
+                                selectedJO.recipeVersionName || 
+                                selectedJO.version_name || 
+                                selectedJO.versionName || 
+                                ((selectedJO.version_id || selectedJO.versionId || selectedJO.bom?.version_id) 
+                                    ? `Version #${selectedJO.version_id || selectedJO.versionId || selectedJO.bom?.version_id}` 
+                                    : 'Active');
+
+                printYieldClosingReceipt({
+                    jo_no: selectedJO.jo_id,
+                    product_code: selectedJO.product_code || `PROD-${selectedJO.product_id}`,
+                    product_name: selectedJO.product_name,
+                    recipe_version: verName,
+                    yield_qty: Number(yieldQty),
+                    lot_number: lotNumber || `MFG-${selectedJO.jo_id}`,
+                    expiry_date: expiryDate || "N/A",
+                    branch_name: branchName,
+                    unit_cost: Number(unitCost || 0)
+                });
+            } catch (printErr) {
+                console.error("Auto print failed:", printErr);
+            }
+
             refreshAll();
         } catch (e: any) {
             console.error("Yield closing error:", e);
@@ -551,8 +797,10 @@ export function useManufacturingQA() {
         filteredQALogs,
         pendingHolds,
         activeJobOrders,
+        closedJobOrders,
         handleOpenYieldDialog,
         handleSubmitYieldClosing,
+        handleReprintReceipt,
         handleOpenOverrideDialog,
         handleSubmitOverride,
 

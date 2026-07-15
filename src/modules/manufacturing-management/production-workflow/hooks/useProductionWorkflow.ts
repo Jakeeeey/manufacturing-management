@@ -74,9 +74,10 @@ export function useProductionWorkflow() {
         setLoadingJobs(true);
         try {
             const data = await fetchJobOrders();
-            setJobOrders(data);
+            const activeJobs = data.filter((jo: any) => jo.status !== "Draft" && jo.status !== "Planned" && jo.status !== "Planning");
+            setJobOrders(activeJobs);
             
-            if (data.length > 0) {
+            if (activeJobs.length > 0) {
                 const nextId = selectIdAfterFetch || selectedJobOrderId || "";
                 setSelectedJobOrderId(nextId);
             } else {
@@ -190,7 +191,6 @@ export function useProductionWorkflow() {
         return () => clearInterval(interval);
     }, [sortedTasks, fetchJobOrderOperators]);
 
-    // Clock In / Check In Operator
     // Clock In / Check In Operator
     const handleAddOperator = async (startTimer: boolean, taskId: number, assigneeId: string) => {
         if (!taskId || !assigneeId || !selectedJobOrder) return;
@@ -464,6 +464,55 @@ export function useProductionWorkflow() {
         }
     };
 
+    const [releasingDraft, setReleasingDraft] = useState(false);
+
+    const handleReleaseDraftJO = async () => {
+        if (!selectedJobOrder) return;
+        setReleasingDraft(true);
+        try {
+            const res = await fetch("/api/manufacturing/planning-engineering", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    action: "release-draft",
+                    joId: selectedJobOrder.order_id
+                })
+            });
+
+            const data = await res.json();
+            if (!res.ok || data.success === false) {
+                const shortfallMsg = data.error || "Failed to release Job Order.";
+                if (window.confirm(`${shortfallMsg}\n\nDo you want to forcibly release this Job Order anyway?`)) {
+                    const forceRes = await fetch("/api/manufacturing/planning-engineering", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            action: "release-draft",
+                            joId: selectedJobOrder.order_id,
+                            forceRelease: true
+                        })
+                    });
+                    const forceData = await forceRes.json();
+                    if (!forceRes.ok || forceData.success === false) {
+                        throw new Error(forceData.error || "Failed to forcibly release Job Order.");
+                    }
+                    toast.success("Job Order forcibly released!");
+                    fetchJobs(selectedJobOrderId);
+                    return;
+                }
+                return;
+            }
+
+            toast.success("Job Order released successfully!");
+            fetchJobs(selectedJobOrderId);
+        } catch (err: any) {
+            console.error("Error releasing Draft JO:", err);
+            toast.error(err.message || "An error occurred during release.");
+        } finally {
+            setReleasingDraft(false);
+        }
+    };
+
     const filteredJobOrders = useMemo(() => {
         return jobOrders.filter((jo) => {
             const matchesSearch =
@@ -534,6 +583,8 @@ export function useProductionWorkflow() {
         filteredJobOrders,
         branches,
         selectedBranchFilter,
-        setSelectedBranchFilter
+        setSelectedBranchFilter,
+        releasingDraft,
+        handleReleaseDraftJO
     };
 }

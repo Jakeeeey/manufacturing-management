@@ -1,5 +1,5 @@
 /* eslint-disable */
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Loader2, ArrowRight, ArrowLeft, Check, ShieldAlert, CheckCircle, Clock } from "lucide-react";
 import {
     Dialog,
@@ -21,7 +21,8 @@ import {
 } from "@/components/ui/select";
 import { Branch } from "../types";
 import { toast } from "sonner";
-import { SearchableSelect } from "@/components/ui/searchable-select";
+import { SearchableSelect } from "./SearchableSelect";
+import { OperatorSelect } from "./OperatorSelect";
 
 interface CreateBufferJODialogProps {
     isOpen: boolean;
@@ -43,6 +44,7 @@ export function CreateBufferJODialog({
     const [loadingDetails, setLoadingDetails] = useState(false);
     const [loadingVersions, setLoadingVersions] = useState(false);
     const [submitting, setSubmitting] = useState(false);
+    const [hasLoadedDetails, setHasLoadedDetails] = useState(false);
 
     // Master list data
     const [products, setProducts] = useState<any[]>([]);
@@ -51,6 +53,7 @@ export function CreateBufferJODialog({
 
     // Form selection states
     const [selectedBranchId, setSelectedBranchId] = useState<string>("");
+    const [selectedParentProductId, setSelectedParentProductId] = useState<string>("");
     const [selectedProductId, setSelectedProductId] = useState<string>("");
     const [selectedVersionId, setSelectedVersionId] = useState<string>("");
     const [joNumber, setJoNumber] = useState("");
@@ -74,10 +77,47 @@ export function CreateBufferJODialog({
     const selectedBranch = branches.find((b) => String(b.id) === selectedBranchId);
     const selectedProduct = products.find((p) => String(p.product_id) === selectedProductId);
 
-    const productOptions = products.map((prod) => ({
-        value: String(prod.product_id),
-        label: `${prod.product_name} (${prod.product_code})`
-    }));
+    const getProductParentId = (p: any) => {
+        if (!p) return null;
+        if (p.parent_id && typeof p.parent_id === "object") {
+            return Number((p.parent_id as any).product_id);
+        }
+        return p.parent_id ? Number(p.parent_id) : null;
+    };
+
+    const parentProducts = useMemo(() => {
+        return products.filter((prod) => getProductParentId(prod) === null);
+    }, [products]);
+
+    const parentProductOptions = useMemo(() => {
+        return parentProducts.map((prod) => ({
+            value: String(prod.product_id),
+            label: prod.product_name
+        }));
+    }, [parentProducts]);
+
+    const familyProducts = useMemo(() => {
+        if (!selectedParentProductId) return [];
+        return products.filter((p) => {
+            const pId = String(p.product_id);
+            const parentId = getProductParentId(p);
+            return pId === selectedParentProductId || (parentId !== null && String(parentId) === selectedParentProductId);
+        });
+    }, [products, selectedParentProductId]);
+
+    const uomOptions = useMemo(() => {
+        return familyProducts.map((prod) => {
+            const uomName = prod.unit_of_measurement?.unit_name || "";
+            const uomShortcut = prod.unit_of_measurement?.unit_shortcut || "PCS";
+            return {
+                product_id: String(prod.product_id),
+                product_code: prod.product_code,
+                uom_name: uomName,
+                uom_shortcut: uomShortcut,
+                multiplier: prod.unit_of_measurement_count || 1
+            };
+        });
+    }, [familyProducts]);
 
     // Initial load: active branch defaults & products list
     useEffect(() => {
@@ -90,10 +130,12 @@ export function CreateBufferJODialog({
             setSearchQuery("");
             setSubAssemblyBoms({});
             setPrintSelection({});
+            setSelectedParentProductId("");
             setSelectedProductId("");
             setSelectedVersionId("");
             setVersions([]);
             setRemarks("");
+            setHasLoadedDetails(false);
 
             // Setup default JO Code
             const code = `JO-BUF-${Math.floor(100000 + Math.random() * 900000)}`;
@@ -125,10 +167,29 @@ export function CreateBufferJODialog({
             // Load operators
             fetch("/api/manufacturing/planning-engineering?action=users")
                 .then((r) => r.json())
-                .then((data) => setOperators(data || []))
+                .then((data) => setOperators(Array.isArray(data) ? data : []))
                 .catch((err) => console.error("Failed to fetch operators:", err));
         }
     }, [isOpen, initialBranchId, branches]);
+
+    // Auto-select UOM when parent product changes
+    useEffect(() => {
+        if (selectedParentProductId) {
+            const parentProd = products.find(p => String(p.product_id) === selectedParentProductId);
+            if (parentProd) {
+                setSelectedProductId(String(parentProd.product_id));
+            } else {
+                const family = products.filter(p => String(getProductParentId(p)) === selectedParentProductId);
+                if (family.length > 0) {
+                    setSelectedProductId(String(family[0].product_id));
+                } else {
+                    setSelectedProductId("");
+                }
+            }
+        } else {
+            setSelectedProductId("");
+        }
+    }, [selectedParentProductId, products]);
 
     // Load versions when product is selected
     useEffect(() => {
@@ -136,31 +197,65 @@ export function CreateBufferJODialog({
             setLoadingVersions(true);
             setVersions([]);
             setSelectedVersionId("");
+            
+            const currentProd = products.find(p => String(p.product_id) === selectedProductId);
+            const parentId = currentProd ? getProductParentId(currentProd) : null;
+
+            // First try to fetch versions for the child product/variant
             fetch(`/api/manufacturing/finished-goods/versions?productId=${selectedProductId}`)
                 .then((r) => r.json())
                 .then((data) => {
-                    if (Array.isArray(data)) {
+                    if (Array.isArray(data) && data.length > 0) {
                         setVersions(data);
                         // Auto-select first active or fallback to first element
                         const active = data.find((v: any) => v.status === "Active" || v.is_active);
                         if (active) {
                             setSelectedVersionId(String(active.version_id));
-                        } else if (data.length > 0) {
+                        } else {
                             setSelectedVersionId(String(data[0].version_id));
                         }
+                        setLoadingVersions(false);
+                    } else if (parentId) {
+                        // Fall back to parent versions if child has none
+                        fetch(`/api/manufacturing/finished-goods/versions?productId=${parentId}`)
+                            .then((r) => r.json())
+                            .then((parentData) => {
+                                if (Array.isArray(parentData)) {
+                                    setVersions(parentData);
+                                    const active = parentData.find((v: any) => v.status === "Active" || v.is_active);
+                                    if (active) {
+                                        setSelectedVersionId(String(active.version_id));
+                                    } else if (parentData.length > 0) {
+                                        setSelectedVersionId(String(parentData[0].version_id));
+                                    }
+                                }
+                            })
+                            .catch((err) => console.error("Failed to load parent versions:", err))
+                            .finally(() => setLoadingVersions(false));
+                    } else {
+                        setVersions([]);
+                        setLoadingVersions(false);
                     }
                 })
-                .catch((err) => console.error("Failed to load versions:", err))
-                .finally(() => setLoadingVersions(false));
+                .catch((err) => {
+                    console.error("Failed to load versions:", err);
+                    setLoadingVersions(false);
+                });
         } else {
             setVersions([]);
             setSelectedVersionId("");
         }
-    }, [selectedProductId]);
+    }, [selectedProductId, products]);
+
+    // Reset loaded details when selection changes on Step 1
+    useEffect(() => {
+        setRoutings([]);
+        setHasLoadedDetails(false);
+    }, [selectedProductId, selectedVersionId]);
 
     // Load BOM & Routing details on Step 2
     useEffect(() => {
-        if (isOpen && selectedProductId && selectedVersionId && currentStep === 2 && routings.length === 0) {
+        if (isOpen && selectedProductId && selectedVersionId && currentStep === 2 && !hasLoadedDetails) {
             const loadDetails = async () => {
                 setLoadingDetails(true);
                 try {
@@ -219,6 +314,7 @@ export function CreateBufferJODialog({
                                 setInventories(stockMap);
                             }
                         }
+                        setHasLoadedDetails(true);
                     }
                 } catch (err) {
                     console.error("Failed to load wizard details:", err);
@@ -228,7 +324,7 @@ export function CreateBufferJODialog({
             };
             loadDetails();
         }
-    }, [isOpen, selectedProductId, selectedVersionId, currentStep, selectedBranchId, routings.length]);
+    }, [isOpen, selectedProductId, selectedVersionId, currentStep, selectedBranchId, hasLoadedDetails]);
 
     // Initialize default print selections for shortfalls
     useEffect(() => {
@@ -458,6 +554,137 @@ export function CreateBufferJODialog({
         setCurrentStep((prev) => prev + 1);
     };
 
+    const printPickingList = (joId: string, productName: string, qty: number) => {
+        const printWindow = window.open("", "_blank");
+        if (!printWindow) return;
+
+        const branchName = branches?.find((b: any) => Number(b.id) === Number(selectedBranchId))?.branch_name || `Branch #${selectedBranchId}`;
+
+        const printRows: string[] = [];
+
+        components.forEach((comp) => {
+            const compProductId = comp.component_product_id?.product_id;
+            const isSubAssembly = comp.component_product_id?.product_type === 388 || comp.component_product_id?.is_finished_good;
+            const name = comp.component_product_id?.product_name || `Component #${compProductId}`;
+            const code = comp.component_product_id?.product_code || "";
+            const uom = comp.unit_of_measurement || "pcs";
+            
+            const needed = (Number(comp.quantity_required) * (1 + (Number(comp.wastage_factor_percentage || 0) / 100))) * (qty / bomBaseQty);
+
+            printRows.push(`
+                <tr style="border-bottom: 1px solid #ddd; background: ${isSubAssembly ? '#f9f9f9' : '#fff'};">
+                    <td style="padding: 10px; font-weight: bold;">
+                        ${isSubAssembly ? `<span style="font-size: 8px; background: #e0f2fe; color: #0369a1; padding: 2px 5px; border-radius: 3px; margin-right: 5px; font-family: sans-serif; font-weight: 900;">SUB-ASSEMBLY</span>` : ""}
+                        ${name} <span style="font-size: 10px; color: #666; font-weight: normal;">(${code})</span>
+                    </td>
+                    <td style="padding: 10px; text-align: right; font-weight: bold;">${Number(needed).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${uom}</td>
+                    <td style="padding: 10px; text-align: center; border-left: 1px solid #ddd;">[ &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; ]</td>
+                    <td style="padding: 10px; font-style: italic; color: #666;"></td>
+                </tr>
+            `);
+
+            if (isSubAssembly) {
+                const children = subAssemblyBoms[Number(compProductId)] || [];
+                children.forEach((child) => {
+                    const childId = child.component_product_id?.product_id;
+                    const childName = child.component_product_id?.product_name || `Child #${childId}`;
+                    const childCode = child.component_product_id?.product_code || "";
+                    const childUom = child.unit_of_measurement || "pcs";
+                    
+                    const childNeeded = (Number(child.quantity_required) * (1 + (Number(child.wastage_factor_percentage || 0) / 100))) * (needed / (child.bom_base_quantity || 1));
+
+                    printRows.push(`
+                        <tr style="border-bottom: 1px solid #eee; background: #fff;">
+                            <td style="padding: 10px 10px 10px 30px; color: #555;">
+                                <span style="color: #999; margin-right: 5px;">↳</span>
+                                ${childName} <span style="font-size: 10px; color: #888;">(${childCode})</span>
+                            </td>
+                            <td style="padding: 10px; text-align: right; font-weight: bold; color: #555;">${Number(childNeeded).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${childUom}</td>
+                            <td style="padding: 10px; text-align: center; border-left: 1px solid #ddd;">[ &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; ]</td>
+                            <td style="padding: 10px; font-style: italic; color: #666;"></td>
+                        </tr>
+                    `);
+                });
+            }
+        });
+
+        const htmlContent = `
+            <html>
+            <head>
+                <title>Material Pick List - ${joId}</title>
+                <style>
+                    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; color: #333; }
+                    .header { border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 20px; }
+                    .title { font-size: 24px; font-weight: bold; text-transform: uppercase; }
+                    .meta { display: grid; grid-template-cols: 2fr 1fr; margin-top: 10px; font-size: 14px; }
+                    th { background-color: #f5f5f5; padding: 10px; text-align: left; border-bottom: 2px solid #ddd; }
+                    @media print {
+                        body { padding: 0; }
+                        .no-print { display: none; }
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="header">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span class="title">Material Picking List (WMS)</span>
+                        <span style="font-weight: bold; background: #7c3aed; color: #fff; padding: 5px 10px; border-radius: 4px;">${joId}</span>
+                    </div>
+                    <div class="meta">
+                        <div>
+                            <strong>Target Product:</strong> ${productName}<br/>
+                            <strong>Production Qty:</strong> ${qty.toLocaleString()} units<br/>
+                            <strong>Date Created:</strong> ${new Date().toLocaleDateString()}<br/>
+                        </div>
+                        <div style="text-align: right;">
+                            <strong>Warehouse Branch:</strong> ${branchName}<br/>
+                            <strong>Status:</strong> Released for Picking
+                        </div>
+                    </div>
+                </div>
+                
+                <table style="width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 13px;">
+                    <thead>
+                        <tr style="background-color: #f5f5f5;">
+                            <th style="padding: 10px; border-bottom: 2px solid #ddd; text-align: left;">Raw Material / Component</th>
+                            <th style="padding: 10px; border-bottom: 2px solid #ddd; text-align: right;">Needed Quantity</th>
+                            <th style="padding: 10px; border-bottom: 2px solid #ddd; text-align: center; width: 120px;">Picked Check</th>
+                            <th style="padding: 10px; border-bottom: 2px solid #ddd; text-align: left; width: 150px;">Bin / Lot Notes</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${printRows.join("")}
+                    </tbody>
+                </table>
+                
+                <div style="margin-top: 50px; display: flex; justify-content: space-between; font-size: 12px;">
+                    <div>
+                        <strong>Picked By:</strong> ________________________<br/>
+                        Date: ________________________
+                    </div>
+                    <div>
+                        <strong>Verified By (WIP Supervisor):</strong> ________________________<br/>
+                        Date: ________________________
+                    </div>
+                </div>
+
+                <div class="no-print" style="margin-top: 30px; text-align: center;">
+                    <button onclick="window.print();" style="background: #7c3aed; color: #fff; border: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; cursor: pointer;">Print Picklist</button>
+                </div>
+
+                <script>
+                    window.onload = function() {
+                        window.print();
+                    };
+                </script>
+            </body>
+            </html>
+        `;
+
+        printWindow.document.write(htmlContent);
+        printWindow.document.close();
+    };
+
     const handleConfirmRelease = async () => {
         if (!selectedProductId || !selectedBranchId) return;
 
@@ -507,6 +734,11 @@ export function CreateBufferJODialog({
             }
 
             toast.success(`Buffer Job Order ${joNumber} released successfully!`);
+            printPickingList(
+                joNumber,
+                selectedProduct?.product_name || `Product #${selectedProductId}`,
+                Number(targetQuantity)
+            );
             onOpenChange(false);
             onSuccess();
         } catch (err: any) {
@@ -586,7 +818,7 @@ export function CreateBufferJODialog({
 
                             <div className="space-y-1">
                                 <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">
-                                    Product SKU
+                                    Product Name
                                 </label>
                                 {loadingProducts ? (
                                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -595,14 +827,73 @@ export function CreateBufferJODialog({
                                     </div>
                                 ) : (
                                     <SearchableSelect
-                                        options={productOptions}
-                                        value={selectedProductId}
-                                        onValueChange={setSelectedProductId}
-                                        placeholder="Select Product SKU..."
-                                        className="h-9 font-semibold"
+                                        options={parentProductOptions}
+                                        value={selectedParentProductId}
+                                        onValueChange={setSelectedParentProductId}
+                                        placeholder="Select Product Name..."
+                                        className="h-9 font-semibold text-xs"
                                     />
                                 )}
                             </div>
+
+                            {selectedParentProductId && uomOptions.length > 0 && (
+                                <div className="space-y-1.5 animate-in fade-in slide-in-from-top-2 duration-300">
+                                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">
+                                        Available Unit of Measurement (UOM)
+                                    </label>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                        {uomOptions.map((opt) => {
+                                            const isSelected = selectedProductId === opt.product_id;
+                                            return (
+                                                <button
+                                                    key={opt.product_id}
+                                                    type="button"
+                                                    onClick={() => setSelectedProductId(opt.product_id)}
+                                                    className={`flex items-center justify-between p-2.5 rounded-xl border text-left transition-all duration-200 group ${
+                                                        isSelected
+                                                            ? "bg-primary/10 border-primary text-foreground shadow-sm ring-1 ring-primary/30"
+                                                            : "bg-card border-border hover:border-muted-foreground/30 hover:bg-accent/5"
+                                                    }`}
+                                                >
+                                                    <div className="flex items-center gap-2.5 font-sans">
+                                                        <div
+                                                            className={`flex items-center justify-center h-8 w-11 rounded-lg text-[10px] font-bold transition-all duration-200 ${
+                                                                isSelected
+                                                                    ? "bg-primary text-primary-foreground scale-105"
+                                                                    : "bg-muted text-muted-foreground group-hover:bg-muted/80"
+                                                            }`}
+                                                        >
+                                                            {opt.uom_shortcut.toUpperCase()}
+                                                        </div>
+                                                        <div className="space-y-0.5">
+                                                            <div className="text-xs font-bold text-foreground truncate max-w-[140px]">
+                                                                {opt.uom_name || "Standard Unit"}
+                                                            </div>
+                                                            <div className="text-[9px] font-medium text-muted-foreground font-mono">
+                                                                {opt.product_code}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex flex-col items-end gap-1 font-sans">
+                                                        {isSelected ? (
+                                                            <div className="h-4 w-4 rounded-full bg-primary flex items-center justify-center text-primary-foreground animate-in zoom-in duration-200">
+                                                                <Check className="h-2.5 w-2.5 stroke-[3]" />
+                                                            </div>
+                                                        ) : (
+                                                            <div className="h-4 w-4 rounded-full border border-muted-foreground/30 group-hover:border-muted-foreground/50 transition-colors" />
+                                                        )}
+                                                        {opt.multiplier > 1 && (
+                                                            <span className="text-[9px] bg-secondary text-secondary-foreground border border-secondary/30 px-1 py-0.5 rounded font-bold">
+                                                                Pack of {opt.multiplier}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
 
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-1">
@@ -806,6 +1097,23 @@ export function CreateBufferJODialog({
                                                                             </div>
                                                                             <div className="font-bold text-foreground">{comp.component_product_id?.product_name || `Product #${compProductId}`}</div>
                                                                             <div className="text-[9px] text-muted-foreground/80">{comp.component_product_id?.product_code || ""}</div>
+                                                                            {inventories[Number(compProductId)]?.recommended_lots?.length > 0 && (
+                                                                                <div className="mt-1 space-y-0.5">
+                                                                                    <div className="text-[7.5px] text-primary/80 font-bold uppercase tracking-wider">Recommended Lots:</div>
+                                                                                    <div className="flex flex-wrap gap-1">
+                                                                                        {inventories[Number(compProductId)].recommended_lots.slice(0, 3).map((lot: any, lIdx: number) => (
+                                                                                            <span key={lIdx} className="text-[8px] bg-primary/10 text-primary border border-primary/20 px-1 py-0.5 rounded font-mono font-medium">
+                                                                                                {lot.lot_no} ({Number(lot.available).toFixed(0)})
+                                                                                            </span>
+                                                                                        ))}
+                                                                                        {inventories[Number(compProductId)].recommended_lots.length > 3 && (
+                                                                                            <span className="text-[8px] text-muted-foreground self-center">
+                                                                                                +{inventories[Number(compProductId)].recommended_lots.length - 3} more
+                                                                                            </span>
+                                                                                        )}
+                                                                                    </div>
+                                                                                </div>
+                                                                            )}
                                                                         </td>
                                                                         <td className="p-2.5 text-center font-semibold text-foreground">
                                                                             {needed.toLocaleString(undefined, {maximumFractionDigits:2})} <span className="text-[9px] text-muted-foreground font-normal">{uom}</span>
@@ -863,6 +1171,15 @@ export function CreateBufferJODialog({
                                                                                 </td>
                                                                                 <td className="p-2.5 pl-6 text-muted-foreground">
                                                                                     ↳ {cc.component_product_id?.product_name || `Product #${ccId}`}
+                                                                                    {inventories[Number(ccId)]?.recommended_lots?.length > 0 && (
+                                                                                        <div className="mt-1 pl-3 flex flex-wrap gap-1">
+                                                                                            {inventories[Number(ccId)].recommended_lots.slice(0, 2).map((lot: any, lIdx: number) => (
+                                                                                                <span key={lIdx} className="text-[7.5px] bg-primary/10 text-primary/90 border border-primary/15 px-1 py-0 rounded font-mono">
+                                                                                                    {lot.lot_no} ({Number(lot.available).toFixed(0)})
+                                                                                                </span>
+                                                                                            ))}
+                                                                                        </div>
+                                                                                    )}
                                                                                 </td>
                                                                                 <td className="p-2.5 text-center text-muted-foreground">
                                                                                     {ccNeeded.toLocaleString(undefined, {maximumFractionDigits:2})} <span className="text-[8px] text-muted-foreground/60">{ccUom}</span>
@@ -908,16 +1225,6 @@ export function CreateBufferJODialog({
                                 </div>
                             </div>
 
-                            {/* Operator Search Input */}
-                            <div className="space-y-1">
-                                <Input
-                                    value={searchQuery}
-                                    onChange={(e) => setSearchQuery(e.target.value)}
-                                    placeholder="Search operators by name or role..."
-                                    className="h-9 text-xs bg-card border-input text-foreground placeholder:text-muted-foreground rounded-lg focus-visible:ring-primary"
-                                />
-                            </div>
-
                             {routings.length === 0 ? (
                                 <p className="text-xs text-muted-foreground py-3 text-center">No routing sequence steps defined.</p>
                             ) : (
@@ -926,14 +1233,6 @@ export function CreateBufferJODialog({
                                         const seq = Number(route.sequence_order);
                                         const assigned = assignments[seq] || [];
                                         const stepRunTime = targetQuantity * Number(route.run_time_hours || 0);
-
-                                        // Filter operators dynamically based on search query
-                                        const filteredOperators = operators.filter((op) => {
-                                            const fullName = `${op.user_fname || op.first_name || ""} ${op.user_lname || op.last_name || ""}`.toLowerCase();
-                                            const pos = (op.user_position || op.role || "").toLowerCase();
-                                            const q = searchQuery.toLowerCase();
-                                            return fullName.includes(q) || pos.includes(q);
-                                        });
 
                                         return (
                                             <div key={`${route.routing_id || "route"}_${index}`} className="border border-border bg-card/20 rounded-xl p-4 space-y-3.5 hover:border-border/60 transition-all duration-300">
@@ -961,55 +1260,14 @@ export function CreateBufferJODialog({
 
                                                 <div className="space-y-2">
                                                     <div className="flex items-center justify-between text-[9px] font-bold text-muted-foreground uppercase tracking-wider">
-                                                        <span>Select Operators for this Workstation</span>
-                                                        <span>{assigned.length} selected</span>
+                                                        <span>Assign Operators for this Workstation</span>
                                                     </div>
-                                                    <div className="grid grid-cols-2 gap-2 max-h-[160px] overflow-y-auto border border-border/80 bg-background/80 p-2.5 rounded-xl">
-                                                        {filteredOperators.length === 0 ? (
-                                                            <div className="col-span-2 text-center text-xs text-muted-foreground py-4">
-                                                                No operators match your search.
-                                                            </div>
-                                                        ) : (
-                                                            filteredOperators.map((op) => {
-                                                                const opId = Number(op.user_id || op.id);
-                                                                const isAssigned = assigned.includes(opId);
-                                                                const initials = `${op.user_fname?.[0] || ""}${op.user_lname?.[0] || ""}`.toUpperCase();
-
-                                                                return (
-                                                                    <div
-                                                                        key={opId}
-                                                                        onClick={() => handleToggleOperator(seq, opId)}
-                                                                        className={`flex items-center gap-3 p-2.5 rounded-xl border cursor-pointer select-none transition-all duration-300 hover:scale-[1.01] ${
-                                                                            isAssigned
-                                                                                ? "bg-primary/15 border-primary shadow-lg shadow-primary/5 text-primary"
-                                                                                : "bg-muted/60 border-border text-muted-foreground hover:border-border/80 hover:bg-accent"
-                                                                        }`}
-                                                                    >
-                                                                        <div className={`h-8 w-8 rounded-full flex items-center justify-center text-xs font-black shrink-0 ${
-                                                                            isAssigned ? "bg-primary text-white" : "bg-muted text-muted-foreground"
-                                                                        }`}>
-                                                                            {initials || "OP"}
-                                                                        </div>
-
-                                                                        <div className="min-w-0 flex-1">
-                                                                            <div className={`text-xs font-bold truncate ${isAssigned ? "text-foreground" : "text-foreground"}`}>
-                                                                                {op.user_fname || op.first_name || ""} {op.user_lname || op.last_name || ""}
-                                                                            </div>
-                                                                            <div className="text-[9px] text-muted-foreground truncate mt-0.5">
-                                                                                {op.user_position || op.role || "Operator"}
-                                                                            </div>
-                                                                        </div>
-
-                                                                        <div className={`h-4.5 w-4.5 rounded-md border flex items-center justify-center transition-all ${
-                                                                            isAssigned ? "bg-primary border-primary text-white" : "border-input bg-background"
-                                                                        }`}>
-                                                                            {isAssigned && <Check className="h-3 w-3 stroke-[3]" />}
-                                                                        </div>
-                                                                    </div>
-                                                                );
-                                                            })
-                                                        )}
-                                                    </div>
+                                                    <OperatorSelect
+                                                        operators={operators}
+                                                        assignedIds={assigned}
+                                                        onToggleOperator={(opId) => handleToggleOperator(seq, opId)}
+                                                        placeholder="Select operators..."
+                                                    />
                                                 </div>
                                             </div>
                                         );

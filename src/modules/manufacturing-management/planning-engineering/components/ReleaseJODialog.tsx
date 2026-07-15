@@ -20,6 +20,7 @@ import {
     SelectValue
 } from "@/components/ui/select";
 import { Branch, SalesOrderDetail } from "../types";
+import { OperatorSelect } from "./OperatorSelect";
 
 interface ReleaseJODialogProps {
     isConfirmOpen: boolean;
@@ -66,6 +67,7 @@ export function ReleaseJODialog({
 }: ReleaseJODialogProps) {
     const [currentStep, setCurrentStep] = useState(1);
     const [loadingDetails, setLoadingDetails] = useState(false);
+    const [hasLoadedDetails, setHasLoadedDetails] = useState(false);
     const [routings, setRoutings] = useState<any[]>([]);
     const [components, setComponents] = useState<any[]>([]);
     const [inventories, setInventories] = useState<Record<number, any>>({});
@@ -88,6 +90,7 @@ export function ReleaseJODialog({
             setSearchQuery("");
             setSubAssemblyBoms({});
             setPrintSelection({});
+            setHasLoadedDetails(false);
         }
     }, [isConfirmOpen, setAssignments]);
 
@@ -96,14 +99,14 @@ export function ReleaseJODialog({
         if (isConfirmOpen) {
             fetch("/api/manufacturing/planning-engineering?action=users")
                 .then((r) => r.json())
-                .then((data) => setOperators(data || []))
+                .then((data) => setOperators(Array.isArray(data) ? data : []))
                 .catch((err) => console.error("Failed to fetch operators:", err));
         }
     }, [isConfirmOpen]);
 
     // Fetch BOM & Routing details on Step 2
     useEffect(() => {
-        if (isConfirmOpen && selectedLines.length > 0 && currentStep >= 2 && routings.length === 0) {
+        if (isConfirmOpen && selectedLines.length > 0 && currentStep >= 2 && !hasLoadedDetails) {
             const loadDetails = async () => {
                 setLoadingDetails(true);
                 try {
@@ -165,6 +168,7 @@ export function ReleaseJODialog({
                                 setInventories(stockMap);
                             }
                         }
+                        setHasLoadedDetails(true);
                     }
                 } catch (err) {
                     console.error("Failed to load wizard details:", err);
@@ -174,7 +178,7 @@ export function ReleaseJODialog({
             };
             loadDetails();
         }
-    }, [isConfirmOpen, selectedLines, currentStep, selectedBranchId, routings.length]);
+    }, [isConfirmOpen, selectedLines, currentStep, selectedBranchId, hasLoadedDetails]);
 
     // Initialize default print selections for shortfalls
     useEffect(() => {
@@ -609,6 +613,23 @@ export function ReleaseJODialog({
                                                                                 </div>
                                                                                 <div className="font-bold text-foreground">{comp.component_product_id?.product_name || `Product #${compProductId}`}</div>
                                                                                 <div className="text-[9px] text-muted-foreground/80">{comp.component_product_id?.product_code || ""}</div>
+                                                                                {inventories[Number(compProductId)]?.recommended_lots?.length > 0 && (
+                                                                                    <div className="mt-1 space-y-0.5">
+                                                                                        <div className="text-[7.5px] text-primary/80 font-bold uppercase tracking-wider">Recommended Lots:</div>
+                                                                                        <div className="flex flex-wrap gap-1">
+                                                                                            {inventories[Number(compProductId)].recommended_lots.slice(0, 3).map((lot: any, lIdx: number) => (
+                                                                                                <span key={lIdx} className="text-[8px] bg-primary/10 text-primary border border-primary/20 px-1 py-0.5 rounded font-mono font-medium">
+                                                                                                    {lot.lot_no} ({Number(lot.available).toFixed(0)})
+                                                                                                </span>
+                                                                                            ))}
+                                                                                            {inventories[Number(compProductId)].recommended_lots.length > 3 && (
+                                                                                                <span className="text-[8px] text-muted-foreground self-center">
+                                                                                                    +{inventories[Number(compProductId)].recommended_lots.length - 3} more
+                                                                                                </span>
+                                                                                            )}
+                                                                                        </div>
+                                                                                    </div>
+                                                                                )}
                                                                             </td>
                                                                             <td className="p-2.5 text-center font-semibold text-foreground">
                                                                                 {needed.toLocaleString(undefined, {maximumFractionDigits:2})} <span className="text-[9px] text-muted-foreground font-normal">{uom}</span>
@@ -668,6 +689,15 @@ export function ReleaseJODialog({
                                                                                         <span className="text-muted-foreground/60 font-bold mr-1.5">↳</span>
                                                                                         <span className="font-semibold text-foreground">{cc.component_product_id?.product_name || `Product #${ccId}`}</span>
                                                                                         <span className="text-[8px] text-muted-foreground/80 ml-1.5 font-mono">({cc.component_product_id?.product_code || ""})</span>
+                                                                                        {inventories[Number(ccId)]?.recommended_lots?.length > 0 && (
+                                                                                            <div className="mt-1 pl-3 flex flex-wrap gap-1">
+                                                                                                {inventories[Number(ccId)].recommended_lots.slice(0, 2).map((lot: any, lIdx: number) => (
+                                                                                                    <span key={lIdx} className="text-[7.5px] bg-primary/10 text-primary/90 border border-primary/15 px-1 py-0 rounded font-mono">
+                                                                                                        {lot.lot_no} ({Number(lot.available).toFixed(0)})
+                                                                                                    </span>
+                                                                                                ))}
+                                                                                            </div>
+                                                                                        )}
                                                                                     </td>
                                                                                     <td className="p-2.5 text-center text-muted-foreground">
                                                                                         {ccNeeded.toLocaleString(undefined, {maximumFractionDigits:2})} <span className="text-[8px] text-muted-foreground/60">{ccUom}</span>
@@ -713,16 +743,6 @@ export function ReleaseJODialog({
                                     </div>
                                 </div>
 
-                                {/* Operator Search Input */}
-                                <div className="space-y-1">
-                                    <Input
-                                        value={searchQuery}
-                                        onChange={(e) => setSearchQuery(e.target.value)}
-                                        placeholder="Search operators by name or role..."
-                                        className="h-9 text-xs bg-card border-input text-foreground placeholder:text-muted-foreground rounded-lg focus-visible:ring-primary"
-                                    />
-                                </div>
-
                                 {routings.length === 0 ? (
                                     <p className="text-xs text-muted-foreground py-3 text-center">No routing sequence steps defined.</p>
                                 ) : (
@@ -731,14 +751,6 @@ export function ReleaseJODialog({
                                             const seq = Number(route.sequence_order);
                                             const assigned = assignments[seq] || [];
                                             const stepRunTime = targetQuantity * Number(route.run_time_hours || 0);
-
-                                            // Filter operators dynamically based on search query
-                                            const filteredOperators = operators.filter((op) => {
-                                                const fullName = `${op.user_fname || op.first_name || ""} ${op.user_lname || op.last_name || ""}`.toLowerCase();
-                                                const pos = (op.user_position || op.role || "").toLowerCase();
-                                                const q = searchQuery.toLowerCase();
-                                                return fullName.includes(q) || pos.includes(q);
-                                            });
 
                                             return (
                                                 <div key={`${route.routing_id || "route"}_${index}`} className="border border-border bg-card/20 rounded-xl p-4 space-y-3.5 hover:border-border/60 transition-all duration-300">
@@ -766,55 +778,14 @@ export function ReleaseJODialog({
 
                                                     <div className="space-y-2">
                                                         <div className="flex items-center justify-between text-[9px] font-bold text-muted-foreground uppercase tracking-wider">
-                                                            <span>Select Operators for this Workstation</span>
-                                                            <span>{assigned.length} selected</span>
+                                                            <span>Assign Operators for this Workstation</span>
                                                         </div>
-                                                        <div className="grid grid-cols-2 gap-2 max-h-[160px] overflow-y-auto border border-border/80 bg-background/80 p-2.5 rounded-xl">
-                                                            {filteredOperators.length === 0 ? (
-                                                                <div className="col-span-2 text-center text-xs text-muted-foreground py-4">
-                                                                    No operators match your search.
-                                                                </div>
-                                                            ) : (
-                                                                filteredOperators.map((op) => {
-                                                                    const opId = Number(op.user_id || op.id);
-                                                                    const isAssigned = assigned.includes(opId);
-                                                                    const initials = `${op.user_fname?.[0] || ""}${op.user_lname?.[0] || ""}`.toUpperCase();
-
-                                                                    return (
-                                                                        <div
-                                                                            key={opId}
-                                                                            onClick={() => handleToggleOperator(seq, opId)}
-                                                                            className={`flex items-center gap-3 p-2.5 rounded-xl border cursor-pointer select-none transition-all duration-300 hover:scale-[1.01] ${
-                                                                                isAssigned
-                                                                                    ? "bg-primary/15 border-primary shadow-lg shadow-primary/5 text-primary"
-                                                                                    : "bg-muted/60 border-border text-muted-foreground hover:border-border/80 hover:bg-accent"
-                                                                            }`}
-                                                                        >
-                                                                            <div className={`h-8 w-8 rounded-full flex items-center justify-center text-xs font-black shrink-0 ${
-                                                                                isAssigned ? "bg-primary text-white" : "bg-muted text-muted-foreground"
-                                                                            }`}>
-                                                                                {initials || "OP"}
-                                                                            </div>
-
-                                                                            <div className="min-w-0 flex-1">
-                                                                                <div className={`text-xs font-bold truncate ${isAssigned ? "text-foreground" : "text-foreground"}`}>
-                                                                                    {op.user_fname || op.first_name || ""} {op.user_lname || op.last_name || ""}
-                                                                                </div>
-                                                                                <div className="text-[9px] text-muted-foreground truncate mt-0.5">
-                                                                                    {op.user_position || op.role || "Operator"}
-                                                                                </div>
-                                                                            </div>
-
-                                                                            <div className={`h-4.5 w-4.5 rounded-md border flex items-center justify-center transition-all ${
-                                                                                isAssigned ? "bg-primary border-primary text-white" : "border-input bg-background"
-                                                                            }`}>
-                                                                                {isAssigned && <Check className="h-3 w-3 stroke-[3]" />}
-                                                                            </div>
-                                                                        </div>
-                                                                    );
-                                                                })
-                                                            )}
-                                                        </div>
+                                                        <OperatorSelect
+                                                            operators={operators}
+                                                            assignedIds={assigned}
+                                                            onToggleOperator={(opId) => handleToggleOperator(seq, opId)}
+                                                            placeholder="Select operators..."
+                                                        />
                                                     </div>
                                                 </div>
                                             );

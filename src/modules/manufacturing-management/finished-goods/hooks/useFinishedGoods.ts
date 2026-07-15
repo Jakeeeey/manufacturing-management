@@ -74,6 +74,8 @@ export function useFinishedGoods(initialTab: string = "details") {
     const [loadingProducts, setLoadingProducts] = useState(false);
     const [loadingBOM, setLoadingBOM] = useState(false);
     const [savingBOM, setSavingBOM] = useState(false);
+    const [saveProgress, setSaveProgress] = useState(0);
+    const [saveStatus, setSaveStatus] = useState("");
 
     // Catalog search
     const [products, setProducts] = useState<Product[]>([]);
@@ -141,18 +143,37 @@ export function useFinishedGoods(initialTab: string = "details") {
         return products.find(p => p.id === selectedProductId) || products[0];
     }, [products, selectedProductId]);
 
+    // Fetch Forex Rate in a separate, non-blocking useEffect
+    useEffect(() => {
+        async function loadForexRate() {
+            try {
+                const forexRes = await fetch("https://open.er-api.com/v6/latest/USD");
+                if (forexRes.ok) {
+                    const forexData = await forexRes.json();
+                    const liveRate = forexData.rates?.PHP;
+                    if (liveRate) {
+                        setSimulatedForexRate(parseFloat(liveRate.toFixed(2)));
+                    }
+                }
+            } catch (e) {
+                console.error("Failed to load forex rate:", e);
+            }
+        }
+        loadForexRate();
+    }, []);
+
     // Fetch Metadata and new WorkCenters/QATemplates on Mount
     useEffect(() => {
         async function loadMetadata() {
+            setLoadingProducts(true);
             try {
-                const [bList, cList, uList, prodRes, overheadRes, operationsRes, forexRes, supRes, classesList, segmentsList, sectionsList, wcList, qaList] = await Promise.all([
+                const [bList, cList, uList, prodRes, overheadRes, operationsRes, supRes, classesList, segmentsList, sectionsList, wcList, qaList] = await Promise.all([
                     fetchBrands(),
                     fetchCategories(),
                     fetchUnits(),
                     fetch("/api/manufacturing/finished-goods/products?limit=-1"),
                     fetch("/api/manufacturing/finished-goods/overhead-types"),
                     fetch("/api/manufacturing/finished-goods/operations"),
-                    fetch("https://open.er-api.com/v6/latest/USD").catch(() => null),
                     fetch("/api/manufacturing/procurement/suppliers"),
                     fetchClasses().catch(() => []),
                     fetchSegments().catch(() => []),
@@ -181,85 +202,70 @@ export function useFinishedGoods(initialTab: string = "details") {
                 if (operationsRes.ok) {
                     setOperationTypes(await operationsRes.json());
                 }
-                if (forexRes && forexRes.ok) {
-                    const forexData = await forexRes.json();
-                    const liveRate = forexData.rates?.PHP;
-                    if (liveRate) {
-                        setSimulatedForexRate(parseFloat(liveRate.toFixed(2)));
-                    }
-                }
             } catch (e) {
                 console.error("Failed to load metadata:", e);
                 toast.error("Error loading brand, category, or UOM options");
+            } finally {
+                setLoadingProducts(false);
             }
         }
         loadMetadata();
     }, []);
 
-    // Load Catalog Products when Search Query changes
+    // Filter Products based on Search Query locally (no network requests)
     useEffect(() => {
-        async function loadCatalog() {
-            setLoadingProducts(true);
-            try {
-                const query = new URLSearchParams();
-                if (debouncedSearchQuery) query.append("search", debouncedSearchQuery);
-                query.append("limit", "-1");
+        const searchLower = debouncedSearchQuery.trim().toLowerCase();
+        const finishedGoods = allCatalogProducts.filter((p: BFFCatalogProduct) => Number(p.product_type) === 388);
+        
+        const filtered = searchLower
+            ? finishedGoods.filter((p: BFFCatalogProduct) => 
+                (p.product_name || "").toLowerCase().includes(searchLower) ||
+                (p.product_code || "").toLowerCase().includes(searchLower) ||
+                (p.barcode || "").toLowerCase().includes(searchLower)
+              )
+            : finishedGoods;
 
-                const res = await fetch(`/api/manufacturing/finished-goods/products?${query.toString()}`);
-                if (!res.ok) throw new Error("Failed to fetch products");
-                const data = await res.json();
+        const mapped: Product[] = filtered.map((p: BFFCatalogProduct) => {
+            const parentId = p.parent_id && typeof p.parent_id === "object"
+                ? Number((p.parent_id as any).product_id)
+                : (p.parent_id ? Number(p.parent_id) : null);
+            return {
+                id: String(p.product_id),
+                sku: p.product_code || `SKU-${p.product_id}`,
+                title: p.product_name,
+                description: p.description || "",
+                barcode: p.barcode || "",
+                baseUom: p.unit_of_measurement?.unit_shortcut || "PCS",
+                expectedYieldPercent: 100,
+                targetSellingPrice: Number(p.price_per_unit || 0),
+                parentProduct: parentId === null,
+                parent_id: parentId,
+                bom: [],
+                routings: [],
+                densityFactor: p.density_factor ? Number(p.density_factor) : 1.0,
+                product_brand: p.product_brand ? Number(p.product_brand) : undefined,
+                product_category: p.product_category ? Number(p.product_category) : undefined,
+                product_class: p.product_class ? Number(p.product_class) : undefined,
+                product_segment: p.product_segment ? Number(p.product_segment) : undefined,
+                product_section: p.product_section ? Number(p.product_section) : undefined,
+                product_shelf_life: p.product_shelf_life ? Number(p.product_shelf_life) : undefined,
+                cost_per_unit: p.cost_per_unit ? Number(p.cost_per_unit) : undefined,
+                unit_of_measurement_count: p.unit_of_measurement_count ? Number(p.unit_of_measurement_count) : undefined,
+                product_image: p.product_image || undefined,
+                production_capacity_per_hour: p.production_capacity_per_hour ? Number(p.production_capacity_per_hour) : undefined,
+                has_versions: !!p.has_versions
+            };
+        });
 
-                // Map to UI model (only show finished goods which have versions)
-                const finishedGoods = data.filter((p: BFFCatalogProduct) => Number(p.product_type) === 388);
-                const mapped: Product[] = finishedGoods.map((p: BFFCatalogProduct) => {
-                    const parentId = p.parent_id && typeof p.parent_id === "object"
-                        ? Number((p.parent_id as any).product_id)
-                        : (p.parent_id ? Number(p.parent_id) : null);
-                    return {
-                        id: String(p.product_id),
-                        sku: p.product_code || `SKU-${p.product_id}`,
-                        title: p.product_name,
-                        description: p.description || "",
-                        barcode: p.barcode || "",
-                        baseUom: p.unit_of_measurement?.unit_shortcut || "PCS",
-                        expectedYieldPercent: 100,
-                        targetSellingPrice: Number(p.price_per_unit || 0),
-                        parentProduct: parentId === null,
-                        parent_id: parentId,
-                        bom: [],
-                        routings: [],
-                        densityFactor: p.density_factor ? Number(p.density_factor) : 1.0,
-                        product_brand: p.product_brand ? Number(p.product_brand) : undefined,
-                        product_category: p.product_category ? Number(p.product_category) : undefined,
-                        product_class: p.product_class ? Number(p.product_class) : undefined,
-                        product_segment: p.product_segment ? Number(p.product_segment) : undefined,
-                        product_section: p.product_section ? Number(p.product_section) : undefined,
-                        product_shelf_life: p.product_shelf_life ? Number(p.product_shelf_life) : undefined,
-                        cost_per_unit: p.cost_per_unit ? Number(p.cost_per_unit) : undefined,
-                        unit_of_measurement_count: p.unit_of_measurement_count ? Number(p.unit_of_measurement_count) : undefined,
-                        product_image: p.product_image || undefined,
-                        production_capacity_per_hour: p.production_capacity_per_hour ? Number(p.production_capacity_per_hour) : undefined,
-                        has_versions: !!p.has_versions
-                    };
-                });
+        setProducts(mapped);
 
-                setProducts(mapped);
-
-                if (mapped.length > 0) {
-                    setSelectedProductId(prev => {
-                        const exists = mapped.some((p: Product) => p.id === prev);
-                        return exists ? prev : mapped[0].id;
-                    });
-                }
-            } catch (e) {
-                console.error("Failed loading products catalog:", e);
-                toast.error("Failed to fetch product catalog");
-            } finally {
-                setLoadingProducts(false);
-            }
+        if (mapped.length > 0) {
+            setSelectedProductId(prev => {
+                const exists = mapped.some((p: Product) => p.id === prev);
+                return exists ? prev : mapped[0].id;
+            });
         }
-        loadCatalog();
-    }, [debouncedSearchQuery]);
+    }, [debouncedSearchQuery, allCatalogProducts]);
 
     // Load Versions when Selected Product changes
     useEffect(() => {
@@ -293,32 +299,36 @@ export function useFinishedGoods(initialTab: string = "details") {
         loadVersions();
     }, [selectedProductId]);
 
-    // Load dynamic cost for each version when versions list changes
+    // Load dynamic cost for currently selected version when selectedVersionId or debouncedForexRate changes
     useEffect(() => {
-        if (versions.length === 0 || !selectedProductId) return;
+        if (!selectedVersionId || !selectedProductId) return;
         const numericId = Number(selectedProductId);
+        const vId = selectedVersionId as number;
 
-        async function loadAllVersionCosts() {
-            const costs: Record<number, number> = {};
-            Promise.all(versions.map(async (v) => {
-                try {
-                    const vId = v.version_id;
-                    const res = await fetch(`/api/manufacturing/finished-goods/bom-cost?productId=${numericId}&versionId=${vId}&forexRate=${debouncedForexRate}`);
-                    if (res.ok) {
-                        const costData = await res.json();
-                        costs[vId] = costData.cost;
-                    } else {
-                        costs[vId] = 0;
-                    }
-                } catch {
-                    costs[v.version_id] = 0;
+        async function loadSelectedVersionCost() {
+            try {
+                const res = await fetch(`/api/manufacturing/finished-goods/bom-cost?productId=${numericId}&versionId=${vId}&forexRate=${debouncedForexRate}`);
+                if (res.ok) {
+                    const costData = await res.json();
+                    setVersionCosts(prev => ({
+                        ...prev,
+                        [vId]: costData.cost
+                    }));
+                } else {
+                    setVersionCosts(prev => ({
+                        ...prev,
+                        [vId]: 0
+                    }));
                 }
-            })).then(() => {
-                setVersionCosts(prev => ({ ...prev, ...costs }));
-            });
+            } catch {
+                setVersionCosts(prev => ({
+                    ...prev,
+                    [vId]: 0
+                }));
+            }
         }
-        loadAllVersionCosts();
-    }, [versions, selectedProductId, debouncedForexRate]);
+        loadSelectedVersionCost();
+    }, [selectedVersionId, selectedProductId, debouncedForexRate]);
 
     // Load BOM & Routings when Selected Version or simulatedForexRate changes
     useEffect(() => {
@@ -445,7 +455,7 @@ export function useFinishedGoods(initialTab: string = "details") {
             }
         }
         loadRecipe();
-    }, [selectedVersionId, selectedProductId, selectedProduct, simulatedForexRate, debouncedForexRate, versions]);
+    }, [selectedVersionId, selectedProductId, selectedProduct, simulatedForexRate, debouncedForexRate, versions, units, allCatalogProducts]);
 
     // Handlers
     const handleRegisterProduct = async (e: React.FormEvent) => {
@@ -498,6 +508,26 @@ export function useFinishedGoods(initialTab: string = "details") {
         }
 
         setSavingBOM(true);
+        setSaveProgress(10);
+        setSaveStatus("Validating submission parameters...");
+        
+        let progress = 10;
+        const interval = setInterval(() => {
+            if (progress < 90) {
+                if (progress < 30) {
+                    progress += 5;
+                    setSaveStatus("Creating new product SKU entry...");
+                } else if (progress < 60) {
+                    progress += 3;
+                    setSaveStatus("Registering initial version (v1.0)...");
+                } else {
+                    progress += 2;
+                    setSaveStatus("Linking associated supplier catalog...");
+                }
+                setSaveProgress(Math.min(progress, 90));
+            }
+        }, 150);
+
         try {
             const matchedUnit = units.find(u => u.unit_shortcut === registerForm.baseUom);
             const unitId = matchedUnit ? matchedUnit.unit_id : (units[0]?.unit_id || 1);
@@ -540,6 +570,11 @@ export function useFinishedGoods(initialTab: string = "details") {
             );
 
             if (res.success && res.productId) {
+                clearInterval(interval);
+                setSaveProgress(100);
+                setSaveStatus("Product registered successfully!");
+                await new Promise(resolve => setTimeout(resolve, 650));
+
                 toast.success(`Successfully registered "${registerForm.title}"!`);
                 setIsRegisterModalOpen(false);
 
@@ -574,10 +609,10 @@ export function useFinishedGoods(initialTab: string = "details") {
                 setAllCatalogProducts(dataList);
                 const finishedGoods = dataList.filter((p: BFFCatalogProduct) => Number(p.product_type) === 388);
                 const list: Product[] = finishedGoods.map((p: BFFCatalogProduct) => {
-                    const parentId = p.parent_id && typeof p.parent_id === "object"
-                        ? Number((p.parent_id as any).product_id)
-                        : (p.parent_id ? Number(p.parent_id) : null);
-                    return {
+                     const parentId = p.parent_id && typeof p.parent_id === "object"
+                          ? Number((p.parent_id as any).product_id)
+                          : (p.parent_id ? Number(p.parent_id) : null);
+                      return {
                         id: String(p.product_id),
                         sku: p.product_code || `SKU-${p.product_id}`,
                         title: p.product_name,
@@ -602,7 +637,7 @@ export function useFinishedGoods(initialTab: string = "details") {
                         product_image: p.product_image || undefined,
                         production_capacity_per_hour: p.production_capacity_per_hour ? Number(p.production_capacity_per_hour) : undefined,
                         has_versions: !!p.has_versions
-                    };
+                      };
                 });
                 setProducts(list);
 
@@ -619,10 +654,14 @@ export function useFinishedGoods(initialTab: string = "details") {
                 setActiveTab("bom");
             }
         } catch (err) {
+            clearInterval(interval);
+            setSaveProgress(0);
+            setSaveStatus("");
             console.error("Product registration error:", err);
             const error = err instanceof Error ? err : new Error(String(err));
             toast.error(error.message || "Failed to register product");
         } finally {
+            clearInterval(interval);
             setSavingBOM(false);
         }
     };
@@ -640,6 +679,23 @@ export function useFinishedGoods(initialTab: string = "details") {
         }
 
         setSavingBOM(true);
+        setSaveProgress(10);
+        setSaveStatus("Cloning base version template...");
+        
+        let progress = 10;
+        const interval = setInterval(() => {
+            if (progress < 90) {
+                if (progress < 40) {
+                    progress += 5;
+                    setSaveStatus("Creating new version record...");
+                } else {
+                    progress += 3;
+                    setSaveStatus("Copying operations and ingredients BOM...");
+                }
+                setSaveProgress(Math.min(progress, 90));
+            }
+        }, 150);
+
         try {
             const baseVerId = form.baseVersionId ? Number(form.baseVersionId) : null;
             const res = await registerNewVersion(
@@ -652,6 +708,11 @@ export function useFinishedGoods(initialTab: string = "details") {
             );
 
             if (res.success && res.version) {
+                clearInterval(interval);
+                setSaveProgress(100);
+                setSaveStatus("Version created successfully!");
+                await new Promise(resolve => setTimeout(resolve, 650));
+
                 toast.success(`Successfully registered version "${form.versionName}"!`);
                 const list = await fetchVersions(numericId);
                 setVersions(list);
@@ -659,10 +720,14 @@ export function useFinishedGoods(initialTab: string = "details") {
                 setIsVersionModalOpen(false);
             }
         } catch (e) {
+            clearInterval(interval);
+            setSaveProgress(0);
+            setSaveStatus("");
             console.error("Version registration error:", e);
             const error = e instanceof Error ? e : new Error(String(e));
             toast.error(error.message || "Failed to register new version");
         } finally {
+            clearInterval(interval);
             setSavingBOM(false);
         }
     };
@@ -675,7 +740,33 @@ export function useFinishedGoods(initialTab: string = "details") {
         }
 
         setSavingBOM(true);
+        setSaveProgress(5);
+        setSaveStatus("Updating product details...");
+        
+        let progress = 5;
+        const interval = setInterval(() => {
+            if (progress < 90) {
+                if (progress < 25) {
+                    progress += 4;
+                    setSaveStatus("Saving product details...");
+                } else if (progress < 50) {
+                    progress += 3;
+                    setSaveStatus("Synchronizing operation routing stages...");
+                } else if (progress < 75) {
+                    progress += 2;
+                    setSaveStatus("Recalculating material cost rollups (COGS)...");
+                } else {
+                    progress += 1;
+                    setSaveStatus("Updating database standard costs...");
+                }
+                setSaveProgress(Math.min(progress, 90));
+            }
+        }, 200);
+
         try {
+            const matchedUnit = units.find(u => u.unit_shortcut === editedDetails.baseUom);
+            const uomIdVal = matchedUnit ? matchedUnit.unit_id : null;
+
             const detailsPayload = {
                 version_name: editedVersionDetails.version_name || "",
                 base_quantity: Number(editedVersionDetails.base_quantity || 1),
@@ -702,7 +793,8 @@ export function useFinishedGoods(initialTab: string = "details") {
                 productShelfLife: editedDetails.product_shelf_life,
                 productImage: editedDetails.product_image,
                 parent_id: editedDetails.parent_id !== undefined ? (editedDetails.parent_id ? Number(editedDetails.parent_id) : null) : null,
-                productionCapacityPerHour: editedDetails.production_capacity_per_hour
+                productionCapacityPerHour: editedDetails.production_capacity_per_hour,
+                unit_of_measurement: uomIdVal
             };
 
             const res = await saveBOMDetails(
@@ -713,6 +805,11 @@ export function useFinishedGoods(initialTab: string = "details") {
             );
 
             if (res.success) {
+                clearInterval(interval);
+                setSaveProgress(100);
+                setSaveStatus("Saved successfully!");
+                await new Promise(resolve => setTimeout(resolve, 650));
+
                 setProducts(prev => prev.map(p => {
                     if (p.id === selectedProductId) {
                         const updatedParentId = editedDetails.parent_id !== undefined ? (editedDetails.parent_id ? Number(editedDetails.parent_id) : null) : p.parent_id;
@@ -742,16 +839,53 @@ export function useFinishedGoods(initialTab: string = "details") {
                     return p;
                 }));
 
+                setAllCatalogProducts(prev => prev.map(p => {
+                    if (String(p.product_id) === selectedProductId) {
+                        const updatedParentId = editedDetails.parent_id !== undefined ? (editedDetails.parent_id ? Number(editedDetails.parent_id) : null) : (p.parent_id && typeof p.parent_id === "object" ? (p.parent_id as any).product_id : p.parent_id);
+                        const updatedUnitOfMeasurement = matchedUnit ? {
+                            unit_id: matchedUnit.unit_id,
+                            unit_name: matchedUnit.unit_name,
+                            unit_shortcut: matchedUnit.unit_shortcut
+                        } : p.unit_of_measurement;
+                        return {
+                            ...p,
+                            product_code: editedDetails.sku || p.product_code,
+                            product_name: editedDetails.title || p.product_name,
+                            description: editedDetails.description || p.description,
+                            barcode: editedDetails.barcode || p.barcode,
+                            price_per_unit: editedDetails.targetSellingPrice || p.price_per_unit,
+                            density_factor: editedDetails.densityFactor || p.density_factor,
+                            product_brand: editedDetails.product_brand,
+                            product_category: editedDetails.product_category,
+                            product_class: editedDetails.product_class,
+                            product_segment: editedDetails.product_segment,
+                            product_section: editedDetails.product_section,
+                            product_shelf_life: editedDetails.product_shelf_life,
+                            cost_per_unit: editedDetails.cost_per_unit,
+                            unit_of_measurement_count: editedDetails.unit_of_measurement_count,
+                            product_image: editedDetails.product_image,
+                            parent_id: updatedParentId,
+                            production_capacity_per_hour: editedDetails.production_capacity_per_hour !== undefined ? editedDetails.production_capacity_per_hour : p.production_capacity_per_hour,
+                            unit_of_measurement: updatedUnitOfMeasurement
+                        };
+                    }
+                    return p;
+                }));
+
                 const vList = await fetchVersions(numericProductId);
                 setVersions(vList);
                 setHasUnsavedChanges(false);
                 toast.success("Finished good configuration saved successfully!");
             }
         } catch (err) {
+            clearInterval(interval);
+            setSaveProgress(0);
+            setSaveStatus("");
             console.error("Save error:", err);
             const error = err instanceof Error ? err : new Error(String(err));
             toast.error(error.message || "Error saving configuration");
         } finally {
+            clearInterval(interval);
             setSavingBOM(false);
         }
     };
@@ -760,18 +894,39 @@ export function useFinishedGoods(initialTab: string = "details") {
         if (!selectedProductId) return;
         const numericProductId = Number(selectedProductId);
         setSavingBOM(true);
+        setSaveProgress(10);
+        setSaveStatus(deactivateAll ? "Deactivating product versions..." : "Activating selected version...");
+        
+        let progress = 10;
+        const interval = setInterval(() => {
+            if (progress < 90) {
+                progress += 5;
+                setSaveStatus(deactivateAll ? "Updating status records..." : "Setting version active status...");
+                setSaveProgress(Math.min(progress, 90));
+            }
+        }, 120);
+
         try {
             const res = await activateVersion(numericProductId, bomId, deactivateAll);
             if (res.success) {
+                clearInterval(interval);
+                setSaveProgress(100);
+                setSaveStatus("Status updated successfully!");
+                await new Promise(resolve => setTimeout(resolve, 650));
+
                 toast.success(deactivateAll ? "All versions deactivated successfully!" : "BOM version activated successfully!");
                 const list = await fetchVersions(numericProductId);
                 setVersions(list);
             }
         } catch (e) {
+            clearInterval(interval);
+            setSaveProgress(0);
+            setSaveStatus("");
             console.error("Failed to update version status:", e);
             const error = e instanceof Error ? e : new Error(String(e));
             toast.error(error.message || "Failed to update version status");
         } finally {
+            clearInterval(interval);
             setSavingBOM(false);
         }
     };
@@ -935,6 +1090,8 @@ export function useFinishedGoods(initialTab: string = "details") {
         loadingProducts,
         loadingBOM,
         savingBOM,
+        saveProgress,
+        saveStatus,
         products,
         setProducts,
         allCatalogProducts,

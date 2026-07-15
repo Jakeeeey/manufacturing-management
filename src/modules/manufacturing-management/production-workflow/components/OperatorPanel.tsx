@@ -17,7 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { RoutingTask, JobOrder, User as UserType, RouteOperatorRecord } from "../types";
-import { SearchableSelect } from "@/components/ui/searchable-select";
+import { SearchableSelect } from "../../planning-engineering/components/SearchableSelect";
 import { toast } from "sonner";
 
 interface OperatorPanelProps {
@@ -227,16 +227,36 @@ export default function OperatorPanel({
     return (
         <Card className="border border-border bg-card shadow-sm rounded-xl overflow-hidden">
             {/* Header */}
-            <CardHeader className="p-4 border-b border-border/40 bg-muted/5">
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+            <CardHeader className="p-3 sm:p-4 border-b border-border/40 bg-muted/5">
+                <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3">
                     <div>
                         <span className="text-[10px] font-bold text-primary uppercase tracking-widest block font-mono">
                             Workstation Step {selectedTask.sequence_order}0
                         </span>
-                        <CardTitle className="text-lg font-extrabold text-foreground mt-0.5">
+                        <CardTitle className="text-base sm:text-lg font-extrabold text-foreground mt-0.5">
                             {selectedTask.name}
                         </CardTitle>
                     </div>
+
+                    {/* Inline Stats strip */}
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] font-medium text-muted-foreground bg-background/50 border border-border/60 px-3 py-1.5 rounded-full shadow-sm">
+                        <div>
+                            Planned: <strong className="text-foreground font-mono">{(Number(selectedTask.planned_setup_hours || 0) + Number(selectedTask.planned_run_hours || 0)).toFixed(1)}h</strong>
+                        </div>
+                        <div className="border-r border-border h-3 hidden sm:block" />
+                        <div>
+                            Actual: <strong className="text-foreground font-mono">{taskSummary.total_hours.toFixed(1)}h</strong>
+                        </div>
+                        <div className="border-r border-border h-3 hidden sm:block" />
+                        <div>
+                            Est Labor: <strong className="text-foreground font-mono">₱{Number(selectedTask.estimated_labor_cost || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}</strong>
+                        </div>
+                        <div className="border-r border-border h-3 hidden sm:block" />
+                        <div>
+                            Act Labor: <strong className="text-foreground font-mono">₱{taskSummary.total_labor_cost.toLocaleString(undefined, { maximumFractionDigits: 0 })}</strong>
+                        </div>
+                    </div>
+
                     <div className="flex items-center gap-2 shrink-0">
                         {selectedTask.requires_qa === 1 && (
                             <Badge variant="outline" className="text-[9px] py-0 px-1 text-amber-600 border-amber-500/20 bg-amber-500/5 font-semibold">
@@ -252,58 +272,27 @@ export default function OperatorPanel({
                 </div>
             </CardHeader>
 
-            <CardContent className="p-4 space-y-4">
-                {/* 1. Required Raw Materials Section & planned/actual stats */}
-                <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
-                    {/* Raw Materials allocated to step */}
-                    <div className="md:col-span-8 p-3 bg-muted/20 border border-border/50 rounded-xl space-y-2">
+            <CardContent className="p-3 sm:p-4 space-y-4">
+                {/* 1. Required Raw Materials Section */}
+                {selectedTask.bom_items && selectedTask.bom_items.length > 0 && (
+                    <div className="p-3 bg-muted/10 border border-border/50 rounded-xl space-y-2">
                         <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block font-mono">
                             Required Raw Materials
                         </span>
-                        {selectedTask.bom_items && selectedTask.bom_items.length > 0 ? (
-                            <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                                {selectedTask.bom_items.map((item: any, idx: number) => (
-                                    <li key={`${item.product_id}_${idx}`} className="flex flex-wrap items-center gap-1 text-muted-foreground pl-2 border-l border-primary/20 relative py-0.5">
-                                        <span className="font-semibold text-foreground truncate max-w-[130px]" title={item.product_name}>{item.product_name}</span>
-                                        <span className="font-bold text-emerald-600 dark:text-emerald-400 font-mono">
-                                            {item.total_needed.toLocaleString(undefined, { maximumFractionDigits: 1 })} {item.unit_shortcut}
-                                        </span>
-                                    </li>
-                                ))}
-                            </ul>
-                        ) : (
-                            <p className="text-[10px] text-muted-foreground italic">No raw materials allocated to this step.</p>
-                        )}
-                    </div>
-
-                    {/* Step Metrics Stats */}
-                    <div className="md:col-span-4 p-3 bg-muted/20 border border-border/50 rounded-xl grid grid-cols-2 gap-2 text-[10px]">
-                        <div>
-                            <span className="text-muted-foreground block font-medium">Planned Hours</span>
-                            <span className="font-bold text-foreground text-xs">
-                                {(Number(selectedTask.planned_setup_hours || 0) + Number(selectedTask.planned_run_hours || 0)).toFixed(1)} hrs
-                            </span>
-                        </div>
-                        <div>
-                            <span className="text-muted-foreground block font-medium">Actual Hours</span>
-                            <span className="font-bold text-foreground text-xs">
-                                {taskSummary.total_hours.toFixed(1)} hrs
-                            </span>
-                        </div>
-                        <div>
-                            <span className="text-muted-foreground block font-medium">Est Labor Cost</span>
-                            <span className="font-bold text-foreground text-xs">
-                                ₱{Number(selectedTask.estimated_labor_cost || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                            </span>
-                        </div>
-                        <div>
-                            <span className="text-muted-foreground block font-medium">Act Labor Cost</span>
-                            <span className="font-bold text-foreground text-xs">
-                                ₱{taskSummary.total_labor_cost.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                            </span>
+                        <div className="flex flex-wrap gap-2 text-xs">
+                            {selectedTask.bom_items.map((item: any, idx: number) => (
+                                <div key={`${item.product_id}_${idx}`} className="flex items-center gap-1.5 px-2.5 py-1 bg-background border border-border rounded-lg shadow-sm">
+                                    <span className="font-semibold text-foreground text-[11px] truncate max-w-[150px]" title={item.product_name}>
+                                        {item.product_name}
+                                    </span>
+                                    <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/5 px-1.5 py-0.5 rounded border border-emerald-500/10 text-[10px]">
+                                        {item.total_needed.toLocaleString(undefined, { maximumFractionDigits: 1 })} {item.unit_shortcut}
+                                    </span>
+                                </div>
+                            ))}
                         </div>
                     </div>
-                </div>
+                )}
 
                 {/* 2. Operators Assignment & Management Section */}
                 <div className="space-y-3">
@@ -358,134 +347,137 @@ export default function OperatorPanel({
                         </div>
                     )}
 
-                    {/* Compact operator check-in list table */}
+                    {/* Compact operator check-in list cards */}
                     {groupedOperators.length === 0 ? (
                         <div className="p-3 bg-muted/10 rounded-lg text-muted-foreground text-center italic border border-dashed text-xs">
                             No operators currently clocked in or logged to this step.
                         </div>
                     ) : (
-                        <div className="border border-border/60 rounded-xl overflow-hidden bg-background">
-                            <table className="w-full text-left text-xs border-collapse">
-                                <thead>
-                                    <tr className="bg-muted/50 border-b border-border/40 text-muted-foreground text-[10px] uppercase font-bold font-mono">
-                                        <th className="p-2 pl-3">Personnel</th>
-                                        <th className="p-2">Shift Timer</th>
-                                        <th className="p-2 text-right">Hours Logged</th>
-                                        <th className="p-2 pr-3 text-right">Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {groupedOperators.map((gop) => {
-                                        const isTimerActive = gop.is_running && gop.active_session;
-                                        const isEditingHours = localActiveManualUserId === gop.user_id;
+                        <div className="space-y-1.5 max-h-[220px] overflow-y-auto pr-1">
+                            {groupedOperators.map((gop) => {
+                                const isTimerActive = gop.is_running && gop.active_session;
+                                const isEditingHours = localActiveManualUserId === gop.user_id;
 
-                                        return (
-                                            <tr key={gop.user_id} className="border-b border-border/30 last:border-none hover:bg-muted/20 transition-colors">
-                                                <td className="p-2 pl-3">
-                                                    <div className="font-bold text-foreground">{getUserLabel(gop.user_id)}</div>
-                                                    <div className="text-[10px] text-muted-foreground">{gop.user_position || "Operator"}</div>
-                                                </td>
-                                                <td className="p-2">
-                                                    {isTimerActive ? (
-                                                        <RunningTimer startedAt={gop.active_session.started_at} />
-                                                    ) : (
-                                                        <span className="text-[10px] text-muted-foreground font-mono bg-muted/40 px-1.5 py-0.5 rounded border border-border/30">
-                                                            Clocked Out
-                                                        </span>
-                                                    )}
-                                                </td>
-                                                <td className="p-2 text-right font-bold font-mono">
-                                                    {isEditingHours ? (
-                                                        <div className="inline-flex items-center gap-1.5 justify-end">
-                                                            <Input
-                                                                type="number"
-                                                                value={localManualHours}
-                                                                onChange={(e) => setLocalManualHours(e.target.value)}
-                                                                className="h-6 w-14 text-right px-1 font-mono text-xs focus-visible:ring-primary"
-                                                                step="0.1"
-                                                            />
-                                                            <span className="text-[10px] text-muted-foreground">hrs</span>
-                                                        </div>
-                                                    ) : (
-                                                        <span>{gop.total_logged_hours.toFixed(2)} hrs</span>
-                                                    )}
-                                                </td>
-                                                <td className="p-2 pr-3">
-                                                    {isEditingHours ? (
-                                                        <div className="flex gap-1 justify-end">
-                                                            <Button
-                                                                variant="default"
-                                                                size="xs"
-                                                                className="h-6 w-11 text-[10px] font-semibold px-0 bg-emerald-600 hover:bg-emerald-700"
-                                                                onClick={() => {
-                                                                    handleSaveManualHours(selectedTask.id, gop.user_id, localManualHours);
-                                                                    setLocalActiveManualUserId(null);
-                                                                    setLocalManualHours("");
-                                                                }}
-                                                            >
-                                                                Save
-                                                            </Button>
-                                                            <Button
-                                                                variant="outline"
-                                                                size="xs"
-                                                                className="h-6 w-11 text-[10px] font-semibold px-0"
-                                                                onClick={() => {
-                                                                    setLocalActiveManualUserId(null);
-                                                                    setLocalManualHours("");
-                                                                }}
-                                                            >
-                                                                Cancel
-                                                            </Button>
-                                                        </div>
-                                                    ) : (
-                                                        <div className="flex gap-1.5 justify-end">
-                                                            {isTimerActive ? (
-                                                                <Button
-                                                                    variant="outline"
-                                                                    size="xs"
-                                                                    className="h-7 text-amber-700 border-amber-300 hover:bg-amber-50 dark:text-amber-400 dark:border-amber-900/50 dark:hover:bg-amber-950/40 px-2 py-0"
-                                                                    onClick={() => handleStopTimer(selectedTask.id, gop.user_id)}
-                                                                >
-                                                                    <Square className="mr-1 h-3 w-3 fill-current" /> Out
-                                                                </Button>
-                                                            ) : (
-                                                                <Button
-                                                                    variant="outline"
-                                                                    size="xs"
-                                                                    className="h-7 text-emerald-700 border-emerald-300 hover:bg-emerald-50 dark:text-emerald-400 dark:border-emerald-900/50 dark:hover:bg-emerald-950/40 px-2 py-0"
-                                                                    onClick={() => handleStartTimer(selectedTask.id, gop.user_id)}
-                                                                >
-                                                                    <Play className="mr-1 h-3 w-3 fill-current" /> In
-                                                                </Button>
-                                                            )}
+                                return (
+                                    <div key={gop.user_id} className="flex flex-col sm:flex-row sm:items-center justify-between p-2 sm:p-2.5 bg-background border border-border/60 rounded-xl hover:bg-muted/10 transition-colors gap-2">
+                                        <div className="flex items-center gap-2.5 min-w-0">
+                                            <div className="p-1.5 bg-primary/5 rounded-lg text-primary shrink-0">
+                                                <User className="h-4 w-4" />
+                                            </div>
+                                            <div className="min-w-0">
+                                                <span className="font-bold text-foreground block text-xs truncate">
+                                                    {getUserLabel(gop.user_id)}
+                                                </span>
+                                                <span className="text-[10px] text-muted-foreground block truncate">
+                                                    {gop.user_position || "Operator"}
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex items-center justify-between sm:justify-end gap-4 flex-1">
+                                            <div className="flex items-center gap-2 shrink-0">
+                                                {isTimerActive ? (
+                                                    <RunningTimer startedAt={gop.active_session.started_at} />
+                                                ) : (
+                                                    <span className="text-[9px] text-muted-foreground font-semibold px-1.5 py-0.5 rounded bg-muted/40 border border-border/30">
+                                                        Clocked Out
+                                                    </span>
+                                                )}
+                                                
+                                                {isEditingHours ? (
+                                                    <div className="flex items-center gap-1.5">
+                                                        <Input
+                                                            type="number"
+                                                            value={localManualHours}
+                                                            onChange={(e) => setLocalManualHours(e.target.value)}
+                                                            className="h-6 w-14 text-right px-1 font-mono text-[11px] focus-visible:ring-primary"
+                                                            step="0.1"
+                                                        />
+                                                        <span className="text-[9px] text-muted-foreground">hrs</span>
+                                                    </div>
+                                                ) : (
+                                                    <span className="font-mono font-bold text-foreground text-xs">
+                                                        {gop.total_logged_hours.toFixed(1)} hrs
+                                                    </span>
+                                                )}
+                                            </div>
+
+                                            <div className="flex items-center gap-1">
+                                                {isEditingHours ? (
+                                                    <>
+                                                        <Button
+                                                            variant="default"
+                                                            size="xs"
+                                                            className="h-6.5 text-[10px] font-semibold px-2 bg-emerald-600 hover:bg-emerald-700 text-white"
+                                                            onClick={() => {
+                                                                handleSaveManualHours(selectedTask.id, gop.user_id, localManualHours);
+                                                                setLocalActiveManualUserId(null);
+                                                                setLocalManualHours("");
+                                                            }}
+                                                        >
+                                                            Save
+                                                        </Button>
+                                                        <Button
+                                                            variant="outline"
+                                                            size="xs"
+                                                            className="h-6.5 text-[10px] font-semibold px-2"
+                                                            onClick={() => {
+                                                                setLocalActiveManualUserId(null);
+                                                                setLocalManualHours("");
+                                                            }}
+                                                        >
+                                                            Cancel
+                                                        </Button>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        {isTimerActive ? (
                                                             <Button
                                                                 variant="outline"
                                                                 size="xs"
-                                                                className="h-7 px-1.5 py-0"
-                                                                onClick={() => {
-                                                                    setLocalActiveManualUserId(gop.user_id);
-                                                                    setLocalManualHours(String(gop.total_logged_hours || 0));
-                                                                }}
-                                                                title="Manually log hours"
+                                                                className="h-6.5 text-amber-700 border-amber-300 hover:bg-amber-50 dark:text-amber-400 dark:border-amber-900/50 dark:hover:bg-amber-950/40 px-2 text-[10px] font-medium"
+                                                                onClick={() => handleStopTimer(selectedTask.id, gop.user_id)}
                                                             >
-                                                                <Clock className="h-3.5 w-3.5" />
+                                                                <Square className="mr-1 h-3 w-3 fill-current" /> Stop
                                                             </Button>
+                                                        ) : (
                                                             <Button
-                                                                variant="ghost"
+                                                                variant="outline"
                                                                 size="xs"
-                                                                className="h-7 text-destructive hover:bg-destructive/10 px-1.5"
-                                                                onClick={() => handleRemoveOperator(selectedTask.id, gop.user_id)}
+                                                                className="h-6.5 text-emerald-700 border-emerald-300 hover:bg-emerald-50 dark:text-emerald-400 dark:border-emerald-900/50 dark:hover:bg-emerald-950/40 px-2 text-[10px] font-medium"
+                                                                onClick={() => handleStartTimer(selectedTask.id, gop.user_id)}
                                                             >
-                                                                <Trash className="h-3.5 w-3.5" />
+                                                                <Play className="mr-1 h-3 w-3 fill-current" /> Run
                                                             </Button>
-                                                        </div>
-                                                    )}
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
+                                                        )}
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="xs"
+                                                            className="h-6.5 text-muted-foreground hover:text-foreground px-1.5"
+                                                            onClick={() => {
+                                                                setLocalActiveManualUserId(gop.user_id);
+                                                                setLocalManualHours(gop.total_logged_hours.toString());
+                                                            }}
+                                                            title="Edit hours manually"
+                                                        >
+                                                            Manual
+                                                        </Button>
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="xs"
+                                                            className="h-6.5 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 px-1.5"
+                                                            onClick={() => handleRemoveOperator(selectedTask.id, gop.user_id)}
+                                                            title="Remove operator assignment"
+                                                        >
+                                                            <Trash className="h-3.5 w-3.5" />
+                                                        </Button>
+                                                    </>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
                         </div>
                     )}
                 </div>

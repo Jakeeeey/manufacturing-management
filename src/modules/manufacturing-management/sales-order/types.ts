@@ -17,6 +17,7 @@ export interface SalesOrder {
     payment_term_name?: string;
     payment_term_days?: number;
     salesman_id?: number;
+    branch_id?: number;
 }
 
 export interface SalesOrderDetail {

@@ -24,6 +24,36 @@ if (DIRECTUS_STATIC_TOKEN) {
     headers["Authorization"] = `Bearer ${DIRECTUS_STATIC_TOKEN}`;
 }
 
+function getPacificTimeISOString() {
+    const now = new Date();
+    const formatter = new Intl.DateTimeFormat("en-US", {
+        timeZone: "America/Los_Angeles",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false
+    });
+    
+    const parts = formatter.formatToParts(now);
+    const partMap = Object.fromEntries(parts.map(p => [p.type, p.value]));
+    
+    const tzString = now.toLocaleString("en-US", { timeZone: "America/Los_Angeles" });
+    const localDate = new Date(tzString);
+    const utcString = now.toLocaleString("en-US", { timeZone: "UTC" });
+    const utcDate = new Date(utcString);
+    const diff = Math.round((localDate.getTime() - utcDate.getTime()) / 60000);
+    const sign = diff >= 0 ? "+" : "-";
+    const absDiff = Math.abs(diff);
+    const hours = String(Math.floor(absDiff / 60)).padStart(2, "0");
+    const minutes = String(absDiff % 60).padStart(2, "0");
+    
+    const ms = String(now.getMilliseconds()).padStart(3, "0");
+    return `${partMap.year}-${partMap.month}-${partMap.day}T${partMap.hour}:${partMap.minute}:${partMap.second}.${ms}${sign}${hours}:${minutes}`;
+}
+
 class ApiError extends Error {
     constructor(public status: number, message: string, public details?: Record<string, unknown>) {
         super(message);
@@ -460,7 +490,8 @@ export async function GET(request: Request) {
                     unit_id: Number(unit?.unit_id) || null,
                     unit_name: unit?.unit_name || "Unit",
                     unit_shortcut: unit?.unit_shortcut || "UNIT",
-                    unit_count: Number(product.unit_of_measurement_count) || 1
+                    unit_count: Number(product.unit_of_measurement_count) || 1,
+                    manufacturing_lead_days: Number(product.manufacturing_lead_days) || 0
                 };
             });
 
@@ -501,7 +532,13 @@ export async function GET(request: Request) {
         const dateFrom = searchParams.get("dateFrom") || "";
         const dateTo = searchParams.get("dateTo") || "";
 
-        const filters = { search, status, customerCode, dateFrom, dateTo };
+        const filters = {
+            search,
+            status: excludeHasJo ? "For Picking" : status,
+            customerCode,
+            dateFrom,
+            dateTo
+        };
         let salesOrders: any[] = [];
         let prefetchedDetails: any[] = [];
         let scheduledDetailIds = new Set<number>();
@@ -543,7 +580,12 @@ export async function GET(request: Request) {
                 }
                 for (const candidate of candidates) {
                     const orderDetails = detailsByOrder.get(Number(candidate.order_id)) || [];
-                    const unscheduled = orderDetails.filter((detail) => !chunkScheduledIds.has(Number(detail.detail_id || detail.id)));
+                    const unscheduled = orderDetails.filter((detail) => {
+                        const isScheduled = chunkScheduledIds.has(Number(detail.detail_id || detail.id));
+                        const ordered = Number(detail.ordered_quantity || 0);
+                        const alloc = Number(detail.allocated_quantity || 0);
+                        return !isScheduled && alloc < ordered;
+                    });
                     if (orderDetails.length === 0 || unscheduled.length > 0) {
                         eligibleOrders.push(candidate);
                         eligibleDetails.push(...unscheduled);
@@ -593,9 +635,16 @@ export async function GET(request: Request) {
             }))).data || [];
         }
         const contextOrders = [...salesOrders, ...selectedOrders];
-        const details = excludeHasJo
+        let details = excludeHasJo
             ? [...prefetchedDetails, ...(missingSelectedIds.length > 0 ? await fetchDetailsForOrders(read, missingSelectedIds) : [])]
             : await fetchDetailsForOrders(read, [...orderIdsToFetch]);
+        if (excludeHasJo) {
+            details = details.filter((detail: any) => {
+                const ordered = Number(detail.ordered_quantity || 0);
+                const alloc = Number(detail.allocated_quantity || 0);
+                return alloc < ordered;
+            });
+        }
         if (excludeHasJo && missingSelectedIds.length > 0) {
             scheduledDetailIds = await findScheduledDetailIds(read, details);
         }
@@ -648,7 +697,7 @@ export async function POST(request: Request) {
             const productIds = directItems.map((item) => item.product_id);
             const productParams = new URLSearchParams({
                 "filter[product_id][_in]": productIds.join(","),
-                fields: "product_id,product_type",
+                fields: "product_id,product_name,product_type",
                 limit: "-1"
             });
             const productRes = await fetch(`${DIRECTUS_URL}/items/products?${productParams.toString()}`, {
@@ -656,8 +705,11 @@ export async function POST(request: Request) {
                 cache: "no-store"
             });
             if (!productRes.ok) throw new ApiError(503, "Unable to validate the selected products.");
+            const productsData = (await productRes.json()).data || [];
+            const productMap = new Map<number, any>(productsData.map((p: any) => [Number(p.product_id), p]));
+
             const validProductIds = new Set(
-                ((await productRes.json()).data || [])
+                productsData
                     .filter((product: any) => Number(product.product_type) === 388)
                     .map((product: any) => Number(product.product_id))
             );
@@ -666,12 +718,36 @@ export async function POST(request: Request) {
                 throw new ApiError(400, `Unknown or non-finished-good product IDs: ${invalidProductIds.join(", ")}`);
             }
 
+            // Customer product version check
+            const actualCustomerId = Number(cust.id);
+            const versionParams = new URLSearchParams({
+                "filter[customer_id][_eq]": String(actualCustomerId),
+                "filter[product_id][_in]": productIds.join(","),
+                fields: "product_id,version_id",
+                limit: "-1"
+            });
+            const versionRes = await fetch(`${DIRECTUS_URL}/items/customer_product_version?${versionParams.toString()}`, { headers, cache: "no-store" });
+            if (!versionRes.ok) throw new ApiError(503, "Unable to check customer product versions.");
+            const versionsData = (await versionRes.json()).data || [];
+            const versionMap = new Map(versionsData.map((v: any) => [Number(v.product_id), Number(v.version_id)]));
+
+            const missingVersionProductNames: string[] = [];
+            for (const productId of productIds) {
+                if (!versionMap.has(productId)) {
+                    const p = productMap.get(productId);
+                    missingVersionProductNames.push(p ? p.product_name : `Product #${productId}`);
+                }
+            }
+            if (missingVersionProductNames.length > 0) {
+                throw new ApiError(400, `Customer product version is not set up for: ${missingVersionProductNames.join(", ")}. Please configure them before ordering.`);
+            }
+
             // 2. Reserve a collision-safe number using the allocator's auto-increment key.
             const allocationRes = await fetch(`${DIRECTUS_URL}/items/sales_order_number_allocations`, {
                 method: "POST",
                 headers,
                 body: JSON.stringify({
-                    created_at: new Date().toISOString(),
+                    created_at: getPacificTimeISOString(),
                     created_by: encoderId
                 })
             });
@@ -708,7 +784,7 @@ export async function POST(request: Request) {
                 discount_amount: discountAmount,
                 net_amount: totalAmount - discountAmount,
                 remarks: remarks || `Directly Created Sales Order.`,
-                created_date: new Date().toISOString(),
+                created_date: getPacificTimeISOString(),
                 created_by: encoderId,
                 delivery_date: deliveryDate || null,
                 due_date: dueDate || null,
@@ -719,6 +795,7 @@ export async function POST(request: Request) {
             };
             const detailPayloads = directItems.map((item) => ({
                 product_id: item.product_id,
+                bom_version_id: versionMap.get(item.product_id),
                 unit_price: item.unit_price,
                 ordered_quantity: item.quantity,
                 allocated_quantity: 0,
@@ -726,7 +803,7 @@ export async function POST(request: Request) {
                 allocated_amount: 0,
                 net_amount: item.unit_price * item.quantity,
                 gross_amount: item.unit_price * item.quantity,
-                created_date: new Date().toISOString()
+                created_date: getPacificTimeISOString()
             }));
             const created = await createSalesOrderWithDetails(salesOrderPayload, detailPayloads);
 
@@ -770,9 +847,44 @@ export async function POST(request: Request) {
         // 3. Fetch customer details
         const custRes = await fetch(`${DIRECTUS_URL}/items/customer/${quote.customer_id}`, { headers, cache: "no-store" });
         let customerCode = "CUST-GEN";
+        let actualQuoteCustomerId = Number(quote.customer_id);
         if (custRes.ok) {
             const cust = (await custRes.json()).data;
             customerCode = cust.customer_code || cust.customer_name || "CUST-GEN";
+            actualQuoteCustomerId = Number(cust.id);
+        }
+
+        // Customer product version check for quotation items
+        const quoteProductIds = quoteItems.map((item: any) => Number(item.product_id));
+        const quoteProductParams = new URLSearchParams({
+            "filter[product_id][_in]": quoteProductIds.join(","),
+            fields: "product_id,product_name",
+            limit: "-1"
+        });
+        const quoteProductRes = await fetch(`${DIRECTUS_URL}/items/products?${quoteProductParams.toString()}`, { headers, cache: "no-store" });
+        const quoteProductsData = quoteProductRes.ok ? (await quoteProductRes.json()).data || [] : [];
+        const quoteProductMap = new Map<number, any>(quoteProductsData.map((p: any) => [Number(p.product_id), p]));
+
+        const quoteVersionParams = new URLSearchParams({
+            "filter[customer_id][_eq]": String(actualQuoteCustomerId),
+            "filter[product_id][_in]": quoteProductIds.join(","),
+            fields: "product_id,version_id",
+            limit: "-1"
+        });
+        const quoteVersionRes = await fetch(`${DIRECTUS_URL}/items/customer_product_version?${quoteVersionParams.toString()}`, { headers, cache: "no-store" });
+        if (!quoteVersionRes.ok) throw new ApiError(503, "Unable to check customer product versions.");
+        const quoteVersionsData = (await quoteVersionRes.json()).data || [];
+        const quoteVersionMap = new Map(quoteVersionsData.map((v: any) => [Number(v.product_id), Number(v.version_id)]));
+
+        const missingQuoteVersionProductNames: string[] = [];
+        for (const productId of quoteProductIds) {
+            if (!quoteVersionMap.has(productId)) {
+                const p = quoteProductMap.get(productId);
+                missingQuoteVersionProductNames.push(p ? p.product_name : `Product #${productId}`);
+            }
+        }
+        if (missingQuoteVersionProductNames.length > 0) {
+            throw new ApiError(400, `Customer product version is not set up for: ${missingQuoteVersionProductNames.join(", ")}. Please configure them before ordering.`);
         }
 
         // 4. Create Sales Order
@@ -800,7 +912,7 @@ export async function POST(request: Request) {
             discount_amount: discountAmount,
             net_amount: quoteTotal - discountAmount,
             remarks: remarks || `Converted 1:1 from Quote ${quote.quote_number}.`,
-            created_date: new Date().toISOString(),
+            created_date: getPacificTimeISOString(),
             created_by: encoderId,
             delivery_date: deliveryDate || null,
             due_date: dueDate || null,
@@ -812,8 +924,10 @@ export async function POST(request: Request) {
         const detailPayloads = quoteItems.map((item: any) => {
             const unitPrice = Number(item.frozen_total_cost_php);
             const quantity = Number(item.quantity);
+            const productId = Number(item.product_id);
             return {
-                product_id: Number(item.product_id),
+                product_id: productId,
+                bom_version_id: quoteVersionMap.get(productId),
                 unit_price: unitPrice,
                 ordered_quantity: quantity,
                 allocated_quantity: 0,
@@ -821,7 +935,7 @@ export async function POST(request: Request) {
                 allocated_amount: 0,
                 net_amount: unitPrice * quantity,
                 gross_amount: unitPrice * quantity,
-                created_date: new Date().toISOString()
+                created_date: getPacificTimeISOString()
             };
         });
         const created = await createSalesOrderWithDetails(salesOrderPayload, detailPayloads);
@@ -891,7 +1005,7 @@ export async function PATCH(request: Request) {
         return await withSalesOrderMutationLock(orderId, async () => {
 
         const headerParams = new URLSearchParams({
-            fields: "order_id,order_status,discount_amount,total_amount,net_amount",
+            fields: "order_id,order_status,discount_amount,total_amount,net_amount,customer_code,remarks",
             limit: "1"
         });
         const orderRes = await fetch(`${DIRECTUS_URL}/items/sales_order/${orderId}?${headerParams.toString()}`, {
@@ -928,17 +1042,21 @@ export async function PATCH(request: Request) {
             const allowedTransitions: Record<string, string[]> = {
                 Draft: ["Pending", "For Approval"],
                 Pending: ["For Approval"],
-                "For Approval": ["Draft", "For Consolidation"]
+                "For Approval": ["Draft", "For Picking"],
+                "For Picking": ["For Invoicing", "Draft"]
             };
             if (!allowedTransitions[currentStatus]?.includes(targetStatus)) {
                 throw new ApiError(409, `Cannot transition sales order from ${currentStatus || "unknown"} to ${targetStatus}.`);
             }
 
             const isApprovalDecision = currentStatus === "For Approval"
-                && (targetStatus === "For Consolidation" || targetStatus === "Draft");
+                && (targetStatus === "For Picking" || targetStatus === "Draft");
             if (isApprovalDecision && !(await canApproveSalesOrders(user))) {
                 throw new ApiError(403, "Sales-order approval access is required for this transition.");
             }
+
+            let creditLimitExceeded = false;
+            let warningString = "";
 
             if (targetStatus === "For Approval") {
                 if (allDetails.length === 0) throw new ApiError(409, "A sales order without details cannot be submitted for approval.");
@@ -951,12 +1069,55 @@ export async function PATCH(request: Request) {
                     return sum + quantity * unitPrice;
                 }, 0);
                 if (discount > total) throw new ApiError(409, "The sales-order discount exceeds its total amount.");
+                const orderNetAmount = total - discount;
+
+                // Credit Limit check
+                try {
+                    const custRes = await fetch(`${DIRECTUS_URL}/items/customer?filter[customer_code][_eq]=${order.customer_code}&fields=id,credit_limit,customer_name`, { headers, cache: "no-store" });
+                    if (custRes.ok) {
+                        const custData = (await custRes.json()).data || [];
+                        if (custData.length > 0) {
+                            const customerRecord = custData[0];
+                            const creditLimit = Number(customerRecord.credit_limit || 0);
+                            if (creditLimit > 0) {
+                                // Fetch outstanding invoices for customer
+                                const invoiceParams = new URLSearchParams({
+                                    "filter[customer_code][_eq]": order.customer_code,
+                                    "filter[payment_status][_neq]": "Paid",
+                                    fields: "net_amount",
+                                    limit: "-1"
+                                });
+                                const invoiceRes = await fetch(`${DIRECTUS_URL}/items/sales_invoice?${invoiceParams.toString()}`, { headers, cache: "no-store" });
+                                const invoices = invoiceRes.ok ? (await invoiceRes.json()).data || [] : [];
+                                const outstandingBalance = invoices.reduce((sum: number, inv: any) => sum + Number(inv.net_amount || 0), 0);
+
+                                if (outstandingBalance + orderNetAmount > creditLimit) {
+                                    creditLimitExceeded = true;
+                                    warningString = `[SYSTEM WARNING: Order of ₱${orderNetAmount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})} exceeds Credit Limit of ₱${creditLimit.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}. Current Outstanding Balance: ₱${outstandingBalance.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}]`;
+                                }
+                            }
+                        }
+                    }
+                } catch (creditError) {
+                    console.error("Error performing credit limit check:", creditError);
+                }
+            }
+
+            const updatePayload: Record<string, any> = { order_status: targetStatus };
+            if (creditLimitExceeded && warningString) {
+                // If warning is not already in the remarks, append it
+                const currentRemarks = order.remarks || "";
+                if (!currentRemarks.includes("[SYSTEM WARNING: Order of")) {
+                    updatePayload.remarks = currentRemarks 
+                        ? `${currentRemarks}\n${warningString}` 
+                        : warningString;
+                }
             }
 
             const updateRes = await fetch(`${DIRECTUS_URL}/items/sales_order/${orderId}`, {
                 method: "PATCH",
                 headers,
-                body: JSON.stringify({ order_status: targetStatus })
+                body: JSON.stringify(updatePayload)
             });
             if (!updateRes.ok) throw new ApiError(503, "Failed to update the sales-order status.");
             return NextResponse.json({ success: true, order_status: targetStatus });
