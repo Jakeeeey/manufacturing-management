@@ -5,8 +5,13 @@ export async function fetchActiveShipments(filters: {
     status?: string;
     startDate?: string;
     endDate?: string;
+    includeReceived?: boolean;
 } = {}, signal?: AbortSignal): Promise<Shipment[]> {
-    const params = new URLSearchParams({ limit: "100" });
+    const params = new URLSearchParams({
+        limit: "100",
+        queue: "receiving",
+        includeReceived: String(Boolean(filters.includeReceived))
+    });
     if (filters.search) params.set("search", filters.search);
     if (filters.status) params.set("status", filters.status);
     if (filters.startDate) params.set("startDate", filters.startDate);

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { toast } from "sonner";
 import { Shipment, Branch, ShipmentLineItem, Product, InspectionRow, StorageLot } from "../types";
 import { 
@@ -9,6 +9,8 @@ import {
     fetchFifoInventory,
     fetchStorageLots
 } from "../services/qa-api";
+
+const receivingQueueStatuses = new Set(["En Route", "Receiving (QA)", "Partially Received", "Received"]);
 
 export function useQAReceiving() {
     const listController = useRef<AbortController | null>(null);
@@ -77,6 +79,25 @@ export function useQAReceiving() {
         });
     }, [shipments, searchPO, searchStatus, startDate, endDate, showReceived]);
 
+    const loadShipments = useCallback(async (filters: { search?: string; status?: string; startDate?: string; endDate?: string; includeReceived?: boolean } = {}) => {
+        listController.current?.abort();
+        const controller = new AbortController();
+        listController.current = controller;
+        setLoadingShipments(true);
+        try {
+            const data = await fetchActiveShipments(filters, controller.signal);
+            setShipments(data || []);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } catch (e: any) {
+            if (e.name !== "AbortError") {
+                console.error(e);
+                toast.error(e.message || "Failed to load active shipments");
+            }
+        } finally {
+            if (!controller.signal.aborted) setLoadingShipments(false);
+        }
+    }, []);
+
     // Load base data
     useEffect(() => {
         loadBranches();
@@ -94,30 +115,20 @@ export function useQAReceiving() {
                 search: searchPO.trim() || undefined,
                 status: searchStatus || undefined,
                 startDate: startDate || undefined,
-                endDate: endDate || undefined
+                endDate: endDate || undefined,
+                includeReceived: showReceived
             });
         }, 250);
         return () => window.clearTimeout(timeout);
-    }, [searchPO, searchStatus, startDate, endDate]);
+    }, [searchPO, searchStatus, startDate, endDate, showReceived, loadShipments]);
 
-    const loadShipments = async (filters: { search?: string; status?: string; startDate?: string; endDate?: string } = {}) => {
-        listController.current?.abort();
-        const controller = new AbortController();
-        listController.current = controller;
-        setLoadingShipments(true);
-        try {
-            const data = await fetchActiveShipments(filters, controller.signal);
-            setShipments(data || []);
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-        } catch (e: any) {
-            if (e.name !== "AbortError") {
-                console.error(e);
-                toast.error(e.message || "Failed to load active shipments");
-            }
-        } finally {
-            if (!controller.signal.aborted) setLoadingShipments(false);
-        }
-    };
+    useEffect(() => {
+        if (!selectedShipment || shipments.some(shipment => shipment.shipment_id === selectedShipment.shipment_id)) return;
+        detailController.current?.abort();
+        setSelectedShipment(null);
+        setLineItems([]);
+        setInspectionRows({});
+    }, [shipments, selectedShipment]);
 
     const loadBranches = async () => {
         setLoadingBranches(true);
@@ -143,6 +154,13 @@ export function useQAReceiving() {
     };
 
     const handleSelectShipment = async (shipment: Shipment) => {
+        if (!receivingQueueStatuses.has(shipment.status)) {
+            toast.error("This purchase order is not eligible for receiving.");
+            setSelectedShipment(null);
+            setLineItems([]);
+            setInspectionRows({});
+            return;
+        }
         detailController.current?.abort();
         const controller = new AbortController();
         detailController.current = controller;
@@ -166,6 +184,11 @@ export function useQAReceiving() {
                     shipment.status = "Receiving (QA)";
                 } catch (err) {
                     console.error("Failed to auto-transition shipment status to Receiving (QA):", err);
+                    toast.error((err as Error).message || "Failed to start receiving inspection.");
+                    setSelectedShipment(null);
+                    setLineItems([]);
+                    setInspectionRows({});
+                    return;
                 }
             }
 
