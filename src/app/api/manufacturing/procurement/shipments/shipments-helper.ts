@@ -1,6 +1,6 @@
 /* eslint-disable */
 import { DIRECTUS_URL, headers } from "../_directus";
-import { canonicalBatchNumber, calculatePurchaseLineAmounts, inventoryStatusToPurchaseOrderStatus, inventoryStatusToShipmentStatus, shipmentStatusToInventoryStatus, type ShipmentStatusLabel } from "../_domain";
+import { canonicalBatchNumber, calculatePurchaseLineAmounts, INVENTORY_STATUS, inventoryStatusToPurchaseOrderStatus, inventoryStatusToShipmentStatus, shipmentStatusToInventoryStatus, type ShipmentStatusLabel } from "../_domain";
 import { DirectusShipment } from "@/modules/manufacturing-management/procurement/types";
 import type { PurchaseOrderListQuery } from "../../purchase-orders/_schemas";
 
@@ -188,7 +188,17 @@ export async function fetchIncomingShipmentsPage(query: PurchaseOrderListQuery) 
             ]
         });
     }
-    if (query.status) {
+    if (query.queue === "receiving" && !query.status) {
+        clauses.push({
+            inventory_status: {
+                _in: [
+                    INVENTORY_STATUS.EN_ROUTE,
+                    INVENTORY_STATUS.PARTIALLY_RECEIVED,
+                    ...(query.includeReceived ? [INVENTORY_STATUS.RECEIVED] : [])
+                ]
+            }
+        });
+    } else if (query.status) {
         clauses.push({ inventory_status: { _eq: shipmentStatusToInventoryStatus(query.status) } });
     }
     if (query.startDate) clauses.push({ date_encoded: { _gte: `${query.startDate}T00:00:00` } });

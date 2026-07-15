@@ -62,6 +62,9 @@ export async function handleQaReceivingPost(request: Request) {
         const receiptsRes = await fetch(`${DIRECTUS_URL}/items/purchase_order_receiving?filter[receipt_no][_in]=${receiptNumbers.join(",")}&fields=purchase_order_product_id,receipt_no&limit=-1`, { headers, cache: "no-store" });
         if (!receiptsRes.ok) throw new Error("Failed to validate previous receiving attempts.");
         const existingReceipts = (await receiptsRes.json()).data || [];
+        if (Number(shipment.inventory_status) === INVENTORY_STATUS.REJECTED) {
+            throw new ReceivingError("Rejected purchase orders cannot continue to receiving.", 409);
+        }
         if (Number(shipment.inventory_status) === INVENTORY_STATUS.RECEIVED && existingReceipts.length === receiptNumbers.length) {
             return NextResponse.json({ success: true, idempotent: true });
         }

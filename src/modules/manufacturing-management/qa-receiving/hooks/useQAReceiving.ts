@@ -10,6 +10,8 @@ import {
     fetchStorageLots
 } from "../services/qa-api";
 
+const receivingQueueStatuses = new Set(["En Route", "Receiving (QA)", "Partially Received", "Received"]);
+
 export function useQAReceiving() {
     const listController = useRef<AbortController | null>(null);
     const detailController = useRef<AbortController | null>(null);
@@ -94,13 +96,14 @@ export function useQAReceiving() {
                 search: searchPO.trim() || undefined,
                 status: searchStatus || undefined,
                 startDate: startDate || undefined,
-                endDate: endDate || undefined
+                endDate: endDate || undefined,
+                includeReceived: showReceived
             });
         }, 250);
         return () => window.clearTimeout(timeout);
-    }, [searchPO, searchStatus, startDate, endDate]);
+    }, [searchPO, searchStatus, startDate, endDate, showReceived]);
 
-    const loadShipments = async (filters: { search?: string; status?: string; startDate?: string; endDate?: string } = {}) => {
+    const loadShipments = async (filters: { search?: string; status?: string; startDate?: string; endDate?: string; includeReceived?: boolean } = {}) => {
         listController.current?.abort();
         const controller = new AbortController();
         listController.current = controller;
@@ -108,6 +111,12 @@ export function useQAReceiving() {
         try {
             const data = await fetchActiveShipments(filters, controller.signal);
             setShipments(data || []);
+            if (selectedShipment && !data.some(shipment => shipment.shipment_id === selectedShipment.shipment_id)) {
+                detailController.current?.abort();
+                setSelectedShipment(null);
+                setLineItems([]);
+                setInspectionRows({});
+            }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
             if (e.name !== "AbortError") {
@@ -143,6 +152,13 @@ export function useQAReceiving() {
     };
 
     const handleSelectShipment = async (shipment: Shipment) => {
+        if (!receivingQueueStatuses.has(shipment.status)) {
+            toast.error("This purchase order is not eligible for receiving.");
+            setSelectedShipment(null);
+            setLineItems([]);
+            setInspectionRows({});
+            return;
+        }
         detailController.current?.abort();
         const controller = new AbortController();
         detailController.current = controller;
@@ -166,6 +182,11 @@ export function useQAReceiving() {
                     shipment.status = "Receiving (QA)";
                 } catch (err) {
                     console.error("Failed to auto-transition shipment status to Receiving (QA):", err);
+                    toast.error((err as Error).message || "Failed to start receiving inspection.");
+                    setSelectedShipment(null);
+                    setLineItems([]);
+                    setInspectionRows({});
+                    return;
                 }
             }
 

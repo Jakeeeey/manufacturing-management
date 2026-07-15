@@ -21,6 +21,10 @@ export const purchaseOrderListStatusSchema = z.enum([
     "Receiving (QA)", "Partially Received", "Received", "Rejected"
 ]);
 
+const receivingQueueStatusSchema = z.enum([
+    "En Route", "Receiving (QA)", "Partially Received", "Received"
+]);
+
 export const purchaseOrderLineSchema = z.object({
     product_id: positiveId,
     quantity_ordered: z.coerce.number().finite().positive(),
@@ -124,10 +128,20 @@ export const purchaseOrderListQuerySchema = z.object({
     limit: z.coerce.number().int().min(1).max(100).default(25),
     search: z.string().trim().max(100).default(""),
     status: purchaseOrderListStatusSchema.optional(),
+    queue: z.enum(["receiving"]).optional(),
+    includeReceived: z.enum(["true", "false"]).default("false").transform(value => value === "true"),
     startDate: dateOnly.optional(),
     endDate: dateOnly.optional(),
     sort: z.enum(["date_encoded", "purchase_order_no", "reference", "total_amount", "inventory_status"]).default("date_encoded"),
     direction: z.enum(["asc", "desc"]).default("desc")
+}).superRefine((query, context) => {
+    if (query.queue === "receiving" && query.status && !receivingQueueStatusSchema.safeParse(query.status).success) {
+        context.addIssue({
+            code: "custom",
+            path: ["status"],
+            message: "Receiving queue status must be En Route, Receiving (QA), Partially Received, or Received."
+        });
+    }
 });
 
 export type PurchaseOrderListQuery = z.infer<typeof purchaseOrderListQuerySchema>;
