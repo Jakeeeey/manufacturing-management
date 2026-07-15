@@ -33,7 +33,7 @@ export interface ShipmentFormState {
     exchange_rate: string;
     total_foreign_currency: string;
     total_php_value: string;
-    status: "Ordered" | "Approved" | "En Route" | "Receiving (QA)" | "Received" | "Rejected";
+    status: "Ordered" | "Approved" | "Cancelled" | "For Pickup" | "En Route" | "Receiving (QA)" | "Partially Received" | "Received" | "Rejected";
     date_received: string;
     branch_id: number | null;
     payment_type: number | null;
@@ -57,7 +57,7 @@ interface IncomingShipmentsProps {
     onCreateShipment: (e: React.FormEvent) => void;
     onTriggerAllocation: (s: IncomingShipment) => void;
     onEditShipment: (shipmentId: number, shipmentData: ShipmentFormState, lineItems: ManifestLineFormItem[]) => void;
-    onUpdateShipmentStatus: (shipmentId: number, status: "Ordered" | "Approved" | "En Route" | "Receiving (QA)" | "Received" | "Rejected") => void;
+    onUpdateShipmentStatus: (shipmentId: number, status: "Ordered" | "Approved" | "Cancelled" | "For Pickup" | "En Route" | "Receiving (QA)" | "Partially Received" | "Received" | "Rejected") => void;
     loading?: boolean;
 }
 
@@ -749,10 +749,16 @@ export default function IncomingShipments({
                 return <span className="bg-blue-500/10 text-blue-600 border border-blue-500/20 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase">Ordered</span>;
             case "Approved":
                 return <span className="bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase">Approved</span>;
+            case "Cancelled":
+                return <span className="bg-zinc-500/10 text-zinc-600 border border-zinc-500/20 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase">Cancelled</span>;
+            case "For Pickup":
+                return <span className="bg-cyan-500/10 text-cyan-700 border border-cyan-500/20 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase">For Pickup</span>;
             case "En Route":
                 return <span className="bg-yellow-500/10 text-yellow-600 border border-yellow-500/20 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase">En Route</span>;
             case "Receiving (QA)":
                 return <span className="bg-purple-500/10 text-purple-600 border border-purple-500/20 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase">Receiving (QA)</span>;
+            case "Partially Received":
+                return <span className="bg-purple-500/10 text-purple-600 border border-purple-500/20 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase">Partially Received</span>;
             case "Received":
                 return <span className="bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase">Received</span>;
             case "Rejected":
@@ -807,8 +813,11 @@ export default function IncomingShipments({
                             <option value="All">All Statuses</option>
                             <option value="Ordered">Ordered</option>
                             <option value="Approved">Approved</option>
+                            <option value="Cancelled">Cancelled</option>
+                            <option value="For Pickup">For Pickup</option>
                             <option value="En Route">En Route</option>
                             <option value="Receiving (QA)">Receiving (QA)</option>
+                            <option value="Partially Received">Partially Received</option>
                             <option value="Received">Received</option>
                             <option value="Rejected">Rejected</option>
                         </select>
@@ -971,8 +980,11 @@ export default function IncomingShipments({
                                 <div className="mt-4 border bg-muted/20 rounded-xl p-4 space-y-3">
                                     <div className="text-[10px] font-extrabold text-muted-foreground uppercase tracking-wider block">Shipment Life Cycle Progress</div>
                                     <div className="flex items-center w-full relative">
-                                        {(["Ordered", "Approved", "En Route", "Receiving (QA)", "Received"] as const).map((st, idx, arr) => {
-                                            const statuses = ["Ordered", "Approved", "En Route", "Receiving (QA)", "Received"];
+                                        {(activeShipment.status === "For Pickup"
+                                            ? ["Ordered", "Approved", "For Pickup", "En Route", "Receiving (QA)", "Received"]
+                                            : ["Ordered", "Approved", "En Route", "Receiving (QA)", "Received"]
+                                        ).map((st, idx, arr) => {
+                                            const statuses = arr;
                                             const currentIdx = statuses.indexOf(activeShipment.status);
                                             const stepIdx = statuses.indexOf(st);
                                             
@@ -1021,13 +1033,13 @@ export default function IncomingShipments({
                                         </button>
                                     )}
 
-                                    {(activeShipment.status === "Ordered" || activeShipment.status === "Rejected") && (
+                                    {activeShipment.status === "Ordered" && (
                                         <button
                                             type="button"
                                             onClick={handleStartEdit}
                                             className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-3 rounded-lg text-xs transition-all shadow-sm cursor-pointer mt-3 inline-flex items-center justify-center gap-1.5"
                                         >
-                                            {activeShipment.status === "Ordered" ? "Edit Purchase Order" : "Edit & Resubmit Purchase Order"}
+                                            Edit Purchase Order
                                         </button>
                                     )}
 

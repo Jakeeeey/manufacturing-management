@@ -3,6 +3,7 @@ import {
     fetchShipmentExpenses, 
     processShipmentLandedCosts 
 } from "./expenses-helper";
+import { expenseAllocationSchema } from "../_schemas";
 
 export async function GET(request: Request) {
     try {
@@ -23,15 +24,14 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
     try {
-        const body = await request.json();
-        const { shipmentId, status, expenses, allocationMethod, lineItemUpdates } = body;
-
-        if (!shipmentId || !status || !expenses || !allocationMethod) {
-            return NextResponse.json({ error: "Missing required fields (shipmentId, status, expenses, allocationMethod)" }, { status: 400 });
+        const parsed = expenseAllocationSchema.safeParse(await request.json());
+        if (!parsed.success) {
+            return NextResponse.json({ error: "Invalid expense allocation.", details: parsed.error.flatten() }, { status: 400 });
         }
+        const { shipmentId, status, expenses, allocationMethod, lineItemUpdates } = parsed.data;
 
         const result = await processShipmentLandedCosts(
-            parseInt(shipmentId),
+            shipmentId,
             status,
             expenses,
             allocationMethod,

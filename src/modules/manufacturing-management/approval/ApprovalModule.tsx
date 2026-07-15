@@ -122,6 +122,8 @@ export default function ApprovalModule() {
                 return <span className="bg-emerald-500/10 text-emerald-500 border border-emerald-500/25 px-2 py-0.5 rounded text-[10px] font-bold uppercase">Approved</span>;
             case "Rejected":
                 return <span className="bg-red-500/10 text-red-500 border border-red-500/25 px-2 py-0.5 rounded text-[10px] font-bold uppercase">Rejected</span>;
+            case "Cancelled":
+                return <span className="bg-zinc-500/10 text-zinc-600 border border-zinc-500/25 px-2 py-0.5 rounded text-[10px] font-bold uppercase">Cancelled</span>;
             default:
                 return <span className="bg-muted text-muted-foreground border px-2 py-0.5 rounded text-[10px] font-bold uppercase">{status}</span>;
         }

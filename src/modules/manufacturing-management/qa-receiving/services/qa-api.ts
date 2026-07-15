@@ -1,4 +1,4 @@
-import { Shipment, ShipmentLineItem, Branch } from "../types";
+import { Shipment, ShipmentLineItem, Branch, StorageLot } from "../types";
 
 export async function fetchActiveShipments(): Promise<Shipment[]> {
     const res = await fetch("/api/manufacturing/procurement/shipments");
@@ -9,6 +9,12 @@ export async function fetchActiveShipments(): Promise<Shipment[]> {
 export async function fetchBranches(): Promise<Branch[]> {
     const res = await fetch("/api/manufacturing/procurement/qa-receiving?action=branches");
     if (!res.ok) throw new Error("Failed to load branch list");
+    return res.json();
+}
+
+export async function fetchStorageLots(): Promise<StorageLot[]> {
+    const res = await fetch("/api/manufacturing/procurement/qa-receiving?action=lots");
+    if (!res.ok) throw new Error("Failed to load storage lots");
     return res.json();
 }
 
@@ -27,8 +33,10 @@ export async function submitInspection(payload: {
         line_id: number;
         product_id: number;
         quantity_received: number;
+        quantity_accepted: number;
         quantity_rejected: number;
-        lot_number: string | null;
+        batch_no: string;
+        lot_id: number;
         expiration_date: string | null;
         rejection_reason: string | null;
         qa_status: string;
