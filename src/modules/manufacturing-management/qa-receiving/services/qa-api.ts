@@ -1,4 +1,4 @@
-import { Shipment, ShipmentLineItem, Branch, StorageLot } from "../types";
+import { Shipment, ShipmentLineItem, Branch, StorageLot, QaSpecification } from "../types";
 
 export async function fetchActiveShipments(filters: {
     search?: string;
@@ -39,6 +39,16 @@ export async function fetchShipmentDetails(shipmentId: number, signal?: AbortSig
     if (!res.ok) throw new Error("Failed to load shipment lines");
     const body = await res.json();
     return body.data || [];
+}
+
+export async function fetchProductQaSpecifications(productId: number, signal?: AbortSignal): Promise<QaSpecification[]> {
+    const params = new URLSearchParams({ productId: String(productId) });
+    const res = await fetch(`/api/manufacturing/qa/specifications?${params.toString()}`, { signal });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+        throw new Error(body.error || "Failed to load the product QA checklist.");
+    }
+    return Array.isArray(body.data) ? body.data : [];
 }
 
 export async function submitInspection(payload: {
