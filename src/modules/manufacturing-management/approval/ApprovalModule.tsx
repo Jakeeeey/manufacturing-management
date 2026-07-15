@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect } from "react";
 import { Anchor, Calendar, Layers, Search, ShieldAlert, CheckCircle, Loader2 } from "lucide-react";
-import { useProcurement } from "../procurement/hooks/useProcurement";
+import { usePurchaseOrderApproval } from "../purchase-order-approval/hooks/usePurchaseOrderApproval";
 import { toast } from "sonner";
 
 export default function ApprovalModule() {
@@ -14,8 +14,11 @@ export default function ApprovalModule() {
         selectedShipment,
         setSelectedShipment,
         selectedShipmentLines,
-        handleUpdateShipmentStatus,
-    } = useProcurement("incoming-shipments");
+        approve,
+        reject,
+        updateStatus,
+        load,
+    } = usePurchaseOrderApproval();
 
     const [search, setSearch] = useState("");
     const [etaDate, setEtaDate] = useState("");
@@ -23,6 +26,13 @@ export default function ApprovalModule() {
     const [isApproving, setIsApproving] = useState(false);
     const [rejectRemarks, setRejectRemarks] = useState("");
     const [isRejecting, setIsRejecting] = useState(false);
+
+    useEffect(() => {
+        const timeout = window.setTimeout(() => {
+            void load({ limit: 100, search });
+        }, 250);
+        return () => window.clearTimeout(timeout);
+    }, [load, search]);
 
     // Filter shipments: only show Ordered (Pending Approval) or Approved status
     const filteredShipments = shipments.filter(s => {
@@ -61,20 +71,8 @@ export default function ApprovalModule() {
 
         try {
             setIsApproving(true);
-            const res = await fetch(`/api/manufacturing/procurement/shipments`, {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    shipmentId: activeShipment.shipment_id,
-                    lead_time_receiving: etaDate,
-                    approvedPrices,
-                    action: "approve"
-                })
-            });
-
-            if (!res.ok) throw new Error("Approval submission failed");
+            await approve(activeShipment.shipment_id, etaDate, approvedPrices);
             toast.success("Purchase Order approved and ETA scheduled successfully.");
-            window.location.reload();
         } catch {
             toast.error("Failed to approve Purchase Order.");
         } finally {
@@ -91,22 +89,8 @@ export default function ApprovalModule() {
 
         try {
             setIsRejecting(true);
-            const res = await fetch(`/api/manufacturing/procurement/shipments`, {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    shipmentId: activeShipment.shipment_id,
-                    remarks: rejectRemarks,
-                    action: "reject"
-                })
-            });
-
-            if (!res.ok) {
-                const errJson = await res.json();
-                throw new Error(errJson.error || "Rejection failed");
-            }
+            await reject(activeShipment.shipment_id, rejectRemarks);
             toast.success("Purchase Order rejected successfully.");
-            window.location.reload();
         } catch (e: any) {
             toast.error(e.message || "Failed to reject Purchase Order.");
         } finally {
@@ -307,7 +291,7 @@ export default function ApprovalModule() {
                                     </div>
                                     <button
                                         type="button"
-                                        onClick={() => handleUpdateShipmentStatus(activeShipment.shipment_id, "En Route")}
+                                        onClick={() => void updateStatus(activeShipment.shipment_id, "En Route")}
                                         className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded-lg text-xs transition-all shadow-sm cursor-pointer mt-1"
                                     >
                                         Mark Cargo as En Route (Departed)

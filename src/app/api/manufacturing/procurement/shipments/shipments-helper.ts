@@ -1,7 +1,8 @@
 /* eslint-disable */
 import { DIRECTUS_URL, headers } from "../_directus";
-import { canonicalBatchNumber, calculatePurchaseLineAmounts, inventoryStatusToShipmentStatus, shipmentStatusToInventoryStatus } from "../_domain";
+import { canonicalBatchNumber, calculatePurchaseLineAmounts, inventoryStatusToShipmentStatus, shipmentStatusToInventoryStatus, type ShipmentStatusLabel } from "../_domain";
 import { DirectusShipment } from "@/modules/manufacturing-management/procurement/types";
+import type { PurchaseOrderListQuery } from "../../purchase-orders/_schemas";
 
 interface DirectusPO {
     purchase_order_id: number;
@@ -84,6 +85,74 @@ interface ExtendedShipment extends Partial<DirectusShipment> {
     branch_id?: number;
 }
 
+function mapPurchaseOrder(po: DirectusPO) {
+    const rate = po.exchange_rate ? Number(po.exchange_rate) : 58.00;
+    const totalPhp = Number(po.total_amount || po.gross_amount || 0);
+    const foreignCurrency = po.total_foreign_currency ? Number(po.total_foreign_currency) : (totalPhp / rate);
+
+    return {
+        shipment_id: po.purchase_order_id,
+        reference_number: po.reference || po.purchase_order_no || "",
+        purchase_order_no: po.purchase_order_no || "",
+        supplier_id: po.supplier_name || 0,
+        date_received: po.date_received || null,
+        lead_time_receiving: po.lead_time_receiving || null,
+        total_foreign_currency: foreignCurrency,
+        exchange_rate: rate,
+        total_php_value: totalPhp,
+        status: inventoryStatusToShipmentStatus(po.inventory_status),
+        remark: po.remark || "",
+        created_at: po.date_encoded || "",
+        branch_id: po.branch_id || null,
+        payment_type: po.payment_type || null,
+        price_type: po.price_type || null
+    };
+}
+
+export async function fetchIncomingShipmentsPage(query: PurchaseOrderListQuery) {
+    const filter: Record<string, unknown> = {};
+    const clauses: Record<string, unknown>[] = [];
+    if (query.search) {
+        clauses.push({
+            _or: [
+                { reference: { _icontains: query.search } },
+                { purchase_order_no: { _icontains: query.search } },
+                { supplier_name: { supplier_name: { _icontains: query.search } } }
+            ]
+        });
+    }
+    if (query.status) {
+        clauses.push({ inventory_status: { _eq: shipmentStatusToInventoryStatus(query.status) } });
+    }
+    if (query.startDate) clauses.push({ date_encoded: { _gte: `${query.startDate}T00:00:00` } });
+    if (query.endDate) clauses.push({ date_encoded: { _lte: `${query.endDate}T23:59:59` } });
+    if (clauses.length === 1) Object.assign(filter, clauses[0]);
+    if (clauses.length > 1) filter._and = clauses;
+
+    const params = new URLSearchParams({
+        fields: "purchase_order_id,purchase_order_no,reference,supplier_name.*,date_received,lead_time_receiving,total_amount,gross_amount,inventory_status,date_encoded,branch_id,payment_type,price_type,exchange_rate,total_foreign_currency,remark",
+        limit: String(query.limit),
+        offset: String((query.page - 1) * query.limit),
+        sort: `${query.direction === "desc" ? "-" : ""}${query.sort}`,
+        meta: "filter_count"
+    });
+    if (Object.keys(filter).length > 0) params.set("filter", JSON.stringify(filter));
+
+    const res = await fetch(`${DIRECTUS_URL}/items/purchase_order?${params.toString()}`, { headers, cache: "no-store" });
+    if (!res.ok) throw new Error(`Failed to load purchase orders (${res.status}).`);
+    const body = await res.json();
+    const total = Number(body.meta?.filter_count || 0);
+    return {
+        data: ((body.data || []) as DirectusPO[]).map(mapPurchaseOrder),
+        meta: {
+            page: query.page,
+            limit: query.limit,
+            total,
+            totalPages: Math.max(1, Math.ceil(total / query.limit))
+        }
+    };
+}
+
 export async function fetchIncomingShipments(): Promise<unknown[]> {
     try {
         const url = `${DIRECTUS_URL}/items/purchase_order?fields=*,supplier_name.*&sort=-date_encoded&limit=-1`;
@@ -91,29 +160,7 @@ export async function fetchIncomingShipments(): Promise<unknown[]> {
         if (!res.ok) return [];
         const poList = ((await res.json()).data || []) as DirectusPO[];
 
-        return poList.map((po) => {
-            const rate = po.exchange_rate ? Number(po.exchange_rate) : 58.00;
-            const totalPhp = Number(po.total_amount || po.gross_amount || 0);
-            const foreignCurrency = po.total_foreign_currency ? Number(po.total_foreign_currency) : (totalPhp / rate);
-
-            return {
-                shipment_id: po.purchase_order_id,
-                reference_number: po.reference || po.purchase_order_no || "",
-                purchase_order_no: po.purchase_order_no || "",
-                supplier_id: po.supplier_name || 0, // Directus resolves supplier_name.* as an object, which maps to supplier_id in type
-                date_received: po.date_received || null,
-                lead_time_receiving: po.lead_time_receiving || null,
-                total_foreign_currency: foreignCurrency,
-                exchange_rate: rate,
-                total_php_value: totalPhp,
-                status: inventoryStatusToShipmentStatus(po.inventory_status),
-                remark: po.remark || "",
-                created_at: po.date_encoded || "",
-                branch_id: po.branch_id || null,
-                payment_type: po.payment_type || null,
-                price_type: po.price_type || null
-            };
-        });
+        return poList.map(mapPurchaseOrder);
     } catch (e) {
         console.error("[Manufacturing Directus API] Failed to fetch incoming shipments:", e);
         return [];
@@ -297,7 +344,7 @@ export async function createIncomingShipment(
 
 export async function updateIncomingShipmentStatus(
     shipmentId: number,
-    status: "Ordered" | "Approved" | "En Route" | "Receiving (QA)" | "Received",
+    status: ShipmentStatusLabel,
     userId?: number | null,
     leadTimeReceiving?: string | null
 ) {

@@ -7,7 +7,8 @@ const ACCESS_TOKEN_COOKIE = "vos_access_token";
 export const PURCHASE_ORDER_MODULE_PATHS = {
     procurement: "/mm/incoming-shipments",
     approval: "/mm/approval",
-    receiving: "/mm/qa-receiving"
+    receiving: "/mm/qa-receiving",
+    expenses: "/mm/shipment-expenses"
 } as const;
 
 export type PurchaseOrderModulePath = typeof PURCHASE_ORDER_MODULE_PATHS[keyof typeof PURCHASE_ORDER_MODULE_PATHS];
@@ -64,7 +65,8 @@ async function responseData<T>(response: Response, message: string): Promise<T> 
 }
 
 export async function requirePurchaseOrderModuleAccess(options: {
-    modulePath: PurchaseOrderModulePath;
+    modulePath?: PurchaseOrderModulePath;
+    modulePaths?: readonly PurchaseOrderModulePath[];
     approvalStage?: ApprovalStage;
     requireReject?: boolean;
 }): Promise<AuthorizedPurchaseOrderUser> {
@@ -109,8 +111,18 @@ export async function requirePurchaseOrderModuleAccess(options: {
         || user.role === "ADMIN"
         || user.isAdmin === true
         || Number(user.isAdmin) === 1;
+    const requestedPaths = options.modulePaths?.length
+        ? [...options.modulePaths]
+        : options.modulePath
+            ? [options.modulePath]
+            : [];
+    if (requestedPaths.length === 0) {
+        throw new PurchaseOrderAuthorizationError(500, "Purchase-order authorization is not configured.");
+    }
     const hasModule = accessRows.some(row =>
-        row.module_id && typeof row.module_id === "object" && row.module_id.base_path === options.modulePath
+        row.module_id
+        && typeof row.module_id === "object"
+        && requestedPaths.includes(row.module_id.base_path as PurchaseOrderModulePath)
     );
     if (!admin && !hasModule) {
         throw new PurchaseOrderAuthorizationError(403, "You do not have access to this purchase-order module.");
@@ -121,7 +133,7 @@ export async function requirePurchaseOrderModuleAccess(options: {
             userId,
             roleId,
             admin,
-            modulePath: options.modulePath,
+            modulePath: requestedPaths[0],
             approvalStage: options.approvalStage || null,
             canReject: admin
         };
@@ -154,7 +166,7 @@ export async function requirePurchaseOrderModuleAccess(options: {
         userId,
         roleId,
         admin,
-        modulePath: options.modulePath,
+        modulePath: requestedPaths[0],
         approvalStage: options.approvalStage,
         canReject
     };

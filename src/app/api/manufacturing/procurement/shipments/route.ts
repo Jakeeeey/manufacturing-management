@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { DIRECTUS_URL, headers } from "../_directus";
 import { canTransitionInventoryStatus, calculatePurchaseLineAmounts, INVENTORY_STATUS, shipmentStatusToInventoryStatus } from "../_domain";
 import { 
@@ -8,33 +7,20 @@ import {
     createIncomingShipment,
     updateIncomingShipmentStatus
 } from "./shipments-helper";
+import {
+    PURCHASE_ORDER_MODULE_PATHS,
+    PurchaseOrderAuthorizationError,
+    requirePurchaseOrderModuleAccess
+} from "../../purchase-orders/_auth";
+import {
+    modulesForStatus,
+    purchaseOrderApprovalSchema,
+    purchaseOrderCreateSchema,
+    purchaseOrderEditSchema,
+    purchaseOrderStatusUpdateSchema
+} from "../../purchase-orders/_schemas";
 
 class InvalidTransitionError extends Error {}
-
-async function getUserIdFromSession(): Promise<number | null> {
-    try {
-        const cookieStore = await cookies();
-        const token = cookieStore.get("vos_access_token")?.value;
-        if (token) {
-            const parts = token.split(".");
-            if (parts.length >= 2) {
-                const base64Url = parts[1];
-                let base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
-                while (base64.length % 4) base64 += "=";
-                const jsonPayload = Buffer.from(base64, "base64").toString("utf8");
-                const payload = JSON.parse(jsonPayload);
-                const rawId = payload?.id || payload?.user_id || payload?.sub;
-                if (rawId) {
-                    const parsed = Number(rawId);
-                    if (!isNaN(parsed)) return parsed;
-                }
-            }
-        }
-    } catch (e) {
-        console.error("Failed to extract userId from session token:", e);
-    }
-    return null;
-}
 
 async function requireAllowedTransition(shipmentId: number, targetStatus: number): Promise<void> {
     const response = await fetch(`${DIRECTUS_URL}/items/purchase_order/${shipmentId}?fields=inventory_status`, { headers, cache: "no-store" });
@@ -47,6 +33,9 @@ async function requireAllowedTransition(shipmentId: number, targetStatus: number
 
 export async function GET(request: Request) {
     try {
+        await requirePurchaseOrderModuleAccess({
+            modulePaths: Object.values(PURCHASE_ORDER_MODULE_PATHS)
+        });
         const { searchParams } = new URL(request.url);
         const shipmentId = searchParams.get("shipmentId");
 
@@ -59,16 +48,16 @@ export async function GET(request: Request) {
         return NextResponse.json(shipments);
     } catch (e) {
         console.error("API Error fetching shipments:", e);
-        return NextResponse.json({ error: (e as Error).message || "Failed to fetch shipments" }, { status: 500 });
+        return NextResponse.json({ error: (e as Error).message || "Failed to fetch shipments" }, {
+            status: e instanceof PurchaseOrderAuthorizationError ? e.status : 500
+        });
     }
 }
 
 export async function POST(request: Request) {
     try {
-        const body = await request.json();
-        const { shipmentData, lineItems, isReceiveLog } = body;
-
-        const userId = await getUserIdFromSession();
+        const rawBody = await request.json();
+        const { isReceiveLog } = rawBody;
 
         if (isReceiveLog) {
             return NextResponse.json(
@@ -76,31 +65,35 @@ export async function POST(request: Request) {
                 { status: 410 }
             );
         }
-
-        if (!shipmentData || !shipmentData.reference_number || !shipmentData.supplier_id || !lineItems) {
-            return NextResponse.json({ error: "Missing required fields (reference_number, supplier_id, lineItems)" }, { status: 400 });
+        const parsed = purchaseOrderCreateSchema.safeParse(rawBody);
+        if (!parsed.success) {
+            return NextResponse.json({ error: "Invalid purchase order.", details: parsed.error.flatten() }, { status: 400 });
         }
-
-        const result = await createIncomingShipment(shipmentData, lineItems, userId);
+        const actor = await requirePurchaseOrderModuleAccess({ modulePath: PURCHASE_ORDER_MODULE_PATHS.procurement });
+        const result = await createIncomingShipment(parsed.data.shipmentData, parsed.data.lineItems, actor.userId);
         return NextResponse.json(result);
     } catch (e) {
         console.error("API Error creating incoming shipment:", e);
-        return NextResponse.json({ error: (e as Error).message || "Failed to create shipment" }, { status: 500 });
+        return NextResponse.json({ error: (e as Error).message || "Failed to create shipment" }, {
+            status: e instanceof PurchaseOrderAuthorizationError ? e.status : 500
+        });
     }
 }
 
 export async function PATCH(request: Request) {
     try {
         const body = await request.json();
-        const { shipmentId, status, lead_time_receiving, approvedPrices, action } = body;
+        const { shipmentId, lead_time_receiving, approvedPrices, action } = body;
 
         if (!shipmentId) {
             return NextResponse.json({ error: "Missing required field (shipmentId)" }, { status: 400 });
         }
 
-        const userId = await getUserIdFromSession();
-
         if (action === "approve") {
+            const parsed = purchaseOrderApprovalSchema.safeParse(body);
+            if (!parsed.success) return NextResponse.json({ error: "Invalid approval request.", details: parsed.error.flatten() }, { status: 400 });
+            const actor = await requirePurchaseOrderModuleAccess({ modulePath: PURCHASE_ORDER_MODULE_PATHS.approval });
+            const userId = actor.userId;
             await requireAllowedTransition(Number(shipmentId), INVENTORY_STATUS.APPROVED);
             let approvedTotal = 0;
             const popRes = await fetch(`${DIRECTUS_URL}/items/purchase_order_products?filter[purchase_order_id][_eq]=${shipmentId}&limit=-1`, { headers });
@@ -153,6 +146,9 @@ export async function PATCH(request: Request) {
             return NextResponse.json({ success: true });
         }
         if (action === "reject") {
+            const parsed = purchaseOrderApprovalSchema.safeParse(body);
+            if (!parsed.success) return NextResponse.json({ error: "Invalid rejection request.", details: parsed.error.flatten() }, { status: 400 });
+            await requirePurchaseOrderModuleAccess({ modulePath: PURCHASE_ORDER_MODULE_PATHS.approval });
             const { remarks } = body;
             if (!remarks || !remarks.trim()) {
                 return NextResponse.json({ error: "Remarks/Reason for rejection is mandatory." }, { status: 400 });
@@ -175,32 +171,28 @@ export async function PATCH(request: Request) {
             return NextResponse.json({ success: true });
         }
 
-        if (!status) {
-            return NextResponse.json({ error: "Missing status for standard update" }, { status: 400 });
-        }
+        const parsed = purchaseOrderStatusUpdateSchema.safeParse(body);
+        if (!parsed.success) return NextResponse.json({ error: "Invalid status update.", details: parsed.error.flatten() }, { status: 400 });
+        const actor = await requirePurchaseOrderModuleAccess({ modulePaths: modulesForStatus(parsed.data.status) });
+        await requireAllowedTransition(parsed.data.shipmentId, shipmentStatusToInventoryStatus(parsed.data.status));
 
-
-        await requireAllowedTransition(Number(shipmentId), shipmentStatusToInventoryStatus(status));
-
-        const result = await updateIncomingShipmentStatus(parseInt(shipmentId), status, userId, lead_time_receiving);
+        const result = await updateIncomingShipmentStatus(parsed.data.shipmentId, parsed.data.status, actor.userId, parsed.data.lead_time_receiving);
         return NextResponse.json(result);
     } catch (e) {
         console.error("API Error updating shipment status:", e);
         return NextResponse.json(
             { error: (e as Error).message || "Failed to update shipment status" },
-            { status: e instanceof InvalidTransitionError ? 400 : 500 }
+            { status: e instanceof PurchaseOrderAuthorizationError ? e.status : e instanceof InvalidTransitionError ? 409 : 500 }
         );
     }
 }
 
 export async function PUT(request: Request) {
     try {
-        const body = await request.json();
-        const { shipmentId, shipmentData, lineItems } = body;
-
-        if (!shipmentId) {
-            return NextResponse.json({ error: "Missing shipmentId" }, { status: 400 });
-        }
+        const parsed = purchaseOrderEditSchema.safeParse(await request.json());
+        if (!parsed.success) return NextResponse.json({ error: "Invalid purchase-order edit.", details: parsed.error.flatten() }, { status: 400 });
+        await requirePurchaseOrderModuleAccess({ modulePath: PURCHASE_ORDER_MODULE_PATHS.procurement });
+        const { shipmentId, shipmentData, lineItems } = parsed.data;
 
         // Recompute total from the actual submitted line items (quantity_ordered is the correct field
         // from ManifestLineFormItem; shipmentData.total_php_value may be stale)
@@ -281,6 +273,8 @@ export async function PUT(request: Request) {
         return NextResponse.json({ success: true });
     } catch (e) {
         console.error("API Error updating shipment:", e);
-        return NextResponse.json({ error: (e as Error).message || "Failed to update shipment" }, { status: 500 });
+        return NextResponse.json({ error: (e as Error).message || "Failed to update shipment" }, {
+            status: e instanceof PurchaseOrderAuthorizationError ? e.status : 500
+        });
     }
 }

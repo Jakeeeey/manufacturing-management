@@ -1,0 +1,191 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
+import type { IncomingShipment, LinkedProduct, RawMaterial, Supplier } from "../../procurement/types";
+import type { ManifestLineFormItem, ShipmentFormState } from "../../procurement/components/IncomingShipments";
+import type { PurchaseOrderListMeta, PurchaseOrderListQuery } from "../types";
+import {
+    fetchLinkedProducts,
+    fetchRawMaterials,
+    fetchSuppliers
+} from "../../procurement/services/procurement-api";
+import {
+    createPurchaseOrder,
+    editPurchaseOrder,
+    fetchPurchaseOrderLines,
+    fetchPurchaseOrders,
+    updatePurchaseOrderStatus
+} from "../services/purchase-order-api";
+
+const blankLine = (): ManifestLineFormItem => ({ parent_product_id: "", product_id: "", quantity_ordered: "", base_unit_cost_php: "" });
+const blankForm = (): ShipmentFormState => ({
+    reference_number: "", supplier_id: "", exchange_rate: "", total_foreign_currency: "0", total_php_value: "0",
+    status: "Ordered", date_received: new Date().toISOString().split("T")[0], branch_id: null, payment_type: null, price_type: ""
+});
+
+export function usePurchaseOrder() {
+    const [loading, setLoading] = useState(false);
+    const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+    const [shipments, setShipments] = useState<IncomingShipment[]>([]);
+    const [rawMaterials, setRawMaterials] = useState<RawMaterial[]>([]);
+    const [supplierLinkedProducts, setSupplierLinkedProducts] = useState<LinkedProduct[]>([]);
+    const [selectedShipment, setSelectedShipment] = useState<IncomingShipment | null>(null);
+    const [selectedShipmentLines, setSelectedShipmentLines] = useState<Awaited<ReturnType<typeof fetchPurchaseOrderLines>>>([]);
+    const [isShipmentModalOpen, setIsShipmentModalOpen] = useState(false);
+    const [shipmentForm, setShipmentForm] = useState<ShipmentFormState>(blankForm);
+    const [shipmentLinesForm, setShipmentLinesForm] = useState<ManifestLineFormItem[]>([blankLine()]);
+    const [listMeta, setListMeta] = useState<PurchaseOrderListMeta>({ page: 1, limit: 5, total: 0, totalPages: 1 });
+    const lastQuery = useRef<PurchaseOrderListQuery>({ page: 1, limit: 5 });
+    const listController = useRef<AbortController | null>(null);
+    const detailController = useRef<AbortController | null>(null);
+
+    const loadShipments = useCallback(async (query: PurchaseOrderListQuery = lastQuery.current) => {
+        lastQuery.current = query;
+        listController.current?.abort();
+        const controller = new AbortController();
+        listController.current = controller;
+        try {
+            const result = await fetchPurchaseOrders(query, controller.signal);
+            setShipments(result.data);
+            setListMeta(result.meta);
+            return result.data;
+        } catch (error) {
+            if ((error as Error).name !== "AbortError") toast.error((error as Error).message || "Failed to load purchase orders.");
+            return [];
+        }
+    }, []);
+
+    useEffect(() => {
+        void Promise.all([
+            loadShipments(),
+            fetchSuppliers().then(setSuppliers),
+            fetchRawMaterials().then(setRawMaterials)
+        ]).catch(error => toast.error((error as Error).message || "Failed to load purchase-order data."));
+        return () => {
+            listController.current?.abort();
+            detailController.current?.abort();
+        };
+    }, [loadShipments]);
+
+    useEffect(() => {
+        detailController.current?.abort();
+        if (!selectedShipment) {
+            setSelectedShipmentLines([]);
+            return;
+        }
+        const controller = new AbortController();
+        detailController.current = controller;
+        setLoading(true);
+        fetchPurchaseOrderLines(selectedShipment.shipment_id, controller.signal)
+            .then(setSelectedShipmentLines)
+            .catch(error => {
+                if (error.name !== "AbortError") toast.error(error.message || "Failed to load purchase-order details.");
+            })
+            .finally(() => {
+                if (!controller.signal.aborted) setLoading(false);
+            });
+        return () => controller.abort();
+    }, [selectedShipment]);
+
+    useEffect(() => {
+        if (!shipmentForm.supplier_id) {
+            setSupplierLinkedProducts([]);
+            return;
+        }
+        void fetchLinkedProducts(Number(shipmentForm.supplier_id))
+            .then(setSupplierLinkedProducts)
+            .catch(() => setSupplierLinkedProducts([]));
+    }, [shipmentForm.supplier_id]);
+
+    useEffect(() => {
+        if (!isShipmentModalOpen) {
+            setShipmentForm(blankForm());
+            setShipmentLinesForm([blankLine()]);
+            return;
+        }
+        const year = new Date().getFullYear();
+        const randomCode = Math.random().toString(36).slice(2, 8).toUpperCase();
+        const lockedRate = typeof window === "undefined" ? "" : localStorage.getItem("vos_locked_forex_rate") || "";
+        setShipmentForm(previous => ({
+            ...previous,
+            exchange_rate: previous.exchange_rate || lockedRate,
+            reference_number: previous.reference_number || `PO-${year}-${randomCode}`
+        }));
+    }, [isShipmentModalOpen]);
+
+    const handleCreateShipment = async (event: React.FormEvent) => {
+        event.preventDefault();
+        const lines = shipmentLinesForm.filter(line => line.product_id && line.quantity_ordered && line.base_unit_cost_php);
+        if (!shipmentForm.reference_number.trim() || !shipmentForm.supplier_id || !shipmentForm.branch_id || !shipmentForm.payment_type || !shipmentForm.price_type || lines.length === 0) {
+            toast.error("Complete the purchase-order header and all required line fields.");
+            return;
+        }
+        const exchangeRate = Number(shipmentForm.exchange_rate);
+        if (!Number.isFinite(exchangeRate) || exchangeRate <= 0) {
+            toast.error("A valid exchange rate is required.");
+            return;
+        }
+        const lineItems = lines.map(line => ({
+            product_id: Number(line.product_id), quantity_ordered: Number(line.quantity_ordered), base_unit_cost_php: Number(line.base_unit_cost_php)
+        }));
+        if (new Set(lineItems.map(line => line.product_id)).size !== lineItems.length) {
+            toast.error("Duplicate products must be consolidated into one line.");
+            return;
+        }
+        const total = lineItems.reduce((sum, line) => sum + line.quantity_ordered * line.base_unit_cost_php, 0);
+        setLoading(true);
+        try {
+            await createPurchaseOrder({
+                ...shipmentForm,
+                supplier_id: Number(shipmentForm.supplier_id),
+                branch_id: Number(shipmentForm.branch_id),
+                payment_type: Number(shipmentForm.payment_type),
+                exchange_rate: exchangeRate,
+                total_php_value: total,
+                total_foreign_currency: total / exchangeRate
+            }, lineItems);
+            toast.success("Purchase order registered successfully.");
+            setIsShipmentModalOpen(false);
+            await loadShipments();
+        } catch (error) {
+            toast.error((error as Error).message || "Failed to create purchase order.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleEditShipment = async (id: number, data: ShipmentFormState, lines: ManifestLineFormItem[]) => {
+        setLoading(true);
+        try {
+            await editPurchaseOrder(id, data, lines);
+            toast.success("Purchase order updated and resubmitted successfully.");
+            setSelectedShipment(null);
+            await loadShipments();
+        } catch (error) {
+            toast.error((error as Error).message || "Failed to update purchase order.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleUpdateShipmentStatus = async (id: number, status: IncomingShipment["status"]) => {
+        setLoading(true);
+        try {
+            await updatePurchaseOrderStatus(id, status);
+            toast.success(`Purchase-order status updated to ${status}.`);
+            const updated = await loadShipments();
+            setSelectedShipment(updated.find(item => item.shipment_id === id) || null);
+        } catch (error) {
+            toast.error((error as Error).message || "Failed to update purchase-order status.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return {
+        loading, suppliers, shipments, rawMaterials, supplierLinkedProducts, listMeta, loadShipments,
+        selectedShipment, setSelectedShipment, selectedShipmentLines,
+        isShipmentModalOpen, setIsShipmentModalOpen,
+        shipmentForm, setShipmentForm, shipmentLinesForm, setShipmentLinesForm,
+        handleCreateShipment, handleEditShipment, handleUpdateShipmentStatus
+    };
+}
