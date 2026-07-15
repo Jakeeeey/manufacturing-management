@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
     CheckCircle2, AlertTriangle, ArrowLeft, Loader2, ClipboardCheck,
-    ShieldCheck
+    ShieldCheck, RefreshCcw
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -14,6 +14,7 @@ import { InvoiceConsolidation } from "../../invoice-consolidation/types";
 import {
     fetchConsolidationByNo,
     auditBatch,
+    repickBatch,
 } from "../../invoice-consolidation/services/invoice-consolidation-api";
 
 interface AuditWorkspaceModuleProps {
@@ -27,6 +28,7 @@ export default function AuditWorkspaceModule({ batchNo }: AuditWorkspaceModulePr
     const [submitting, setSubmitting] = useState(false);
     const [auditStatus, setAuditStatus] = useState<Record<number, boolean>>({});
     const [showConfirm, setShowConfirm] = useState(false);
+    const [showRepickConfirm, setShowRepickConfirm] = useState(false);
 
     useEffect(() => {
         if (!batchNo) return;
@@ -70,6 +72,22 @@ export default function AuditWorkspaceModule({ batchNo }: AuditWorkspaceModulePr
         } finally {
             setSubmitting(false);
             setShowConfirm(false);
+        }
+    };
+
+    const handleRepick = async () => {
+        if (!consolidation) return;
+        setSubmitting(true);
+        try {
+            const result = await repickBatch(consolidation.id);
+            toast.success(result.message || "Batch returned to picking floor");
+            router.push("/mm/consolidation/picking");
+        } catch (e) {
+            const err = e as Error;
+            toast.error(err.message || "Failed to re-pick batch");
+        } finally {
+            setSubmitting(false);
+            setShowRepickConfirm(false);
         }
     };
 
@@ -216,6 +234,20 @@ export default function AuditWorkspaceModule({ batchNo }: AuditWorkspaceModulePr
                 <div className="flex items-center gap-2">
                     <Button
                         variant="outline"
+                        onClick={() => setShowRepickConfirm(true)}
+                        disabled={submitting}
+                        className="flex items-center gap-1.5 text-xs font-bold border-destructive/30 text-destructive hover:bg-destructive/5"
+                        suppressHydrationWarning
+                    >
+                        {submitting ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                            <RefreshCcw className="h-3.5 w-3.5" />
+                        )}
+                        Return to Picker
+                    </Button>
+                    <Button
+                        variant="outline"
                         onClick={() => router.push("/mm/consolidation/auditing")}
                         disabled={submitting}
                         className="text-xs font-bold"
@@ -238,6 +270,47 @@ export default function AuditWorkspaceModule({ batchNo }: AuditWorkspaceModulePr
                     </Button>
                 </div>
             </footer>
+
+            {showRepickConfirm && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm">
+                    <div className="bg-card border rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+                        <div className="flex items-center gap-3">
+                            <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-500">
+                                <RefreshCcw className="h-5 w-5" />
+                            </div>
+                            <div>
+                                <h3 className="text-sm font-bold text-foreground">Re-pick this batch?</h3>
+                                <p className="text-[11px] text-muted-foreground mt-0.5">
+                                    {consolidation.consolidatorNo} will be returned to Picking status. Inventory will be restored and picked quantities cleared.
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex items-start gap-2 p-3 bg-amber-500/5 border border-amber-500/20 rounded-xl">
+                            <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+                            <p className="text-[10px] font-medium text-amber-600">
+                                All current picking data will be cleared. The batch must be picked again from scratch.
+                            </p>
+                        </div>
+                        <div className="flex items-center justify-end gap-2 pt-2">
+                            <button
+                                onClick={() => setShowRepickConfirm(false)}
+                                className="px-3.5 py-1.5 text-xs font-bold bg-muted hover:bg-muted/80 rounded-lg transition-colors cursor-pointer"
+                                suppressHydrationWarning
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleRepick}
+                                disabled={submitting}
+                                className="px-3.5 py-1.5 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                                suppressHydrationWarning
+                            >
+                                {submitting ? "Processing..." : "Confirm Re-pick"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {showConfirm && (
                 <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm">

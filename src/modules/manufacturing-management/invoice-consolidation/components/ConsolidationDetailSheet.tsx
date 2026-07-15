@@ -14,7 +14,6 @@ import {
     PackageCheck,
     Play,
     Printer,
-    RotateCcw,
     Search,
     ShieldCheck,
 } from "lucide-react";
@@ -180,7 +179,6 @@ export default function ConsolidationDetailSheet({ consolidation, submitting, on
                     {consolidation.status === "Pending" && <Button disabled={submitting} onClick={() => onRequestAction("start-picking", consolidation.id)} className="h-12 flex-1 rounded-xl text-[10px] font-black uppercase tracking-widest"><Play className="mr-2 h-4 w-4" />Initialize Picking</Button>}
                     {consolidation.status === "Picking" && <Button asChild className="h-12 flex-1 rounded-xl bg-blue-600 text-[10px] font-black uppercase tracking-widest hover:bg-blue-700"><Link href={`/mm/consolidation/picking/${encodeURIComponent(consolidation.consolidatorNo)}`}><Play className="mr-2 h-4 w-4" />Picking Active</Link></Button>}
                     {consolidation.status === "Picked" && <Button disabled={submitting} onClick={() => onRequestAction("audit", consolidation.id)} className="h-12 flex-1 rounded-xl bg-emerald-600 text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700"><ShieldCheck className="mr-2 h-4 w-4" />Verify Batch</Button>}
-                    {consolidation.status === "Audited" && <Button disabled={submitting} onClick={() => onRequestAction("revert", consolidation.id)} className="h-12 flex-1 rounded-xl bg-amber-500 text-[10px] font-black uppercase tracking-widest hover:bg-amber-600"><RotateCcw className="mr-2 h-4 w-4" />Revert Pending</Button>}
                 </div>
             </SheetContent>
         </Sheet>

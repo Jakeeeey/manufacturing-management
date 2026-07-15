@@ -75,10 +75,33 @@ export default function PickingWorkspaceModule({ batchNo }: PickingWorkspaceModu
         localItems, hasChanges, editingDetailId, editValue,
         showCompleteConfirm, showCloseConfirm, saving,
         totals, shortProducts,
-        setEditValue, setEditingDetailId, setShowCompleteConfirm, setShowCloseConfirm,
-        increment, decrement, startEdit, commitEdit,
+        setEditValue, setShowCompleteConfirm, setShowCloseConfirm,
+        increment, decrement, startEdit, commitEdit, cancelEdit,
         handleSave, handleComplete, handleConfirmShortComplete,
     } = usePickingModal(consolidation, submitting, handleSaveQuantities, handleCompletePicking, handleClose);
+
+    const focusNextRow = useCallback((currentDetailId: number) => {
+        const allRows = document.querySelectorAll<HTMLElement>('[data-detail-id]');
+        const idx = Array.from(allRows).findIndex(
+            (el) => Number(el.dataset.detailId) === currentDetailId
+        );
+        if (idx === -1) return;
+        if (idx < allRows.length - 1) {
+            allRows[idx + 1]?.focus();
+        } else {
+            document.getElementById('picking-save-btn')?.focus();
+        }
+    }, []);
+
+    const focusPrevRow = useCallback((currentDetailId: number) => {
+        const allRows = document.querySelectorAll<HTMLElement>('[data-detail-id]');
+        const idx = Array.from(allRows).findIndex(
+            (el) => Number(el.dataset.detailId) === currentDetailId
+        );
+        if (idx > 0) {
+            allRows[idx - 1]?.focus();
+        }
+    }, []);
 
     useEffect(() => {
         const warn = (e: BeforeUnloadEvent) => {
@@ -162,6 +185,21 @@ export default function PickingWorkspaceModule({ batchNo }: PickingWorkspaceModu
                 />
             </div>
 
+            {/* Keyboard legend */}
+            <div className="shrink-0 flex items-center gap-3 border-b border-border/30 bg-card/40 px-6 py-2 text-[9px] font-bold uppercase tracking-wider text-muted-foreground">
+                <kbd className="rounded border border-border/40 bg-background px-1.5 py-0.5 font-mono text-[9px] font-black text-foreground">Tab</kbd>
+                <span>Next product</span>
+                <span className="text-muted-foreground/30">|</span>
+                <kbd className="rounded border border-border/40 bg-background px-1.5 py-0.5 font-mono text-[9px] font-black text-foreground">Shift+Tab</kbd>
+                <span>Previous product</span>
+                <span className="text-muted-foreground/30">|</span>
+                <kbd className="rounded border border-border/40 bg-background px-1.5 py-0.5 font-mono text-[9px] font-black text-foreground">Backspace</kbd>
+                <span>Clear input</span>
+                <span className="text-muted-foreground/30">|</span>
+                <kbd className="rounded border border-border/40 bg-background px-1.5 py-0.5 font-mono text-[9px] font-black text-foreground">Esc</kbd>
+                <span>Cancel edit</span>
+            </div>
+
             {/* Product list */}
             <div className="flex-1 min-h-0 overflow-y-auto p-6">
                 <div className="max-w-4xl mx-auto space-y-2">
@@ -178,10 +216,24 @@ export default function PickingWorkspaceModule({ batchNo }: PickingWorkspaceModu
                         const short = item.orderedQuantity - item.pickedQuantity;
                         const isComplete = item.pickedQuantity >= item.orderedQuantity;
                         const isEditing = editingDetailId === item.detailId;
+                        const inputId = `pick-qty-${item.detailId}`;
                         return (
                             <div
                                 key={item.detailId}
-                                className={`border rounded-xl p-4 transition-colors ${
+                                data-detail-id={item.detailId}
+                                tabIndex={0}
+                                role="button"
+                                onFocus={() => startEdit(item)}
+                                onKeyDown={(e) => {
+                                    if (e.key === "Enter" && !isEditing) {
+                                        e.preventDefault();
+                                        startEdit(item);
+                                        setTimeout(() => document.getElementById(inputId)?.focus(), 0);
+                                    }
+                                }}
+                                className={`border rounded-xl p-4 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
+                                    isEditing ? "ring-2 ring-primary/30" : ""
+                                } ${
                                     isComplete
                                         ? "bg-emerald-500/5 border-emerald-500/20"
                                         : "bg-card border-border hover:border-primary/30"
@@ -207,6 +259,7 @@ export default function PickingWorkspaceModule({ batchNo }: PickingWorkspaceModu
                                             <p className="text-[9px] font-bold text-muted-foreground uppercase mb-1">Picked</p>
                                             <div className="flex items-center gap-1">
                                                 <button
+                                                    tabIndex={-1}
                                                     onClick={() => decrement(item.detailId)}
                                                     disabled={item.pickedQuantity <= 0 || saving || submitting}
                                                     className="h-7 w-7 rounded-md border border-input flex items-center justify-center hover:bg-muted transition-colors cursor-pointer disabled:opacity-30"
@@ -217,31 +270,46 @@ export default function PickingWorkspaceModule({ batchNo }: PickingWorkspaceModu
 
                                                 {isEditing ? (
                                                     <input
-                                                        type="number"
-                                                        min={0}
-                                                        max={item.orderedQuantity}
+                                                        id={inputId}
+                                                        type="text"
+                                                        inputMode="numeric"
                                                         value={editValue}
                                                         onChange={(e) => setEditValue(e.target.value)}
-                                                        onBlur={commitEdit}
+                                                        onFocus={(e) => e.target.select()}
                                                         onKeyDown={(e) => {
-                                                            if (e.key === "Enter") commitEdit();
-                                                            if (e.key === "Escape") setEditingDetailId(null);
+                                                            if (e.key === "Backspace") {
+                                                                setEditValue("");
+                                                            } else if (e.key === "Enter") {
+                                                                e.preventDefault();
+                                                                commitEdit();
+                                                                focusNextRow(item.detailId);
+                                                            } else if (e.key === "Tab" && e.shiftKey) {
+                                                                e.preventDefault();
+                                                                cancelEdit();
+                                                                focusPrevRow(item.detailId);
+                                                            } else if (e.key === "Tab") {
+                                                                e.preventDefault();
+                                                                cancelEdit();
+                                                                focusNextRow(item.detailId);
+                                                            } else if (e.key === "Escape") {
+                                                                cancelEdit();
+                                                                (e.currentTarget.closest('[data-detail-id]') as HTMLElement)?.focus();
+                                                            }
                                                         }}
                                                         className="w-14 text-center border border-input rounded-md px-1 py-1 text-xs font-bold"
                                                         autoFocus
                                                         suppressHydrationWarning
                                                     />
                                                 ) : (
-                                                    <button
-                                                        onClick={() => startEdit(item)}
-                                                        className="w-14 text-center text-sm font-black text-foreground hover:bg-muted rounded-md py-1 transition-colors cursor-pointer"
-                                                        suppressHydrationWarning
+                                                    <span
+                                                        className="w-14 inline-block text-center text-sm font-black text-foreground py-1 select-none"
                                                     >
                                                         {item.pickedQuantity}
-                                                    </button>
+                                                    </span>
                                                 )}
 
                                                 <button
+                                                    tabIndex={-1}
                                                     onClick={() => increment(item.detailId)}
                                                     disabled={item.pickedQuantity >= item.orderedQuantity || saving || submitting}
                                                     className="h-7 w-7 rounded-md border border-input flex items-center justify-center hover:bg-muted transition-colors cursor-pointer disabled:opacity-30"
@@ -288,6 +356,7 @@ export default function PickingWorkspaceModule({ batchNo }: PickingWorkspaceModu
                 </div>
                 <div className="flex items-center gap-2">
                     <Button
+                        id="picking-save-btn"
                         variant="outline"
                         onClick={handleSave}
                         disabled={!hasChanges || saving || submitting}

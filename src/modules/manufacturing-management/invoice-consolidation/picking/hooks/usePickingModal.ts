@@ -90,6 +90,11 @@ export function usePickingModal(
         setEditValue("");
     }, [editingDetailId, editValue, updateItem]);
 
+    const cancelEdit = useCallback(() => {
+        setEditingDetailId(null);
+        setEditValue("");
+    }, []);
+
     const savingRef = useRef(false);
 
     useEffect(() => {
@@ -181,6 +186,7 @@ export function usePickingModal(
         decrement,
         startEdit,
         commitEdit,
+        cancelEdit,
         handleSave,
         handleComplete,
         handleConfirmShortComplete,

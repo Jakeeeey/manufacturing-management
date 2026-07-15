@@ -11,6 +11,7 @@ import {
     createConsolidation,
     auditBatch,
     revertBatch,
+    repickBatch,
     startPicking,
     completePicking,
     savePickedQuantities,
@@ -156,6 +157,22 @@ export function useInvoiceConsolidation() {
         }
     };
 
+    const handleRepick = async (batchId: number) => {
+        setSubmitting(true);
+        try {
+            const result = await repickBatch(batchId);
+            toast.success(result.message || "Batch returned to picking floor");
+            await loadData();
+            return true;
+        } catch (e) {
+            const err = e as Error;
+            toast.error(err.message || "Failed to re-pick batch");
+            return false;
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
     const handleStartPicking = async (batchId: number) => {
         setSubmitting(true);
         try {
@@ -231,6 +248,7 @@ export function useInvoiceConsolidation() {
         handleCreate,
         handleAudit,
         handleRevert,
+        handleRepick,
         handleStartPicking,
         handleCompletePicking,
         handleSaveQuantities,

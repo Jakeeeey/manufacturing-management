@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { DIRECTUS_URL, headers as directusHeaders } from "../../directus-api";
+import {
+    netMovementsZeroForSource,
+    fetchAvailableStock,
+    fefoAllocate,
+    postMovements,
+    type PostMovementPayload,
+} from "../inventory-movements-client";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,6 +29,8 @@ async function getUserIdFromToken(): Promise<number | null> {
         return null;
     }
 }
+
+const TXN_TYPE_SALES_ISSUE = 4;
 
 export async function POST(req: NextRequest) {
     try {
@@ -52,36 +61,132 @@ export async function POST(req: NextRequest) {
 
         const consolidator = items[0];
         const currentStatus = consolidator.status || "Pending";
-        let nextStatus: string | null = null;
 
         if (action === "start") {
             if (currentStatus !== "Pending") {
                 return NextResponse.json({ message: "Only Pending batches can start picking" }, { status: 400 });
             }
-            nextStatus = "Picking";
-        } else if (action === "complete") {
+            const patchRes = await fetch(`${DIRECTUS_URL}/items/consolidator/${batchId}`, {
+                method: "PATCH",
+                headers: directusHeaders,
+                body: JSON.stringify({ status: "Picking" }),
+            });
+            if (!patchRes.ok) {
+                return NextResponse.json({ message: `Failed to update status (HTTP ${patchRes.status})` }, { status: patchRes.status });
+            }
+            return NextResponse.json({ success: true, message: "Batch moved to Picking", status: "Picking" });
+        }
+
+        if (action === "complete") {
             if (currentStatus !== "Picking") {
                 return NextResponse.json({ message: "Only Picking batches can be completed" }, { status: 400 });
             }
-            nextStatus = "Picked";
-        } else {
-            return NextResponse.json({ message: "Action must be 'start' or 'complete'" }, { status: 400 });
+
+            // --- Idempotency / recovery check ---
+            // netMovementsZeroForSource returns true when no movements exist
+            // OR when all prior negative movements have been compensated (re-picked).
+            const netZero = await netMovementsZeroForSource(batchId, TXN_TYPE_SALES_ISSUE);
+
+            if (!netZero) {
+                // Outstanding negative movements exist that haven't been compensated.
+                if (currentStatus === "Picking") {
+                    // Prior POST succeeded but PATCH to "Picked" failed.
+                    // Recover by advancing status.
+                    const recoverRes = await fetch(`${DIRECTUS_URL}/items/consolidator/${batchId}`, {
+                        method: "PATCH",
+                        headers: directusHeaders,
+                        body: JSON.stringify({ status: "Picked" }),
+                    });
+                    if (!recoverRes.ok) {
+                        return NextResponse.json({ message: "Movements posted but status recovery failed" }, { status: 502 });
+                    }
+                    return NextResponse.json({ success: true, message: "Batch moved to Picked (recovered)", status: "Picked" });
+                }
+                // Status is Picked or Audited — cannot re-post without re-pick.
+                return NextResponse.json({ message: "Outstanding movements exist — re-pick the batch first" }, { status: 409 });
+            }
+
+            // --- Load details ---
+            const detailRes = await fetch(
+                `${DIRECTUS_URL}/items/consolidator_details?filter[consolidator_id][_eq]=${batchId}&limit=-1`,
+                { headers: directusHeaders, cache: "no-store" }
+            );
+            if (!detailRes.ok) {
+                return NextResponse.json({ message: "Failed to load batch details" }, { status: 502 });
+            }
+            const details: { id: number; product_id: number; picked_quantity: number }[] = (await detailRes.json()).data || [];
+
+            if (details.length === 0) {
+                return NextResponse.json({ message: "Batch has no details" }, { status: 400 });
+            }
+
+            // --- FEFO allocate & build movement payloads ---
+            const movementsToPost: PostMovementPayload[] = [];
+            const branchId = Number(consolidator.branch_id);
+
+            for (const detail of details) {
+                const pickedQty = Number(detail.picked_quantity || 0);
+                if (pickedQty <= 0) continue;
+
+                const availableStock = await fetchAvailableStock(detail.product_id, branchId);
+                const { allocations, shortfall } = fefoAllocate(pickedQty, availableStock);
+
+                if (shortfall > 0) {
+                    return NextResponse.json({
+                        message: "Insufficient stock to cover picked quantity",
+                        productId: detail.product_id,
+                        required: pickedQty,
+                        available: pickedQty - shortfall,
+                        shortfall,
+                    }, { status: 422 });
+                }
+
+                for (const alloc of allocations) {
+                    movementsToPost.push({
+                        product_id: detail.product_id,
+                        lot_id: alloc.lot_id,
+                        branch_id: branchId,
+                        transaction_type_id: TXN_TYPE_SALES_ISSUE,
+                        source_document_id: batchId,
+                        source_document_no: consolidator.consolidator_no,
+                        batch_no: alloc.batch_no,
+                        expiry_date: alloc.expiry_date,
+                        manufacturing_date: alloc.manufacturing_date,
+                        quantity: -Math.abs(alloc.quantity),
+                        created_by: userId,
+                        remarks: `Invoice consolidation pick - ${consolidator.consolidator_no}`,
+                    });
+                }
+            }
+
+            if (movementsToPost.length > 0) {
+                const postedCount = await postMovements(movementsToPost);
+                if (postedCount !== movementsToPost.length) {
+                    return NextResponse.json({ message: "Partial movement post — server error" }, { status: 502 });
+                }
+            }
+
+            // --- Advance status ---
+            const patchRes = await fetch(`${DIRECTUS_URL}/items/consolidator/${batchId}`, {
+                method: "PATCH",
+                headers: directusHeaders,
+                body: JSON.stringify({ status: "Picked" }),
+            });
+            if (!patchRes.ok) {
+                // Movements ARE posted — the next invocation will hit the recovery
+                // branch above. Return a clear error so the UI can prompt a retry.
+                return NextResponse.json({ message: "Movements posted but status update failed — retry to complete" }, { status: 502 });
+            }
+
+            return NextResponse.json({
+                success: true,
+                message: "Batch moved to Picked with inventory movements",
+                status: "Picked",
+                movementsPosted: movementsToPost.length,
+            }, { status: movementsToPost.length > 0 ? 201 : 200 });
         }
 
-        const patchRes = await fetch(`${DIRECTUS_URL}/items/consolidator/${batchId}`, {
-            method: "PATCH",
-            headers: directusHeaders,
-            body: JSON.stringify({ status: nextStatus }),
-        });
-        if (!patchRes.ok) {
-            return NextResponse.json({ message: `Failed to update status (HTTP ${patchRes.status})` }, { status: patchRes.status });
-        }
-
-        return NextResponse.json({
-            success: true,
-            message: `Batch moved to ${nextStatus}`,
-            status: nextStatus,
-        });
+        return NextResponse.json({ message: "Action must be 'start' or 'complete'" }, { status: 400 });
     } catch (e) {
         console.error("invoice-consolidation pick POST error:", e);
         return NextResponse.json({ message: "BFF Network Error" }, { status: 502 });

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { DIRECTUS_URL, headers as directusHeaders } from "../../directus-api";
+import { movementsExistForSource } from "../inventory-movements-client";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,6 +23,8 @@ async function getUserIdFromToken(): Promise<number | null> {
         return null;
     }
 }
+
+const TXN_TYPE_SALES_ISSUE = 4;
 
 export async function POST(req: NextRequest) {
     try {
@@ -55,6 +58,12 @@ export async function POST(req: NextRequest) {
         }
         if (consolidator.status !== "Picked") {
             return NextResponse.json({ message: "Batch must be in Picked status before audit" }, { status: 400 });
+        }
+
+        // Verify inventory movements have been posted before allowing audit
+        const hasMovements = await movementsExistForSource(batchId, TXN_TYPE_SALES_ISSUE);
+        if (!hasMovements) {
+            return NextResponse.json({ message: "Cannot audit: no inventory movements posted for this batch. Complete picking first." }, { status: 400 });
         }
 
         const [invRes, detRes] = await Promise.all([

@@ -92,6 +92,15 @@ export async function auditBatch(payload: AuditPayload): Promise<{ success: bool
     return handleResponse(res, "Failed to audit batch");
 }
 
+export async function repickBatch(batchId: number): Promise<{ success: boolean; message: string; compensatedCount?: number }> {
+    const res = await fetchWithSessionRetry("/api/manufacturing/invoice-consolidation/audit/repick", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ batchId }),
+    });
+    return handleResponse(res, "Failed to re-pick batch");
+}
+
 export async function revertBatch(batchId: number): Promise<{ success: boolean; message: string }> {
     const res = await fetchWithSessionRetry("/api/manufacturing/invoice-consolidation/revert", {
         method: "POST",

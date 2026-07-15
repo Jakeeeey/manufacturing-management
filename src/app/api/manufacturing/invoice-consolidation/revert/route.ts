@@ -49,6 +49,13 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ message: "Batch not found" }, { status: 404 });
         }
 
+        const consolidator = items[0];
+        if (consolidator.status === "Picked" || consolidator.status === "Audited") {
+            return NextResponse.json({
+                message: `Cannot revert a ${consolidator.status} batch. Inventory movements have been posted.`,
+            }, { status: 400 });
+        }
+
         const invRes = await fetch(
             `${DIRECTUS_URL}/items/consolidator_invoices?filter[consolidator_id][_eq]=${batchId}&limit=-1`,
             { headers: directusHeaders, cache: "no-store" }
