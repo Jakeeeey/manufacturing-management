@@ -16,16 +16,19 @@ export default function QAReceivingModule() {
         storageLots,
         loadingShipments,
         selectedShipment,
-        setSelectedShipment,
         lineItems,
-        setLineItems,
         loadingLines,
         selectedBranchId,
         setSelectedBranchId,
         inspectionRows,
+        qaSpecificationStates,
+        qaReadings,
+        qaSubmissionBlockReason,
         handleSelectShipment,
         handleUpdateRow,
+        handleUpdateQaReading,
         handleSubmitInspection,
+        clearInspection,
         fifoBranchId,
         loadingFifo,
         expandedProducts,
@@ -66,8 +69,7 @@ export default function QAReceivingModule() {
                     <button
                         onClick={() => {
                             setActiveTab("inbound");
-                            setSelectedShipment(null);
-                            setLineItems([]);
+                            clearInspection();
                         }}
                         className={`px-3.5 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-1.5 ${
                             activeTab === "inbound"
@@ -134,13 +136,14 @@ export default function QAReceivingModule() {
                                 selectedBranchId={selectedBranchId}
                                 setSelectedBranchId={setSelectedBranchId}
                                 inspectionRows={inspectionRows}
+                                qaSpecificationStates={qaSpecificationStates}
+                                qaReadings={qaReadings}
+                                qaSubmissionBlockReason={qaSubmissionBlockReason}
                                 loadingLines={loadingLines}
                                 handleUpdateRow={handleUpdateRow}
+                                handleUpdateQaReading={handleUpdateQaReading}
                                 handleSubmitInspection={handleSubmitInspection}
-                                onCancel={() => {
-                                    setSelectedShipment(null);
-                                    setLineItems([]);
-                                }}
+                                onCancel={clearInspection}
                             />
                         ) : (
                             <div className="flex flex-col items-center justify-center flex-1 p-8 text-center space-y-3">
