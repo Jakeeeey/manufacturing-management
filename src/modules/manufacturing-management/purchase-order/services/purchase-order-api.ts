@@ -1,5 +1,12 @@
 import type { IncomingShipment, ShipmentLineItem } from "../../procurement/types";
-import type { PurchaseOrderCatalog, PurchaseOrderDraftPayload, PurchaseOrderListQuery, PurchaseOrderListResponse } from "../types";
+import type {
+    PurchaseOrderApprovalCommand,
+    PurchaseOrderApprovalDetail,
+    PurchaseOrderCatalog,
+    PurchaseOrderDraftPayload,
+    PurchaseOrderListQuery,
+    PurchaseOrderListResponse
+} from "../types";
 
 async function responseJson<T>(response: Response, fallback: string): Promise<T> {
     if (!response.ok) {
@@ -56,11 +63,17 @@ export async function updatePurchaseOrderStatus(id: number, status: string) {
     return responseJson(response, "Failed to update purchase-order status.");
 }
 
-export async function submitPurchaseOrderApproval(id: number, payload: Record<string, unknown>) {
+export async function fetchPurchaseOrderApproval(id: number, signal?: AbortSignal) {
+    const response = await fetch(`/api/manufacturing/purchase-orders/${id}/approvals`, { signal });
+    const body = await responseJson<{ data: PurchaseOrderApprovalDetail }>(response, "Failed to load purchase-order approval details.");
+    return body.data;
+}
+
+export async function submitPurchaseOrderWorkflowAction(id: number, payload: PurchaseOrderApprovalCommand) {
     const response = await fetch(`/api/manufacturing/purchase-orders/${id}/approvals`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
     });
-    return responseJson(response, "Failed to submit purchase-order approval.");
+    return responseJson<{ success: true; status: string; workflowRevision: number }>(response, "Failed to submit purchase-order approval.");
 }

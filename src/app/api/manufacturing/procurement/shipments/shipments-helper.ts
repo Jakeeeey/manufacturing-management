@@ -1,6 +1,6 @@
 /* eslint-disable */
 import { DIRECTUS_URL, headers } from "../_directus";
-import { canonicalBatchNumber, calculatePurchaseLineAmounts, inventoryStatusToPurchaseOrderStatus, inventoryStatusToShipmentStatus, shipmentStatusToInventoryStatus, type ShipmentStatusLabel } from "../_domain";
+import { canonicalBatchNumber, calculatePurchaseLineAmounts, INVENTORY_STATUS, inventoryStatusToPurchaseOrderStatus, inventoryStatusToShipmentStatus, shipmentStatusToInventoryStatus, type ShipmentStatusLabel } from "../_domain";
 import { DirectusShipment } from "@/modules/manufacturing-management/procurement/types";
 import type { PurchaseOrderListQuery } from "../../purchase-orders/_schemas";
 
@@ -23,6 +23,13 @@ interface DirectusPO {
     remark?: string | null;
     currency_code?: "PHP" | "USD" | null;
     workflow_revision?: number | null;
+    approver_id?: number | null;
+    finance_id?: number | null;
+    date_approved?: string | null;
+    date_financed?: string | null;
+    approval_rule_id?: number | null;
+    approval_requires_finance?: boolean | null;
+    approval_allow_self_approval?: boolean | null;
 }
 
 interface DirectusSupplier {
@@ -132,6 +139,13 @@ function mapPurchaseOrder(po: DirectusPO, suppliers: ReadonlyMap<number, Directu
         price_type: po.price_type || null
         ,currency_code: po.currency_code || "PHP"
         ,workflow_revision: Number(po.workflow_revision || 0)
+        ,approver_id: po.approver_id || null
+        ,finance_id: po.finance_id || null
+        ,date_approved: po.date_approved || null
+        ,date_financed: po.date_financed || null
+        ,approval_rule_id: po.approval_rule_id || null
+        ,approval_requires_finance: po.approval_requires_finance == null ? null : Number(po.approval_requires_finance) === 1
+        ,approval_allow_self_approval: po.approval_allow_self_approval == null ? null : Number(po.approval_allow_self_approval) === 1
     };
 }
 
@@ -174,7 +188,17 @@ export async function fetchIncomingShipmentsPage(query: PurchaseOrderListQuery) 
             ]
         });
     }
-    if (query.status) {
+    if (query.queue === "receiving" && !query.status) {
+        clauses.push({
+            inventory_status: {
+                _in: [
+                    INVENTORY_STATUS.EN_ROUTE,
+                    INVENTORY_STATUS.PARTIALLY_RECEIVED,
+                    ...(query.includeReceived ? [INVENTORY_STATUS.RECEIVED] : [])
+                ]
+            }
+        });
+    } else if (query.status) {
         clauses.push({ inventory_status: { _eq: shipmentStatusToInventoryStatus(query.status) } });
     }
     if (query.startDate) clauses.push({ date_encoded: { _gte: `${query.startDate}T00:00:00` } });
@@ -183,7 +207,7 @@ export async function fetchIncomingShipmentsPage(query: PurchaseOrderListQuery) 
     if (clauses.length > 1) filter._and = clauses;
 
     const params = new URLSearchParams({
-        fields: "purchase_order_id,purchase_order_no,reference,supplier_name,date_received,lead_time_receiving,total_amount,gross_amount,inventory_status,date_encoded,branch_id,payment_type,price_type,exchange_rate,total_foreign_currency,currency_code,workflow_revision,remark",
+        fields: "purchase_order_id,purchase_order_no,reference,supplier_name,date_received,lead_time_receiving,total_amount,gross_amount,inventory_status,date_encoded,branch_id,payment_type,price_type,exchange_rate,total_foreign_currency,currency_code,workflow_revision,remark,approver_id,finance_id,date_approved,date_financed,approval_rule_id,approval_requires_finance,approval_allow_self_approval",
         limit: String(query.limit),
         offset: String((query.page - 1) * query.limit),
         sort: `${query.direction === "desc" ? "-" : ""}${query.sort}`,

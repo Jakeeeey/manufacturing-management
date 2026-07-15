@@ -120,6 +120,23 @@ export interface PurchaseOrderApprovalContext {
     businessDate: string;
 }
 
+export type PurchaseOrderWorkflowStage = "Plant" | "Finance" | "Complete" | "Rejected";
+
+export interface PurchaseOrderWorkflowState {
+    inventoryStatus: number;
+    approverId: number | null;
+    financeId: number | null;
+    requiresFinance: boolean;
+}
+
+export function derivePurchaseOrderWorkflowStage(state: PurchaseOrderWorkflowState): PurchaseOrderWorkflowStage {
+    if (state.inventoryStatus === 13) return "Rejected";
+    if (state.inventoryStatus !== 1) return "Complete";
+    if (!state.approverId) return "Plant";
+    if (state.requiresFinance && !state.financeId) return "Finance";
+    return "Complete";
+}
+
 function dateOnly(value: string): number {
     const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
     if (!match) throw new Error("Approval dates must use YYYY-MM-DD format.");
