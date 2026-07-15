@@ -10,6 +10,32 @@ export type ApprovalAction = typeof APPROVAL_ACTIONS[number];
 export const QA_PARAMETER_TYPES = ["Numeric", "Boolean", "Text"] as const;
 export type QaParameterType = typeof QA_PARAMETER_TYPES[number];
 
+export type CurrencyCode = string;
+export type QaDisposition = "Passed" | "Partially Accepted" | "Rejected";
+export type DiscountKind = "Percentage" | "Fixed";
+
+export interface MoneySummary {
+    currencyCode: CurrencyCode;
+    exchangeRate: number;
+    grossAmount: number;
+    discountAmount: number;
+    vatAmount: number;
+    withholdingAmount: number;
+    netAmount: number;
+}
+
+export interface PurchaseOrderDiscount {
+    kind: DiscountKind;
+    value: number;
+}
+
+export interface QaQuantityDisposition {
+    received: number;
+    accepted: number;
+    rejected: number;
+    disposition: QaDisposition;
+}
+
 export const PURCHASE_RECEIVING_MOVEMENT = {
     typeName: "Purchase Receiving QA",
     direction: "IN",

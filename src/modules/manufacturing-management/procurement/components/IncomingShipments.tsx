@@ -59,6 +59,11 @@ interface IncomingShipmentsProps {
     onEditShipment: (shipmentId: number, shipmentData: ShipmentFormState, lineItems: ManifestLineFormItem[]) => void;
     onUpdateShipmentStatus: (shipmentId: number, status: "Ordered" | "Approved" | "Cancelled" | "For Pickup" | "En Route" | "Receiving (QA)" | "Partially Received" | "Received" | "Rejected") => void;
     loading?: boolean;
+    serverList?: {
+        total: number;
+        totalPages: number;
+        onQueryChange: (query: { page: number; limit: number; search: string; status?: string }) => void;
+    };
 }
 
 interface RawProductSelectorProps {
@@ -450,8 +455,10 @@ export default function IncomingShipments({
     onCreateShipment,
     onEditShipment,
     onUpdateShipmentStatus,
-    loading = false
+    loading = false,
+    serverList
 }: IncomingShipmentsProps) {
+    const onServerQueryChange = serverList?.onQueryChange;
     const [editingShipmentId, setEditingShipmentId] = useState<number | null>(null);
     const [statusLoading, setStatusLoading] = useState<"en-route" | "arrived" | null>(null);
     const [search, setSearch] = useState("");
@@ -464,6 +471,19 @@ export default function IncomingShipments({
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setCurrentPage(1);
     }, [search, statusFilter, itemsPerPage]);
+
+    useEffect(() => {
+        if (!onServerQueryChange) return;
+        const timeout = window.setTimeout(() => {
+            onServerQueryChange({
+                page: currentPage,
+                limit: itemsPerPage,
+                search,
+                status: statusFilter === "All" ? undefined : statusFilter
+            });
+        }, 250);
+        return () => window.clearTimeout(timeout);
+    }, [currentPage, itemsPerPage, onServerQueryChange, search, statusFilter]);
 
     const handleStartEdit = async () => {
         if (!activeShipment) return;
@@ -484,10 +504,10 @@ export default function IncomingShipments({
         // Always re-fetch lines fresh to guarantee quantity_ordered is populated
         let freshLines: ShipmentLineItem[] = [];
         try {
-            const res = await fetch(`/api/manufacturing/procurement/shipments?shipmentId=${activeShipment.shipment_id}`);
+            const res = await fetch(`/api/manufacturing/purchase-orders/${activeShipment.shipment_id}`);
             if (res.ok) {
                 const data = await res.json();
-                freshLines = Array.isArray(data) ? data : (data.lines || []);
+                freshLines = Array.isArray(data) ? data : (data.data || data.lines || []);
             }
         } catch (e) {
             console.error("Failed to fetch fresh lines for edit:", e);
@@ -666,7 +686,7 @@ export default function IncomingShipments({
         return () => window.removeEventListener("keydown", handleGlobalKeyDown);
     }, [isModalOpen, setIsModalOpen]);
 
-    const filteredShipments = shipments.filter(s => {
+    const filteredShipments = serverList ? shipments : shipments.filter(s => {
         const poNo = s.purchase_order_no || "";
         const matchesSearch = s.reference_number.toLowerCase().includes(search.toLowerCase()) ||
             poNo.toLowerCase().includes(search.toLowerCase()) ||
@@ -676,9 +696,11 @@ export default function IncomingShipments({
         return matchesSearch && matchesStatus;
     });
 
-    const totalItems = filteredShipments.length;
-    const totalPages = Math.ceil(totalItems / itemsPerPage) || 1;
-    const paginatedShipments = filteredShipments.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+    const totalItems = serverList?.total ?? filteredShipments.length;
+    const totalPages = serverList?.totalPages ?? (Math.ceil(totalItems / itemsPerPage) || 1);
+    const paginatedShipments = serverList
+        ? filteredShipments
+        : filteredShipments.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
     const activeShipment = selectedShipment || null;
 
@@ -777,7 +799,7 @@ export default function IncomingShipments({
                         <h3 className="font-bold text-sm text-foreground flex items-center gap-1.5 min-w-0">
                             <Anchor className="h-4 w-4 text-primary shrink-0" />
                             <span className="truncate">Procurement Registry</span>
-                            <span className="text-[10px] text-muted-foreground shrink-0">({filteredShipments.length})</span>
+                            <span className="text-[10px] text-muted-foreground shrink-0">({totalItems})</span>
                         </h3>
                         <button
                             onClick={() => { setIsOverridden(false); setIsModalOpen(true); }}
