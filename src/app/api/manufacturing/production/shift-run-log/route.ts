@@ -1,4 +1,5 @@
 /* eslint-disable */
+export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 
 const DIRECTUS_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://vtc:8074";
@@ -39,7 +40,20 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
     try {
         const body = await request.json();
-        const { taskId, joId, shiftName, yieldQty, inspectorId, qaStatus, qaParameters, materialsConsumed } = body;
+        const { 
+            taskId, 
+            joId, 
+            shiftName, 
+            yieldQty, 
+            inspectorId, 
+            qaStatus, 
+            qaParameters, 
+            materialsConsumed,
+            batchNo,
+            expiryDate,
+            manufacturingDate,
+            targetLotId
+        } = body;
 
         if (!taskId || !joId || !shiftName || yieldQty === undefined) {
             return NextResponse.json({ error: "Missing required fields: taskId, joId, shiftName, yieldQty" }, { status: 400 });
@@ -54,6 +68,21 @@ export async function POST(request: Request) {
         const producedProductId = joData.product_id;
         const branchId = joData.branch_id || 1;
         const jobOrderNo = joData.job_order_no;
+        const targetQuantity = Number(joData.target_quantity || 0);
+
+        // Fetch all existing yield logs for this Job Order to compute accumulated yield
+        const existingYieldRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_yield_ledger?filter[job_order_id][_eq]=${joId}&limit=-1`, { headers, cache: "no-store" });
+        let accumulatedYield = 0;
+        if (existingYieldRes.ok) {
+            const existingYieldData = await existingYieldRes.json();
+            accumulatedYield = (existingYieldData.data || []).reduce((sum: number, log: any) => sum + Number(log.yield_quantity || 0), 0);
+        }
+
+        if (accumulatedYield + Number(yieldQty) > targetQuantity) {
+            return NextResponse.json({ 
+                error: `Accumulated yield would exceed target! Already yielded: ${accumulatedYield.toLocaleString()} units. New yield: ${Number(yieldQty).toLocaleString()} units. Target: ${targetQuantity.toLocaleString()} units.` 
+            }, { status: 400 });
+        }
 
         const timestamp = new Date().toISOString();
 
@@ -77,7 +106,7 @@ export async function POST(request: Request) {
                     let prodName = `Product #${rawProductId}`;
                     let unitName = "units";
                     try {
-                        const prodDetailRes = await fetch(`${DIRECTUS_URL}/items/products/${rawProductId}?fields=product_name,unit_of_measurement.unit_shortcut`, { headers });
+                        const prodDetailRes = await fetch(`${DIRECTUS_URL}/items/products/${rawProductId}?fields=product_name,unit_of_measurement.unit_shortcut`, { headers, cache: "no-store" });
                         if (prodDetailRes.ok) {
                             const prodData = (await prodDetailRes.json()).data;
                             if (prodData) {
@@ -97,7 +126,6 @@ export async function POST(request: Request) {
         }
 
         // 3. Insert new row into relational manufacturing_job_order_yield_ledger table
-        // Initial qa_status is set to Pending unless operator explicitly requested QA Hold
         const ledgerPayload = {
             job_order_id: Number(joId),
             shift_name: shiftName,
@@ -120,7 +148,7 @@ export async function POST(request: Request) {
         const ledgerData = (await ledgerRes.json()).data;
         const ledgerId = ledgerData.ledger_id || ledgerData.id;
 
-        // 4. Insert QA Parameters/Yield Log into manufacturing_job_order_qa_records (remains step-specific for timeline)
+        // 4. Insert QA Parameters/Yield Log into manufacturing_job_order_qa_records
         if (qaParameters && qaParameters.length > 0) {
             for (const param of qaParameters) {
                 const valNumeric = param.value !== undefined && param.value !== "" ? Number(param.value) : null;
@@ -147,7 +175,6 @@ export async function POST(request: Request) {
                 });
             }
         } else {
-            // Write a general yield log record if no checklist parameters exist
             const qaPayload = {
                 job_order_id: Number(joId),
                 jo_route_id: Number(taskId),
@@ -165,9 +192,38 @@ export async function POST(request: Request) {
             });
         }
 
+        // Helper function to resolve or create master lot
+        const resolveMasterLotId = async (name: string, typeId: number) => {
+            let lotId = 1;
+            try {
+                const lotQuery = encodeURIComponent(JSON.stringify({ lot_name: { _eq: name } }));
+                const lotLookupRes = await fetch(`${DIRECTUS_URL}/items/lots?filter=${lotQuery}&limit=1`, { headers, cache: "no-store" });
+                const lotLookup = lotLookupRes.ok ? (await lotLookupRes.json()).data || [] : [];
+                if (lotLookup.length > 0) {
+                    lotId = lotLookup[0].lot_id;
+                } else {
+                    const createLotRes = await fetch(`${DIRECTUS_URL}/items/lots`, {
+                        method: "POST",
+                        headers,
+                        body: JSON.stringify({
+                            lot_name: name,
+                            inventory_type_id: typeId,
+                            max_batch_capacity: 100000,
+                            created_by: inspectorId ? Number(inspectorId) : 24
+                        })
+                    });
+                    if (createLotRes.ok) {
+                        lotId = (await createLotRes.json()).data.lot_id;
+                    }
+                }
+            } catch (err) {
+                console.error(`Error resolving master lot ID for ${name}:`, err);
+            }
+            return lotId;
+        };
+
         // 5. Process Material Consumption Reconciliations & deductions
         if (materialsConsumed && materialsConsumed.length > 0) {
-            // Load existing materials sheet for the Job Order
             const matsSheetRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_materials?filter[job_order_id][_eq]=${joId}&limit=-1`, { headers, cache: "no-store" });
             const matsSheet = matsSheetRes.ok ? (await matsSheetRes.json()).data || [] : [];
 
@@ -177,85 +233,212 @@ export async function POST(request: Request) {
 
                 if (consumedQty <= 0) continue;
 
-                // A. Update Job Order materials worksheet (actual_consumed_quantity)
                 const matchingMat = matsSheet.find((m: any) => Number(m.product_id) === rawProductId);
-                if (matchingMat) {
-                    const newTotal = Number(matchingMat.actual_consumed_quantity || 0) + consumedQty;
-                    await fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_materials/${matchingMat.id}`, {
-                        method: "PATCH",
-                        headers,
-                        body: JSON.stringify({ actual_consumed_quantity: newTotal })
-                    });
-                } else {
-                    // Create raw materials log entry if it wasn't pre-allocated
-                    await fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_materials`, {
+                let remainingToConsume = consumedQty;
+
+                // Log Consumage and Movements
+                const logConsumageAndMovement = async (qty: number, lot: any) => {
+                    if (qty <= 0) return;
+                    let consumageId = 0;
+                    if (ledgerId) {
+                        const consumagePayload = {
+                            ledger_id: Number(ledgerId),
+                            product_id: rawProductId,
+                            quantity_consumed: qty
+                        };
+                        const consumageRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_yield_ledger_bom_consumage`, {
+                            method: "POST",
+                            headers,
+                            body: JSON.stringify(consumagePayload)
+                        });
+                        if (consumageRes.ok) {
+                            const cData = (await consumageRes.json()).data;
+                            consumageId = cData.id || cData.consumage_id || 0;
+                        }
+                    }
+
+                    const consumedLotId = await resolveMasterLotId(lot.lot_number || "LOT-N/A", 1);
+                    const mPayload = {
+                        product_id: rawProductId,
+                        lot_id: consumedLotId,
+                        branch_id: branchId,
+                        transaction_type_id: 1, // Job Order Consumage
+                        source_document_id: consumageId,
+                        source_document_no: String(ledgerId),
+                        batch_no: lot.lot_number || "LOT-N/A",
+                        expiry_date: lot.expiry_date || null,
+                        manufacturing_date: lot.created_on ? lot.created_on.split("T")[0] : null,
+                        quantity: -qty, // OUT direction
+                        created_by: inspectorId ? Number(inspectorId) : 24,
+                        remarks: `Consumed from lot ${lot.lot_number || "N/A"} for JO yield`
+                    };
+                    await fetch(`${DIRECTUS_URL}/items/inventory_movements`, {
                         method: "POST",
                         headers,
-                        body: JSON.stringify({
-                            job_order_id: Number(joId),
-                            jo_id: jobOrderNo,
-                            product_id: rawProductId,
-                            quantity_required: 0,
-                            actual_consumed_quantity: consumedQty
-                        })
+                        body: JSON.stringify(mPayload)
                     });
-                }
+                };
 
-                // B. Reconcile inventory lots using First-In-First-Out (FIFO)
-                const lots = lotsCache[rawProductId] || [];
-                let remainingToDeduct = consumedQty;
-                for (const lot of lots) {
-                    if (remainingToDeduct <= 0) break;
+                if (matchingMat) {
+                    try {
+                        const reservationsRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_materials_reservations?filter[jo_material_id][_eq]=${matchingMat.jo_material_id || matchingMat.id}&limit=-1`, { headers, cache: "no-store" });
+                        const reservations = reservationsRes.ok ? (await reservationsRes.json()).data || [] : [];
+                        
+                        const sortedReservations = [...reservations].sort((a, b) => {
+                            const aQty = Number(a.reserved_quantity || 0);
+                            const bQty = Number(b.reserved_quantity || 0);
+                            return bQty - aQty;
+                        });
 
-                    const lotQty = Number(lot.quantity || 0);
-                    const lotId = lot.id || lot.lot_id;
+                        for (const resRow of sortedReservations) {
+                            if (remainingToConsume <= 0) break;
 
-                    if (lotQty >= remainingToDeduct) {
-                        const newLotQty = lotQty - remainingToDeduct;
-                        await fetch(`${DIRECTUS_URL}/items/inventory_lots/${lotId}`, {
+                            const reservedVal = Number(resRow.reserved_quantity || 0);
+                            const usedVal = Number(resRow.actual_used_quantity || 0);
+                            const porId = resRow.purchase_order_receiving_id ? Number(resRow.purchase_order_receiving_id) : null;
+
+                            const portion = porId !== null ? Math.min(reservedVal, remainingToConsume) : remainingToConsume;
+
+                            if (portion <= 0 && porId !== null) continue;
+
+                            const newReserved = Math.max(0, reservedVal - portion);
+                            const newUsed = usedVal + portion;
+
+                            // Update reservation row
+                            await fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_materials_reservations/${resRow.jo_materials_reservation_id || resRow.id}`, {
+                                method: "PATCH",
+                                headers,
+                                body: JSON.stringify({
+                                    reserved_quantity: newReserved,
+                                    actual_used_quantity: newUsed
+                                })
+                            }).catch(err => console.error(`Failed to update materials reservation row:`, err));
+
+                            // Deduct from physical inventory_lots
+                            if (porId && portion > 0) {
+                                try {
+                                    const porDetailRes = await fetch(`${DIRECTUS_URL}/items/purchase_order_receiving/${porId}?fields=purchase_order_id,lot_no,batch_no,expiry_date`, { headers, cache: "no-store" });
+                                    if (porDetailRes.ok) {
+                                        const porDetail = (await porDetailRes.json()).data;
+                                        if (porDetail) {
+                                            const poId = porDetail.purchase_order_id;
+                                            const lotNo = porDetail.lot_no || porDetail.batch_no || "LOT-N/A";
+                                            
+                                            const lotQuery = encodeURIComponent(JSON.stringify({
+                                                _and: [
+                                                    { product_id: { _eq: rawProductId } },
+                                                    { branch_id: { _eq: branchId } },
+                                                    { source_type: { _eq: "procurement" } },
+                                                    { source_reference: { _eq: String(poId) } },
+                                                    { lot_number: { _eq: lotNo } }
+                                                ]
+                                            }));
+                                            
+                                            const lRes = await fetch(`${DIRECTUS_URL}/items/inventory_lots?filter=${lotQuery}&limit=1`, { headers, cache: "no-store" });
+                                            if (lRes.ok) {
+                                                const lotList = (await lRes.json()).data || [];
+                                                if (lotList.length > 0) {
+                                                     const lot = lotList[0];
+                                                     const currentQty = Number(lot.quantity || 0);
+                                                     const newQty = Math.max(0, currentQty - portion);
+                                                     await fetch(`${DIRECTUS_URL}/items/inventory_lots/${lot.id}`, {
+                                                         method: "PATCH",
+                                                         headers,
+                                                         body: JSON.stringify({ quantity: newQty })
+                                                     });
+                                                     await logConsumageAndMovement(portion, lot);
+                                                }
+                                            }
+                                        }
+                                    }
+                                } catch (porErr) {
+                                    console.error(`Failed to deduct physical inventory lot for POR ID ${porId}:`, porErr);
+                                }
+                            } else {
+                                // For sub-assembly direct reservations
+                                await logConsumageAndMovement(portion, { lot_number: "Manufacturing Stock" });
+                            }
+
+                            remainingToConsume -= portion;
+                        }
+
+                        // Update parent manufacturing_job_order_materials row
+                        const newJomReserved = Math.max(0, Number(matchingMat.reserved_quantity || 0) - consumedQty);
+                        const newJomConsumed = Number(matchingMat.actual_consumed_quantity || 0) + consumedQty;
+                        await fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_materials/${matchingMat.jo_material_id || matchingMat.id}`, {
                             method: "PATCH",
                             headers,
-                            body: JSON.stringify({ quantity: newLotQty })
-                        });
-                        remainingToDeduct = 0;
-                    } else {
-                        await fetch(`${DIRECTUS_URL}/items/inventory_lots/${lotId}`, {
-                            method: "PATCH",
-                            headers,
-                            body: JSON.stringify({ quantity: 0 })
-                        });
-                        remainingToDeduct -= lotQty;
+                            body: JSON.stringify({
+                                reserved_quantity: newJomReserved,
+                                actual_consumed_quantity: newJomConsumed
+                            })
+                        }).catch(err => console.error("Error updating parent material requirement row:", err));
+                    } catch (err) {
+                        console.error("Error reconciling reservations:", err);
                     }
                 }
 
-                // C. Insert new row into manufacturing_job_order_yield_ledger_bom_consumage
-                if (ledgerId) {
-                    const consumagePayload = {
-                        ledger_id: Number(ledgerId),
-                        product_id: rawProductId,
-                        quantity_consumed: consumedQty
-                    };
-                    const consumageRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_yield_ledger_bom_consumage`, {
-                        method: "POST",
-                        headers,
-                        body: JSON.stringify(consumagePayload)
-                    });
-                    if (!consumageRes.ok) {
-                        console.error("Failed to insert into manufacturing_job_order_yield_ledger_bom_consumage database table:", await consumageRes.text());
+                // If shortfall remains or mat wasn't pre-allocated, deduct standard FIFO
+                if (remainingToConsume > 0) {
+                    if (!matchingMat) {
+                        await fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_materials`, {
+                            method: "POST",
+                            headers,
+                            body: JSON.stringify({
+                                job_order_id: Number(joId),
+                                product_id: rawProductId,
+                                uom_id: 1,
+                                allocated_quantity: 0,
+                                reserved_quantity: 0,
+                                actual_consumed_quantity: consumedQty,
+                                scrap_quantity: 0
+                            })
+                        }).catch(err => console.error("Error creating unallocated materials row:", err));
+                    }
+
+                    try {
+                        const fallbackQuery = encodeURIComponent(JSON.stringify({
+                            _and: [
+                                { product_id: { _eq: rawProductId } },
+                                { branch_id: { _eq: branchId } },
+                                { qa_status: { _eq: "Passed" } },
+                                { quantity: { _gt: 0 } }
+                            ]
+                        }));
+                        const fbRes = await fetch(`${DIRECTUS_URL}/items/inventory_lots?filter=${fallbackQuery}&sort=id&limit=1`, { headers, cache: "no-store" });
+                        if (fbRes.ok) {
+                            const fbList = (await fbRes.json()).data || [];
+                            if (fbList.length > 0) {
+                                const fbLot = fbList[0];
+                                const currentQty = Number(fbLot.quantity || 0);
+                                const newQty = Math.max(0, currentQty - remainingToConsume);
+                                await fetch(`${DIRECTUS_URL}/items/inventory_lots/${fbLot.id}`, {
+                                    method: "PATCH",
+                                    headers,
+                                    body: JSON.stringify({ quantity: newQty })
+                                });
+                                await logConsumageAndMovement(remainingToConsume, fbLot);
+                            }
+                        }
+                    } catch (err) {
+                        console.error("Failed to deduct fallback lot for shortfall:", err);
                     }
                 }
             }
         }
 
-        // 5. Record Yield: Insert new inventory lot for the produced product
-        // Linked directly to the yield ledger via source_type and source_reference
+        // 6. Record Yield: Insert new inventory lot for the produced product
+        const finalBatchNo = batchNo || `${jobOrderNo}-YLD-${new Date().toISOString().split("T")[0].replace(/-/g, "")}`;
         const newLotPayload = {
             product_id: producedProductId,
             branch_id: branchId,
             quantity: Number(yieldQty),
-            qa_status: qaStatus === "Passed" ? "Pending" : "QA Hold",
+            qa_status: qaStatus || "Pending",
             source_type: "yield_ledger",
             source_reference: String(ledgerId),
+            lot_number: finalBatchNo,
+            expiry_date: expiryDate || null,
+            created_on: manufacturingDate || null,
             remarks: `Yield from Job Order ${jobOrderNo} | Shift: ${shiftName}`
         };
 
@@ -269,7 +452,29 @@ export async function POST(request: Request) {
             console.error("Failed to insert new inventory lot:", await lotRes.text());
         }
 
-        return NextResponse.json({ success: true, message: "Shift run progress logged successfully and inventory reconciled." });
+        // 7. Log finished yield movement in inventory_movements ledger
+        const finishedLotId = targetLotId ? Number(targetLotId) : await resolveMasterLotId(finalBatchNo, 2); // 2 = Finished Goods
+        const finishedMovementPayload = {
+            product_id: producedProductId,
+            lot_id: finishedLotId,
+            branch_id: branchId,
+            transaction_type_id: 2, // Job Order Finished Goods
+            source_document_id: Number(ledgerId),
+            source_document_no: jobOrderNo,
+            batch_no: finalBatchNo,
+            expiry_date: expiryDate || null,
+            manufacturing_date: manufacturingDate || null,
+            quantity: Number(yieldQty),
+            created_by: inspectorId ? Number(inspectorId) : 24,
+            remarks: `Finished yield output from Job Order ${jobOrderNo}`
+        };
+        await fetch(`${DIRECTUS_URL}/items/inventory_movements`, {
+            method: "POST",
+            headers,
+            body: JSON.stringify(finishedMovementPayload)
+        });
+
+        return NextResponse.json({ success: true, message: "Shift run progress logged successfully, inventory movements ledger updated." });
     } catch (e) {
         console.error("Error in shift-run-log POST API:", e);
         return NextResponse.json({ error: (e as Error).message || "Failed to log shift progress" }, { status: 500 });

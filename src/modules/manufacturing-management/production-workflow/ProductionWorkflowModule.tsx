@@ -63,7 +63,9 @@ export default function ProductionWorkflowModule() {
         filteredJobOrders,
         branches,
         selectedBranchFilter,
-        setSelectedBranchFilter
+        setSelectedBranchFilter,
+        releasingDraft,
+        handleReleaseDraftJO
     } = useProductionWorkflow();
 
     const [clockedInCount, setClockedInCount] = React.useState(0);
@@ -230,68 +232,85 @@ export default function ProductionWorkflowModule() {
                     }
                 }}
             >
-                <DialogContent className="sm:max-w-[1200px] w-[95vw] h-[92vh] flex flex-col bg-background border border-border/80 shadow-2xl rounded-2xl p-0 overflow-hidden">
+                <DialogContent className="w-[98vw] md:w-full md:max-w-[1200px] lg:max-w-[1400px] xl:max-w-[1600px] max-h-[96vh] md:max-h-[92vh] h-[95vh] md:h-[92vh] flex flex-col bg-background border border-border/80 shadow-2xl rounded-2xl p-0 overflow-hidden">
                     {/* Header */}
-                    <div className="bg-gradient-to-r from-primary/10 via-primary/5 to-background p-6 border-b border-border/50 shrink-0">
+                    <div className="bg-gradient-to-r from-primary/10 via-primary/5 to-background p-4 sm:p-5 border-b border-border/50 shrink-0">
                         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                             <div className="space-y-1">
-                                <span className="text-xs font-semibold uppercase tracking-wider text-primary bg-primary/10 px-2 py-0.5 rounded-full">
-                                    Job Order Details Terminal
-                                </span>
-                                <DialogTitle className="font-extrabold text-2xl tracking-tight text-foreground mt-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <span className="text-xs font-semibold uppercase tracking-wider text-primary bg-primary/10 px-2 py-0.5 rounded-full">
+                                        Job Order Details Terminal
+                                    </span>
+                                    {parentJoNo && (
+                                        <span className="text-[10px] text-amber-700 dark:text-amber-400 bg-amber-500/10 px-2.5 py-0.5 rounded-full font-bold border border-amber-500/20 shrink-0">
+                                            Sub-assembly (Parent: {parentJoNo})
+                                        </span>
+                                    )}
+                                </div>
+                                <DialogTitle className="font-extrabold text-lg sm:text-2xl tracking-tight text-foreground mt-1">
                                     {selectedJobOrder?.order_no || `JO #${selectedJobOrder?.jo_id}`}
                                 </DialogTitle>
-                                <DialogDescription className="text-muted-foreground text-sm font-medium">
+                                <DialogDescription className="text-muted-foreground text-xs sm:text-sm font-medium truncate sm:whitespace-normal">
                                     Product: {selectedJobOrder?.product_name} • Total Quantity: {selectedJobOrder?.quantity.toLocaleString()} pcs
                                 </DialogDescription>
                             </div>
-                            <div className="flex items-center gap-2 shrink-0 pr-12 mr-2">
-                                <Button
-                                    onClick={() => setIsShiftLogOpen(true)}
-                                    className="bg-primary hover:bg-primary/95 text-white font-bold h-10 text-xs px-5 shadow-md shadow-primary/10 hover:shadow-primary/20 transition-all duration-200"
-                                >
-                                    <ClipboardCheck className="mr-1.5 h-4.5 w-4.5" /> Log Shift / Daily Yield
-                                </Button>
+                            <div className="flex items-center gap-2 shrink-0 sm:pr-12 sm:mr-2 w-full sm:w-auto justify-end sm:justify-start">
+                                {selectedJobOrder?.status === "Draft" ? (
+                                    <Button
+                                        onClick={handleReleaseDraftJO}
+                                        disabled={releasingDraft}
+                                        className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold h-10 text-xs px-5 shadow-md shadow-emerald-500/10 hover:shadow-emerald-500/20 transition-all duration-200 flex items-center"
+                                    >
+                                        <ClipboardCheck className="mr-1.5 h-4.5 w-4.5" /> {releasingDraft ? "Releasing..." : "Release Job Order"}
+                                    </Button>
+                                ) : (
+                                    <Button
+                                        onClick={() => setIsShiftLogOpen(true)}
+                                        className="bg-primary hover:bg-primary/95 text-white font-bold h-10 text-xs px-5 shadow-md shadow-primary/10 hover:shadow-primary/20 transition-all duration-200 flex items-center"
+                                    >
+                                        <ClipboardCheck className="mr-1.5 h-4.5 w-4.5" /> Log Shift / Daily Yield
+                                    </Button>
+                                )}
                             </div>
+                        </div>
+
+                        {/* Integrated Horizontal Step Navigator */}
+                        <div className="border-t border-border/40 pt-3 mt-3">
+                            <RoutingSequence
+                                sortedTasks={sortedTasks}
+                                selectedTaskId={selectedTaskId}
+                                setSelectedTaskId={setSelectedTaskId}
+                                routeOperators={routeOperators}
+                            />
                         </div>
                     </div>
 
                     {/* Scrollable Workspace Body */}
-                    <div className="flex-1 overflow-y-auto p-6 space-y-6 min-h-0 bg-muted/5">
-                        {parentJoNo && (
-                            <div className="p-3 bg-amber-500/10 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400 border border-amber-500/20 rounded-xl text-xs font-semibold">
-                                Note: This is a sub-assembly Job Order linked to Parent Job Order: {parentJoNo}.
-                            </div>
-                        )}
-
-                        {/* Sequential Routing Steps Timeline */}
-                        <RoutingSequence
-                            sortedTasks={sortedTasks}
-                            selectedTaskId={selectedTaskId}
-                            setSelectedTaskId={setSelectedTaskId}
-                            operatorsSummary={operatorsSummary}
-                        />
-
+                    <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 min-h-0 bg-muted/5">
                         {/* Unified Team Allocation List */}
                         <div className="space-y-6">
-                            {sortedTasks.map((task) => (
-                                <OperatorPanel
-                                    key={task.id}
-                                    selectedTask={task}
-                                    activeStep={activeStep}
-                                    selectedJobOrder={selectedJobOrder!}
-                                    sortedTasks={sortedTasks}
-                                    users={users}
-                                    routeOperators={routeOperators.filter((op) => op.task_id === task.id)}
-                                    loadingOperators={loadingOperators}
-                                    handleAddOperator={handleAddOperator}
-                                    handleRemoveOperator={handleRemoveOperator}
-                                    handleStartTimer={handleStartTimer}
-                                    handleStopTimer={handleStopTimer}
-                                    handleSaveManualHours={handleSaveManualHours}
-                                    handleCompleteStepClick={handleCompleteStepClick}
-                                />
-                            ))}
+                            {(() => {
+                                const activeTask = sortedTasks.find((t) => t.id === selectedTaskId) || sortedTasks[0];
+                                if (!activeTask) return null;
+                                return (
+                                    <OperatorPanel
+                                        key={activeTask.id}
+                                        selectedTask={activeTask}
+                                        activeStep={activeStep}
+                                        selectedJobOrder={selectedJobOrder!}
+                                        sortedTasks={sortedTasks}
+                                        users={users}
+                                        routeOperators={routeOperators.filter((op) => op.task_id === activeTask.id)}
+                                        loadingOperators={loadingOperators}
+                                        handleAddOperator={handleAddOperator}
+                                        handleRemoveOperator={handleRemoveOperator}
+                                        handleStartTimer={handleStartTimer}
+                                        handleStopTimer={handleStopTimer}
+                                        handleSaveManualHours={handleSaveManualHours}
+                                        handleCompleteStepClick={handleCompleteStepClick}
+                                    />
+                                );
+                            })()}
                         </div>
                     </div>
                 </DialogContent>

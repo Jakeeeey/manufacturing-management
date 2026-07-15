@@ -10,6 +10,298 @@ export async function handlePOST(request: Request) {
         const body = await request.json();
         const { action } = body;
 
+        if (action === "release-draft") {
+            const { joId } = body;
+            if (!joId) {
+                return NextResponse.json({ error: "Missing joId parameter" }, { status: 400 });
+            }
+
+            // 1. Fetch Job Order Header
+            const joRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_job_orders/${joId}?fields=job_order_id,job_order_no,product_id,version_id,target_quantity,status,branch_id,remarks,created_by`, { headers, cache: "no-store" });
+            if (!joRes.ok) {
+                return NextResponse.json({ error: `Job Order not found: ${joId}` }, { status: 404 });
+            }
+            const joData = (await joRes.ok ? (await joRes.json()).data : null);
+            if (!joData) {
+                return NextResponse.json({ error: `Job Order not found: ${joId}` }, { status: 404 });
+            }
+
+            if (joData.status !== "Draft" && joData.status !== "Planned" && joData.status !== "Planning") {
+                return NextResponse.json({ error: "Only Draft or Planned Job Orders can be released." }, { status: 400 });
+            }
+
+            // 2. Fetch Job Order Materials Worksheet
+            const matsRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_materials?filter[job_order_id][_eq]=${joData.job_order_id}&limit=-1`, { headers, cache: "no-store" });
+            const mats = matsRes.ok ? (await matsRes.json()).data || [] : [];
+
+            // 3. For each material in the worksheet, try to reserve any remaining shortfall
+            let allRequirementsMet = true;
+            const shortfallsList = [];
+
+            for (const mat of mats) {
+                const compProductId = Number(mat.product_id);
+                const allocatedQty = Number(mat.allocated_quantity || 0);
+                const reservedQty = Number(mat.reserved_quantity || 0);
+                const needed = allocatedQty - reservedQty;
+
+                if (needed <= 0) continue;
+
+                // FIFO/FEFO Allocation directly from purchase_order_receiving
+                if (!joData.branch_id) {
+                    return NextResponse.json({ error: "Job Order has no branch assigned" }, { status: 400 });
+                }
+                const branchId = Number(joData.branch_id);
+                const branchFilter = `&filter[branch_id][_eq]=${branchId}`;
+                const receiptsUrl = `${DIRECTUS_URL}/items/purchase_order_receiving?filter[product_id][_eq]=${compProductId}&filter[qa_status][_eq]=Passed&filter[is_reverted][_eq]=0&filter[received_quantity][_gt]=0${branchFilter}&sort=expiry_date`;
+                
+                const receiptsRes = await fetch(receiptsUrl, { headers });
+                const validReceipts = receiptsRes.ok ? (await receiptsRes.json()).data || [] : [];
+                
+                const receiptIds = validReceipts.map((r: any) => r.purchase_order_product_id).filter(Boolean);
+                const reservationsMap: Record<number, number> = {};
+
+                if (receiptIds.length > 0) {
+                    try {
+                        const resFilter = encodeURIComponent(JSON.stringify({
+                            _and: [
+                                { purchase_order_receiving_id: { _in: receiptIds } },
+                                { jo_material_id: { job_order_id: { status: { _in: ["Proceed", "Ongoing", "On Hold"] } } } }
+                            ]
+                        }));
+                        const resRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_materials_reservations?filter=${resFilter}&fields=purchase_order_receiving_id,reserved_quantity&limit=-1`, { headers });
+                        if (resRes.ok) {
+                            const reservationsData = (await resRes.json()).data || [];
+                            reservationsData.forEach((r: any) => {
+                                const porId = Number(r.purchase_order_receiving_id);
+                                if (porId) {
+                                    reservationsMap[porId] = (reservationsMap[porId] || 0) + Number(r.reserved_quantity || 0);
+                                }
+                            });
+                        }
+                    } catch (err) {
+                        console.error("Error fetching material reservations:", err);
+                    }
+                }
+
+                // Fetch physical inventory lots
+                const lotQueryFilter = encodeURIComponent(JSON.stringify({
+                    _and: [
+                        { product_id: { _eq: compProductId } },
+                        { branch_id: { _eq: branchId } },
+                        { source_type: { _eq: "procurement" } }
+                    ]
+                }));
+                const physicalLotsRes = await fetch(`${DIRECTUS_URL}/items/inventory_lots?filter=${lotQueryFilter}&limit=-1`, { headers });
+                const physicalLots = physicalLotsRes.ok ? (await physicalLotsRes.json()).data || [] : [];
+
+                let newlyReservedQty = 0;
+                const newAllocations = [];
+
+                for (const rec of validReceipts) {
+                    if (newlyReservedQty >= needed) break;
+
+                    const matchedLot = physicalLots.find((l: any) => 
+                        String(l.source_reference) === String(rec.purchase_order_id) && 
+                        (l.lot_number === rec.lot_no || l.lot_number === rec.batch_no || (l.lot_number === "LOT-N/A" && !rec.lot_no && !rec.batch_no))
+                    );
+                    const physicalQty = matchedLot ? Number(matchedLot.quantity || 0) : 0;
+                    const recId = Number(rec.purchase_order_product_id);
+                    const alreadyReserved = reservationsMap[recId] || 0;
+                    const netAvailable = Math.max(0, physicalQty - alreadyReserved);
+
+                    if (netAvailable <= 0) continue;
+
+                    const currentNeeded = needed - newlyReservedQty;
+                    const taken = Math.min(netAvailable, currentNeeded);
+
+                    if (taken > 0) {
+                        newlyReservedQty += taken;
+                        newAllocations.push({
+                            purchase_order_receiving_id: recId,
+                            allocated: taken
+                        });
+                    }
+                }
+
+                // Save new allocations/reservations
+                if (newlyReservedQty > 0) {
+                    for (const alloc of newAllocations) {
+                        const reservationPayload = {
+                            product_id: compProductId,
+                            jo_material_id: mat.jo_material_id || mat.id,
+                            purchase_order_receiving_id: alloc.purchase_order_receiving_id,
+                            reserved_quantity: alloc.allocated,
+                            actual_used_quantity: 0,
+                            created_by: joData.created_by ? Number(joData.created_by) : null
+                        };
+                        await fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_materials_reservations`, {
+                            method: "POST",
+                            headers,
+                            body: JSON.stringify(reservationPayload)
+                        }).catch(err => console.error("Error creating materials reservation row during draft release:", err));
+                    }
+
+                    // Update parent requirements row's reserved_quantity
+                    const updatedReservedQty = reservedQty + newlyReservedQty;
+                    await fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_materials/${mat.jo_material_id || mat.id}`, {
+                        method: "PATCH",
+                        headers,
+                        body: JSON.stringify({ reserved_quantity: updatedReservedQty })
+                    }).catch(err => console.error("Failed to update parent reserved quantity:", err));
+                }
+
+                const finalReservedQty = reservedQty + newlyReservedQty;
+                if (finalReservedQty < allocatedQty) {
+                    allRequirementsMet = false;
+                    // Fetch product name for detail report
+                    const productRes = await fetch(`${DIRECTUS_URL}/items/products/${compProductId}?fields=product_name`, { headers });
+                    const prodName = productRes.ok ? (await productRes.json()).data?.product_name || `Product #${compProductId}` : `Product #${compProductId}`;
+                    shortfallsList.push({
+                        name: prodName,
+                        shortage: allocatedQty - finalReservedQty
+                    });
+                }
+            }
+
+            if (allRequirementsMet || body.forceRelease === true) {
+                // Change status to Released
+                const patchRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_job_orders/${joData.job_order_id}`, {
+                    method: "PATCH",
+                    headers,
+                    body: JSON.stringify({ status: "Released" })
+                });
+                if (patchRes.ok) {
+                    return NextResponse.json({ 
+                        success: true, 
+                        message: allRequirementsMet 
+                            ? "Job Order released successfully." 
+                            : "Job Order forcibly released with material shortfalls." 
+                    });
+                } else {
+                    return NextResponse.json({ error: "Failed to update Job Order status to Released." }, { status: 500 });
+                }
+            } else {
+                const shortfallMsg = shortfallsList.map(s => `${s.name} (Shortfall: ${s.shortage.toFixed(2)} units)`).join("; ");
+                return NextResponse.json({
+                    success: false,
+                    error: `Still insufficient raw materials to release: ${shortfallMsg}`
+                }, { status: 400 });
+            }
+        }
+
+        if (action === "reserve-lot") {
+            const { joId, materialId, productId, receivingId, qty, isSubAssembly } = body;
+            if (!joId || !materialId || !productId || !qty) {
+                return NextResponse.json({ error: "Missing parameters for reservation." }, { status: 400 });
+            }
+
+            if (isSubAssembly) {
+                // Update parent requirement row directly
+                const matRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_materials/${materialId}`, {
+                    method: "PATCH",
+                    headers,
+                    body: JSON.stringify({ reserved_quantity: Number(qty) })
+                });
+                if (!matRes.ok) {
+                    const errTxt = await matRes.text();
+                    return NextResponse.json({ error: `Failed to update sub-assembly reservation: ${errTxt}` }, { status: 500 });
+                }
+                return NextResponse.json({ success: true, message: "Sub-assembly successfully reserved from manufacturing stock." });
+            }
+
+            if (!receivingId) {
+                return NextResponse.json({ error: "Missing receivingId for raw material reservation." }, { status: 400 });
+            }
+
+            // Create reservation entry
+            const reservationPayload = {
+                product_id: Number(productId),
+                jo_material_id: Number(materialId),
+                purchase_order_receiving_id: Number(receivingId),
+                reserved_quantity: Number(qty),
+                actual_used_quantity: 0
+            };
+
+            const res = await fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_materials_reservations`, {
+                method: "POST",
+                headers,
+                body: JSON.stringify(reservationPayload)
+            });
+
+            if (!res.ok) {
+                const errTxt = await res.text();
+                return NextResponse.json({ error: `Failed to save materials reservation: ${errTxt}` }, { status: 500 });
+            }
+
+            // Update parent requirement row
+            const matRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_materials/${materialId}`, { headers });
+            if (matRes.ok) {
+                const matData = (await matRes.json()).data;
+                const newReserved = Number(matData.reserved_quantity || 0) + Number(qty);
+                await fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_materials/${materialId}`, {
+                    method: "PATCH",
+                    headers,
+                    body: JSON.stringify({ reserved_quantity: newReserved })
+                });
+            }
+
+            return NextResponse.json({ success: true, message: "Material successfully reserved from lot." });
+        }
+
+        if (action === "unreserve-lot") {
+            const { joId, materialId, reservationId, isSubAssembly } = body;
+            if (!joId || !materialId) {
+                return NextResponse.json({ error: "Missing parameters for unreservation." }, { status: 400 });
+            }
+
+            if (isSubAssembly) {
+                // Set reserved_quantity to 0 directly
+                const matRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_materials/${materialId}`, {
+                    method: "PATCH",
+                    headers,
+                    body: JSON.stringify({ reserved_quantity: 0 })
+                });
+                if (!matRes.ok) {
+                    const errTxt = await matRes.text();
+                    return NextResponse.json({ error: `Failed to clear sub-assembly reservation: ${errTxt}` }, { status: 500 });
+                }
+                return NextResponse.json({ success: true, message: "Sub-assembly reservation successfully cleared." });
+            }
+
+            if (!reservationId) {
+                return NextResponse.json({ error: "Missing reservationId for raw material unreservation." }, { status: 400 });
+            }
+
+            // Fetch the reservation row to get the quantity being unreserved
+            const resUrl = `${DIRECTUS_URL}/items/manufacturing_job_order_materials_reservations/${reservationId}`;
+            const resRes = await fetch(resUrl, { headers });
+            if (!resRes.ok) {
+                return NextResponse.json({ error: "Reservation record not found." }, { status: 404 });
+            }
+            const resData = (await resRes.json()).data;
+            const unreservedQty = Number(resData.reserved_quantity || 0);
+
+            // Delete the reservation row
+            const delRes = await fetch(resUrl, { method: "DELETE", headers });
+            if (!delRes.ok) {
+                return NextResponse.json({ error: "Failed to delete reservation." }, { status: 500 });
+            }
+
+            // Update parent requirement row
+            const matRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_materials/${materialId}`, { headers });
+            if (matRes.ok) {
+                const matData = (await matRes.json()).data;
+                const newReserved = Math.max(0, Number(matData.reserved_quantity || 0) - unreservedQty);
+                await fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_materials/${materialId}`, {
+                    method: "PATCH",
+                    headers,
+                    body: JSON.stringify({ reserved_quantity: newReserved })
+                });
+            }
+
+            return NextResponse.json({ success: true, message: "Material successfully unreserved." });
+        }
+
         if (action === "direct-allocate") {
             const { branchId, productId, recipeVersionId, lines } = body;
 
@@ -119,8 +411,43 @@ export async function handlePOST(request: Request) {
             }
 
             // Apportion and update Sales Order Detail lines and create negative product_ledger entries
+            // Helper function to resolve or create master lot in the lots table
+            const resolveMasterLotId = async (name: string, typeId: number) => {
+                let lotId = 49; // Default fallback to a valid existing lot ID (e.g. 49) instead of 1
+                const mappedTypeId = typeId === 1 ? 390 : 389;
+                try {
+                    const lotQuery = encodeURIComponent(JSON.stringify({ lot_name: { _eq: name } }));
+                    const lotLookupRes = await fetch(`${DIRECTUS_URL}/items/lots?filter=${lotQuery}&limit=1`, { headers, cache: "no-store" });
+                    const lotLookup = lotLookupRes.ok ? (await lotLookupRes.json()).data || [] : [];
+                    if (lotLookup.length > 0) {
+                        lotId = lotLookup[0].lot_id;
+                    } else {
+                        const createLotRes = await fetch(`${DIRECTUS_URL}/items/lots`, {
+                            method: "POST",
+                            headers,
+                            body: JSON.stringify({
+                                lot_name: name,
+                                inventory_type_id: mappedTypeId,
+                                max_batch_capacity: 100000,
+                                created_by: 24
+                            })
+                        });
+                        if (createLotRes.ok) {
+                            lotId = (await createLotRes.json()).data.lot_id;
+                        } else {
+                            console.error(`Failed to create master lot ${name}:`, await createLotRes.text());
+                        }
+                    }
+                } catch (err) {
+                    console.error(`Error resolving master lot ID for ${name}:`, err);
+                }
+                return lotId;
+            };
+
             let deductionIdx = 0;
             let deductionRemaining = lotDeductions.length > 0 ? lotDeductions[0].quantity : 0;
+
+            const parentOrderIdsToUpdate = new Set<number>();
 
             for (const line of lines) {
                 const detailId = Number(line.detail_id || line.id);
@@ -153,6 +480,7 @@ export async function handlePOST(request: Request) {
                         const parentSo = (await parentSoRes.json()).data;
                         parentOrderNo = parentSo?.order_no || "";
                     }
+                    parentOrderIdsToUpdate.add(Number(parentOrderId));
                 }
 
                 let lineRemaining = orderedQty;
@@ -177,6 +505,36 @@ export async function handlePOST(request: Request) {
                         console.error("Failed to post ledger entry:", await ledgerRes.text());
                     }
 
+                    // Write negative shipment/issue movement to inventory_movements ledger
+                    try {
+                        const masterLotId = await resolveMasterLotId(currentLotDeduction.lotNumber, 2); // 2 = Finished Goods
+                        const physicalLot = matchingLots.find((l: any) => l.lot_number === currentLotDeduction.lotNumber);
+                        const movementPayload = {
+                            product_id: Number(productId),
+                            lot_id: masterLotId,
+                            branch_id: Number(branchId),
+                            transaction_type_id: 4, // Sales Order Issue / Dispatch
+                            source_document_id: physicalLot ? physicalLot.id : 0,
+                            source_document_no: parentOrderNo || `SO-${parentOrderId}`,
+                            batch_no: currentLotDeduction.lotNumber,
+                            expiry_date: physicalLot ? physicalLot.expiry_date : null,
+                            manufacturing_date: physicalLot && physicalLot.created_on ? physicalLot.created_on.split("T")[0] : null,
+                            quantity: -take, // negative for issue
+                            created_by: 24,
+                            remarks: `Direct Allocation Shipment for Sales Order ${parentOrderNo || `SO-${parentOrderId}`}`
+                        };
+                        const movRes = await fetch(`${DIRECTUS_URL}/items/inventory_movements`, {
+                            method: "POST",
+                            headers,
+                            body: JSON.stringify(movementPayload)
+                        });
+                        if (!movRes.ok) {
+                            console.error("Failed to post negative inventory movement for Sales Order Issue:", await movRes.text());
+                        }
+                    } catch (movErr) {
+                        console.error("Error posting negative inventory movement for Sales Order Issue:", movErr);
+                    }
+
                     lineRemaining -= take;
                     deductionRemaining -= take;
                     if (deductionRemaining <= 0) {
@@ -186,24 +544,37 @@ export async function handlePOST(request: Request) {
                         }
                     }
                 }
+            }
 
-                // Check parent order fully allocated status
-                if (parentOrderId) {
-                    const allDetailsRes = await fetch(`${DIRECTUS_URL}/items/sales_order_details?filter[order_id][_eq]=${parentOrderId}&limit=-1`, { headers, cache: "no-store" });
-                    if (allDetailsRes.ok) {
-                        const allDetails = (await allDetailsRes.json()).data || [];
-                        const allFullyAllocated = allDetails.every((d: any) => {
-                            const ordered = Number(d.ordered_quantity || 0);
-                            const alloc = Number(d.allocated_quantity || 0);
-                            return alloc >= ordered;
-                        });
+            // Check and update affected parent orders status
+            for (const parentOrderId of parentOrderIdsToUpdate) {
+                const allDetailsRes = await fetch(`${DIRECTUS_URL}/items/sales_order_details?filter[order_id][_eq]=${parentOrderId}&limit=-1`, { headers, cache: "no-store" });
+                if (allDetailsRes.ok) {
+                    const allDetails = (await allDetailsRes.json()).data || [];
+                    console.log(`[Diagnostic] checking parentOrderId ${parentOrderId}, lines count: ${lines.length}`);
+                    const allFullyAllocated = allDetails.every((d: any) => {
+                        const detailIdVal = Number(d.detail_id || d.id);
+                        const isBeingAllocated = lines.some((l: any) => Number(l.detail_id || l.id) === detailIdVal);
+                        const ordered = Number(d.ordered_quantity || 0);
+                        const alloc = Number(d.allocated_quantity || 0);
+                        const result = isBeingAllocated || alloc >= ordered;
+                        console.log(`[Diagnostic] Detail ID: ${detailIdVal}, isBeingAllocated: ${isBeingAllocated}, ordered: ${ordered}, alloc: ${alloc}, line result: ${result}`);
+                        return result;
+                    });
+                    console.log(`[Diagnostic] final allFullyAllocated: ${allFullyAllocated}`);
 
-                        const newStatus = allFullyAllocated ? "For Invoicing" : "For Picking";
-                        await fetch(`${DIRECTUS_URL}/items/sales_order/${parentOrderId}`, {
-                            method: "PATCH",
-                            headers,
-                            body: JSON.stringify({ order_status: newStatus })
-                        });
+                    const newStatus = allFullyAllocated ? "For Invoicing" : "For Picking";
+                    console.log(`[BFF Direct Allocate] Transitioning SO ${parentOrderId} to status: ${newStatus}`);
+                    const updateStatusRes = await fetch(`${DIRECTUS_URL}/items/sales_order/${parentOrderId}`, {
+                        method: "PATCH",
+                        headers,
+                        body: JSON.stringify({ 
+                            order_status: newStatus,
+                            for_invoicing_at: newStatus === "For Invoicing" ? new Date().toISOString() : undefined
+                        })
+                    });
+                    if (!updateStatusRes.ok) {
+                        console.error(`Failed to update parent Sales Order ${parentOrderId} status to ${newStatus}:`, await updateStatusRes.text());
                     }
                 }
             }
