@@ -67,6 +67,12 @@ export function inventoryStatusToShipmentStatus(statusId?: number | null): Shipm
     }
 }
 
+export function inventoryStatusToPurchaseOrderStatus(statusId?: number | null) {
+    return statusId === INVENTORY_STATUS.REQUESTED
+        ? "Requested" as const
+        : inventoryStatusToShipmentStatus(statusId);
+}
+
 export function shipmentStatusToInventoryStatus(status: string): InventoryStatusId {
     switch (status) {
         case "Approved": return INVENTORY_STATUS.APPROVED;

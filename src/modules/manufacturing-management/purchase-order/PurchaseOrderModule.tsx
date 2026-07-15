@@ -31,6 +31,8 @@ export default function PurchaseOrderModule() {
                     totalPages: purchaseOrder.listMeta.totalPages,
                     onQueryChange: purchaseOrder.loadShipments
                 }}
+                canonicalDrafting
+                jobOrders={purchaseOrder.jobOrders}
             />
         </div>
     );
