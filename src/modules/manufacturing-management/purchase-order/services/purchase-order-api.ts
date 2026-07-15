@@ -1,5 +1,5 @@
 import type { IncomingShipment, ShipmentLineItem } from "../../procurement/types";
-import type { PurchaseOrderListQuery, PurchaseOrderListResponse } from "../types";
+import type { PurchaseOrderCatalog, PurchaseOrderDraftPayload, PurchaseOrderListQuery, PurchaseOrderListResponse } from "../types";
 
 async function responseJson<T>(response: Response, fallback: string): Promise<T> {
     if (!response.ok) {
@@ -24,11 +24,16 @@ export async function fetchPurchaseOrderLines(id: number, signal?: AbortSignal) 
     return body.data;
 }
 
-export async function createPurchaseOrder(shipmentData: unknown, lineItems: unknown[]) {
+export async function fetchPurchaseOrderCatalog(signal?: AbortSignal) {
+    const response = await fetch("/api/manufacturing/purchase-orders/catalog", { signal });
+    return responseJson<PurchaseOrderCatalog>(response, "Failed to load purchase-order catalog.");
+}
+
+export async function createPurchaseOrder(payload: PurchaseOrderDraftPayload) {
     const response = await fetch("/api/manufacturing/purchase-orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ shipmentData, lineItems })
+        body: JSON.stringify(payload)
     });
     return responseJson(response, "Failed to create purchase order.");
 }
