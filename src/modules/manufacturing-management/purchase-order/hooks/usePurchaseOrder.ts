@@ -2,25 +2,48 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { IncomingShipment, LinkedProduct, RawMaterial, Supplier } from "../../procurement/types";
 import type { ManifestLineFormItem, ShipmentFormState } from "../../procurement/components/IncomingShipments";
-import type { PurchaseOrderListMeta, PurchaseOrderListQuery } from "../types";
+import type { PurchaseOrderDraftPayload, PurchaseOrderListMeta, PurchaseOrderListQuery } from "../types";
 import {
     fetchLinkedProducts,
-    fetchRawMaterials,
-    fetchSuppliers
+    fetchRawMaterials
 } from "../../procurement/services/procurement-api";
 import {
     createPurchaseOrder,
     editPurchaseOrder,
     fetchPurchaseOrderLines,
     fetchPurchaseOrders,
-    updatePurchaseOrderStatus
+    updatePurchaseOrderStatus,
+    fetchPurchaseOrderCatalog
 } from "../services/purchase-order-api";
 
-const blankLine = (): ManifestLineFormItem => ({ parent_product_id: "", product_id: "", quantity_ordered: "", base_unit_cost_php: "" });
+const blankLine = (): ManifestLineFormItem => ({
+    parent_product_id: "", product_id: "", quantity_ordered: "", base_unit_cost_php: "",
+    purchase_intent: "Buffer_Stock", job_order_id: "", discount_percent: "0", vat_percent: "0", withholding_percent: "0"
+});
 const blankForm = (): ShipmentFormState => ({
     reference_number: "", supplier_id: "", exchange_rate: "", total_foreign_currency: "0", total_php_value: "0",
-    status: "Ordered", date_received: new Date().toISOString().split("T")[0], branch_id: null, payment_type: null, price_type: ""
+    status: "Ordered", date_received: new Date().toISOString().split("T")[0], branch_id: null, payment_type: null, price_type: "", currency_code: "PHP"
 });
+
+function calculateDraftTotals(lines: PurchaseOrderDraftPayload["lines"], exchangeRate: number) {
+    const round = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
+    return lines.reduce((totals, line) => {
+        const grossForeign = round(line.quantity * line.unitPrice);
+        const discountForeign = round(grossForeign * line.discountPercent / 100);
+        const subtotalForeign = round(grossForeign - discountForeign);
+        const vatForeign = round(subtotalForeign * line.vatPercent / 100);
+        const withholdingForeign = round(subtotalForeign * line.withholdingPercent / 100);
+        const netForeign = round(subtotalForeign + vatForeign - withholdingForeign);
+        return {
+            grossPhp: round(totals.grossPhp + grossForeign * exchangeRate),
+            discountPhp: round(totals.discountPhp + discountForeign * exchangeRate),
+            vatPhp: round(totals.vatPhp + vatForeign * exchangeRate),
+            withholdingPhp: round(totals.withholdingPhp + withholdingForeign * exchangeRate),
+            netPhp: round(totals.netPhp + netForeign * exchangeRate),
+            netForeign: round(totals.netForeign + netForeign)
+        };
+    }, { grossPhp: 0, discountPhp: 0, vatPhp: 0, withholdingPhp: 0, netPhp: 0, netForeign: 0 });
+}
 
 export function usePurchaseOrder() {
     const [loading, setLoading] = useState(false);
@@ -28,6 +51,7 @@ export function usePurchaseOrder() {
     const [shipments, setShipments] = useState<IncomingShipment[]>([]);
     const [rawMaterials, setRawMaterials] = useState<RawMaterial[]>([]);
     const [supplierLinkedProducts, setSupplierLinkedProducts] = useState<LinkedProduct[]>([]);
+    const [jobOrders, setJobOrders] = useState<Array<{ job_order_id: number; job_order_no?: string }>>([]);
     const [selectedShipment, setSelectedShipment] = useState<IncomingShipment | null>(null);
     const [selectedShipmentLines, setSelectedShipmentLines] = useState<Awaited<ReturnType<typeof fetchPurchaseOrderLines>>>([]);
     const [isShipmentModalOpen, setIsShipmentModalOpen] = useState(false);
@@ -57,7 +81,10 @@ export function usePurchaseOrder() {
     useEffect(() => {
         void Promise.all([
             loadShipments(),
-            fetchSuppliers().then(setSuppliers),
+            fetchPurchaseOrderCatalog().then(catalog => {
+                setSuppliers(catalog.suppliers);
+                setJobOrders(catalog.jobOrders);
+            }),
             fetchRawMaterials().then(setRawMaterials)
         ]).catch(error => toast.error((error as Error).message || "Failed to load purchase-order data."));
         return () => {
@@ -102,20 +129,17 @@ export function usePurchaseOrder() {
             setShipmentLinesForm([blankLine()]);
             return;
         }
-        const year = new Date().getFullYear();
-        const randomCode = Math.random().toString(36).slice(2, 8).toUpperCase();
         const lockedRate = typeof window === "undefined" ? "" : localStorage.getItem("vos_locked_forex_rate") || "";
         setShipmentForm(previous => ({
             ...previous,
-            exchange_rate: previous.exchange_rate || lockedRate,
-            reference_number: previous.reference_number || `PO-${year}-${randomCode}`
+            exchange_rate: previous.currency_code === "USD" ? previous.exchange_rate || lockedRate : "1"
         }));
     }, [isShipmentModalOpen]);
 
     const handleCreateShipment = async (event: React.FormEvent) => {
         event.preventDefault();
         const lines = shipmentLinesForm.filter(line => line.product_id && line.quantity_ordered && line.base_unit_cost_php);
-        if (!shipmentForm.reference_number.trim() || !shipmentForm.supplier_id || !shipmentForm.branch_id || !shipmentForm.payment_type || !shipmentForm.price_type || lines.length === 0) {
+        if (!shipmentForm.supplier_id || !shipmentForm.branch_id || !shipmentForm.payment_type || !shipmentForm.price_type || lines.length === 0) {
             toast.error("Complete the purchase-order header and all required line fields.");
             return;
         }
@@ -124,26 +148,40 @@ export function usePurchaseOrder() {
             toast.error("A valid exchange rate is required.");
             return;
         }
-        const lineItems = lines.map(line => ({
-            product_id: Number(line.product_id), quantity_ordered: Number(line.quantity_ordered), base_unit_cost_php: Number(line.base_unit_cost_php)
+        const lineItems: PurchaseOrderDraftPayload["lines"] = lines.map(line => ({
+            productId: Number(line.product_id),
+            parentProductId: Number(line.parent_product_id || line.product_id),
+            purchaseIntent: line.purchase_intent || "Buffer_Stock",
+            jobOrderId: line.purchase_intent === "MRP_Demand" ? Number(line.job_order_id) || null : null,
+            quantity: Number(line.quantity_ordered),
+            unitPrice: Number(line.base_unit_cost_php),
+            discountPercent: Number(line.discount_percent) || 0,
+            vatPercent: Number(line.vat_percent) || 0,
+            withholdingPercent: Number(line.withholding_percent) || 0
         }));
-        if (new Set(lineItems.map(line => line.product_id)).size !== lineItems.length) {
+        if (lineItems.some(line => line.purchaseIntent === "MRP_Demand" && !line.jobOrderId)) {
+            toast.error("Every MRP-demand line requires a valid job order.");
+            return;
+        }
+        if (new Set(lineItems.map(line => line.productId)).size !== lineItems.length) {
             toast.error("Duplicate products must be consolidated into one line.");
             return;
         }
-        const total = lineItems.reduce((sum, line) => sum + line.quantity_ordered * line.base_unit_cost_php, 0);
+        const totals = calculateDraftTotals(lineItems, exchangeRate);
         setLoading(true);
         try {
-            await createPurchaseOrder({
-                ...shipmentForm,
-                supplier_id: Number(shipmentForm.supplier_id),
-                branch_id: Number(shipmentForm.branch_id),
-                payment_type: Number(shipmentForm.payment_type),
-                exchange_rate: exchangeRate,
-                total_php_value: total,
-                total_foreign_currency: total / exchangeRate
-            }, lineItems);
-            toast.success("Purchase order registered successfully.");
+            const result = await createPurchaseOrder({
+                externalReference: shipmentForm.reference_number.trim() || undefined,
+                supplierId: Number(shipmentForm.supplier_id),
+                branchId: Number(shipmentForm.branch_id),
+                paymentTypeId: Number(shipmentForm.payment_type),
+                priceType: shipmentForm.price_type,
+                currencyCode: shipmentForm.currency_code || "PHP",
+                exchangeRate,
+                expectedTotals: totals,
+                lines: lineItems
+            }) as { purchaseOrderNo?: string };
+            toast.success(`Purchase order ${result.purchaseOrderNo || ""} created in Requested status.`.trim());
             setIsShipmentModalOpen(false);
             await loadShipments();
         } catch (error) {
@@ -182,7 +220,7 @@ export function usePurchaseOrder() {
     };
 
     return {
-        loading, suppliers, shipments, rawMaterials, supplierLinkedProducts, listMeta, loadShipments,
+        loading, suppliers, shipments, rawMaterials, supplierLinkedProducts, jobOrders, listMeta, loadShipments,
         selectedShipment, setSelectedShipment, selectedShipmentLines,
         isShipmentModalOpen, setIsShipmentModalOpen,
         shipmentForm, setShipmentForm, shipmentLinesForm, setShipmentLinesForm,

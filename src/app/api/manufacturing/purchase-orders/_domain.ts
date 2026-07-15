@@ -24,6 +24,55 @@ export interface MoneySummary {
     netAmount: number;
 }
 
+function roundCurrency(value: number): number {
+    return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+export interface PurchaseOrderMoneyLine {
+    quantity: number;
+    unitPrice: number;
+    discountPercent: number;
+    vatPercent: number;
+    withholdingPercent: number;
+}
+
+export function calculatePurchaseOrderLine(line: PurchaseOrderMoneyLine, exchangeRate: number) {
+    const grossForeign = roundCurrency(line.quantity * line.unitPrice);
+    const discountForeign = roundCurrency(grossForeign * line.discountPercent / 100);
+    const discountedSubtotalForeign = roundCurrency(grossForeign - discountForeign);
+    const vatForeign = roundCurrency(discountedSubtotalForeign * line.vatPercent / 100);
+    const withholdingForeign = roundCurrency(discountedSubtotalForeign * line.withholdingPercent / 100);
+    const netForeign = roundCurrency(discountedSubtotalForeign + vatForeign - withholdingForeign);
+    return {
+        grossForeign,
+        discountForeign,
+        vatForeign,
+        withholdingForeign,
+        netForeign,
+        grossPhp: roundCurrency(grossForeign * exchangeRate),
+        discountPhp: roundCurrency(discountForeign * exchangeRate),
+        vatPhp: roundCurrency(vatForeign * exchangeRate),
+        withholdingPhp: roundCurrency(withholdingForeign * exchangeRate),
+        netPhp: roundCurrency(netForeign * exchangeRate)
+    };
+}
+
+export function calculatePurchaseOrderTotals(lines: readonly PurchaseOrderMoneyLine[], exchangeRate: number) {
+    const calculatedLines = lines.map(line => calculatePurchaseOrderLine(line, exchangeRate));
+    const sum = (field: keyof typeof calculatedLines[number]) => roundCurrency(
+        calculatedLines.reduce((total, line) => total + line[field], 0)
+    );
+    return {
+        lines: calculatedLines,
+        grossPhp: sum("grossPhp"),
+        discountPhp: sum("discountPhp"),
+        vatPhp: sum("vatPhp"),
+        withholdingPhp: sum("withholdingPhp"),
+        netPhp: sum("netPhp"),
+        netForeign: sum("netForeign")
+    };
+}
+
 export interface PurchaseOrderDiscount {
     kind: DiscountKind;
     value: number;
