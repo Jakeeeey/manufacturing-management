@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { toast } from "sonner";
 import { Shipment, Branch, ShipmentLineItem, Product, InspectionRow, StorageLot } from "../types";
 import { 
@@ -79,6 +79,25 @@ export function useQAReceiving() {
         });
     }, [shipments, searchPO, searchStatus, startDate, endDate, showReceived]);
 
+    const loadShipments = useCallback(async (filters: { search?: string; status?: string; startDate?: string; endDate?: string; includeReceived?: boolean } = {}) => {
+        listController.current?.abort();
+        const controller = new AbortController();
+        listController.current = controller;
+        setLoadingShipments(true);
+        try {
+            const data = await fetchActiveShipments(filters, controller.signal);
+            setShipments(data || []);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } catch (e: any) {
+            if (e.name !== "AbortError") {
+                console.error(e);
+                toast.error(e.message || "Failed to load active shipments");
+            }
+        } finally {
+            if (!controller.signal.aborted) setLoadingShipments(false);
+        }
+    }, []);
+
     // Load base data
     useEffect(() => {
         loadBranches();
@@ -101,32 +120,15 @@ export function useQAReceiving() {
             });
         }, 250);
         return () => window.clearTimeout(timeout);
-    }, [searchPO, searchStatus, startDate, endDate, showReceived]);
+    }, [searchPO, searchStatus, startDate, endDate, showReceived, loadShipments]);
 
-    const loadShipments = async (filters: { search?: string; status?: string; startDate?: string; endDate?: string; includeReceived?: boolean } = {}) => {
-        listController.current?.abort();
-        const controller = new AbortController();
-        listController.current = controller;
-        setLoadingShipments(true);
-        try {
-            const data = await fetchActiveShipments(filters, controller.signal);
-            setShipments(data || []);
-            if (selectedShipment && !data.some(shipment => shipment.shipment_id === selectedShipment.shipment_id)) {
-                detailController.current?.abort();
-                setSelectedShipment(null);
-                setLineItems([]);
-                setInspectionRows({});
-            }
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-        } catch (e: any) {
-            if (e.name !== "AbortError") {
-                console.error(e);
-                toast.error(e.message || "Failed to load active shipments");
-            }
-        } finally {
-            if (!controller.signal.aborted) setLoadingShipments(false);
-        }
-    };
+    useEffect(() => {
+        if (!selectedShipment || shipments.some(shipment => shipment.shipment_id === selectedShipment.shipment_id)) return;
+        detailController.current?.abort();
+        setSelectedShipment(null);
+        setLineItems([]);
+        setInspectionRows({});
+    }, [shipments, selectedShipment]);
 
     const loadBranches = async () => {
         setLoadingBranches(true);
