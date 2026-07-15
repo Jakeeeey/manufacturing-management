@@ -66,7 +66,7 @@ export async function updateSalesOrderDetails(orderId: number, details: { detail
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function approveSalesOrder(orderId: number): Promise<any> {
-    return updateSalesOrderStatus(orderId, "For Consolidation");
+    return updateSalesOrderStatus(orderId, "For Picking");
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

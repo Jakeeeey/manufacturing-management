@@ -120,6 +120,39 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Missing required fields (joId, productId, quantityProduced, branchId)" }, { status: 400 });
         }
 
+        // Helper function to resolve or create master lot in the lots table
+        const resolveMasterLotId = async (name: string, typeId: number) => {
+            let lotId = 49; // Default fallback to a valid existing lot ID (e.g. 49) instead of 1
+            const mappedTypeId = typeId === 1 ? 390 : 389;
+            try {
+                const lotQuery = encodeURIComponent(JSON.stringify({ lot_name: { _eq: name } }));
+                const lotLookupRes = await fetch(`${DIRECTUS_URL}/items/lots?filter=${lotQuery}&limit=1`, { headers, cache: "no-store" });
+                const lotLookup = lotLookupRes.ok ? (await lotLookupRes.json()).data || [] : [];
+                if (lotLookup.length > 0) {
+                    lotId = lotLookup[0].lot_id;
+                } else {
+                    const createLotRes = await fetch(`${DIRECTUS_URL}/items/lots`, {
+                        method: "POST",
+                        headers,
+                        body: JSON.stringify({
+                            lot_name: name,
+                            inventory_type_id: mappedTypeId,
+                            max_batch_capacity: 100000,
+                            created_by: 24
+                        })
+                    });
+                    if (createLotRes.ok) {
+                        lotId = (await createLotRes.json()).data.lot_id;
+                    } else {
+                        console.error(`Failed to create master lot ${name}:`, await createLotRes.text());
+                    }
+                }
+            } catch (err) {
+                console.error(`Error resolving master lot ID for ${name}:`, err);
+            }
+            return lotId;
+        };
+
         const qty = Number(quantityProduced);
         const bId = Number(branchId);
         const pId = Number(productId);
@@ -229,6 +262,7 @@ export async function POST(request: Request) {
         };
 
         // 1. Automatically register finished goods into the decoupled inventory_lots collection
+        let insertedLotId = 0;
         try {
             const lotPayload = {
                 product_id: pId,
@@ -254,9 +288,40 @@ export async function POST(request: Request) {
                 console.error("[BFF Finished Goods] Failed to create cloud inventory lot record:", errTxt);
                 return NextResponse.json({ error: `Failed to register lot in cloud: ${lotRes.status} - ${errTxt}` }, { status: 500 });
             }
+            const lotObj = await lotRes.json();
+            insertedLotId = Number(lotObj.data?.id || lotObj.data?.lot_id || 0);
         } catch (lotErr) {
             console.error("[BFF Finished Goods] Error creating inventory lot record:", lotErr);
             return NextResponse.json({ error: "Failed to register finished goods lot in cloud" }, { status: 500 });
+        }
+
+        // 1b. Log finished yield movement in inventory_movements ledger
+        try {
+            const finishedLotId = await resolveMasterLotId(finalLotNo, 2); // 2 = Finished Goods
+            const finishedMovementPayload = {
+                product_id: pId,
+                lot_id: finishedLotId,
+                branch_id: bId,
+                transaction_type_id: 2, // Job Order Finished Goods
+                source_document_id: insertedLotId,
+                source_document_no: joId,
+                batch_no: finalLotNo,
+                expiry_date: finalExpDate,
+                manufacturing_date: new Date().toISOString().split('T')[0],
+                quantity: qty,
+                created_by: 24,
+                remarks: `Finished yield output from Job Order ${joId}`
+            };
+            const movRes = await fetch(`${DIRECTUS_URL}/items/inventory_movements`, {
+                method: "POST",
+                headers,
+                body: JSON.stringify(finishedMovementPayload)
+            });
+            if (!movRes.ok) {
+                console.error("[BFF Finished Goods] Failed to create positive inventory movement record:", await movRes.text());
+            }
+        } catch (movErr) {
+            console.error("[BFF Finished Goods] Error creating positive inventory movement record:", movErr);
         }
 
         // 2. Create positive product_ledger entry for produced item
@@ -327,26 +392,55 @@ export async function POST(request: Request) {
                                 return new Date(a.created_on || 0).getTime() - new Date(b.created_on || 0).getTime();
                             });
 
-                            let remainingToDeduct = compQtyRequired;
-                            for (const lot of activeLots) {
-                                if (remainingToDeduct <= 0) break;
-                                const available = Number(lot.quantity || 0);
-                                const deduct = Math.min(available, remainingToDeduct);
-                                
-                                const newQty = available - deduct;
-                                remainingToDeduct -= deduct;
+                             let remainingToDeduct = compQtyRequired;
+                             for (const lot of activeLots) {
+                                 if (remainingToDeduct <= 0) break;
+                                 const available = Number(lot.quantity || 0);
+                                 const deduct = Math.min(available, remainingToDeduct);
+                                 
+                                 const newQty = available - deduct;
+                                 remainingToDeduct -= deduct;
 
-                                const patchRes = await fetch(`${DIRECTUS_URL}/items/inventory_lots/${lot.id}`, {
-                                    method: "PATCH",
-                                    headers,
-                                    body: JSON.stringify({ quantity: newQty })
-                                });
-                                if (!patchRes.ok) {
-                                    console.error(`[BFF Finished Goods] Failed to update quantity for lot ${lot.id}:`, await patchRes.text());
-                                } else {
-                                    console.log(`[BFF Finished Goods] Deducted ${deduct} units from lot ID ${lot.id} (lot number: ${lot.lot_number}). New quantity: ${newQty}`);
-                                }
-                            }
+                                 const patchRes = await fetch(`${DIRECTUS_URL}/items/inventory_lots/${lot.id}`, {
+                                     method: "PATCH",
+                                     headers,
+                                     body: JSON.stringify({ quantity: newQty })
+                                 });
+                                 if (!patchRes.ok) {
+                                     console.error(`[BFF Finished Goods] Failed to update quantity for lot ${lot.id}:`, await patchRes.text());
+                                 } else {
+                                     console.log(`[BFF Finished Goods] Deducted ${deduct} units from lot ID ${lot.id} (lot number: ${lot.lot_number}). New quantity: ${newQty}`);
+                                     
+                                     // Log negative ledger movement in inventory_movements
+                                     try {
+                                         const consumedLotId = await resolveMasterLotId(lot.lot_number || "LOT-N/A", 1); // 1 = Raw Materials
+                                         const componentMovementPayload = {
+                                             product_id: compId,
+                                             lot_id: consumedLotId,
+                                             branch_id: bId,
+                                             transaction_type_id: 1, // Job Order Consumage
+                                             source_document_id: lot.id,
+                                             source_document_no: joId,
+                                             batch_no: lot.lot_number || "LOT-N/A",
+                                             expiry_date: lot.expiry_date || null,
+                                             manufacturing_date: lot.created_on ? lot.created_on.split("T")[0] : null,
+                                             quantity: -deduct, // Negative for deduction
+                                             created_by: 24,
+                                             remarks: `Consumed from lot ${lot.lot_number || "N/A"} for JO yield`
+                                         };
+                                         const movRes = await fetch(`${DIRECTUS_URL}/items/inventory_movements`, {
+                                             method: "POST",
+                                             headers,
+                                             body: JSON.stringify(componentMovementPayload)
+                                         });
+                                         if (!movRes.ok) {
+                                             console.error(`[BFF Finished Goods] Failed to create deduction movement record for product ${compId}:`, await movRes.text());
+                                         }
+                                     } catch (movErr) {
+                                         console.error(`[BFF Finished Goods] Error creating deduction movement record for product ${compId}:`, movErr);
+                                     }
+                                 }
+                             }
                         } else {
                             console.error(`[BFF Finished Goods] Failed to fetch active inventory lots for component ${compId}:`, await lotsRes.text());
                         }

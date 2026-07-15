@@ -611,7 +611,7 @@ export default function InventoryModule() {
 
             const mappedBatches = prodBatches.map(b => {
                 const branchObj = branches.find(br => Number(br.id) === Number(b.branch_id));
-                const branchName = branchObj ? branchObj.branch_name : `Branch #${b.branch_id}`;
+                const branchName = branchObj ? branchObj.branch_name : (Number(b.branch_id) === 1 || Number(b.branch_id) === 183 ? "Main Branch" : Number(b.branch_id) === 163 ? "Urdaneta Branch" : `Branch #${b.branch_id}`);
 
                 const daysToExpiry = b.expiration_date
                     ? Math.ceil((new Date(b.expiration_date).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
@@ -1491,7 +1491,7 @@ export default function InventoryModule() {
                                                 <td className="py-3.5 px-4 font-extrabold text-foreground">{jo.jo_id}</td>
                                                 <td className="py-3.5 px-4 font-bold text-foreground">{jo.product_name || `Product #${jo.product_id}`}</td>
                                                 <td className="py-3.5 px-4 font-bold text-foreground">{(jo.quantity || 0).toLocaleString()} units</td>
-                                                <td className="py-3.5 px-4 font-semibold text-muted-foreground">{data?.branches?.find(b => Number(b.id) === Number(jo.branch_id))?.branch_name || `Branch #${jo.branch_id}`}</td>
+                                                <td className="py-3.5 px-4 font-semibold text-muted-foreground">{data?.branches?.find(b => Number(b.id) === Number(jo.branch_id))?.branch_name || (Number(jo.branch_id) === 1 || Number(jo.branch_id) === 183 ? "Main Branch" : Number(jo.branch_id) === 163 ? "Urdaneta Branch" : `Branch #${jo.branch_id}`)}</td>
                                                 <td className="py-3.5 px-4">
                                                     <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${jo.isPicked
                                                             ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
@@ -1558,7 +1558,7 @@ export default function InventoryModule() {
                                                 <td className="py-3.5 px-4 font-extrabold text-foreground">{jo.jo_id}</td>
                                                 <td className="py-3.5 px-4 font-bold text-foreground">{jo.product_name || `Product #${jo.product_id}`}</td>
                                                 <td className="py-3.5 px-4 font-bold text-foreground">{(jo.quantity || 0).toLocaleString()} units</td>
-                                                <td className="py-3.5 px-4 font-semibold text-muted-foreground">{data?.branches?.find(b => Number(b.id) === Number(jo.branch_id))?.branch_name || `Branch #${jo.branch_id}`}</td>
+                                                <td className="py-3.5 px-4 font-semibold text-muted-foreground">{data?.branches?.find(b => Number(b.id) === Number(jo.branch_id))?.branch_name || (Number(jo.branch_id) === 1 || Number(jo.branch_id) === 183 ? "Main Branch" : Number(jo.branch_id) === 163 ? "Urdaneta Branch" : `Branch #${jo.branch_id}`)}</td>
                                                 <td className="py-3.5 px-4">
                                                     <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${jo.status === "Finished"
                                                             ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
@@ -1802,7 +1802,7 @@ export default function InventoryModule() {
                                 <div>
                                     <span className="text-[9px] text-muted-foreground uppercase font-bold">Branch</span>
                                     <div className="text-xs font-bold mt-0.5">
-                                        {data?.branches?.find(b => Number(b.id) === Number(selectedPickingJO.branch_id))?.branch_name || `Branch #${selectedPickingJO.branch_id}`}
+                                        {data?.branches?.find(b => Number(b.id) === Number(selectedPickingJO.branch_id))?.branch_name || (Number(selectedPickingJO.branch_id) === 1 || Number(selectedPickingJO.branch_id) === 183 ? "Main Branch" : Number(selectedPickingJO.branch_id) === 163 ? "Urdaneta Branch" : `Branch #${selectedPickingJO.branch_id}`)}
                                     </div>
                                 </div>
                                 <div>

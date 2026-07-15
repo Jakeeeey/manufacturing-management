@@ -115,7 +115,7 @@ export function ConsolidationPanel({
                                 <Button
                                     type="button"
                                     variant="outline"
-                                    className="w-full font-bold text-xs uppercase border-green-600/30 text-green-600 bg-green-50/5 hover:bg-green-50/10 hover:text-green-700"
+                                    className="w-full font-bold text-xs uppercase border-emerald-600/50 text-emerald-600 dark:text-emerald-400 bg-emerald-50/20 dark:bg-emerald-950/20 hover:bg-emerald-600 hover:text-white dark:hover:bg-emerald-600 dark:hover:text-white transition-all duration-200"
                                     onClick={handleInitiateDirectAllocate}
                                 >
                                     Direct Allocate & Invoice

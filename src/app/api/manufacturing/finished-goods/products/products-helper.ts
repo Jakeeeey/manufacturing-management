@@ -340,6 +340,7 @@ export async function updateProductDetails(
         unit_of_measurement_count?: number;
         product_image?: string;
         production_capacity_per_hour?: number;
+        unit_of_measurement?: number | null;
     }
 ): Promise<boolean> {
     try {

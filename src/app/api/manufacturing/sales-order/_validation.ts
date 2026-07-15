@@ -30,7 +30,7 @@ export const salesOrderPostSchema = z.object({
     deliveryDate: optionalDate,
     paymentTerms: optionalId,
     remarks: z.string().nullish(),
-    discountAmount: money.default(0),
+    discountAmount: money.refine(v => v === 0, { message: "Manual flat discount amounts are not allowed." }).default(0),
     salesmanId: optionalId,
     supplierId: optionalId,
     branchId: optionalId
@@ -84,7 +84,7 @@ const quantityPatchSchema = z.object({
 
 const statusPatchSchema = z.object({
     orderId: positiveId,
-    orderStatus: z.enum(["Draft", "Pending", "For Approval", "For Consolidation"]),
+    orderStatus: z.enum(["Draft", "Pending", "For Approval", "For Picking"]),
     details: z.never().optional()
 }).strict();
 

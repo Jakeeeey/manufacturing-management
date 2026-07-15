@@ -49,6 +49,7 @@ interface FormErrors {
     customerId?: string;
     poNo?: string;
     discountAmount?: string;
+    deliveryDate?: string;
     items?: Record<number, LineErrors>;
 }
 
@@ -115,6 +116,7 @@ export function CreateSalesOrderModal({
     const [dueDate, setDueDate] = useState("");
     const [discountAmount, setDiscountAmount] = useState(0);
     const [remarks, setRemarks] = useState("");
+    const [overrideLeadTime, setOverrideLeadTime] = useState(false);
 
     // Detail Items
     const [items, setItems] = useState<DirectOrderItem[]>([]);
@@ -123,6 +125,33 @@ export function CreateSalesOrderModal({
 
     const [customerOverrides, setCustomerOverrides] = useState<Record<number, number>>({});
     const [versionStates, setVersionStates] = useState<Record<number, VersionState>>({});
+
+    const getLeadTimeStatus = () => {
+        if (!deliveryDate || items.length === 0) return { feasible: true, maxLeadDays: 0, requiredDate: null };
+        
+        let maxLeadDays = 0;
+        items.forEach(item => {
+            if (item.product_id) {
+                const prod = products.find(p => Number(p.product_id) === Number(item.product_id));
+                if (prod && prod.manufacturing_lead_days) {
+                    maxLeadDays = Math.max(maxLeadDays, Number(prod.manufacturing_lead_days));
+                }
+            }
+        });
+
+        if (maxLeadDays === 0) return { feasible: true, maxLeadDays: 0, requiredDate: null };
+
+        const orderDateObj = new Date();
+        const requiredDateObj = new Date(orderDateObj.getTime() + maxLeadDays * 24 * 60 * 60 * 1000);
+        
+        // Format required date as YYYY-MM-DD local time safely
+        const offset = requiredDateObj.getTimezoneOffset();
+        const localRequiredDateObj = new Date(requiredDateObj.getTime() - offset * 60 * 1000);
+        const requiredDateStr = localRequiredDateObj.toISOString().split('T')[0];
+
+        const feasible = deliveryDate >= requiredDateStr;
+        return { feasible, maxLeadDays, requiredDate: requiredDateStr };
+    };
 
     useEffect(() => {
         if (!customerId) {
@@ -243,6 +272,7 @@ export function CreateSalesOrderModal({
         setDueDate("");
         setDiscountAmount(0);
         setRemarks("");
+        setOverrideLeadTime(false);
         setItems([]);
         setFormErrors({});
         setDiscardOpen(false);
@@ -375,20 +405,31 @@ export function CreateSalesOrderModal({
         if (!poNo.trim()) errors.poNo = "Enter a PO number.";
         if (discountInvalid) errors.discountAmount = discountErrorMessage;
 
+        const leadTime = getLeadTimeStatus();
+        if (!leadTime.feasible && !overrideLeadTime) {
+            errors.deliveryDate = `Delivery date is earlier than required lead time (${leadTime.maxLeadDays} days).`;
+        }
+
         const seenProductIds = new Set<number>();
         items.forEach(item => {
             const lineErrors: LineErrors = {};
             if (!item.parent_product_id) lineErrors.product = "Select a parent product.";
             if (!item.product_id) lineErrors.uom = "Select an available UOM.";
             if (item.product_id && seenProductIds.has(item.product_id)) lineErrors.uom = "This product and UOM are already selected.";
-            if (item.product_id) seenProductIds.add(item.product_id);
+            if (item.product_id) {
+                seenProductIds.add(item.product_id);
+                // Enforce version setup check
+                if (!customerOverrides[item.product_id]) {
+                    lineErrors.product = "Customer product version is not set up yet.";
+                }
+            }
             if (!Number.isFinite(item.quantity) || item.quantity <= 0) lineErrors.quantity = "Quantity must be greater than zero.";
             if (!Number.isFinite(item.unit_price) || item.unit_price < 0) lineErrors.unit_price = "Unit price cannot be negative.";
             if (Object.keys(lineErrors).length > 0) errors.items![item.line_id] = lineErrors;
         });
         if (items.length === 0) errors.items = { 0: { product: "Add at least one product." } };
 
-        const hasErrors = Boolean(errors.customerId || errors.poNo || errors.discountAmount || Object.keys(errors.items || {}).length);
+        const hasErrors = Boolean(errors.customerId || errors.poNo || errors.discountAmount || errors.deliveryDate || Object.keys(errors.items || {}).length);
         setFormErrors(errors);
         if (hasErrors) {
             requestAnimationFrame(() => {
@@ -407,6 +448,11 @@ export function CreateSalesOrderModal({
         if (!validateForm()) return;
 
         setSubmitting(true);
+        const leadTime = getLeadTimeStatus();
+        const finalRemarks = (!leadTime.feasible && overrideLeadTime)
+            ? `${remarks ? remarks + '\n' : ''}[USER OVERRIDE: Lead time feasibility bypassed]`
+            : remarks;
+
         try {
             await onSubmit({
                 customerId: Number(customerId),
@@ -418,7 +464,7 @@ export function CreateSalesOrderModal({
                 deliveryDate: deliveryDate || null,
                 dueDate: dueDate || null,
                 discountAmount,
-                remarks,
+                remarks: finalRemarks,
                 items: items.map(item => ({
                     product_id: item.product_id,
                     quantity: item.quantity,
@@ -577,9 +623,14 @@ export function CreateSalesOrderModal({
                                     id="direct-so-delivery-date"
                                     type="date"
                                     value={deliveryDate}
-                                    onChange={e => setDeliveryDate(e.target.value)}
+                                    onChange={e => {
+                                        setDeliveryDate(e.target.value);
+                                        setFormErrors(prev => ({ ...prev, deliveryDate: undefined }));
+                                    }}
                                     className={inputClassName}
+                                    aria-invalid={Boolean(formErrors.deliveryDate)}
                                 />
+                                {formErrors.deliveryDate && <p className="text-xs text-destructive mt-1">{formErrors.deliveryDate}</p>}
                             </div>
 
                             <div className="space-y-1">
@@ -600,16 +651,41 @@ export function CreateSalesOrderModal({
                                     type="number"
                                     min={0}
                                     value={discountAmount}
-                                    onChange={event => {
-                                        setDiscountAmount(Number(event.target.value));
-                                        setFormErrors(previous => ({ ...previous, discountAmount: undefined }));
-                                    }}
-                                    aria-invalid={Boolean(formErrors.discountAmount || discountInvalid)}
-                                    aria-describedby={(formErrors.discountAmount || discountInvalid) ? "direct-so-discount-error" : undefined}
-                                    className={inputClassName}
+                                    disabled
+                                    className="w-full bg-muted border rounded-lg px-3 py-2 text-xs text-muted-foreground outline-none cursor-not-allowed font-semibold"
                                 />
-                                {(formErrors.discountAmount || discountInvalid) && <p id="direct-so-discount-error" className="text-xs text-destructive">{formErrors.discountAmount || discountErrorMessage}</p>}
+                                <p className="text-[10px] text-muted-foreground mt-0.5">Manual flat discounts are disabled.</p>
                             </div>
+
+                            {/* Lead time feasibility warning alert */}
+                            {(() => {
+                                const leadTime = getLeadTimeStatus();
+                                if (leadTime.feasible) return null;
+                                return (
+                                    <div className="col-span-1 md:col-span-3 bg-amber-500/10 border border-amber-500/20 text-amber-600 rounded-lg p-3 text-xs flex flex-col gap-1.5 mt-1">
+                                        <div className="font-bold flex items-center gap-1.5">
+                                            ⚠️ Lead Time Feasibility Warning
+                                        </div>
+                                        <div>
+                                            The requested delivery date of <strong>{deliveryDate}</strong> is earlier than the standard manufacturing lead time of <strong>{leadTime.maxLeadDays} days</strong> (Earliest feasible date: <strong>{leadTime.requiredDate}</strong>).
+                                        </div>
+                                        <label className="flex items-center gap-1.5 mt-1 font-semibold cursor-pointer">
+                                            <input 
+                                                type="checkbox" 
+                                                checked={overrideLeadTime} 
+                                                onChange={e => {
+                                                    setOverrideLeadTime(e.target.checked);
+                                                    if (e.target.checked) {
+                                                        setFormErrors(prev => ({ ...prev, deliveryDate: undefined }));
+                                                    }
+                                                }}
+                                                className="rounded border-gray-300 text-primary focus:ring-primary h-3.5 w-3.5"
+                                            />
+                                            Override lead time feasibility constraint
+                                        </label>
+                                    </div>
+                                );
+                            })()}
                         </div>
 
                         <div className="space-y-1">
@@ -731,6 +807,7 @@ export function CreateSalesOrderModal({
                                                                 id={`line-${item.line_id}-price`}
                                                                 type="number"
                                                                 min={0}
+                                                                step="any"
                                                                 value={item.unit_price}
                                                                 onChange={e => handleItemChange(index, "unit_price", Number(e.target.value))}
                                                                 aria-invalid={Boolean(formErrors.items?.[item.line_id]?.unit_price)}
