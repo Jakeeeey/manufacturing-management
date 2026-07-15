@@ -166,7 +166,15 @@ export default function LotTable({
                                     <TableCell>{lot.maxBatchCapacity.toLocaleString()} batches</TableCell>
                                     <TableCell>
                                         {lot.createdAt
-                                            ? new Date(lot.createdAt).toLocaleDateString("en-PH")
+                                            ? new Date(lot.createdAt).toLocaleString("en-PH", {
+                                                timeZone: "UTC",
+                                                year: "numeric",
+                                                month: "short",
+                                                day: "2-digit",
+                                                hour: "2-digit",
+                                                minute: "2-digit",
+                                                hour12: true
+                                              })
                                             : "N/A"}
                                     </TableCell>
                                     <TableCell className="text-right">

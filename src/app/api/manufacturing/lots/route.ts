@@ -171,6 +171,11 @@ export async function POST(request: Request) {
             }
         }
 
+        // Generate current Manila time (UTC+8) to save in Directus
+        const now = new Date();
+        const manilaTime = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+        const manilaIsoString = manilaTime.toISOString();
+
         const res = await fetch(`${DIRECTUS_URL}/items/lots`, {
             method: "POST",
             headers,
@@ -178,7 +183,9 @@ export async function POST(request: Request) {
                 lot_name: lot_name.trim(),
                 inventory_type_id,
                 max_batch_capacity,
-                created_by: userId ? Number(userId) : 24 // Fallback to seed user ID 24 if no active token
+                created_by: userId ? Number(userId) : 24, // Fallback to seed user ID 24 if no active token
+                created_at: manilaIsoString,
+                updated_at: manilaIsoString
             })
         });
 
