@@ -94,6 +94,8 @@ export default function PlanningEngineeringModule() {
         isSubAssembly?: boolean;
     } | null>(null);
 
+    const [reservingLot, setReservingLot] = useState(false);
+
     const [confirmUnreserveData, setConfirmUnreserveData] = useState<{
         joId: string;
         materialId: number;
@@ -123,7 +125,7 @@ export default function PlanningEngineeringModule() {
     const handleConfirmReserveAction = async () => {
         if (!confirmReserveData) return;
         const { joId, materialId, productId, receivingId, qty, lotNo, isSubAssembly } = confirmReserveData;
-        setConfirmReserveData(null);
+        setReservingLot(true);
         try {
             const res = await fetch("/api/manufacturing/planning-engineering", {
                 method: "POST",
@@ -146,15 +148,18 @@ export default function PlanningEngineeringModule() {
             if (selectedUnreleasedJo) {
                 await handleOpenDetails(selectedUnreleasedJo, true);
             }
+            setConfirmReserveData(null);
         } catch (err: any) {
             toast.error(err.message || "Failed to reserve lot.");
+        } finally {
+            setReservingLot(false);
         }
     };
 
     const handleConfirmUnreserveAction = async () => {
         if (!confirmUnreserveData) return;
         const { joId, materialId, reservationId, qty, lotNo, isSubAssembly } = confirmUnreserveData;
-        setConfirmUnreserveData(null);
+        setReservingLot(true);
         try {
             const res = await fetch("/api/manufacturing/planning-engineering", {
                 method: "POST",
@@ -175,8 +180,11 @@ export default function PlanningEngineeringModule() {
             if (selectedUnreleasedJo) {
                 await handleOpenDetails(selectedUnreleasedJo, true);
             }
+            setConfirmUnreserveData(null);
         } catch (err: any) {
             toast.error(err.message || "Failed to unreserve lot.");
+        } finally {
+            setReservingLot(false);
         }
     };
 
@@ -733,7 +741,7 @@ export default function PlanningEngineeringModule() {
             </Dialog>
 
             {/* Custom Reserve Confirmation Dialog */}
-            <AlertDialog open={confirmReserveData !== null} onOpenChange={(open) => { if (!open) setConfirmReserveData(null); }}>
+            <AlertDialog open={confirmReserveData !== null} onOpenChange={(open) => { if (!open && !reservingLot) setConfirmReserveData(null); }}>
                 <AlertDialogContent className="rounded-2xl max-w-md border border-border shadow-2xl p-6 bg-background">
                     <AlertDialogHeader>
                         <AlertDialogTitle className="text-lg font-extrabold text-foreground flex items-center gap-2">
@@ -751,22 +759,30 @@ export default function PlanningEngineeringModule() {
                         </div>
                     </AlertDialogHeader>
                     <AlertDialogFooter className="mt-6 flex gap-3">
-                        <AlertDialogCancel className="font-bold h-10 px-5 rounded-lg border-border">Cancel</AlertDialogCancel>
+                        <AlertDialogCancel disabled={reservingLot} className="font-bold h-10 px-5 rounded-lg border-border">Cancel</AlertDialogCancel>
                         <AlertDialogAction
                             onClick={(e) => {
                                 e.preventDefault();
                                 handleConfirmReserveAction();
                             }}
-                            className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold h-10 px-5 rounded-lg shadow-md shadow-emerald-500/10 hover:shadow-emerald-500/20 transition-all"
+                            disabled={reservingLot}
+                            className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold h-10 px-5 rounded-lg shadow-md shadow-emerald-500/10 hover:shadow-emerald-500/20 transition-all flex items-center justify-center gap-2"
                         >
-                            Confirm Reservation
+                            {reservingLot ? (
+                                <>
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                    Reserving...
+                                </>
+                            ) : (
+                                "Confirm Reservation"
+                            )}
                         </AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
 
             {/* Custom Unreserve Confirmation Dialog */}
-            <AlertDialog open={confirmUnreserveData !== null} onOpenChange={(open) => { if (!open) setConfirmUnreserveData(null); }}>
+            <AlertDialog open={confirmUnreserveData !== null} onOpenChange={(open) => { if (!open && !reservingLot) setConfirmUnreserveData(null); }}>
                 <AlertDialogContent className="rounded-2xl max-w-md border border-border shadow-2xl p-6 bg-background">
                     <AlertDialogHeader>
                         <AlertDialogTitle className="text-lg font-extrabold text-foreground flex items-center gap-2">
@@ -784,15 +800,23 @@ export default function PlanningEngineeringModule() {
                         </div>
                     </AlertDialogHeader>
                     <AlertDialogFooter className="mt-6 flex gap-3">
-                        <AlertDialogCancel className="font-bold h-10 px-5 rounded-lg border-border">Cancel</AlertDialogCancel>
+                        <AlertDialogCancel disabled={reservingLot} className="font-bold h-10 px-5 rounded-lg border-border">Cancel</AlertDialogCancel>
                         <AlertDialogAction
                             onClick={(e) => {
                                 e.preventDefault();
                                 handleConfirmUnreserveAction();
                             }}
-                            className="bg-red-600 hover:bg-red-500 text-white font-bold h-10 px-5 rounded-lg shadow-md shadow-red-500/10 hover:shadow-red-500/20 transition-all"
+                            disabled={reservingLot}
+                            className="bg-red-600 hover:bg-red-500 text-white font-bold h-10 px-5 rounded-lg shadow-md shadow-red-500/10 hover:shadow-red-500/20 transition-all flex items-center justify-center gap-2"
                         >
-                            Confirm Unreserve
+                            {reservingLot ? (
+                                <>
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                    Unreserving...
+                                </>
+                            ) : (
+                                "Confirm Unreserve"
+                            )}
                         </AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>

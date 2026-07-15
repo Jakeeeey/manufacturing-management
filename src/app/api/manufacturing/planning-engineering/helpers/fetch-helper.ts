@@ -41,7 +41,8 @@ export async function fetchJobOrders(): Promise<DirectusJobOrder[]> {
             fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_qa_records?limit=-1`, { headers: headersNoCache }),
             fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_materials?limit=-1`, { headers: headersNoCache }),
             fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_yield_ledger?limit=-1`, { headers: headersNoCache }),
-            fetch(`${DIRECTUS_URL}/items/product_manufacturing_version?limit=-1&fields=version_id,version_name`, { headers: headersNoCache })
+            fetch(`${DIRECTUS_URL}/items/product_manufacturing_version?limit=-1&fields=version_id,version_name`, { headers: headersNoCache }),
+            fetch(`${DIRECTUS_URL}/items/inventory_lots?limit=-1`, { headers: headersNoCache })
         ];
 
         if (!useCache) {
@@ -64,6 +65,7 @@ export async function fetchJobOrders(): Promise<DirectusJobOrder[]> {
         const materialsList = responses[5].ok ? (await responses[5].json()).data || [] : [];
         const mfgYieldLedger = responses[6].ok ? (await responses[6].json()).data || [] : [];
         const mfgVersions = responses[7].ok ? (await responses[7].json()).data || [] : [];
+        const invLots = responses[8].ok ? (await responses[8].json()).data || [] : [];
 
         let mfgRoutings = [];
         let mfgBoms = [];
@@ -78,11 +80,11 @@ export async function fetchJobOrders(): Promise<DirectusJobOrder[]> {
             operations = masterDataCache.operations;
             mfgRoutesBom = masterDataCache.mfgRoutesBom;
         } else {
-            const mfgRoutingsRes = responses[8];
-            const mfgBomsRes = responses[9];
-            const prodRes = responses[10];
-            const operationsRes = responses[11];
-            const mfgRoutesBomRes = responses[12];
+            const mfgRoutingsRes = responses[9];
+            const mfgBomsRes = responses[10];
+            const prodRes = responses[11];
+            const operationsRes = responses[12];
+            const mfgRoutesBomRes = responses[13];
 
             mfgRoutings = mfgRoutingsRes && mfgRoutingsRes.ok ? (await mfgRoutingsRes.json()).data || [] : [];
             mfgBoms = mfgBomsRes && mfgBomsRes.ok ? (await mfgBomsRes.json()).data || [] : [];
@@ -252,7 +254,43 @@ export async function fetchJobOrders(): Promise<DirectusJobOrder[]> {
             const matchingBom = mfgBoms.find((b: any) => Number(b.version_id) === Number(jo.version_id));
             const versionStr = matchingBom ? `${matchingBom.version_name || "v" + matchingBom.version_code}` : jo.version_id ? `Version #${jo.version_id}` : "";
 
-            const joYieldLogs = mfgYieldLedger.filter((l: any) => getObjId(l.job_order_id) === joIdInt);
+            const joYieldLogs = mfgYieldLedger
+                .filter((l: any) => getObjId(l.job_order_id) === joIdInt)
+                .map((l: any) => {
+                    const matchedLot = invLots.find((lot: any) => 
+                        lot.source_type === "yield_ledger" && 
+                        String(lot.source_reference) === String(l.ledger_id || l.id)
+                    );
+                    return {
+                        ...l,
+                        lot_number: matchedLot?.lot_number || l.lot_number || `MFG-${jo.job_order_no}`,
+                        expiry_date: matchedLot?.expiry_date || null,
+                        manufacturing_date: matchedLot?.created_on ? matchedLot.created_on.split('T')[0] : null
+                    };
+                });
+
+            // Also check if there is a final closed lot for this Job Order (source_type = "manufacturing")
+            const finalLots = invLots.filter((lot: any) => 
+                lot.source_type === "manufacturing" && 
+                lot.source_reference === jo.job_order_no
+            );
+            finalLots.forEach((lot: any) => {
+                // Prevent duplicate logs if already present
+                if (!joYieldLogs.some((l: any) => String(l.lot_number) === String(lot.lot_number))) {
+                    joYieldLogs.push({
+                        ledger_id: `mfg-${lot.id}`,
+                        job_order_id: joIdInt,
+                        shift_name: "Final Close",
+                        yield_quantity: String(lot.quantity),
+                        qa_status: lot.qa_status || "Passed",
+                        logged_at: lot.created_on,
+                        lot_number: lot.lot_number,
+                        expiry_date: lot.expiry_date || null,
+                        manufacturing_date: lot.created_on ? lot.created_on.split('T')[0] : null
+                    });
+                }
+            });
+
             const totalProduced = joYieldLogs.reduce((sum: number, l: any) => sum + Number(l.yield_quantity || 0), 0);
 
             let resolvedParentId = jo.parent_job_order_id ? Number(jo.parent_job_order_id) : null;

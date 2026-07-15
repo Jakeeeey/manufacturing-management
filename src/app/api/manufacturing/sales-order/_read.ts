@@ -8,7 +8,8 @@ export const SALES_ORDER_FIELDS = [
 ].join(",");
 
 export const SALES_ORDER_DETAIL_FIELDS = [
-    "detail_id", "order_id", "bom_version_id", "product_id", "unit_price", "ordered_quantity", "net_amount"
+    "detail_id", "order_id", "bom_version_id", "product_id", "unit_price", "ordered_quantity", "net_amount",
+    "allocated_quantity", "allocated_amount"
 ].join(",");
 
 export type DirectusReader = (collection: string, params: URLSearchParams) => Promise<{ data: Row[]; meta?: { filter_count?: number } }>;

@@ -22,8 +22,11 @@ export async function handleGET(request: Request) {
         if (action === "net-requirements") {
             const productIdsStr = searchParams.get("productIds");
             const branchIdStr = searchParams.get("branchId");
+            if (!branchIdStr) {
+                return NextResponse.json({ error: "Missing required branchId query parameter" }, { status: 400 });
+            }
             const productIds = productIdsStr ? productIdsStr.split(",").map(Number).filter(Boolean) : [];
-            const branchId = branchIdStr ? Number(branchIdStr) : undefined;
+            const branchId = Number(branchIdStr);
             const data = await getProductInventoryAndSafetyStock(productIds, branchId);
             return NextResponse.json(data);
         }

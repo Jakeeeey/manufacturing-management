@@ -66,7 +66,10 @@ export async function POST(request: Request) {
         }
         const joData = (await joRes.json()).data;
         const producedProductId = joData.product_id;
-        const branchId = joData.branch_id || 1;
+        if (!joData.branch_id) {
+            return NextResponse.json({ error: `Job Order with ID ${joId} has no branch_id` }, { status: 400 });
+        }
+        const branchId = joData.branch_id;
         const jobOrderNo = joData.job_order_no;
         const targetQuantity = Number(joData.target_quantity || 0);
 

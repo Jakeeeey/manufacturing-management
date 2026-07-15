@@ -135,8 +135,13 @@ export function DemandLinesTable({
                                             </div>
                                         </TableCell>
                                         <TableCell className="py-2 text-xs">
-                                            <div className="font-semibold text-foreground">
-                                                {line.product_id?.product_name}
+                                            <div className="font-semibold text-foreground flex items-center gap-1.5 flex-wrap">
+                                                <span>{line.product_id?.product_name}</span>
+                                                {line.product_id?.uom && (
+                                                    <span className="text-[10px] font-medium text-muted-foreground bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
+                                                        {line.product_id.uom} ({line.product_id.uom_count || 1})
+                                                    </span>
+                                                )}
                                             </div>
                                             <div className="text-[10px] font-medium text-primary">
                                                 Ver: {line.bom_version_name || "No Version"}
