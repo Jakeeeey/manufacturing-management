@@ -241,15 +241,15 @@ export function ReleaseJODialog({
             if (shortfall > 0 && printSelection[`parent-${compProductId}`]) {
                 tableRowsHtml += `
                     <tr>
-                        <td style="padding: 10px; border-bottom: 1px solid #ddd; font-weight: bold;">
+                        <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; font-weight: bold;">
                             ${comp.component_product_id?.product_name || `Product #${compProductId}`}
-                            <div style="font-size: 10px; color: #666; font-weight: normal; margin-top: 2px;">
+                            <div style="font-size: 9px; color: #64748b; font-weight: normal; margin-top: 1px;">
                                 ${comp.component_product_id?.product_code || ""}
                             </div>
                         </td>
-                        <td style="padding: 10px; border-bottom: 1px solid #ddd; text-align: center;">${needed.toLocaleString(undefined, {maximumFractionDigits:2})} ${uom}</td>
-                        <td style="padding: 10px; border-bottom: 1px solid #ddd; text-align: center; color: #666;">${available.toLocaleString(undefined, {maximumFractionDigits:2})} ${uom}</td>
-                        <td style="padding: 10px; border-bottom: 1px solid #ddd; text-align: center; font-weight: bold; color: #d32f2f;">${shortfall.toLocaleString(undefined, {maximumFractionDigits:2})} ${uom}</td>
+                        <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; text-align: center;">${needed.toLocaleString(undefined, {maximumFractionDigits:2})} ${uom}</td>
+                        <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; text-align: center; color: #64748b;">${available.toLocaleString(undefined, {maximumFractionDigits:2})} ${uom}</td>
+                        <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; text-align: center; font-weight: bold; color: #e11d48;">${shortfall.toLocaleString(undefined, {maximumFractionDigits:2})} ${uom}</td>
                     </tr>
                 `;
             }
@@ -266,15 +266,15 @@ export function ReleaseJODialog({
                     if (ccShortfall > 0 && printSelection[`child-${compProductId}-${ccId}`]) {
                         tableRowsHtml += `
                             <tr>
-                                <td style="padding: 10px; border-bottom: 1px solid #ddd; font-weight: bold; padding-left: 25px; color: #4b5563;">
+                                <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; font-weight: bold; padding-left: 20px; color: #475569;">
                                     ↳ ${cc.component_product_id?.product_name || `Product #${ccId}`}
-                                    <div style="font-size: 9px; color: #888; font-weight: normal; margin-top: 1px; padding-left: 12px;">
+                                    <div style="font-size: 8px; color: #94a3b8; font-weight: normal; margin-top: 1px; padding-left: 10px;">
                                         Sub-ingredient for ${comp.component_product_id?.product_name} | Code: ${cc.component_product_id?.product_code || ""}
                                     </div>
                                 </td>
-                                <td style="padding: 10px; border-bottom: 1px solid #ddd; text-align: center; color: #4b5563;">${ccNeeded.toLocaleString(undefined, {maximumFractionDigits:2})} ${ccUom}</td>
-                                <td style="padding: 10px; border-bottom: 1px solid #ddd; text-align: center; color: #888;">${ccAvailable.toLocaleString(undefined, {maximumFractionDigits:2})} ${ccUom}</td>
-                                <td style="padding: 10px; border-bottom: 1px solid #ddd; text-align: center; font-weight: bold; color: #d32f2f;">${ccShortfall.toLocaleString(undefined, {maximumFractionDigits:2})} ${ccUom}</td>
+                                <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; text-align: center; color: #475569;">${ccNeeded.toLocaleString(undefined, {maximumFractionDigits:2})} ${ccUom}</td>
+                                <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; text-align: center; color: #94a3b8;">${ccAvailable.toLocaleString(undefined, {maximumFractionDigits:2})} ${ccUom}</td>
+                                <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; text-align: center; font-weight: bold; color: #e11d48;">${ccShortfall.toLocaleString(undefined, {maximumFractionDigits:2})} ${ccUom}</td>
                             </tr>
                         `;
                     }
@@ -287,35 +287,37 @@ export function ReleaseJODialog({
                 <head>
                     <title>MRP Procurement Request - JO Release Shortfall</title>
                     <style>
-                        body { font-family: 'Segoe UI', Arial, sans-serif; color: #333; margin: 40px; line-height: 1.5; }
-                        .header { display: flex; justify-content: space-between; border-bottom: 2px solid #333; padding-bottom: 20px; margin-bottom: 30px; }
-                        .title { font-size: 24px; font-weight: 800; color: #111; text-transform: uppercase; letter-spacing: 0.5px; }
-                        .meta-info { font-size: 12px; line-height: 1.6; text-align: right; }
-                        .jo-summary { background-color: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 8px; padding: 15px; margin-bottom: 30px; }
-                        .jo-summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; font-size: 13px; }
-                        .jo-summary-label { font-weight: bold; color: #555; font-size: 11px; text-transform: uppercase; margin-bottom: 4px; }
-                        .jo-summary-value { font-weight: 700; color: #111; font-size: 14px; }
-                        table { width: 100%; border-collapse: collapse; margin-bottom: 40px; font-size: 13px; }
-                        th { background-color: #111; color: #fff; padding: 10px; font-weight: bold; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; }
-                        .footer { border-top: 1px solid #ddd; padding-top: 20px; font-size: 11px; color: #777; display: flex; justify-content: space-between; }
-                        .sign-line { margin-top: 50px; display: flex; justify-content: space-between; }
-                        .sign-box { border-top: 1px dashed #333; width: 200px; text-align: center; padding-top: 5px; font-size: 12px; font-weight: bold; }
+                        @page { size: portrait; margin: 10mm; }
+                        body { font-family: 'Segoe UI', Arial, sans-serif; color: #1e293b; margin: 0; padding: 10px; line-height: 1.4; font-size: 11px; }
+                        .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #334155; padding-bottom: 12px; margin-bottom: 15px; }
+                        .title { font-size: 18px; font-weight: 800; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px; }
+                        .meta-info { font-size: 11px; line-height: 1.5; text-align: right; color: #475569; }
+                        .jo-summary { background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 15px; margin-bottom: 15px; }
+                        .jo-summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; font-size: 11px; }
+                        .jo-summary-label { font-weight: bold; color: #64748b; font-size: 9px; text-transform: uppercase; margin-bottom: 2px; }
+                        .jo-summary-value { font-weight: 700; color: #0f172a; font-size: 12px; }
+                        table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 11px; }
+                        th { background-color: #f1f5f9; color: #1e293b; padding: 6px 8px; font-weight: bold; text-transform: uppercase; font-size: 9px; letter-spacing: 0.5px; border-bottom: 2px solid #cbd5e1; }
+                        .footer { border-top: 1px solid #e2e8f0; padding-top: 10px; font-size: 9px; color: #64748b; display: flex; justify-content: space-between; margin-top: 25px; }
+                        .sign-line { margin-top: 30px; display: flex; justify-content: space-between; }
+                        .sign-box { border-top: 1px dashed #475569; width: 180px; text-align: center; padding-top: 5px; font-size: 10px; font-weight: bold; color: #334155; }
                         @media print {
-                            body { margin: 20px; }
-                            button { display: none !important; }
+                            body { padding: 0; margin: 0; font-size: 10px; }
+                            .no-print { display: none !important; }
+                            * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+                            tr { page-break-inside: avoid; }
                         }
                     </style>
                 </head>
-                <body>
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                        <span style="font-size: 12px; font-weight: bold; color: #fff; background-color: #d32f2f; padding: 5px 10px; border-radius: 4px; text-transform: uppercase;">MRP Shortage Warning</span>
-                        <button onclick="window.print()" style="padding: 8px 16px; background-color: #111; color: #fff; border: none; border-radius: 4px; font-weight: bold; cursor: pointer;">Print Document</button>
+                <body onload="window.print(); window.close()">
+                    <div class="no-print" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                        <span style="font-size: 10px; font-weight: bold; color: #fff; background-color: #e11d48; padding: 3px 8px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.5px;">MRP Shortage Warning</span>
                     </div>
 
                     <div class="header">
                         <div>
                             <div class="title">MRP Procurement Request</div>
-                            <div style="font-size: 12px; color: #666; margin-top: 5px;">Generated by Quality & Production Planning Console</div>
+                            <div style="font-size: 11px; color: #64748b; margin-top: 3px;">Generated by Quality & Production Planning Console</div>
                         </div>
                         <div class="meta-info">
                             <div><strong>Request Date:</strong> ${dateStr}</div>
@@ -341,14 +343,14 @@ export function ReleaseJODialog({
                         </div>
                     </div>
 
-                    <h3 style="font-size: 15px; text-transform: uppercase; border-bottom: 2px solid #eee; padding-bottom: 8px; margin-bottom: 15px;">Shortfall Materials Checklist</h3>
+                    <h3 style="font-size: 12px; text-transform: uppercase; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px; margin-bottom: 10px; color: #0f172a;">Shortfall Materials Checklist</h3>
                     <table>
                         <thead>
                             <tr>
-                                <th style="text-align: left; padding: 10px;">Raw Material</th>
-                                <th style="width: 20%; padding: 10px;">Total Needed</th>
-                                <th style="width: 20%; padding: 10px;">On Hand Stock</th>
-                                <th style="width: 20%; padding: 10px;">Shortfall (Required Buy)</th>
+                                <th style="text-align: left; padding: 6px 8px;">Raw Material</th>
+                                <th style="width: 20%; padding: 6px 8px;">Total Needed</th>
+                                <th style="width: 20%; padding: 6px 8px;">On Hand Stock</th>
+                                <th style="width: 20%; padding: 6px 8px;">Shortfall (Required Buy)</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -362,7 +364,7 @@ export function ReleaseJODialog({
                         <div class="sign-box">Received By (Purchasing)</div>
                     </div>
 
-                    <div class="footer" style="margin-top: 60px;">
+                    <div class="footer">
                         <div>ERP Automated Material Requirements Planning (MRP)</div>
                         <div>Page 1 of 1</div>
                     </div>

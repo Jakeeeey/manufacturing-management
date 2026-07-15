@@ -23,6 +23,8 @@ interface YieldClosingDialogProps {
     setYieldQty: (qty: string) => void;
     lotNumber: string;
     setLotNumber: (lot: string) => void;
+    manufacturingDate: string;
+    setManufacturingDate: (date: string) => void;
     expiryDate: string;
     setExpiryDate: (date: string) => void;
     unitCost: string;
@@ -40,6 +42,8 @@ export function YieldClosingDialog({
     setYieldQty,
     lotNumber,
     setLotNumber,
+    manufacturingDate,
+    setManufacturingDate,
     expiryDate,
     setExpiryDate,
     unitCost,
@@ -120,7 +124,7 @@ export function YieldClosingDialog({
                                 )}
                             </div>
 
-                            <div className="space-y-1.5">
+                            <div className="col-span-2 space-y-1.5">
                                 <Label htmlFor="lotNo" className="font-semibold text-xs">Lot Number</Label>
                                 <Input 
                                     id="lotNo"
@@ -132,7 +136,22 @@ export function YieldClosingDialog({
                             </div>
 
                             <div className="space-y-1.5">
-                                <Label htmlFor="expiry" className="font-semibold text-xs">Expiration Date</Label>
+                                <Label htmlFor="mfgDate" className="font-semibold text-xs">
+                                    Manufacturing Date <span className="text-destructive">*</span>
+                                </Label>
+                                <Input 
+                                    id="mfgDate"
+                                    type="date"
+                                    value={manufacturingDate}
+                                    onChange={e => setManufacturingDate(e.target.value)}
+                                    className="h-9 text-xs"
+                                />
+                            </div>
+
+                            <div className="space-y-1.5">
+                                <Label htmlFor="expiry" className="font-semibold text-xs">
+                                    Expiration Date <span className="text-destructive">*</span>
+                                </Label>
                                 <Input 
                                     id="expiry"
                                     type="date"

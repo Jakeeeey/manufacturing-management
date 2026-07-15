@@ -76,7 +76,6 @@ export default function InboundShipmentsList({
                             <option value="En Route">En Route</option>
                             <option value="Receiving (QA)">Receiving (QA)</option>
                             <option value="Received">Received</option>
-                            <option value="Rejected">Rejected</option>
                         </select>
                     </div>
                 </div>

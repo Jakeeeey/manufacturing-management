@@ -42,4 +42,5 @@ next-env.d.ts
 
 # agent config
 .gemini/
+/scratch/bihon_sop_text.txt
 /scratch/

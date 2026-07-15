@@ -70,8 +70,8 @@ export function useProductionWorkflow() {
     }, [sortedTasks, selectedTaskId]);
 
     // Fetch Job Orders
-    const fetchJobs = useCallback(async (selectIdAfterFetch?: string) => {
-        setLoadingJobs(true);
+    const fetchJobs = useCallback(async (selectIdAfterFetch?: string, silent = false) => {
+        if (!silent) setLoadingJobs(true);
         try {
             const data = await fetchJobOrders();
             const activeJobs = data.filter((jo: any) => jo.status !== "Draft" && jo.status !== "Planned" && jo.status !== "Planning");
@@ -85,9 +85,9 @@ export function useProductionWorkflow() {
                 setSelectedTaskId(null);
             }
         } catch (err: any) {
-            toast.error(err.message || "Failed to load Job Orders from terminal.");
+            if (!silent) toast.error(err.message || "Failed to load Job Orders from terminal.");
         } finally {
-            setLoadingJobs(false);
+            if (!silent) setLoadingJobs(false);
         }
     }, [selectedJobOrderId]);
 
@@ -157,6 +157,70 @@ export function useProductionWorkflow() {
         loadUsersList();
         loadBranches();
     }, []);
+
+    // Establish Realtime SSE (Server-Sent Events) Connection for inventory movements
+    useEffect(() => {
+        let eventSource: EventSource | null = null;
+        let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+        let isDisposed = false;
+        let reconnectAttempts = 0;
+
+        const connectSSE = () => {
+            if (isDisposed) return;
+            if (reconnectAttempts >= 10) {
+                console.warn("[Production Realtime SSE] Maximum reconnect attempts reached (10). Standing by.");
+                return;
+            }
+
+            try {
+                eventSource = new EventSource("/api/manufacturing/inventory/movements/stream");
+
+                eventSource.addEventListener("movement", (event) => {
+                    try {
+                        const movement = JSON.parse(event.data);
+                        console.log(`[Production Realtime SSE] Inventory movement detected (ID: ${movement.movement_id}). Refreshing active job orders...`);
+                        
+                        // Silent reload to update active job orders
+                        fetchJobs(undefined, true);
+                    } catch (e) {
+                        console.error("[Production Realtime SSE] Error parsing movement event data:", e);
+                    }
+                });
+
+                eventSource.onerror = () => {
+                    if (eventSource) {
+                        eventSource.close();
+                        eventSource = null;
+                    }
+                    if (!isDisposed && reconnectAttempts < 10) {
+                        reconnectAttempts++;
+                        const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+                        reconnectTimeout = setTimeout(connectSSE, delay);
+                    }
+                };
+
+            } catch (err) {
+                console.error("[Production Realtime SSE] Error initializing EventSource:", err);
+                if (!isDisposed && reconnectAttempts < 10) {
+                    reconnectAttempts++;
+                    const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+                    reconnectTimeout = setTimeout(connectSSE, delay);
+                }
+            }
+        };
+
+        connectSSE();
+
+        return () => {
+            isDisposed = true;
+            if (eventSource) {
+                eventSource.close();
+            }
+            if (reconnectTimeout) {
+                clearTimeout(reconnectTimeout);
+            }
+        };
+    }, [fetchJobs]);
 
     // Selection Side Effects
     useEffect(() => {
