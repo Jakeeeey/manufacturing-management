@@ -1,7 +1,7 @@
 /* eslint-disable */
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { DIRECTUS_URL, headers } from "@/app/api/manufacturing/directus-api";
+import { DIRECTUS_URL, headers } from "../_directus";
 
 export async function GET(request: Request) {
     try {
@@ -149,7 +149,7 @@ export async function POST(request: Request) {
                                         product_id: childId,
                                         supplier_id: Number(supId)
                                     })
-                                }).catch(() => {});
+                                }).catch(() => { });
                             }
                         }
                     }
@@ -209,7 +209,7 @@ export async function PATCH(request: Request) {
                 if (oldLinksRes.ok) {
                     const oldLinks = (await oldLinksRes.json()).data || [];
                     for (const link of oldLinks) {
-                        await fetch(`${DIRECTUS_URL}/items/product_per_supplier/${link.id}`, { method: "DELETE", headers }).catch(() => {});
+                        await fetch(`${DIRECTUS_URL}/items/product_per_supplier/${link.id}`, { method: "DELETE", headers }).catch(() => { });
                     }
                 }
             }
@@ -224,7 +224,7 @@ export async function PATCH(request: Request) {
                             product_id: pid,
                             supplier_id: Number(supId)
                         })
-                    }).catch(() => {});
+                    }).catch(() => { });
                 }
             }
         }
@@ -267,7 +267,7 @@ export async function PATCH(request: Request) {
                                         product_id: childId,
                                         supplier_id: Number(supId)
                                     })
-                                }).catch(() => {});
+                                }).catch(() => { });
                             }
                         }
                     }

@@ -3,9 +3,16 @@ import {
     fetchShipmentExpenses, 
     processShipmentLandedCosts 
 } from "./expenses-helper";
+import { expenseAllocationSchema } from "../_schemas";
+import {
+    PURCHASE_ORDER_MODULE_PATHS,
+    PurchaseOrderAuthorizationError,
+    requirePurchaseOrderModuleAccess
+} from "../../purchase-orders/_auth";
 
 export async function GET(request: Request) {
     try {
+        await requirePurchaseOrderModuleAccess({ modulePath: PURCHASE_ORDER_MODULE_PATHS.expenses });
         const { searchParams } = new URL(request.url);
         const shipmentId = searchParams.get("shipmentId");
 
@@ -17,21 +24,23 @@ export async function GET(request: Request) {
         return NextResponse.json(expenses);
     } catch (e) {
         console.error("API Error fetching shipment expenses:", e);
-        return NextResponse.json({ error: (e as Error).message || "Failed to fetch shipment expenses" }, { status: 500 });
+        return NextResponse.json({ error: (e as Error).message || "Failed to fetch shipment expenses" }, {
+            status: e instanceof PurchaseOrderAuthorizationError ? e.status : 500
+        });
     }
 }
 
 export async function POST(request: Request) {
     try {
-        const body = await request.json();
-        const { shipmentId, status, expenses, allocationMethod, lineItemUpdates } = body;
-
-        if (!shipmentId || !status || !expenses || !allocationMethod) {
-            return NextResponse.json({ error: "Missing required fields (shipmentId, status, expenses, allocationMethod)" }, { status: 400 });
+        await requirePurchaseOrderModuleAccess({ modulePath: PURCHASE_ORDER_MODULE_PATHS.expenses });
+        const parsed = expenseAllocationSchema.safeParse(await request.json());
+        if (!parsed.success) {
+            return NextResponse.json({ error: "Invalid expense allocation.", details: parsed.error.flatten() }, { status: 400 });
         }
+        const { shipmentId, status, expenses, allocationMethod, lineItemUpdates } = parsed.data;
 
         const result = await processShipmentLandedCosts(
-            parseInt(shipmentId),
+            shipmentId,
             status,
             expenses,
             allocationMethod,
@@ -40,6 +49,8 @@ export async function POST(request: Request) {
         return NextResponse.json(result);
     } catch (e) {
         console.error("API Error allocating shipment expenses:", e);
-        return NextResponse.json({ error: (e as Error).message || "Failed to allocate shipment expenses" }, { status: 500 });
+        return NextResponse.json({ error: (e as Error).message || "Failed to allocate shipment expenses" }, {
+            status: e instanceof PurchaseOrderAuthorizationError ? e.status : 500
+        });
     }
 }

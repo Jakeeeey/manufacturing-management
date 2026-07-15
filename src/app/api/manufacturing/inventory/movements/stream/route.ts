@@ -1,4 +1,4 @@
-﻿import { DIRECTUS_URL, headers } from "@/app/api/manufacturing/directus-api";
+import { DIRECTUS_URL, headers } from "@/app/api/manufacturing/directus-api";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

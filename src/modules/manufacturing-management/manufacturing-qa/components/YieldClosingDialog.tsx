@@ -86,7 +86,15 @@ export function YieldClosingDialog({
                             </div>
                             <div className="border-t pt-1.5">
                                 <span className="text-muted-foreground block text-[11px] font-bold uppercase tracking-wider">Recipe version</span>
-                                <span className="font-mono text-xs text-muted-foreground">Version #{selectedJO.version_id || selectedJO.bom?.version_id || 'Active'}</span>
+                                <span className="font-mono text-xs text-muted-foreground">
+                                    {selectedJO.recipe_version_name || 
+                                     selectedJO.recipeVersionName || 
+                                     selectedJO.version_name || 
+                                     selectedJO.versionName || 
+                                     ((selectedJO.version_id || selectedJO.versionId || selectedJO.bom?.version_id) 
+                                        ? `Version #${selectedJO.version_id || selectedJO.versionId || selectedJO.bom?.version_id}` 
+                                        : 'Active')}
+                                </span>
                             </div>
                         </div>
 

@@ -262,5 +262,17 @@
     "actual_hours": 0,
     "hourly_rate": 150,
     "labor_cost": 0
+  },
+  {
+    "id": 25,
+    "jo_id": "JO-620182-SUB25542",
+    "routing_id": 0,
+    "task_id": 126,
+    "user_id": 170,
+    "started_at": "2026-07-14T07:55:33.714Z",
+    "stopped_at": null,
+    "actual_hours": 0,
+    "hourly_rate": 150,
+    "labor_cost": 0
   }
 ]

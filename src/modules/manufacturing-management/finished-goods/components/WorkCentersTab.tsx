@@ -85,7 +85,7 @@ export const WorkCentersTab: React.FC<WorkCentersTabProps> = ({
                     <p className="text-xs text-muted-foreground">Manage factory floor layouts, hourly machine rates, and standard production rates per workstation.</p>
                 </div>
                 {!isCreatingNew && editingId === null && (
-                    <Button 
+                    <Button
                         onClick={handleAddClick}
                         className="inline-flex items-center gap-1.5 h-9 text-xs rounded-lg"
                     >
@@ -114,7 +114,7 @@ export const WorkCentersTab: React.FC<WorkCentersTabProps> = ({
                         {isCreatingNew && (
                             <tr className="border-b border-primary/20 bg-primary/5">
                                 <td className="p-2.5 pl-5 align-middle">
-                                    <input 
+                                    <input
                                         type="text"
                                         value={wcName}
                                         onChange={(e) => setWcName(e.target.value)}
@@ -123,7 +123,7 @@ export const WorkCentersTab: React.FC<WorkCentersTabProps> = ({
                                     />
                                 </td>
                                 <td className="p-2.5 align-middle">
-                                    <input 
+                                    <input
                                         type="number"
                                         value={overheadCost}
                                         onChange={(e) => setOverheadCost(e.target.value)}
@@ -131,7 +131,7 @@ export const WorkCentersTab: React.FC<WorkCentersTabProps> = ({
                                     />
                                 </td>
                                 <td className="p-2.5 align-middle">
-                                    <input 
+                                    <input
                                         type="number"
                                         value={capacity}
                                         onChange={(e) => setCapacity(e.target.value)}
@@ -140,7 +140,7 @@ export const WorkCentersTab: React.FC<WorkCentersTabProps> = ({
                                 </td>
                                 <td className="p-2.5 align-middle">
                                     <label className="inline-flex items-center gap-1.5 cursor-pointer">
-                                        <input 
+                                        <input
                                             type="checkbox"
                                             checked={isActive}
                                             onChange={(e) => setIsActive(e.target.checked)}
@@ -185,7 +185,7 @@ export const WorkCentersTab: React.FC<WorkCentersTabProps> = ({
                                     return (
                                         <tr key={wc.work_center_id} className="border-b border-primary/20 bg-primary/5">
                                             <td className="p-2.5 pl-5 align-middle">
-                                                <input 
+                                                <input
                                                     type="text"
                                                     value={wcName}
                                                     onChange={(e) => setWcName(e.target.value)}
@@ -193,7 +193,7 @@ export const WorkCentersTab: React.FC<WorkCentersTabProps> = ({
                                                 />
                                             </td>
                                             <td className="p-2.5 align-middle">
-                                                <input 
+                                                <input
                                                     type="number"
                                                     value={overheadCost}
                                                     onChange={(e) => setOverheadCost(e.target.value)}
@@ -201,7 +201,7 @@ export const WorkCentersTab: React.FC<WorkCentersTabProps> = ({
                                                 />
                                             </td>
                                             <td className="p-2.5 align-middle">
-                                                <input 
+                                                <input
                                                     type="number"
                                                     value={capacity}
                                                     onChange={(e) => setCapacity(e.target.value)}
@@ -210,7 +210,7 @@ export const WorkCentersTab: React.FC<WorkCentersTabProps> = ({
                                             </td>
                                             <td className="p-2.5 align-middle">
                                                 <label className="inline-flex items-center gap-1.5 cursor-pointer">
-                                                    <input 
+                                                    <input
                                                         type="checkbox"
                                                         checked={isActive}
                                                         onChange={(e) => setIsActive(e.target.checked)}
@@ -255,11 +255,10 @@ export const WorkCentersTab: React.FC<WorkCentersTabProps> = ({
                                             {(wc.capacity_per_hour || 0).toLocaleString("en-US")} units
                                         </td>
                                         <td className="p-3.5 align-middle">
-                                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${
-                                                wc.is_active !== false 
-                                                    ? "bg-success/10 text-success" 
+                                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${wc.is_active !== false
+                                                    ? "bg-success/10 text-success"
                                                     : "bg-destructive/10 text-destructive"
-                                            }`}>
+                                                }`}>
                                                 {wc.is_active !== false ? "Operational" : "Under Maintenance / Off"}
                                             </span>
                                         </td>

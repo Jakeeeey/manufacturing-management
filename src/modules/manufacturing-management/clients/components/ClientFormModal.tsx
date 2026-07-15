@@ -1,6 +1,6 @@
 /* eslint-disable */
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { X, Save, User, MapPin, ChevronDown, Loader2, Search } from "lucide-react";
+import { X, Save, User, MapPin, ChevronDown, Loader2, Search, Sliders, Building, Phone, Settings } from "lucide-react";
 import { Customer, StoreType } from "../types";
 import { toast } from "sonner";
 import CustomerMapSelector from "./CustomerMapSelector";
@@ -227,38 +227,43 @@ export default function ClientFormModal({
 
                 {/* Navigation Tabs (only shown when editing existing customer) */}
                 {showOverridesTab && (
-                    <div className="flex border-b px-6 pt-2 gap-4 bg-muted/5 shrink-0">
+                    <div className="flex border-b px-6 py-2.5 gap-2 bg-muted/20 shrink-0">
                         <button
                             type="button"
                             onClick={() => setActiveTab("general")}
-                            className={`pb-2 text-xs font-bold transition-all border-b-2 outline-none cursor-pointer ${
+                            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all outline-none cursor-pointer flex items-center gap-1.5 ${
                                 activeTab === "general"
-                                    ? "border-primary text-primary"
-                                    : "border-transparent text-muted-foreground hover:text-foreground"
+                                    ? "bg-primary text-primary-foreground shadow-md shadow-primary/20"
+                                    : "bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground"
                             }`}
                         >
-                            General Info
+                            <User className="h-3.5 w-3.5" />
+                            General Billing Profile
                         </button>
                         <button
                             type="button"
                             onClick={() => setActiveTab("overrides")}
-                            className={`pb-2 text-xs font-bold transition-all border-b-2 outline-none cursor-pointer ${
+                            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all outline-none cursor-pointer flex items-center gap-1.5 ${
                                 activeTab === "overrides"
-                                    ? "border-primary text-primary"
-                                    : "border-transparent text-muted-foreground hover:text-foreground"
+                                    ? "bg-primary text-primary-foreground shadow-md shadow-primary/20"
+                                    : "bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground"
                             }`}
                         >
-                            Served Product Versions
+                            <Sliders className="h-3.5 w-3.5" />
+                            Served BOM Versions
                         </button>
                     </div>
                 )}
 
                 {activeTab === "overrides" && showOverridesTab ? (
-                    <div className="flex-1 overflow-y-auto p-6 space-y-4">
-                        <div className="flex flex-col gap-1">
-                            <h4 className="text-xs font-extrabold text-primary uppercase tracking-wider">Served Product Versions Configuration</h4>
-                            <p className="text-[10px] text-muted-foreground">
-                                Override which manufacturing BOM version is served to this customer. By default, customers are served the globally Active version.
+                    <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-muted/10">
+                        <div className="flex flex-col gap-1.5 bg-card border rounded-2xl p-5 shadow-sm">
+                            <h4 className="text-xs font-extrabold text-foreground uppercase tracking-wider flex items-center gap-1.5">
+                                <Sliders className="h-4.5 w-4.5 text-primary" />
+                                Served BOM Versions Configuration
+                            </h4>
+                            <p className="text-[10px] text-muted-foreground leading-relaxed">
+                                Override which manufacturing Bill of Materials (BOM) version is served to this customer. By default, customers are served the globally Active version.
                             </p>
                         </div>
 
@@ -267,10 +272,10 @@ export default function ClientFormModal({
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/50 group-focus-within:text-primary transition-colors" />
                             <input
                                 type="text"
-                                placeholder="Search products by name or code..."
+                                placeholder="Search finished goods by name or SKU..."
                                 value={productSearch}
                                 onChange={(e) => setProductSearch(e.target.value)}
-                                className="w-full bg-background border rounded-lg pl-9 pr-4 py-2 text-xs outline-none focus:ring-1 focus:ring-primary font-semibold"
+                                className="w-full bg-background border rounded-xl pl-9 pr-4 py-2.5 text-xs outline-none focus:ring-1 focus:ring-primary focus:border-primary font-semibold transition-all shadow-sm"
                             />
                         </div>
 
@@ -280,10 +285,11 @@ export default function ClientFormModal({
                                 <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest animate-pulse">Loading settings...</span>
                             </div>
                         ) : (
-                            <div className="border rounded-xl divide-y bg-background overflow-hidden max-h-[40vh] overflow-y-auto">
+                            <div className="border rounded-2xl divide-y bg-background overflow-hidden max-h-[45vh] overflow-y-auto shadow-sm">
                                 {filteredProducts.length === 0 ? (
-                                    <div className="p-8 text-center text-xs text-muted-foreground">
-                                        No products found
+                                    <div className="p-12 text-center text-xs text-muted-foreground flex flex-col items-center gap-2">
+                                        <Search className="h-6 w-6 text-muted-foreground/35" />
+                                        <span>No finished goods match your search query.</span>
                                     </div>
                                 ) : (
                                     filteredProducts.map((p) => {
@@ -291,10 +297,10 @@ export default function ClientFormModal({
                                         const selectedVer = overrides[p.id] || "";
                                         
                                         return (
-                                            <div key={p.id} className="flex items-center justify-between p-3.5 hover:bg-muted/5 transition-colors gap-4">
+                                            <div key={p.id} className="flex items-center justify-between p-4 hover:bg-muted/10 transition-colors gap-4">
                                                 <div className="flex flex-col gap-0.5 min-w-0">
                                                     <span className="text-xs font-bold text-foreground truncate">{p.name}</span>
-                                                    <span className="text-[9px] font-mono text-muted-foreground uppercase">{p.code}</span>
+                                                    <span className="text-[9px] font-mono text-muted-foreground/75 uppercase tracking-wider">{p.code}</span>
                                                 </div>
                                                 <div className="flex items-center gap-2 shrink-0">
                                                     <select
@@ -303,7 +309,7 @@ export default function ClientFormModal({
                                                             const val = e.target.value ? Number(e.target.value) : null;
                                                             updateProductVersionOverride?.(p.id, val);
                                                         }}
-                                                        className="rounded-lg border bg-background text-foreground text-xs font-semibold px-2 py-1.5 outline-none focus:ring-1 focus:ring-primary cursor-pointer transition-all"
+                                                        className="rounded-lg border bg-background text-foreground text-xs font-bold px-3 py-2 outline-none focus:ring-1 focus:ring-primary focus:border-primary cursor-pointer transition-all hover:bg-muted/30"
                                                     >
                                                         <option value="">Default (Global Active Version)</option>
                                                          {productVersions.map((v) => (
@@ -311,7 +317,7 @@ export default function ClientFormModal({
                                                                  {v.version_name} ({v.status})
                                                              </option>
                                                          ))}
-                                                    </select>
+                                                     </select>
                                                 </div>
                                             </div>
                                         );
@@ -321,309 +327,349 @@ export default function ClientFormModal({
                         )}
                     </div>
                 ) : (
-                    <form onSubmit={onSave} className="flex-1 overflow-y-auto p-6 space-y-6">
-                    {/* section 1: Identity */}
-                    <div className="space-y-4">
-                        <h4 className="text-[10px] font-extrabold text-primary uppercase tracking-wider border-b pb-1">1. Customer Identity</h4>
-                        
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-1.5">
-                                <label className="text-[10px] font-bold text-muted-foreground uppercase">Client/Corporate Name <span className="text-red-500 font-bold text-[11px]">*</span></label>
-                                <input
-                                    type="text"
-                                    required
-                                    value={formData.customer_name}
-                                    onChange={(e) => onNameChange(e.target.value)}
-                                    placeholder="e.g. Super Shopping Corp."
-                                    className="w-full bg-background border rounded-lg px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary font-semibold"
-                                />
+                    <form onSubmit={onSave} className="flex-1 overflow-y-auto p-6 space-y-6 bg-muted/10 scrollbar-thin">
+                    
+                        {/* section 1: Identity */}
+                        <div className="bg-card border rounded-2xl p-5 space-y-4 shadow-sm hover:shadow-md transition-shadow">
+                            <div className="flex items-center gap-2.5 border-b pb-3">
+                                <span className="p-2 rounded-xl bg-primary/10 text-primary shrink-0">
+                                    <Building className="h-4 w-4" />
+                                </span>
+                                <div>
+                                    <h4 className="text-xs font-extrabold text-foreground uppercase tracking-wider">1. Customer Identity</h4>
+                                    <p className="text-[10px] text-muted-foreground mt-0.5">Corporate identity, tax identification, and store classification.</p>
+                                </div>
                             </div>
-
-                            <div className="space-y-1.5">
-                                <label className="text-[10px] font-bold text-muted-foreground uppercase">Customer Account Code <span className="text-red-500 font-bold text-[11px]">*</span></label>
-                                <input
-                                    type="text"
-                                    required
-                                    value={formData.customer_code}
-                                    onChange={(e) => setFormData((prev: ClientFormData) => ({ ...prev, customer_code: e.target.value.toUpperCase() }))}
-                                    placeholder="e.g. CUST-SUPER-204"
-                                    className="w-full bg-background border rounded-lg px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary font-mono font-bold"
-                                />
-                            </div>
-                        </div>
-
-                        <div className="grid grid-cols-3 gap-4">
-                            <div className="space-y-1.5">
-                                <label className="text-[10px] font-bold text-muted-foreground uppercase">TIN Number (Tax Registry)</label>
-                                <input
-                                    type="text"
-                                    value={formData.customer_tin}
-                                    onChange={(e) => {
-                                        const raw = e.target.value.replace(/\D/g, "");
-                                        const limited = raw.slice(0, 12);
-                                        setFormData((prev: ClientFormData) => ({ ...prev, customer_tin: limited }));
-                                    }}
-                                    placeholder="e.g. 000-123-456-000"
-                                    className="w-full bg-background border rounded-lg px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary font-mono font-bold"
-                                />
-                            </div>
-
-                            <div className="space-y-1.5">
-                                <label className="text-[10px] font-bold text-muted-foreground uppercase">Store/Outlet Name</label>
-                                <input
-                                    type="text"
-                                    value={formData.store_name}
-                                    onChange={(e) => setFormData((prev: ClientFormData) => ({ ...prev, store_name: e.target.value }))}
-                                    placeholder="e.g. Super Shopping (Ortigas)"
-                                    className="w-full bg-background border rounded-lg px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary font-semibold"
-                                />
-                            </div>
-
-                            <div className="space-y-1.5 relative" ref={storeTypeContainerRef}>
-                                <label className="text-[10px] font-bold text-muted-foreground uppercase">Store Trade Type</label>
-                                <div className="relative">
+                            
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-bold text-muted-foreground uppercase flex items-center gap-1">
+                                        Client/Corporate Name 
+                                        <span className="text-destructive font-bold text-[11px]">*</span>
+                                    </label>
                                     <input
                                         type="text"
-                                        placeholder="Type to search or register..."
-                                        value={storeTypeQuery}
-                                        onFocus={() => setIsStoreTypeFocused(true)}
-                                        onChange={e => {
-                                            setStoreTypeQuery(e.target.value);
-                                            setIsStoreTypeFocused(true);
-                                        }}
-                                        className="w-full bg-background border rounded-lg pl-3 pr-8 py-2 text-xs outline-none focus:ring-1 focus:ring-primary font-semibold"
+                                        required
+                                        value={formData.customer_name}
+                                        onChange={(e) => onNameChange(e.target.value)}
+                                        placeholder="e.g. Super Shopping Corp."
+                                        className="w-full bg-background border rounded-lg px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary focus:border-primary font-semibold transition-all font-semibold"
                                     />
-                                    <div className="absolute right-2.5 top-2.5 flex items-center gap-1.5 text-muted-foreground">
-                                        {formData.store_type_id && (
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    setFormData(prev => ({ ...prev, store_type_id: "" }));
-                                                    setStoreTypeQuery("");
-                                                }}
-                                                className="hover:text-foreground cursor-pointer"
-                                            >
-                                                <X className="h-3 w-3" />
-                                            </button>
-                                        )}
-                                        {isRegisteringStoreType ? (
-                                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                        ) : (
-                                            <ChevronDown className="h-3.5 w-3.5" />
-                                        )}
-                                    </div>
-                                    
-                                    {isStoreTypeFocused && (
-                                        <div className="absolute left-0 right-0 top-full mt-1 max-h-[160px] overflow-y-auto border bg-card rounded-lg shadow-lg z-50 divide-y divide-border scrollbar-thin">
-                                            {filteredStoreTypes.map((st) => (
+                                </div>
+
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-bold text-muted-foreground uppercase flex items-center gap-1">
+                                        Customer Account Code 
+                                        <span className="text-destructive font-bold text-[11px]">*</span>
+                                    </label>
+                                    <input
+                                        type="text"
+                                        required
+                                        value={formData.customer_code}
+                                        onChange={(e) => setFormData((prev: ClientFormData) => ({ ...prev, customer_code: e.target.value.toUpperCase() }))}
+                                        placeholder="e.g. CUST-SUPER-204"
+                                        className="w-full bg-background border rounded-lg px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary focus:border-primary font-mono font-bold transition-all text-primary"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-bold text-muted-foreground uppercase">TIN Number (Tax Registry)</label>
+                                    <input
+                                        type="text"
+                                        value={formData.customer_tin}
+                                        onChange={(e) => {
+                                            const raw = e.target.value.replace(/\D/g, "");
+                                            const limited = raw.slice(0, 12);
+                                            setFormData((prev: ClientFormData) => ({ ...prev, customer_tin: limited }));
+                                        }}
+                                        placeholder="e.g. 000-123-456-000"
+                                        className="w-full bg-background border rounded-lg px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary focus:border-primary font-mono font-semibold transition-all"
+                                    />
+                                </div>
+
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-bold text-muted-foreground uppercase">Store/Outlet Name</label>
+                                    <input
+                                        type="text"
+                                        value={formData.store_name}
+                                        onChange={(e) => setFormData((prev: ClientFormData) => ({ ...prev, store_name: e.target.value }))}
+                                        placeholder="e.g. Super Shopping (Ortigas)"
+                                        className="w-full bg-background border rounded-lg px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary focus:border-primary font-semibold transition-all font-semibold"
+                                    />
+                                </div>
+
+                                <div className="space-y-1.5 relative" ref={storeTypeContainerRef}>
+                                    <label className="text-[10px] font-bold text-muted-foreground uppercase">Store Trade Type</label>
+                                    <div className="relative">
+                                        <input
+                                            type="text"
+                                            placeholder="Type to search or register..."
+                                            value={storeTypeQuery}
+                                            onFocus={() => setIsStoreTypeFocused(true)}
+                                            onChange={e => {
+                                                setStoreTypeQuery(e.target.value);
+                                                setIsStoreTypeFocused(true);
+                                            }}
+                                            className="w-full bg-background border rounded-lg pl-3 pr-8 py-2 text-xs outline-none focus:ring-1 focus:ring-primary focus:border-primary font-semibold transition-all font-semibold"
+                                        />
+                                        <div className="absolute right-2.5 top-2.5 flex items-center gap-1.5 text-muted-foreground">
+                                            {formData.store_type_id && (
                                                 <button
-                                                    key={st.id}
                                                     type="button"
                                                     onClick={() => {
-                                                        setFormData(prev => ({ ...prev, store_type_id: String(st.id) }));
-                                                        setStoreTypeQuery(st.store_type);
-                                                        setIsStoreTypeFocused(false);
+                                                        setFormData(prev => ({ ...prev, store_type_id: "" }));
+                                                        setStoreTypeQuery("");
                                                     }}
-                                                    className="w-full text-left px-3 py-2 text-xs hover:bg-muted transition-colors font-semibold text-foreground block cursor-pointer"
+                                                    className="hover:text-foreground cursor-pointer"
                                                 >
-                                                    {st.store_type}
-                                                </button>
-                                            ))}
-
-                                            {/* Offer to create store type on the fly */}
-                                            {storeTypeQuery.trim() !== "" && 
-                                             !storeTypes.some(st => (st.store_type || "").toLowerCase() === storeTypeQuery.trim().toLowerCase()) && (
-                                                <button
-                                                    type="button"
-                                                    onClick={handleRegisterStoreType}
-                                                    className="w-full text-left px-3 py-2 text-xs hover:bg-primary/20 text-primary font-bold transition-colors block border-t bg-primary/5 cursor-pointer"
-                                                >
-                                                    + Create &quot;{storeTypeQuery}&quot; as new Store Type
+                                                    <X className="h-3 w-3" />
                                                 </button>
                                             )}
-                                            
-                                            {filteredStoreTypes.length === 0 && storeTypeQuery.trim() === "" && (
-                                                <div className="px-3 py-2 text-xs text-muted-foreground text-center">
-                                                    No store types found. Type to create.
-                                                </div>
+                                            {isRegisteringStoreType ? (
+                                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                            ) : (
+                                                <ChevronDown className="h-3.5 w-3.5" />
                                             )}
                                         </div>
-                                    )}
+                                        
+                                        {isStoreTypeFocused && (
+                                            <div className="absolute left-0 right-0 top-full mt-1 max-h-[160px] overflow-y-auto border bg-card rounded-lg shadow-lg z-50 divide-y divide-border scrollbar-thin">
+                                                {filteredStoreTypes.map((st) => (
+                                                    <button
+                                                        key={st.id}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setFormData(prev => ({ ...prev, store_type_id: String(st.id) }));
+                                                            setStoreTypeQuery(st.store_type);
+                                                            setIsStoreTypeFocused(false);
+                                                        }}
+                                                        className="w-full text-left px-3 py-2 text-xs hover:bg-muted transition-colors font-semibold text-foreground block cursor-pointer"
+                                                    >
+                                                        {st.store_type}
+                                                    </button>
+                                                ))}
+
+                                                {/* Offer to create store type on the fly */}
+                                                {storeTypeQuery.trim() !== "" && 
+                                                 !storeTypes.some(st => (st.store_type || "").toLowerCase() === storeTypeQuery.trim().toLowerCase()) && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={handleRegisterStoreType}
+                                                        className="w-full text-left px-3 py-2 text-xs hover:bg-primary/20 text-primary font-bold transition-colors block border-t bg-primary/5 cursor-pointer"
+                                                    >
+                                                        + Create &quot;{storeTypeQuery}&quot; as new Store Type
+                                                    </button>
+                                                )}
+                                                
+                                                {filteredStoreTypes.length === 0 && storeTypeQuery.trim() === "" && (
+                                                    <div className="px-3 py-2 text-xs text-muted-foreground text-center">
+                                                        No store types found. Type to create.
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                         </div>
-                    </div>
 
-                    {/* section 2: Contact Info */}
-                    <div className="space-y-4">
-                        <h4 className="text-[10px] font-extrabold text-primary uppercase tracking-wider border-b pb-1">2. Contact Details</h4>
-                        
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-1.5">
-                                <label className="text-[10px] font-bold text-muted-foreground uppercase">Email Address</label>
-                                <input
-                                    type="email"
-                                    value={formData.customer_email}
-                                    onChange={(e) => setFormData((prev: ClientFormData) => ({ ...prev, customer_email: e.target.value }))}
-                                    placeholder="e.g. accounting@supershopping.com"
-                                    className="w-full bg-background border rounded-lg px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary font-semibold"
-                                />
-                            </div>
-
-                            <div className="space-y-1.5">
-                                <label className="text-[10px] font-bold text-muted-foreground uppercase">Contact Number</label>
-                                <input
-                                    type="text"
-                                    value={formData.contact_number}
-                                    onChange={(e) => {
-                                        const raw = e.target.value.replace(/\D/g, "");
-                                        const limited = raw.slice(0, 11);
-                                        setFormData((prev: ClientFormData) => ({ ...prev, contact_number: limited }));
-                                    }}
-                                    placeholder="e.g. 0917-123-4567 or 8888-8888"
-                                    className="w-full bg-background border rounded-lg px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary font-mono font-bold"
-                                />
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* section 3: Billing Address */}
-                    <div className="space-y-4">
-                        <h4 className="text-[10px] font-extrabold text-primary uppercase tracking-wider border-b pb-1 flex items-center gap-1">
-                            <MapPin className="h-3.5 w-3.5 text-primary" />
-                            3. Corporate Billing Address (PH PSGC Lookup)
-                        </h4>
-                        
-                        <div className="grid grid-cols-3 gap-4">
-                            <div className="space-y-1.5 flex flex-col justify-end">
-                                <label className="text-[10px] font-bold text-muted-foreground uppercase">Province</label>
-                                <select
-                                    value={selectedProvinceCode}
-                                    onChange={(e) => {
-                                        const val = e.target.value;
-                                        setSelectedProvinceCode(val);
-                                        setSelectedCityCode("");
-                                        setFormData((prev: ClientFormData) => ({ ...prev, province: "", city: "", brgy: "" }));
-                                    }}
-                                    className="w-full h-9 rounded-lg border bg-background text-foreground text-xs font-semibold px-3 py-2 outline-none focus:ring-1 focus:ring-primary cursor-pointer transition-all"
-                                >
-                                    <option value="">Select Province...</option>
-                                    {provinces.map(p => (
-                                        <option key={p.code} value={p.code}>{p.name}</option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            <div className="space-y-1.5 flex flex-col justify-end">
-                                <label className="text-[10px] font-bold text-muted-foreground uppercase">City / Municipality</label>
-                                <select
-                                    value={selectedCityCode}
-                                    onChange={(e) => {
-                                        const val = e.target.value;
-                                        setSelectedCityCode(val);
-                                        setFormData((prev: ClientFormData) => ({ ...prev, city: "", brgy: "" }));
-                                    }}
-                                    disabled={!selectedProvinceCode}
-                                    className="w-full h-9 rounded-lg border bg-background text-foreground text-xs font-semibold px-3 py-2 outline-none focus:ring-1 focus:ring-primary cursor-pointer transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                    <option value="">Select City...</option>
-                                    {filteredCities.map(c => (
-                                        <option key={c.code} value={c.code}>{c.name}</option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            <div className="space-y-1.5 flex flex-col justify-end">
-                                <label className="text-[10px] font-bold text-muted-foreground uppercase">Barangay</label>
-                                <select
-                                    value={formData.brgy}
-                                    onChange={(e) => {
-                                        const val = e.target.value;
-                                        setFormData((prev: ClientFormData) => ({ ...prev, brgy: val }));
-                                    }}
-                                    disabled={!selectedCityCode}
-                                    className="w-full h-9 rounded-lg border bg-background text-foreground text-xs font-semibold px-3 py-2 outline-none focus:ring-1 focus:ring-primary cursor-pointer transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                    <option value="">Select Barangay...</option>
-                                    {barangays.map(b => (
-                                        <option key={b.code} value={b.code}>{b.name}</option>
-                                    ))}
-                                </select>
-                            </div>
-                        </div>
-
-                        {/* Geographic Coordinates */}
-                        <div className="border-t border-dashed pt-4 mt-2">
-                            <label className="text-[9px] font-extrabold text-muted-foreground uppercase tracking-wider block mb-2">
-                                Geographic Coordinates (For Route Optimization)
-                            </label>
-                            <div className="grid grid-cols-3 gap-4">
-                                <div className="space-y-1.5">
-                                    <label className="text-[10px] font-bold text-muted-foreground uppercase">Latitude</label>
-                                    <input
-                                        type="text"
-                                        value={formData.latitude}
-                                        onChange={(e) => setFormData((prev: ClientFormData) => ({ ...prev, latitude: e.target.value }))}
-                                        placeholder="e.g. 14.5995"
-                                        className="w-full bg-background border rounded-lg px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary font-mono font-bold"
-                                    />
-                                </div>
-                                <div className="space-y-1.5">
-                                    <label className="text-[10px] font-bold text-muted-foreground uppercase">Longitude</label>
-                                    <input
-                                        type="text"
-                                        value={formData.longitude}
-                                        onChange={(e) => setFormData((prev: ClientFormData) => ({ ...prev, longitude: e.target.value }))}
-                                        placeholder="e.g. 120.9842"
-                                        className="w-full bg-background border rounded-lg px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary font-mono font-bold"
-                                    />
-                                </div>
-                                <div className="flex items-end">
-                                    <button
-                                        type="button"
-                                        onClick={handleGetCurrentLocation}
-                                        className="w-full h-9 inline-flex items-center justify-center gap-1.5 bg-primary/10 hover:bg-primary/20 text-primary px-3 py-2 rounded-lg text-xs font-bold transition-all border border-primary/20 cursor-pointer"
-                                        title="Use your browser's location sensor to pin coordinates"
-                                    >
-                                        <MapPin className="h-3.5 w-3.5 text-primary shrink-0 animate-pulse" />
-                                        Pin GPS Location
-                                    </button>
-                                </div>
-                            </div>
-
-                            {/* Interactive Map Selector */}
-                            <CustomerMapSelector
-                                latitude={formData.latitude}
-                                longitude={formData.longitude}
-                                onChange={(lat, lng) => {
-                                    setFormData((prev: ClientFormData) => ({
-                                        ...prev,
-                                        latitude: lat,
-                                        longitude: lng
-                                    }));
-                                }}
-                            />
-                        </div>
-                    </div>
-
-                    {/* section 4: Settings */}
-                    <div className="space-y-4 pt-2">
-                        <div className="flex items-center justify-between p-3.5 border bg-muted/5 rounded-xl">
-                            <div className="space-y-0.5">
-                                <span className="text-xs font-bold block">Active Account Status</span>
-                                <span className="text-[9px] text-muted-foreground block max-w-sm">
-                                    Deactivating this profile excludes it from billing searches and pricing locks in new Quotations.
+                        {/* section 2: Contact Info */}
+                        <div className="bg-card border rounded-2xl p-5 space-y-4 shadow-sm hover:shadow-md transition-shadow">
+                            <div className="flex items-center gap-2.5 border-b pb-3">
+                                <span className="p-2 rounded-xl bg-primary/10 text-primary shrink-0">
+                                    <Phone className="h-4 w-4" />
                                 </span>
+                                <div>
+                                    <h4 className="text-xs font-extrabold text-foreground uppercase tracking-wider">2. Contact Details</h4>
+                                    <p className="text-[10px] text-muted-foreground mt-0.5">Corporate billing and operations touchpoints.</p>
+                                </div>
                             </div>
-                            <input
-                                type="checkbox"
-                                checked={formData.isActive}
-                                onChange={(e) => setFormData((prev: ClientFormData) => ({ ...prev, isActive: e.target.checked }))}
-                                className="h-4.5 w-4.5 rounded border-muted text-primary focus:ring-primary cursor-pointer"
-                            />
+                            
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-bold text-muted-foreground uppercase">Email Address</label>
+                                    <input
+                                        type="email"
+                                        value={formData.customer_email}
+                                        onChange={(e) => setFormData((prev: ClientFormData) => ({ ...prev, customer_email: e.target.value }))}
+                                        placeholder="e.g. accounting@supershopping.com"
+                                        className="w-full bg-background border rounded-lg px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary focus:border-primary font-semibold transition-all font-semibold"
+                                    />
+                                </div>
+
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-bold text-muted-foreground uppercase">Contact Number</label>
+                                    <input
+                                        type="text"
+                                        value={formData.contact_number}
+                                        onChange={(e) => {
+                                            const raw = e.target.value.replace(/\D/g, "");
+                                            const limited = raw.slice(0, 11);
+                                            setFormData((prev: ClientFormData) => ({ ...prev, contact_number: limited }));
+                                        }}
+                                        placeholder="e.g. 0917-123-4567 or 8888-8888"
+                                        className="w-full bg-background border rounded-lg px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary focus:border-primary font-mono font-semibold transition-all font-semibold"
+                                    />
+                                </div>
+                            </div>
                         </div>
-                    </div>
-                </form>
+
+                        {/* section 3: Billing Address */}
+                        <div className="bg-card border rounded-2xl p-5 space-y-4 shadow-sm hover:shadow-md transition-shadow">
+                            <div className="flex items-center gap-2.5 border-b pb-3">
+                                <span className="p-2 rounded-xl bg-primary/10 text-primary shrink-0">
+                                    <MapPin className="h-4 w-4" />
+                                </span>
+                                <div>
+                                    <h4 className="text-xs font-extrabold text-foreground uppercase tracking-wider">3. Corporate Billing Address</h4>
+                                    <p className="text-[10px] text-muted-foreground mt-0.5">Corporate billing address integrated with Philippine Standard Geographic Code (PSGC).</p>
+                                </div>
+                            </div>
+                            
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div className="space-y-1.5 flex flex-col justify-end">
+                                    <label className="text-[10px] font-bold text-muted-foreground uppercase">Province</label>
+                                    <select
+                                        value={selectedProvinceCode}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            setSelectedProvinceCode(val);
+                                            setSelectedCityCode("");
+                                            setFormData((prev: ClientFormData) => ({ ...prev, province: "", city: "", brgy: "" }));
+                                        }}
+                                        className="w-full h-9 rounded-lg border bg-background text-foreground text-xs font-semibold px-3 py-2 outline-none focus:ring-1 focus:ring-primary focus:border-primary cursor-pointer transition-all"
+                                    >
+                                        <option value="">Select Province...</option>
+                                        {provinces.map(p => (
+                                            <option key={p.code} value={p.code}>{p.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                <div className="space-y-1.5 flex flex-col justify-end">
+                                    <label className="text-[10px] font-bold text-muted-foreground uppercase">City / Municipality</label>
+                                    <select
+                                        value={selectedCityCode}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            setSelectedCityCode(val);
+                                            setFormData((prev: ClientFormData) => ({ ...prev, city: "", brgy: "" }));
+                                        }}
+                                        disabled={!selectedProvinceCode}
+                                        className="w-full h-9 rounded-lg border bg-background text-foreground text-xs font-semibold px-3 py-2 outline-none focus:ring-1 focus:ring-primary focus:border-primary cursor-pointer transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        <option value="">Select City...</option>
+                                        {filteredCities.map(c => (
+                                            <option key={c.code} value={c.code}>{c.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                <div className="space-y-1.5 flex flex-col justify-end">
+                                    <label className="text-[10px] font-bold text-muted-foreground uppercase">Barangay</label>
+                                    <select
+                                        value={formData.brgy}
+                                        onChange={(e) => {
+                                            const val = e.target.value;
+                                            setFormData((prev: ClientFormData) => ({ ...prev, brgy: val }));
+                                        }}
+                                        disabled={!selectedCityCode}
+                                        className="w-full h-9 rounded-lg border bg-background text-foreground text-xs font-semibold px-3 py-2 outline-none focus:ring-1 focus:ring-primary focus:border-primary cursor-pointer transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        <option value="">Select Barangay...</option>
+                                        {barangays.map(b => (
+                                            <option key={b.code} value={b.code}>{b.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+
+                            {/* Geographic Coordinates */}
+                            <div className="border-t border-dashed pt-4 mt-2 space-y-3">
+                                <div>
+                                    <label className="text-[9px] font-extrabold text-muted-foreground uppercase tracking-wider block">
+                                        Geographic Coordinates (For Logistics & Route Optimization)
+                                    </label>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <div className="space-y-1.5">
+                                        <label className="text-[10px] font-bold text-muted-foreground uppercase">Latitude</label>
+                                        <input
+                                            type="text"
+                                            value={formData.latitude}
+                                            onChange={(e) => setFormData((prev: ClientFormData) => ({ ...prev, latitude: e.target.value }))}
+                                            placeholder="e.g. 14.5995"
+                                            className="w-full bg-background border rounded-lg px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary focus:border-primary font-mono font-bold transition-all"
+                                        />
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <label className="text-[10px] font-bold text-muted-foreground uppercase">Longitude</label>
+                                        <input
+                                            type="text"
+                                            value={formData.longitude}
+                                            onChange={(e) => setFormData((prev: ClientFormData) => ({ ...prev, longitude: e.target.value }))}
+                                            placeholder="e.g. 120.9842"
+                                            className="w-full bg-background border rounded-lg px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary focus:border-primary font-mono font-bold transition-all"
+                                        />
+                                    </div>
+                                    <div className="flex items-end">
+                                        <button
+                                            type="button"
+                                            onClick={handleGetCurrentLocation}
+                                            className="w-full h-9 inline-flex items-center justify-center gap-1.5 bg-primary/10 hover:bg-primary/20 text-primary px-3 py-2 rounded-lg text-xs font-bold transition-all border border-primary/20 cursor-pointer active:scale-[0.98]"
+                                            title="Use your browser's location sensor to pin coordinates"
+                                        >
+                                            <MapPin className="h-3.5 w-3.5 text-primary shrink-0 animate-pulse" />
+                                            Pin GPS Location
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Interactive Map Selector */}
+                                <div className="border rounded-xl overflow-hidden mt-2 bg-background/50 animate-in fade-in duration-200">
+                                    <CustomerMapSelector
+                                        latitude={formData.latitude}
+                                        longitude={formData.longitude}
+                                        onChange={(lat, lng) => {
+                                            setFormData((prev: ClientFormData) => ({
+                                                ...prev,
+                                                latitude: lat,
+                                                longitude: lng
+                                            }));
+                                        }}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* section 4: Settings */}
+                        <div className="bg-card border rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2.5">
+                                    <span className="p-2 rounded-xl bg-primary/10 text-primary shrink-0">
+                                        <Settings className="h-4 w-4" />
+                                    </span>
+                                    <div className="space-y-0.5">
+                                        <span className="text-xs font-bold block text-foreground">Active Account Status</span>
+                                        <span className="text-[9px] text-muted-foreground block max-w-sm">
+                                            Deactivating this profile excludes it from billing searches and pricing locks in new Quotations.
+                                        </span>
+                                    </div>
+                                </div>
+                                <label className="relative inline-flex items-center cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={formData.isActive}
+                                        onChange={(e) => setFormData((prev: ClientFormData) => ({ ...prev, isActive: e.target.checked }))}
+                                        className="sr-only peer"
+                                    />
+                                    <div className="w-9 h-5 bg-muted peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+                                </label>
+                            </div>
+                        </div>
+                    </form>
                 )}
 
                 {/* Modal Footer */}

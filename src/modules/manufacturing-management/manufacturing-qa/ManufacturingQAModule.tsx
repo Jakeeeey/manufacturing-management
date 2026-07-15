@@ -10,7 +10,8 @@ import {
     Forklift,
     FileText,
     ClipboardCheck,
-    CheckCircle2
+    CheckCircle2,
+    Printer
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -28,6 +29,7 @@ import { YieldClosingDialog } from "./components/YieldClosingDialog";
 import { OverrideDialog } from "./components/OverrideDialog";
 import { DailyQAQueue } from "./components/DailyQAQueue";
 import { FinalQAReleases } from "./components/FinalQAReleases";
+import { ClosedQAQueue } from "./components/ClosedQAQueue";
 
 export default function ManufacturingQAModule() {
     const {
@@ -67,8 +69,10 @@ export default function ManufacturingQAModule() {
         filteredQALogs,
         pendingHolds,
         activeJobOrders,
+        closedJobOrders,
         handleOpenYieldDialog,
         handleSubmitYieldClosing,
+        handleReprintReceipt,
         handleOpenOverrideDialog,
         handleSubmitOverride,
 
@@ -180,7 +184,7 @@ export default function ManufacturingQAModule() {
 
             {/* Main Tabs Dashboard */}
             <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-                <TabsList className="grid grid-cols-5 max-w-4xl">
+                <TabsList className="grid grid-cols-6 max-w-5xl">
                     <TabsTrigger value="holds" className="gap-1.5">
                         <Lock className="h-4 w-4 text-rose-500 dark:text-rose-400" />
                         Active Holds ({pendingHolds.length})
@@ -191,11 +195,15 @@ export default function ManufacturingQAModule() {
                     </TabsTrigger>
                     <TabsTrigger value="final-qa" className="gap-1.5">
                         <CheckCircle2 className="h-4 w-4 text-emerald-500 dark:text-emerald-400" />
-                        Final Release ({lots.filter(l => lotsProducts.find(p => Number(p.product_id) === Number(l.product_id))?.is_finished_good).length})
+                        Final Release ({lots.length})
                     </TabsTrigger>
                     <TabsTrigger value="closing" className="gap-1.5">
                         <Forklift className="h-4 w-4 text-purple-500 dark:text-purple-400" />
                         Yield Closing ({activeJobOrders.length})
+                    </TabsTrigger>
+                    <TabsTrigger value="closed-qa" className="gap-1.5">
+                        <Printer className="h-4 w-4 text-emerald-500 dark:text-emerald-400" />
+                        Closed QA ({closedJobOrders.length})
                     </TabsTrigger>
                     <TabsTrigger value="logs" className="gap-1.5">
                         <FileText className="h-4 w-4 text-muted-foreground" />
@@ -289,6 +297,19 @@ export default function ManufacturingQAModule() {
                         setJoSearch={setJoSearch}
                         getBranchName={getBranchName}
                         handleOpenYieldDialog={handleOpenYieldDialog}
+                        pendingHolds={pendingHolds}
+                    />
+                </TabsContent>
+
+                {/* TAB: Closed QA (Reprintable Completed Runs) */}
+                <TabsContent value="closed-qa" className="space-y-4 outline-none">
+                    <ClosedQAQueue
+                        loadingJobOrders={loadingJobOrders}
+                        closedJobOrders={closedJobOrders}
+                        joSearch={joSearch}
+                        setJoSearch={setJoSearch}
+                        getBranchName={getBranchName}
+                        handleReprintReceipt={handleReprintReceipt}
                     />
                 </TabsContent>
 

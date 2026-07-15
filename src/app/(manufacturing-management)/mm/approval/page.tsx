@@ -10,7 +10,7 @@ import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { NavUser } from "@/components/shared/app-sidebar/nav-user";
 import { cookies } from "next/headers";
-import ApprovalModule from "@/modules/manufacturing-management/approval/ApprovalModule";
+import PurchaseOrderApprovalModule from "@/modules/manufacturing-management/purchase-order-approval/PurchaseOrderApprovalModule";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -108,7 +108,7 @@ export default async function ApprovalPage() {
 
             {/* Scrollable Content */}
             <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-4 bg-background">
-                <ApprovalModule />
+                <PurchaseOrderApprovalModule />
             </main>
         </div>
     );

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { DIRECTUS_URL, headers } from "@/app/api/manufacturing/directus-api";
+import { DIRECTUS_URL, headers } from "../../_directus";
 import { fetchProductsBySupplier } from "../suppliers-helper";
 
 export async function GET(request: Request) {

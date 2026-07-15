@@ -12,7 +12,10 @@ async function handleResponse(res: Response, fallbackMessage: string) {
     return res.json();
 }
 
-export async function fetchSalesOrders(params: { page?: number; limit?: number; search?: string; status?: string; selectedIds?: number[]; excludeHasJo?: boolean; customerCode?: string; dateFrom?: string; dateTo?: string } = {}): Promise<{ data: SalesOrder[]; detailsMap: Record<number, SalesOrderDetail[]>; meta: { totalCount: number; totalPages: number; page: number; limit: number } }> {
+export async function fetchSalesOrders(
+    params: { page?: number; limit?: number; search?: string; status?: string; selectedIds?: number[]; excludeHasJo?: boolean; customerCode?: string; dateFrom?: string; dateTo?: string } = {},
+    options: { signal?: AbortSignal } = {}
+): Promise<{ data: SalesOrder[]; detailsMap: Record<number, SalesOrderDetail[]>; meta: { totalCount: number; totalPages: number; page: number; limit: number; hasMore?: boolean; countExact?: boolean } }> {
     const query = new URLSearchParams();
     if (params.page) query.append("page", String(params.page));
     if (params.limit) query.append("limit", String(params.limit));
@@ -25,12 +28,19 @@ export async function fetchSalesOrders(params: { page?: number; limit?: number; 
     if (params.selectedIds && params.selectedIds.length > 0) {
         query.append("selectedIds", params.selectedIds.join(","));
     }
-    const res = await fetch(`/api/manufacturing/sales-order?${query.toString()}`);
+    const res = await fetch(`/api/manufacturing/sales-order?${query.toString()}`, {
+        signal: options.signal
+    });
     return handleResponse(res, "Failed to load sales orders");
 }
 
-export async function fetchSalesOrderDetails(orderId: number): Promise<SalesOrderDetail[]> {
-    const res = await fetch(`/api/manufacturing/sales-order?orderId=${orderId}`);
+export async function fetchSalesOrderDetails(
+    orderId: number,
+    options: { signal?: AbortSignal } = {}
+): Promise<SalesOrderDetail[]> {
+    const res = await fetch(`/api/manufacturing/sales-order?orderId=${orderId}`, {
+        signal: options.signal
+    });
     return handleResponse(res, "Failed to load order details");
 }
 
@@ -56,7 +66,7 @@ export async function updateSalesOrderDetails(orderId: number, details: { detail
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function approveSalesOrder(orderId: number): Promise<any> {
-    return updateSalesOrderStatus(orderId, "For Consolidation");
+    return updateSalesOrderStatus(orderId, "For Picking");
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

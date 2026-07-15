@@ -3,13 +3,12 @@
 
 import React, { useState, useMemo, useEffect } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { 
-    Search, 
-    Plus, 
-    Save, 
-    Layers, 
-    Activity, 
-    FileText, 
+import {
+    Search,
+    Plus,
+    Save,
+    Layers,
+    FileText,
     Sliders,
     AlertCircle,
     Loader2,
@@ -60,6 +59,8 @@ export default function FinishedGoodsModule() {
         loadingProducts,
         loadingBOM,
         savingBOM,
+        saveProgress,
+        saveStatus,
         products,
         selectedProductId,
         setSelectedProductId,
@@ -87,10 +88,8 @@ export default function FinishedGoodsModule() {
         editedRoutings,
         setEditedRoutings,
         editedOverheads,
-        setEditedOverheads,
         hasUnsavedChanges,
         setHasUnsavedChanges,
-        overheadTypes,
         operationTypes,
         setOperationTypes,
         simulatedForexRate,
@@ -112,7 +111,7 @@ export default function FinishedGoodsModule() {
     useEffect(() => {
         const ingredients: BOMItem[] = [];
         const routings: RoutingStep[] = [];
-        
+
         editedRoutes.forEach(r => {
             const workCenter = workCenters.find(wc => wc.work_center_id === r.work_center_id);
             const machineRate = workCenter ? Number(workCenter.overhead_cost_per_hour || 0) : 0;
@@ -127,7 +126,7 @@ export default function FinishedGoodsModule() {
                 durationHours: r.run_time_hours,
                 requiresQA: !!r.qa_template_id
             });
-            
+
             if (r.bom_items) {
                 r.bom_items.forEach(b => {
                     const matchedProd = allCatalogProducts.find(p => p.product_id === b.product_id);
@@ -146,7 +145,7 @@ export default function FinishedGoodsModule() {
                 });
             }
         });
-        
+
         setEditedBOM(ingredients);
         setEditedRoutings(routings);
     }, [editedRoutes, setEditedBOM, setEditedRoutings, workCenters, allCatalogProducts]);
@@ -228,20 +227,6 @@ export default function FinishedGoodsModule() {
     const handleDetailChange = (field: keyof Product, value: unknown) => {
         setHasUnsavedChanges(true);
         setEditedDetails(prev => ({ ...prev, [field]: value }));
-    };
-
-    const handleBOMChange = <K extends keyof BOMItem>(itemId: string, field: K, value: BOMItem[K]) => {
-        setHasUnsavedChanges(true);
-        setEditedBOM(prev => prev.map(item => 
-            item.id === itemId ? { ...item, [field]: value } : item
-        ));
-    };
-
-    const handleRoutingChange = <K extends keyof RoutingStep>(stepId: string, field: K, value: RoutingStep[K]) => {
-        setHasUnsavedChanges(true);
-        setEditedRoutings(prev => prev.map(step => 
-            step.id === stepId ? { ...step, [field]: value } : step
-        ));
     };
 
     // Importation Derived Calculations
@@ -404,55 +389,10 @@ export default function FinishedGoodsModule() {
         return targetPrice > 0 ? (simulatedNetProfit / targetPrice) * 100 : 0;
     }, [simulationTargetPrice, simulatedNetProfit]);
 
-    const addBOMItem = () => {
-        const newItem: BOMItem = {
-            id: `bom-new-${Date.now()}`,
-            productId: undefined,
-            name: "Select Material",
-            type: "raw_material",
-            quantity: 0,
-            uom: "",
-            uomId: undefined,
-            wastagePercent: 0,
-            landedCost: 0,
-            densityFactor: 1.0
-        };
-        setHasUnsavedChanges(true);
-        setEditedBOM(prev => [...prev, newItem]);
-        setSimulationPriceOverrides(prev => ({ ...prev, [newItem.id]: newItem.landedCost }));
-        toast.success("New raw material slot added to recipe");
-    };
-
-    const deleteBOMItem = (id: string) => {
-        setHasUnsavedChanges(true);
-        setEditedBOM(prev => prev.filter(item => item.id !== id));
-        toast.info("Material slot removed");
-    };
-
-    const addRoutingStep = () => {
-        const newStep: RoutingStep = {
-            id: `rt-new-${Date.now()}`,
-            sequence: "" as unknown as number,
-            name: "",
-            laborFlatRate: 0.0,
-            machineHourlyRate: 0.0,
-            durationHours: 0.0
-        };
-        setHasUnsavedChanges(true);
-        setEditedRoutings(prev => [...prev, newStep]);
-        toast.success("New manufacturing routing step added");
-    };
-
-    const deleteRoutingStep = (id: string) => {
-        setHasUnsavedChanges(true);
-        setEditedRoutings(prev => prev.filter(step => step.id !== id));
-        toast.info("Routing step removed");
-    };
-
     const treeProducts = useMemo(() => {
         const childrenMap = new Map<string, Product[]>();
         const roots: Product[] = [];
-        
+
         products.forEach(p => {
             if (p.parent_id) {
                 const pIdStr = String(p.parent_id);
@@ -464,28 +404,28 @@ export default function FinishedGoodsModule() {
                 roots.push(p);
             }
         });
-        
+
         if (searchQuery.trim()) {
             const query = searchQuery.toLowerCase();
             const matchingRoots: Product[] = [];
-            
+
             roots.forEach(root => {
                 const rootMatches = root.title.toLowerCase().includes(query) || root.sku.toLowerCase().includes(query);
                 const children = childrenMap.get(root.id) || [];
                 const matchingChildren = children.filter(c => c.title.toLowerCase().includes(query) || c.sku.toLowerCase().includes(query));
-                
+
                 if (rootMatches || matchingChildren.length > 0) {
                     matchingRoots.push(root);
                 }
             });
-            
+
             return { roots: matchingRoots, childrenMap };
         }
-        
+
         return { roots, childrenMap };
     }, [products, searchQuery]);
 
-// disabled-lint-next-line @typescript-eslint/no-unused-vars
+    // disabled-lint-next-line @typescript-eslint/no-unused-vars
     const existingRoutingNames = useMemo(() => {
         const names = new Set<string>();
         products.forEach(p => {
@@ -603,7 +543,7 @@ export default function FinishedGoodsModule() {
                             <Plus className="h-3.5 w-3.5" />
                             Register Product
                         </button>
-                        
+
                         <button
                             type="button"
                             onClick={() => setIsMenuOpen(!isMenuOpen)}
@@ -614,9 +554,9 @@ export default function FinishedGoodsModule() {
 
                         {isMenuOpen && (
                             <>
-                                <div 
-                                    className="fixed inset-0 z-10" 
-                                    onClick={() => setIsMenuOpen(false)} 
+                                <div
+                                    className="fixed inset-0 z-10"
+                                    onClick={() => setIsMenuOpen(false)}
                                 />
                                 <div className="absolute right-0 top-full mt-1.5 w-56 rounded-lg bg-card border border-border/80 shadow-lg py-1 z-20 text-xs text-foreground font-semibold divide-y divide-border/40 animate-in slide-in-from-top-1 duration-150">
                                     <button
@@ -698,7 +638,7 @@ export default function FinishedGoodsModule() {
                             </>
                         )}
                     </div>
-                    <button 
+                    <button
                         onClick={handleSave}
                         disabled={savingBOM || !selectedProduct}
                         className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground transition-all hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -720,7 +660,7 @@ export default function FinishedGoodsModule() {
                         <div className="p-3 border-b">
                             <div className="relative">
                                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                                <input 
+                                <input
                                     type="text"
                                     placeholder="Search products or SKUs..."
                                     value={searchQuery}
@@ -729,7 +669,7 @@ export default function FinishedGoodsModule() {
                                 />
                             </div>
                         </div>
-                        
+
                         {/* Products list items */}
                         <div className="flex-1 overflow-y-auto p-2 space-y-1">
                             {loadingProducts ? (
@@ -740,10 +680,10 @@ export default function FinishedGoodsModule() {
                             ) : (
                                 treeProducts.roots.map((root) => {
                                     const children = treeProducts.childrenMap.get(root.id) || [];
-                                    const displayedChildren = searchQuery.trim() 
+                                    const displayedChildren = searchQuery.trim()
                                         ? children.filter(c => c.title.toLowerCase().includes(searchQuery.toLowerCase()) || c.sku.toLowerCase().includes(searchQuery.toLowerCase()))
                                         : children;
-                                        
+
                                     return (
                                         <div key={root.id} className="space-y-1 mb-1">
                                             {/* Render Parent */}
@@ -755,11 +695,10 @@ export default function FinishedGoodsModule() {
                                                     }
                                                     setSelectedProductId(root.id);
                                                 }}
-                                                className={`w-full flex flex-col text-left p-3 rounded-lg border transition-all ${
-                                                    selectedProductId === root.id 
-                                                        ? "bg-card border-primary shadow-sm ring-1 ring-primary/20" 
+                                                className={`w-full flex flex-col text-left p-3 rounded-lg border transition-all ${selectedProductId === root.id
+                                                        ? "bg-card border-primary shadow-sm ring-1 ring-primary/20"
                                                         : "bg-transparent border-transparent hover:bg-muted"
-                                                }`}
+                                                    }`}
                                             >
                                                 <div className="flex items-start justify-between w-full gap-2 min-w-0">
                                                     <span className="text-sm font-semibold truncate flex-1 min-w-0 flex items-center gap-1.5">
@@ -777,7 +716,7 @@ export default function FinishedGoodsModule() {
                                                     </span>
                                                 </div>
                                             </button>
-                                            
+
                                             {/* Render Children */}
                                             {displayedChildren.length > 0 && (
                                                 <div className="pl-4 ml-3 border-l border-border/60 space-y-1 mt-1">
@@ -791,15 +730,14 @@ export default function FinishedGoodsModule() {
                                                                 }
                                                                 setSelectedProductId(child.id);
                                                             }}
-                                                            className={`w-full flex flex-col text-left p-2.5 rounded-lg border transition-all relative ${
-                                                                selectedProductId === child.id 
-                                                                    ? "bg-card border-primary/70 shadow-sm ring-1 ring-primary/10" 
+                                                            className={`w-full flex flex-col text-left p-2.5 rounded-lg border transition-all relative ${selectedProductId === child.id
+                                                                    ? "bg-card border-primary/70 shadow-sm ring-1 ring-primary/10"
                                                                     : "bg-transparent border-transparent hover:bg-muted/70"
-                                                            }`}
+                                                                }`}
                                                         >
                                                             {/* Connection line indicator */}
                                                             <div className="absolute left-[-16px] top-1/2 -translate-y-1/2 w-3 border-t border-border/60" />
-                                                            
+
                                                             <div className="flex items-start justify-between w-full gap-2 min-w-0">
                                                                 <span className="text-xs font-medium truncate flex-1 min-w-0 flex items-center gap-1.5 text-muted-foreground">
                                                                     <Sliders className="h-3 w-3 text-muted-foreground/60 shrink-0" />
@@ -880,7 +818,7 @@ export default function FinishedGoodsModule() {
                                                     );
                                                 })}
                                             </select>
-                                            
+
                                             {selectedVersionId && !versions.find(v => v.version_id === selectedVersionId)?.is_active && (
                                                 <button
                                                     onClick={() => handleActivateVersion(selectedVersionId)}
@@ -890,7 +828,7 @@ export default function FinishedGoodsModule() {
                                                     Set Active
                                                 </button>
                                             )}
-                                            
+
                                             {selectedVersionId && versions.find(v => v.version_id === selectedVersionId)?.is_active && (
                                                 <div className="flex items-center gap-1.5">
                                                     <span className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 rounded px-2 py-1 text-[10px] font-bold uppercase tracking-wider">
@@ -943,11 +881,10 @@ export default function FinishedGoodsModule() {
                                 <button
                                     key={t.id}
                                     onClick={() => handleTabChange(t.id)}
-                                    className={`flex items-center gap-1.5 px-4 py-3 text-xs font-semibold border-b-2 transition-all -mb-[1px] ${
-                                        activeTab === t.id 
-                                            ? "border-primary text-primary" 
+                                    className={`flex items-center gap-1.5 px-4 py-3 text-xs font-semibold border-b-2 transition-all -mb-[1px] ${activeTab === t.id
+                                            ? "border-primary text-primary"
                                             : "border-transparent text-muted-foreground hover:text-foreground"
-                                    }`}
+                                        }`}
                                 >
                                     <Icon className="h-4 w-4" />
                                     {t.label}
@@ -958,7 +895,13 @@ export default function FinishedGoodsModule() {
 
                     {/* Tab Contents */}
                     <div className="flex-1 overflow-y-auto p-6 min-h-0 relative">
-                        {selectedProduct ? (
+                        {loadingProducts && !selectedProduct ? (
+                            <div className="flex flex-col items-center justify-center p-20 text-muted-foreground h-full">
+                                <Loader2 className="h-10 w-10 animate-spin text-primary mb-3" />
+                                <span className="text-sm font-semibold">Loading product database...</span>
+                                <span className="text-xs text-muted-foreground mt-1">Please wait while we retrieve finished goods and configuration options.</span>
+                            </div>
+                        ) : selectedProduct ? (
                             <>
                                 {activeTab === "details" && (
                                     <ProductDetailsTab
@@ -1096,10 +1039,21 @@ export default function FinishedGoodsModule() {
                                 )}
                                 {savingBOM && (
                                     <div className="absolute inset-0 bg-background/55 backdrop-blur-xs flex items-center justify-center z-50 animate-in fade-in duration-150">
-                                        <div className="bg-card border rounded-xl shadow-lg p-5 flex flex-col items-center gap-2 max-w-xs text-center border-primary/20">
-                                            <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                                            <h4 className="text-xs font-bold text-foreground">Saving Changes...</h4>
-                                            <p className="text-[10px] text-muted-foreground">Uploading ingredients, routing configurations and updating cost rollups.</p>
+                                        <div className="bg-card border rounded-xl shadow-lg p-6 flex flex-col gap-4 w-80 text-center border-primary/20">
+                                            <div className="flex flex-col items-center gap-1">
+                                                <h4 className="text-xs font-bold text-foreground uppercase tracking-wider">Processing Request</h4>
+                                                <p className="text-[10px] text-muted-foreground font-mono">{saveStatus}</p>
+                                            </div>
+                                            <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden relative">
+                                                <div 
+                                                    className="bg-primary h-full rounded-full transition-all duration-300 ease-out"
+                                                    style={{ width: `${saveProgress}%` }}
+                                                />
+                                            </div>
+                                            <div className="flex justify-between items-center text-[10px] font-mono font-bold text-muted-foreground">
+                                                <span>PROGRESS</span>
+                                                <span className="text-primary">{saveProgress}%</span>
+                                            </div>
                                         </div>
                                     </div>
                                 )}
@@ -1146,11 +1100,11 @@ export default function FinishedGoodsModule() {
                         </div>
 
                         {/* Form */}
-                        <form 
+                        <form
                             onSubmit={(e) => {
                                 e.preventDefault();
                                 handleRegisterNewVersion(versionForm);
-                            }} 
+                            }}
                             className="p-6 space-y-4 text-xs"
                         >
                             {/* Version Name */}
@@ -1507,9 +1461,9 @@ export default function FinishedGoodsModule() {
                                             {registerForm.productImage ? (
                                                 <div className="relative group w-16 h-16 rounded-lg overflow-hidden border bg-background flex items-center justify-center">
                                                     {/* disabled-lint-next-line @next/next/no-img-element */}
-                                                    <img 
-                                                        src={`${process.env.NEXT_PUBLIC_DIRECTUS_URL || "http://vtc:8074"}/assets/${registerForm.productImage}`} 
-                                                        alt="Preview" 
+                                                    <img
+                                                        src={`${process.env.NEXT_PUBLIC_DIRECTUS_URL || "http://vtc:8074"}/assets/${registerForm.productImage}`}
+                                                        alt="Preview"
                                                         className="w-full h-full object-cover"
                                                         onError={(e) => {
                                                             const target = e.target as HTMLImageElement;
@@ -1524,11 +1478,11 @@ export default function FinishedGoodsModule() {
                                                             const oldId = registerForm.productImage;
                                                             setRegisterForm(prev => ({ ...prev, productImage: "" }));
                                                             if (oldId && oldId.length > 10) {
-                                                                    try {
-                                                                        await fetch(`/api/manufacturing/files?id=${oldId}`, { method: "DELETE" });
-                                                                    } catch (err) {
-                                                                        console.error("Failed to delete file", err);
-                                                                    }
+                                                                try {
+                                                                    await fetch(`/api/manufacturing/files?id=${oldId}`, { method: "DELETE" });
+                                                                } catch (err) {
+                                                                    console.error("Failed to delete file", err);
+                                                                }
                                                             }
                                                         }}
                                                         className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-[10px] font-bold transition-all uppercase"
@@ -1541,15 +1495,15 @@ export default function FinishedGoodsModule() {
                                                     <ImageIcon className="h-5 w-5" />
                                                 </div>
                                             )}
-                                            
+
                                             <div className="flex-1 space-y-1">
                                                 <p className="text-xs font-medium text-foreground">
                                                     {registerForm.productImage ? "Image uploaded successfully" : "Select a product image"}
                                                 </p>
                                                 <label className="inline-flex items-center justify-center rounded-lg border bg-background hover:bg-muted text-foreground px-2.5 py-1 text-xs font-semibold cursor-pointer transition-all">
                                                     <span>{uploadingRegImage ? "Uploading..." : "Choose File"}</span>
-                                                    <input 
-                                                        type="file" 
+                                                    <input
+                                                        type="file"
                                                         accept="image/*"
                                                         disabled={uploadingRegImage}
                                                         onChange={async (e) => {

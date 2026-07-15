@@ -17,6 +17,7 @@ export interface SalesOrder {
     payment_term_name?: string;
     payment_term_days?: number;
     salesman_id?: number;
+    branch_id?: number;
 }
 
 export interface SalesOrderDetail {
@@ -34,6 +35,8 @@ export interface SalesOrderDetail {
     unit_price: number;
     ordered_quantity: number;
     net_amount: number;
+    bom_version_id?: number | null;
+    bom_version_name?: string | null;
 }
 
 export interface QuotationHeader {

@@ -2,10 +2,11 @@
 // disabled-lint-next-line @typescript-eslint/no-unused-vars
 import React, { useState, useEffect } from "react";
 import { 
-// disabled-lint-next-line @typescript-eslint/no-unused-vars
     Loader2, ShieldCheck, Save, Send, Building2, 
-    FileText, CreditCard, Calendar, Plus, Minus, AlertCircle 
+    FileText, CreditCard, Calendar, Plus, Minus, AlertCircle,
+    X, CheckCircle2, PackageCheck, PackageOpen
 } from "lucide-react";
+import { toast } from "sonner";
 import { SalesOrder, SalesOrderDetail } from "../types";
 
 interface SalesOrderDetailPanelProps {
@@ -34,6 +35,7 @@ export function SalesOrderDetailPanel({
 }: SalesOrderDetailPanelProps) {
     const [editableQuantities, setEditableQuantities] = useState<Record<number, number>>({});
     const [prevOrderDetails, setPrevOrderDetails] = useState<unknown[]>([]);
+    const [isAllocationModalOpen, setIsAllocationModalOpen] = useState(false);
 
     if (orderDetails !== prevOrderDetails) {
         setPrevOrderDetails(orderDetails);
@@ -222,6 +224,8 @@ export function SalesOrderDetailPanel({
                             const brand = pId?.brand || "N/A";
                             const category = pId?.category || "N/A";
                             const uom = pId?.uom || "PCS";
+                            const bomVersionName = item.bom_version_name?.trim() || "No Version";
+                            const hasBomVersion = bomVersionName !== "No Version";
                             
                             const rawQty = editableQuantities[item.detail_id];
                             const currentQty = rawQty !== undefined ? rawQty : item.ordered_quantity;
@@ -243,13 +247,13 @@ export function SalesOrderDetailPanel({
                                                 <span className="text-[9px] font-mono bg-muted border px-1.5 py-0.2 rounded text-muted-foreground uppercase font-semibold">
                                                     {code}
                                                 </span>
-                                                {(item as any).version?.version_name ? (
+                                                {hasBomVersion ? (
                                                     <span className="text-[9px] bg-indigo-500/10 text-indigo-600 border border-indigo-500/20 px-1.5 py-0.2 rounded font-bold">
-                                                        v{(item as any).version.version_name.replace(/^[vV]/, "")}
+                                                        {bomVersionName}
                                                     </span>
                                                 ) : (
                                                     <span className="text-[9px] bg-slate-500/10 text-slate-500 border border-slate-500/20 px-1.5 py-0.2 rounded font-medium italic">
-                                                        Standard Active
+                                                        No Version
                                                     </span>
                                                 )}
                                                 {brand !== "N/A" && (
@@ -383,12 +387,12 @@ export function SalesOrderDetailPanel({
                                 }));
                                 handleUpdateQuantities(selectedOrder.order_id, detailsPayload);
                             }}
-                            className={`w-full inline-flex items-center justify-center gap-1.5 rounded-lg py-2.5 text-xs font-bold shadow-xs transition-all disabled:opacity-50 cursor-pointer ${
+                            className={`w-full inline-flex items-center justify-center gap-1.5 rounded-lg py-2.5 text-xs font-bold shadow-sm transition-all cursor-pointer ${
                                 hasChanges 
-                                    ? "bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-600"
-                                    : "border border-slate-700 bg-slate-800/40 hover:bg-slate-800 text-slate-400"
+                                    ? "bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-600 active:scale-[0.98]"
+                                    : "border border-border bg-muted/40 text-muted-foreground/60 cursor-not-allowed opacity-70"
                             }`}
-                            title="Transitioning to Pending will allocate items..."
+                            title={hasChanges ? "Save changes and update status" : "No quantity changes to save"}
                         >
                             {savingQuantities ? (
                                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -414,7 +418,334 @@ export function SalesOrderDetailPanel({
                 )}
 
 
+                {selectedOrder && selectedOrder.order_status === "For Picking" && (
+                    <button
+                        type="button"
+                        onClick={() => setIsAllocationModalOpen(true)}
+                        className="w-full mt-2 inline-flex items-center justify-center gap-1.5 rounded-lg border border-emerald-600/40 text-emerald-600 dark:text-emerald-400 bg-emerald-50/10 hover:bg-emerald-500/10 py-2.5 text-xs font-bold transition-all cursor-pointer active:scale-[0.98]"
+                    >
+                        <ShieldCheck className="h-3.5 w-3.5" />
+                        Check FIFO Lot Allocation
+                    </button>
+                )}
+
+            </div>
+            <FIFOAllocationModal 
+                isOpen={isAllocationModalOpen} 
+                onClose={() => setIsAllocationModalOpen(false)} 
+                selectedOrder={selectedOrder} 
+                orderDetails={orderDetails} 
+            />
+        </div>
+    );
+}
+
+interface FIFOAllocationModalProps {
+    isOpen: boolean;
+    onClose: () => void;
+    selectedOrder: SalesOrder;
+    orderDetails: SalesOrderDetail[];
+}
+
+function FIFOAllocationModal({ isOpen, onClose, selectedOrder, orderDetails }: FIFOAllocationModalProps) {
+    const [loading, setLoading] = useState(false);
+    const [batches, setBatches] = useState<any[]>([]);
+    const [branches, setBranches] = useState<any[]>([]);
+    const [targetBranchId, setTargetBranchId] = useState<number | string>("");
+    const [executing, setExecuting] = useState(false);
+
+    useEffect(() => {
+        if (!isOpen || !selectedOrder) return;
+        
+        async function fetchInventoryData() {
+            setLoading(true);
+            try {
+                const res = await fetch("/api/manufacturing/inventory");
+                if (res.ok) {
+                    const data = await res.json();
+                    setBatches(data.batches || []);
+                    setBranches(data.branches || []);
+                    
+                    const orderBranch = selectedOrder.branch_id;
+                    if (orderBranch) {
+                        setTargetBranchId(orderBranch);
+                    } else if (data.branches && data.branches.length > 0) {
+                        setTargetBranchId(data.branches[0].branch_id || data.branches[0].id);
+                    }
+                }
+            } catch (e) {
+                console.error("Failed to load inventory data:", e);
+                toast.error("Failed to load inventory data");
+            } finally {
+                setLoading(false);
+            }
+        }
+        
+        fetchInventoryData();
+    }, [isOpen, selectedOrder]);
+
+    if (!isOpen) return null;
+
+    // Calculate allocations for each item
+    const previewData = orderDetails.map(detail => {
+        const prodId = detail.product_id.product_id;
+        const prodName = detail.product_id.product_name;
+        const prodCode = detail.product_id.product_code;
+        const ordered = detail.ordered_quantity;
+        
+        // Filter lots for the target branch and product
+        const prodLots = batches.filter(b => 
+            Number(b.product_id) === prodId && 
+            Number(b.branch_id) === Number(targetBranchId) && 
+            b.qa_status === "Passed" && 
+            Number(b.quantity_received) > 0
+        );
+        
+        // FIFO sorting: earliest expiry first, then by line_id
+        const sortedLots = [...prodLots].sort((a, b) => {
+            if (a.expiration_date && b.expiration_date) {
+                return new Date(a.expiration_date).getTime() - new Date(b.expiration_date).getTime();
+            }
+            if (a.expiration_date) return -1;
+            if (b.expiration_date) return 1;
+            return Number(a.line_id) - Number(b.line_id);
+        });
+        
+        let remaining = ordered;
+        const allocatedLots: any[] = [];
+        let totalAvailable = 0;
+        
+        sortedLots.forEach(lot => {
+            const avail = Number(lot.quantity_received);
+            totalAvailable += avail;
+            if (remaining <= 0) return;
+            
+            const take = Math.min(avail, remaining);
+            if (take > 0) {
+                allocatedLots.push({
+                    lotNumber: lot.lot_number,
+                    expirationDate: lot.expiration_date,
+                    availableQty: avail,
+                    allocatedQty: take
+                });
+                remaining -= take;
+            }
+        });
+        
+        return {
+            productId: prodId,
+            productName: prodName,
+            productCode: prodCode,
+            orderedQty: ordered,
+            availableQty: totalAvailable,
+            allocatedLots,
+            shortfall: remaining
+        };
+    });
+
+    const hasAllocations = previewData.some(item => item.allocatedLots.length > 0);
+    const selectedBranch = branches.find(b => Number(b.branch_id || b.id) === Number(targetBranchId));
+    const branchName = selectedBranch ? (selectedBranch.branch_name || selectedBranch.name) : `Branch #${targetBranchId}`;
+
+    const handleExecuteAllocation = async () => {
+        if (!selectedOrder || !targetBranchId) return;
+        setExecuting(true);
+        try {
+            for (const item of previewData) {
+                if (item.allocatedLots.length === 0) continue;
+                
+                const detail = orderDetails.find(d => d.product_id.product_id === item.productId);
+                if (!detail) continue;
+                
+                const payload = {
+                    branchId: Number(targetBranchId),
+                    productId: item.productId,
+                    recipeVersionId: detail.bom_version_id || 1,
+                    lines: [
+                        {
+                            detail_id: detail.detail_id,
+                            ordered_quantity: detail.ordered_quantity
+                        }
+                    ]
+                };
+                
+                const res = await fetch("/api/manufacturing/planning-engineering", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        action: "direct-allocate",
+                        ...payload
+                    })
+                });
+                
+                if (!res.ok) {
+                    const errData = await res.json();
+                    throw new Error(errData.error || `Failed to allocate ${item.productName}`);
+                }
+            }
+            
+            toast.success("Direct inventory allocation executed successfully!");
+            onClose();
+            window.location.reload();
+        } catch (e: any) {
+            console.error("Error during direct allocation:", e);
+            toast.error(e.message || "Failed to execute inventory allocation.");
+        } finally {
+            setExecuting(false);
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 transition-all duration-200">
+            <div className="bg-card border rounded-2xl shadow-xl w-full max-w-3xl overflow-hidden max-h-[85vh] flex flex-col scale-100 transition-all duration-200 animate-in zoom-in-95">
+                {/* Header */}
+                <div className="p-4 border-b flex justify-between items-center bg-muted/10">
+                    <div>
+                        <h3 className="font-bold text-sm text-foreground flex items-center gap-1.5">
+                            <PackageCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                            FIFO Finished Goods Allocation Check
+                        </h3>
+                        <p className="text-[10px] text-muted-foreground mt-0.5">
+                            Previewing lot-by-lot allocation for Sales Order <span className="font-mono font-bold text-primary">{selectedOrder.order_no}</span>
+                        </p>
+                    </div>
+                    <button
+                        onClick={onClose}
+                        className="p-1 rounded-lg hover:bg-muted text-muted-foreground transition-all cursor-pointer"
+                        aria-label="Close dialog"
+                    >
+                        <X className="h-4 w-4" />
+                    </button>
+                </div>
+
+                {/* Sub-Header / Settings */}
+                <div className="p-4 bg-muted/30 border-b flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs">
+                    <div className="flex items-center gap-2">
+                        <span className="font-semibold text-muted-foreground">Select Branch:</span>
+                        <select
+                            value={targetBranchId}
+                            onChange={(e) => setTargetBranchId(Number(e.target.value))}
+                            className="bg-background border rounded px-2 py-1 outline-none focus:ring-1 focus:ring-primary focus:border-primary font-semibold"
+                        >
+                            {branches.map(b => (
+                                <option key={b.branch_id || b.id} value={b.branch_id || b.id}>
+                                    {b.branch_name || b.name}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                    <div className="text-[11px] text-muted-foreground font-semibold">
+                        Order Status: <span className="text-foreground">{selectedOrder.order_status}</span>
+                    </div>
+                </div>
+
+                {/* Content */}
+                <div className="p-6 overflow-y-auto space-y-4 flex-1">
+                    {loading ? (
+                        <div className="flex flex-col items-center justify-center py-12 text-muted-foreground text-xs gap-2">
+                            <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                            <span>Loading branch inventory lots...</span>
+                        </div>
+                    ) : (
+                        <div className="space-y-4">
+                            {previewData.map(item => {
+                                const isFullyAllocated = item.shortfall === 0;
+                                return (
+                                    <div key={item.productId} className="border rounded-xl p-4 bg-muted/20 hover:bg-muted/30 transition-all space-y-3">
+                                        <div className="flex justify-between items-start">
+                                            <div>
+                                                <h4 className="font-bold text-xs text-foreground">{item.productName}</h4>
+                                                <p className="text-[10px] text-muted-foreground font-mono font-semibold">{item.productCode}</p>
+                                            </div>
+                                            <div className="text-right">
+                                                <div className="text-xs font-bold text-foreground">
+                                                    Required: <span className="font-mono">{item.orderedQty.toLocaleString()}</span>
+                                                </div>
+                                                <div className="flex items-center gap-1.5 mt-0.5 justify-end">
+                                                    {isFullyAllocated ? (
+                                                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full dark:bg-emerald-950/20 dark:text-emerald-400">
+                                                            <CheckCircle2 className="h-3 w-3" />
+                                                            Fully Covered
+                                                        </span>
+                                                    ) : (
+                                                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full dark:bg-amber-950/20 dark:text-amber-400">
+                                                            <AlertCircle className="h-3 w-3" />
+                                                            Shortage: {item.shortfall.toLocaleString()}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Lot table */}
+                                        {item.allocatedLots.length > 0 ? (
+                                            <div className="border rounded-lg overflow-hidden bg-background">
+                                                <table className="w-full text-[11px] text-left">
+                                                    <thead className="bg-muted/50 border-b font-semibold text-muted-foreground">
+                                                        <tr>
+                                                            <th className="p-2">Lot Number</th>
+                                                            <th className="p-2">Expiry Date</th>
+                                                            <th className="p-2 text-right">Available</th>
+                                                            <th className="p-2 text-right text-emerald-600">Allocated</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y font-medium">
+                                                        {item.allocatedLots.map((lot, idx) => (
+                                                            <tr key={idx} className="hover:bg-muted/10">
+                                                                <td className="p-2 font-mono font-bold text-foreground">{lot.lotNumber}</td>
+                                                                <td className="p-2 text-muted-foreground">
+                                                                    {lot.expirationDate ? new Date(lot.expirationDate).toLocaleDateString() : "No Expiry"}
+                                                                </td>
+                                                                <td className="p-2 text-right font-mono">{lot.availableQty.toLocaleString()}</td>
+                                                                <td className="p-2 text-right font-mono font-black text-emerald-600 dark:text-emerald-400 bg-emerald-50/5">
+                                                                    {lot.allocatedQty.toLocaleString()}
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        ) : (
+                                            <div className="border border-dashed rounded-lg p-3 text-center text-[11px] text-muted-foreground bg-background/50">
+                                                <PackageOpen className="h-5 w-5 text-muted-foreground/30 mx-auto mb-1" />
+                                                No passed finished goods lots found in {branchName}.
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+
+                {/* Footer */}
+                <div className="p-4 border-t bg-muted/10 flex justify-end gap-3">
+                    <button
+                        onClick={onClose}
+                        className="px-4 py-2 text-xs font-bold border rounded-lg hover:bg-muted transition-all cursor-pointer"
+                    >
+                        Close
+                    </button>
+                    {isEditableState(selectedOrder.order_status) && hasAllocations && (
+                        <button
+                            disabled={executing || loading}
+                            onClick={handleExecuteAllocation}
+                            className="px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-all shadow-md flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                        >
+                            {executing ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                                <PackageCheck className="h-3.5 w-3.5" />
+                            )}
+                            Confirm & Execute Direct Allocation
+                        </button>
+                    )}
+                </div>
             </div>
         </div>
     );
+}
+
+function isEditableState(status: string) {
+    return status === "For Picking";
 }

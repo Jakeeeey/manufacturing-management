@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { 
+import {
     getBOMDetailsForVersion,
     saveActiveBOMDetails,
     syncRoutesAndBOM
@@ -66,13 +66,14 @@ export async function POST(request: Request) {
             product_section: details.productSection,
             product_shelf_life: details.productShelfLife,
             product_image: details.productImage,
-            production_capacity_per_hour: details.productionCapacityPerHour
+            production_capacity_per_hour: details.productionCapacityPerHour,
+            unit_of_measurement: details.unit_of_measurement
         });
         if (!prodOk) throw new Error("Failed to update product details in Directus");
 
         // 2. Save version metadata (expected yield and base quantity)
         const versionOk = await saveActiveBOMDetails(
-            numericVersionId, 
+            numericVersionId,
             details.expected_yield_percentage || details.expectedYieldPercent || 100,
             details.base_quantity || 1
         );

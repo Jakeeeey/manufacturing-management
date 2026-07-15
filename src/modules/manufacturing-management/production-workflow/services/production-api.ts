@@ -130,6 +130,10 @@ export interface ShiftRunLogPayload {
         product_id: number;
         actual_qty: number;
     }>;
+    batchNo?: string;
+    expiryDate?: string;
+    manufacturingDate?: string;
+    targetLotId?: number;
 }
 
 export async function submitShiftRunLog(payload: ShiftRunLogPayload): Promise<any> {

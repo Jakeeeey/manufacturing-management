@@ -2,15 +2,80 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { X, Plus, Trash2, Loader2, DollarSign, Keyboard } from "lucide-react";
+import { Plus, Trash2, Loader2, DollarSign, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { CreatableSelect } from "../../finished-goods/components/CreatableSelect";
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogHeader,
+    DialogTitle
+} from "@/components/ui/dialog";
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle
+} from "@/components/ui/alert-dialog";
 
 interface CreateSalesOrderModalProps {
     isOpen: boolean;
     onClose: () => void;
     // disabled-lint-next-line @typescript-eslint/no-explicit-any
     onSubmit: (payload: any) => Promise<any>;
+}
+
+interface DirectOrderItem {
+    line_id: number;
+    parent_product_id: number;
+    product_id: number;
+    quantity: number;
+    unit_price: number;
+}
+
+interface LineErrors {
+    product?: string;
+    uom?: string;
+    quantity?: string;
+    unit_price?: string;
+}
+
+interface FormErrors {
+    customerId?: string;
+    poNo?: string;
+    discountAmount?: string;
+    deliveryDate?: string;
+    items?: Record<number, LineErrors>;
+}
+
+interface VersionState {
+    status: "loading" | "resolved" | "unavailable";
+    label?: string;
+}
+
+function singularUnitName(name: string) {
+    const normalized = name.trim().toLowerCase();
+    if (normalized === "pieces") return "piece";
+    if (normalized === "boxes") return "box";
+    if (normalized.endsWith("s")) return normalized.slice(0, -1);
+    return normalized;
+}
+
+function formatUomLabel(product: any, products: any[]) {
+    const count = Number(product.unit_count) || 1;
+    const parent = products.find(item => Number(item.product_id) === Number(product.parent_product_id)) || product;
+    const baseUnitName = String(parent.unit_name || parent.unit_shortcut || "units").trim().toLowerCase();
+    const countedBaseUnit = count === 1 ? singularUnitName(baseUnitName) : baseUnitName;
+    const shortcut = String(product.unit_shortcut || "UNIT").toUpperCase();
+
+    if (product.is_parent) return `${shortcut} - ${count} ${countedBaseUnit}`;
+    const packageName = singularUnitName(String(product.unit_name || shortcut));
+    return `${shortcut} - ${count} ${countedBaseUnit} per ${packageName}`;
 }
 
 export function CreateSalesOrderModal({
@@ -20,6 +85,8 @@ export function CreateSalesOrderModal({
 }: CreateSalesOrderModalProps) {
     const [submitting, setSubmitting] = useState(false);
     const poInputRef = useRef<HTMLInputElement>(null);
+    const nextLineIdRef = useRef(1);
+    const versionRequestRef = useRef(0);
 
     // Lookups
     // disabled-lint-next-line @typescript-eslint/no-explicit-any
@@ -36,6 +103,7 @@ export function CreateSalesOrderModal({
     const [suppliers, setSuppliers] = useState<any[]>([]);
 
     const [loadingLookups, setLoadingLookups] = useState(false);
+    const [lookupError, setLookupError] = useState("");
 
     // Form fields
     const [customerId, setCustomerId] = useState("");
@@ -48,19 +116,52 @@ export function CreateSalesOrderModal({
     const [dueDate, setDueDate] = useState("");
     const [discountAmount, setDiscountAmount] = useState(0);
     const [remarks, setRemarks] = useState("");
+    const [overrideLeadTime, setOverrideLeadTime] = useState(false);
 
     // Detail Items
-    const [items, setItems] = useState<{ product_id: number; quantity: number; unit_price: number }[]>([]);
+    const [items, setItems] = useState<DirectOrderItem[]>([]);
+    const [formErrors, setFormErrors] = useState<FormErrors>({});
+    const [discardOpen, setDiscardOpen] = useState(false);
 
     const [customerOverrides, setCustomerOverrides] = useState<Record<number, number>>({});
-    const [resolvedVersionNames, setResolvedVersionNames] = useState<Record<number, string>>({});
+    const [versionStates, setVersionStates] = useState<Record<number, VersionState>>({});
+
+    const getLeadTimeStatus = () => {
+        if (!deliveryDate || items.length === 0) return { feasible: true, maxLeadDays: 0, requiredDate: null };
+        
+        let maxLeadDays = 0;
+        items.forEach(item => {
+            if (item.product_id) {
+                const prod = products.find(p => Number(p.product_id) === Number(item.product_id));
+                if (prod && prod.manufacturing_lead_days) {
+                    maxLeadDays = Math.max(maxLeadDays, Number(prod.manufacturing_lead_days));
+                }
+            }
+        });
+
+        if (maxLeadDays === 0) return { feasible: true, maxLeadDays: 0, requiredDate: null };
+
+        const orderDateObj = new Date();
+        const requiredDateObj = new Date(orderDateObj.getTime() + maxLeadDays * 24 * 60 * 60 * 1000);
+        
+        // Format required date as YYYY-MM-DD local time safely
+        const offset = requiredDateObj.getTimezoneOffset();
+        const localRequiredDateObj = new Date(requiredDateObj.getTime() - offset * 60 * 1000);
+        const requiredDateStr = localRequiredDateObj.toISOString().split('T')[0];
+
+        const feasible = deliveryDate >= requiredDateStr;
+        return { feasible, maxLeadDays, requiredDate: requiredDateStr };
+    };
 
     useEffect(() => {
         if (!customerId) {
             setCustomerOverrides({});
             return;
         }
-        fetch(`/api/manufacturing/finished-goods/customer-product-version?customerId=${customerId}`)
+        const controller = new AbortController();
+        fetch(`/api/manufacturing/finished-goods/customer-product-version?customerId=${customerId}`, {
+            signal: controller.signal
+        })
             .then(r => r.ok ? r.json() : [])
             .then(data => {
                 const map: Record<number, number> = {};
@@ -69,47 +170,57 @@ export function CreateSalesOrderModal({
                 });
                 setCustomerOverrides(map);
             })
-            .catch(err => console.error("Error loading overrides in modal:", err));
+            .catch(err => {
+                if (err?.name !== "AbortError") console.error("Error loading overrides in modal:", err);
+            });
+        return () => controller.abort();
     }, [customerId]);
 
     useEffect(() => {
-        setResolvedVersionNames({});
+        setVersionStates({});
     }, [customerId]);
 
     useEffect(() => {
-        const fetchVersions = async () => {
-            const newNames: Record<number, string> = {};
-            for (const item of items) {
-                const pid = Number(item.product_id);
-                if (pid && !resolvedVersionNames[pid]) {
-                    try {
-                        const res = await fetch(`/api/manufacturing/finished-goods/versions?productId=${pid}`);
-                        if (res.ok) {
-                            const versions = await res.json();
-                            const overrideVerId = customerOverrides[pid];
-                            let matchedVer = null;
-                            if (overrideVerId) {
-                                matchedVer = versions.find((v: any) => Number(v.version_id) === overrideVerId);
-                            }
-                            if (!matchedVer) {
-                                matchedVer = versions.find((v: any) => v.status === "Active" || v.is_active);
-                            }
-                            newNames[pid] = matchedVer ? `${matchedVer.version_name} (${matchedVer.status === "Active" ? "Active" : "Override"})` : "Standard Active";
-                        } else {
-                            newNames[pid] = "Standard Active";
-                        }
-                    } catch (err) {
-                        console.error("Error fetching version details in modal:", err);
-                        newNames[pid] = "Standard Active";
-                    }
-                }
+        const productIds = [...new Set(items.map(item => Number(item.product_id)).filter(Boolean))];
+        const requestId = ++versionRequestRef.current;
+        const controller = new AbortController();
+        if (productIds.length === 0) {
+            setVersionStates({});
+            return () => controller.abort();
+        }
+
+        setVersionStates(Object.fromEntries(productIds.map(id => [id, { status: "loading" }])));
+        Promise.all(productIds.map(async productId => {
+            try {
+                const response = await fetch(`/api/manufacturing/finished-goods/versions?productId=${productId}`, {
+                    signal: controller.signal
+                });
+                if (!response.ok) return [productId, { status: "unavailable" }] as const;
+                const versions = await response.json();
+                const overrideVersionId = customerOverrides[productId];
+                const overrideVersion = overrideVersionId
+                    ? versions.find((version: any) => Number(version.version_id) === overrideVersionId)
+                    : null;
+                const matchedVersion = overrideVersion
+                    || versions.find((version: any) => version.status === "Active" || version.is_active);
+                if (!matchedVersion) return [productId, { status: "unavailable" }] as const;
+                const suffix = overrideVersion ? "Override" : "Active";
+                return [productId, {
+                    status: "resolved",
+                    label: `${matchedVersion.version_name} (${suffix})`
+                }] as const;
+            } catch (error) {
+                if ((error as Error)?.name === "AbortError") return null;
+                console.error("Error fetching version details in modal:", error);
+                return [productId, { status: "unavailable" }] as const;
             }
-            if (Object.keys(newNames).length > 0) {
-                setResolvedVersionNames(prev => ({ ...prev, ...newNames }));
-            }
-        };
-        fetchVersions();
-    }, [items, customerOverrides]);
+        })).then(results => {
+            if (requestId !== versionRequestRef.current) return;
+            setVersionStates(Object.fromEntries(results.filter(Boolean) as Array<readonly [number, VersionState]>));
+        });
+
+        return () => controller.abort();
+    }, [items.map(item => item.product_id).join(","), customerOverrides]);
 
     useEffect(() => {
         if (!isOpen) return;
@@ -117,29 +228,33 @@ export function CreateSalesOrderModal({
         // Fetch lookups
         const loadLookups = async () => {
             setLoadingLookups(true);
+            setLookupError("");
             try {
-                const [custRes, prodRes, branchRes, termsRes, salesRes, suppRes] = await Promise.all([
-                    fetch("/api/manufacturing/finished-goods/customers?all=true").then(r => r.ok ? r.json() : []),
-                    fetch("/api/manufacturing/finished-goods/products?limit=250").then(r => r.ok ? r.json() : []),
-                    fetch("/api/manufacturing/procurement/qa-receiving?action=branches").then(r => r.ok ? r.json() : []),
-                    fetch("/api/manufacturing/payment-terms").then(r => r.ok ? r.json() : []).catch(() => []),
-                    fetch("/api/manufacturing/salesman").then(r => r.ok ? r.json() : []).catch(() => []),
-                    fetch("/api/manufacturing/procurement/suppliers").then(r => r.ok ? r.json() : []).catch(() => [])
-                ]);
+                const response = await fetch("/api/manufacturing/sales-order?action=create-lookups");
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok) {
+                    throw new Error(data.error || "Failed to load sales-order setup directories.");
+                }
 
-                setCustomers(Array.isArray(custRes) ? custRes : (custRes.data || []));
-                // Only finished goods (type 388)
-                const allProds = Array.isArray(prodRes) ? prodRes : (prodRes.data || []);
-                // disabled-lint-next-line @typescript-eslint/no-explicit-any
-                setProducts(allProds.filter((p: any) => Number(p.product_type) === 388));
-                
-                setBranches(Array.isArray(branchRes) ? branchRes : (branchRes.data || []));
-                setPaymentTerms(Array.isArray(termsRes) ? termsRes : (termsRes.data || []));
-                setSalesmen(Array.isArray(salesRes) ? salesRes : (salesRes.data || []));
-                setSuppliers(Array.isArray(suppRes) ? suppRes : (suppRes.data || []));
+                const nextCustomers = Array.isArray(data.customers) ? data.customers : [];
+                const nextProducts = Array.isArray(data.products) ? data.products : [];
+                if (nextCustomers.length === 0 || nextProducts.length === 0) {
+                    throw new Error("Customer or finished-good product setup is unavailable.");
+                }
+
+                setCustomers(nextCustomers);
+                setProducts(nextProducts);
+                setBranches(Array.isArray(data.branches) ? data.branches : []);
+                setPaymentTerms(Array.isArray(data.paymentTerms) ? data.paymentTerms : []);
+                setSalesmen(Array.isArray(data.salesmen) ? data.salesmen : []);
+                setSuppliers(Array.isArray(data.suppliers) ? data.suppliers : []);
             } catch (err) {
                 console.error("Failed to load lookups:", err);
-                toast.error("Failed to load required setup directories.");
+                const message = err instanceof Error ? err.message : "Failed to load required setup directories.";
+                setCustomers([]);
+                setProducts([]);
+                setLookupError(message);
+                toast.error(message);
             } finally {
                 setLoadingLookups(false);
             }
@@ -157,50 +272,187 @@ export function CreateSalesOrderModal({
         setDueDate("");
         setDiscountAmount(0);
         setRemarks("");
+        setOverrideLeadTime(false);
         setItems([]);
+        setFormErrors({});
+        setDiscardOpen(false);
         setCustomerOverrides({});
-        setResolvedVersionNames({});
+        setVersionStates({});
+        nextLineIdRef.current = 1;
 
-        // Focus PO Number input on open
-        setTimeout(() => {
-            poInputRef.current?.focus();
-        }, 150);
     }, [isOpen]);
 
+    useEffect(() => {
+        if (!isOpen || loadingLookups) return;
+        poInputRef.current?.focus();
+    }, [isOpen, loadingLookups]);
+
+    const handleCustomerChange = (value: string) => {
+        setCustomerId(value);
+        setFormErrors(previous => ({ ...previous, customerId: undefined }));
+        const customer = customers.find(item => String(item.id) === value);
+        const defaultPaymentTermId = Number(customer?.payment_term_id);
+        const hasConfiguredTerm = Number.isSafeInteger(defaultPaymentTermId)
+            && defaultPaymentTermId > 0
+            && paymentTerms.some(term => Number(term.id) === defaultPaymentTermId);
+        setPaymentTermId(hasConfiguredTerm ? String(defaultPaymentTermId) : "");
+    };
+
     const handleAddItem = () => {
-        setItems(prev => [...prev, { product_id: 0, quantity: 1, unit_price: 0 }]);
+        setItems(prev => [...prev, {
+            line_id: nextLineIdRef.current++,
+            parent_product_id: 0,
+            product_id: 0,
+            quantity: 1,
+            unit_price: 0
+        }]);
+        setFormErrors(previous => {
+            const itemErrors = { ...(previous.items || {}) };
+            delete itemErrors[0];
+            return { ...previous, items: itemErrors };
+        });
     };
 
     const handleRemoveItem = (index: number) => {
+        const lineId = items[index]?.line_id;
         setItems(prev => prev.filter((_, idx) => idx !== index));
+        if (lineId) {
+            setFormErrors(previous => {
+                const itemErrors = { ...(previous.items || {}) };
+                delete itemErrors[lineId];
+                return { ...previous, items: itemErrors };
+            });
+        }
     };
 
-    // disabled-lint-next-line @typescript-eslint/no-explicit-any
-    const handleItemChange = (index: number, field: string, value: any) => {
-        setItems(prev => prev.map((item, idx) => {
-            if (idx === index) {
-                const updated = { ...item, [field]: value };
-                // If product changed, we can autofill standard price if available
-                if (field === "product_id") {
-                    const prod = products.find(p => Number(p.product_id) === Number(value));
-                    updated.unit_price = prod ? Number(prod.price_per_unit || prod.cost_per_unit || 0) : 0;
-                }
-                return updated;
+    const clearLineError = (lineId: number, field: keyof LineErrors) => {
+        setFormErrors(previous => ({
+            ...previous,
+            items: {
+                ...(previous.items || {}),
+                [lineId]: { ...(previous.items?.[lineId] || {}), [field]: undefined }
             }
-            return item;
         }));
+    };
+
+    const handleParentProductChange = (index: number, parentProductId: number) => {
+        const lineId = items[index]?.line_id;
+        if (lineId) {
+            clearLineError(lineId, "product");
+            clearLineError(lineId, "uom");
+        }
+        setItems(prev => prev.map((item, idx) => {
+            if (idx !== index) return item;
+            const usedVariantIds = new Set(prev
+                .filter((_, otherIndex) => otherIndex !== index)
+                .map(otherItem => Number(otherItem.product_id))
+                .filter(Boolean));
+            const variants = products
+                .filter(product => Number(product.parent_product_id) === parentProductId)
+                .sort((a, b) => Number(b.is_parent) - Number(a.is_parent) || Number(a.unit_count) - Number(b.unit_count));
+            const defaultVariant = variants.find(variant => !usedVariantIds.has(Number(variant.product_id)));
+            return {
+                ...item,
+                parent_product_id: parentProductId,
+                product_id: defaultVariant ? Number(defaultVariant.product_id) : 0,
+                unit_price: defaultVariant
+                    ? Number(defaultVariant.price_per_unit || defaultVariant.cost_per_unit || 0)
+                    : 0
+            };
+        }));
+    };
+
+    const handleUomChange = (index: number, productId: number) => {
+        const variant = products.find(product => Number(product.product_id) === productId);
+        const lineId = items[index]?.line_id;
+        if (lineId) clearLineError(lineId, "uom");
+        setItems(prev => prev.map((item, idx) => idx === index ? {
+                ...item,
+                product_id: productId,
+                unit_price: variant ? Number(variant.price_per_unit || variant.cost_per_unit || 0) : 0
+            } : item));
+    };
+
+    const handleItemChange = (index: number, field: "quantity" | "unit_price", value: number) => {
+        const lineId = items[index]?.line_id;
+        if (lineId) clearLineError(lineId, field);
+        setItems(prev => prev.map((item, idx) => idx === index ? { ...item, [field]: value } : item));
+    };
+
+    const subTotal = items.reduce((sum, item) => sum + Number(item.unit_price || 0) * Number(item.quantity || 0), 0);
+    const grandTotal = subTotal - discountAmount;
+    const discountInvalid = !Number.isFinite(discountAmount) || discountAmount < 0 || discountAmount > subTotal;
+    const discountErrorMessage = discountAmount < 0
+        ? "Discount cannot be negative."
+        : "Discount cannot exceed the order subtotal.";
+    const isDirty = Boolean(
+        customerId || poNo || branchId || paymentTermId || salesmanId || supplierId
+        || deliveryDate || dueDate || discountAmount || remarks || items.length
+    );
+
+    const requestClose = () => {
+        if (submitting) return;
+        if (isDirty) {
+            setDiscardOpen(true);
+            return;
+        }
+        onClose();
+    };
+
+    const validateForm = () => {
+        const errors: FormErrors = { items: {} };
+        if (!customerId) errors.customerId = "Select a customer.";
+        if (!poNo.trim()) errors.poNo = "Enter a PO number.";
+        if (discountInvalid) errors.discountAmount = discountErrorMessage;
+
+        const leadTime = getLeadTimeStatus();
+        if (!leadTime.feasible && !overrideLeadTime) {
+            errors.deliveryDate = `Delivery date is earlier than required lead time (${leadTime.maxLeadDays} days).`;
+        }
+
+        const seenProductIds = new Set<number>();
+        items.forEach(item => {
+            const lineErrors: LineErrors = {};
+            if (!item.parent_product_id) lineErrors.product = "Select a parent product.";
+            if (!item.product_id) lineErrors.uom = "Select an available UOM.";
+            if (item.product_id && seenProductIds.has(item.product_id)) lineErrors.uom = "This product and UOM are already selected.";
+            if (item.product_id) {
+                seenProductIds.add(item.product_id);
+                // Enforce version setup check
+                if (!customerOverrides[item.product_id]) {
+                    lineErrors.product = "Customer product version is not set up yet.";
+                }
+            }
+            if (!Number.isFinite(item.quantity) || item.quantity <= 0) lineErrors.quantity = "Quantity must be greater than zero.";
+            if (!Number.isFinite(item.unit_price) || item.unit_price < 0) lineErrors.unit_price = "Unit price cannot be negative.";
+            if (Object.keys(lineErrors).length > 0) errors.items![item.line_id] = lineErrors;
+        });
+        if (items.length === 0) errors.items = { 0: { product: "Add at least one product." } };
+
+        const hasErrors = Boolean(errors.customerId || errors.poNo || errors.discountAmount || errors.deliveryDate || Object.keys(errors.items || {}).length);
+        setFormErrors(errors);
+        if (hasErrors) {
+            requestAnimationFrame(() => {
+                const firstInvalid = document.querySelector<HTMLElement>('[data-slot="dialog-content"] [aria-invalid="true"]');
+                firstInvalid?.focus();
+            });
+        }
+        return !hasErrors;
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!customerId) return toast.warning("Please select a customer.");
-        if (!poNo.trim()) return toast.warning("Please input a PO number.");
-        if (items.length === 0) return toast.warning("Please add at least one item.");
-        if (items.some(it => !it.product_id || it.quantity <= 0 || it.unit_price < 0)) {
-            return toast.warning("Please configure all item products, quantities, and prices correctly.");
+        if (lookupError || customers.length === 0 || products.length === 0) {
+            return toast.error("Customer and product directories must load before creating a sales order.");
         }
+        if (!validateForm()) return;
 
         setSubmitting(true);
+        const leadTime = getLeadTimeStatus();
+        const finalRemarks = (!leadTime.feasible && overrideLeadTime)
+            ? `${remarks ? remarks + '\n' : ''}[USER OVERRIDE: Lead time feasibility bypassed]`
+            : remarks;
+
         try {
             await onSubmit({
                 customerId: Number(customerId),
@@ -212,8 +464,12 @@ export function CreateSalesOrderModal({
                 deliveryDate: deliveryDate || null,
                 dueDate: dueDate || null,
                 discountAmount,
-                remarks,
-                items
+                remarks: finalRemarks,
+                items: items.map(item => ({
+                    product_id: item.product_id,
+                    quantity: item.quantity,
+                    unit_price: item.unit_price
+                }))
             });
             onClose();
         } catch (err) {
@@ -237,157 +493,205 @@ export function CreateSalesOrderModal({
 
     if (!isOpen) return null;
 
-    const subTotal = items.reduce((sum, it) => sum + (Number(it.unit_price || 0) * Number(it.quantity || 0)), 0);
-    const grandTotal = Math.max(0, subTotal - discountAmount);
+    const lookupsReady = !lookupError && customers.length > 0 && products.length > 0;
+    const fieldLabelClassName = "block text-xs font-semibold text-foreground";
+    const inputClassName = "h-9 w-full rounded-md border bg-background px-3 text-xs font-semibold outline-none focus:border-primary focus:ring-1 focus:ring-primary aria-invalid:border-destructive";
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-xs animate-in fade-in duration-300">
-            <div className="bg-card border w-full max-w-4xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200">
-                <div className="p-5 border-b flex items-center justify-between bg-muted/10">
-                    <div>
-                        <h4 className="text-base font-black text-foreground flex items-center gap-2">
-                            <span>Create Direct Sales Order</span>
-                            <span className="inline-flex items-center gap-1 text-[9px] font-bold text-muted-foreground uppercase bg-muted/80 border px-1.5 py-0.5 rounded">
-                                <Keyboard className="h-3 w-3" /> Keyboard Friendly
-                            </span>
-                        </h4>
-                        <p className="text-[10px] text-muted-foreground mt-0.5">Initialize a Sales Order directly with fast autocomplete fields and keyboard shortcuts.</p>
-                    </div>
-                    <button onClick={onClose} className="p-1.5 hover:bg-muted rounded-lg text-muted-foreground hover:text-foreground border-none bg-transparent cursor-pointer transition-colors">
-                        <X className="h-4 w-4" />
-                    </button>
-                </div>
-
+        <>
+            <Dialog open={isOpen} onOpenChange={open => { if (!open) requestClose(); }}>
+                <DialogContent
+                    className="flex max-h-[95vh] w-[calc(100vw-2rem)] max-w-[calc(100vw-2rem)] flex-col gap-0 overflow-hidden p-0 sm:w-[80vw] sm:max-w-[80vw]"
+                    onOpenAutoFocus={event => {
+                        event.preventDefault();
+                        poInputRef.current?.focus();
+                    }}
+                >
+                    <DialogHeader className="shrink-0 border-b px-5 py-4 pr-12 text-left">
+                        <DialogTitle>Create Direct Sales Order</DialogTitle>
+                        <DialogDescription>Enter the customer, fulfillment, and product details.</DialogDescription>
+                    </DialogHeader>
                 {loadingLookups ? (
                     <div className="p-20 flex flex-col items-center justify-center gap-2 text-muted-foreground">
                         <Loader2 className="h-8 w-8 animate-spin text-primary" />
                         <span className="text-xs">Loading dependencies...</span>
                     </div>
                 ) : (
-                    <form 
-                        onSubmit={handleSubmit} 
+                    <form
+                        onSubmit={handleSubmit}
                         onKeyDown={handleFormKeyDown}
-                        className="flex-1 overflow-y-auto p-6 space-y-6"
+                        className="flex min-h-0 flex-1 flex-col"
                     >
-                        {/* Keyboard navigation helper */}
-                        <div className="text-[10px] text-muted-foreground bg-muted/30 border border-muted/50 rounded-lg p-2.5 flex items-center justify-between">
-                            <span className="font-semibold">💡 Keyboard Shortcuts:</span>
-                            <div className="flex gap-4">
-                                <span><kbd className="bg-muted px-1.5 py-0.5 border rounded shadow-xs text-[9px] font-bold">Alt + A</kbd> Add product row</span>
-                                <span><kbd className="bg-muted px-1.5 py-0.5 border rounded shadow-xs text-[9px] font-bold">Tab</kbd> Move focus forward</span>
-                                <span><kbd className="bg-muted px-1.5 py-0.5 border rounded shadow-xs text-[9px] font-bold">Esc</kbd> Close modal</span>
+                        <div className="flex-1 space-y-5 overflow-y-auto p-4 sm:p-6">
+                        {lookupError && (
+                            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
+                                {lookupError}
                             </div>
-                        </div>
-
+                        )}
                         {/* Header Fields */}
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div className="space-y-1">
-                                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-wider block">PO Number <span className="text-red-500">*</span></label>
+                            <div className="space-y-1.5">
+                                <label htmlFor="direct-so-po" className={fieldLabelClassName}>PO Number <span className="text-destructive">*</span></label>
                                 <input
+                                    id="direct-so-po"
                                     ref={poInputRef}
                                     type="text"
-                                    required
                                     value={poNo}
-                                    onChange={e => setPoNo(e.target.value)}
+                                    onChange={event => {
+                                        setPoNo(event.target.value);
+                                        setFormErrors(previous => ({ ...previous, poNo: undefined }));
+                                    }}
                                     placeholder="e.g. PO-88902"
-                                    className="w-full h-9 bg-background border rounded-lg px-3 py-2 text-xs text-foreground outline-none focus:ring-1 focus:ring-primary focus:border-primary font-semibold"
+                                    aria-invalid={Boolean(formErrors.poNo)}
+                                    aria-describedby={formErrors.poNo ? "direct-so-po-error" : undefined}
+                                    className={inputClassName}
                                 />
+                                {formErrors.poNo && <p id="direct-so-po-error" className="text-xs text-destructive">{formErrors.poNo}</p>}
                             </div>
 
-                            <div className="space-y-1">
-                                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-wider block">Customer <span className="text-red-500">*</span></label>
+                            <div className="space-y-1.5">
+                                <label className={fieldLabelClassName}>Customer <span className="text-destructive">*</span></label>
                                 <CreatableSelect
                                     options={customers.map(c => ({ value: String(c.id), label: `${c.customer_name} (${c.customer_code})` }))}
                                     value={customerId}
-                                    onValueChange={val => setCustomerId(val)}
+                                    onValueChange={handleCustomerChange}
                                     placeholder="Select Customer..."
                                     className="h-9 text-xs"
+                                    disabled={!lookupsReady}
+                                    aria-label="Customer"
+                                    aria-invalid={Boolean(formErrors.customerId)}
+                                    aria-describedby={formErrors.customerId ? "direct-so-customer-error" : undefined}
                                 />
+                                {formErrors.customerId && <p id="direct-so-customer-error" className="text-xs text-destructive">{formErrors.customerId}</p>}
                             </div>
 
                             <div className="space-y-1">
-                                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-wider block">Production Branch</label>
+                                <label className={fieldLabelClassName}>Production Branch</label>
                                 <CreatableSelect
                                     options={branches.map(b => ({ value: String(b.id), label: b.branch_name }))}
                                     value={branchId}
                                     onValueChange={val => setBranchId(val)}
                                     placeholder="Select Branch..."
                                     className="h-9 text-xs"
+                                    aria-label="Production branch"
                                 />
                             </div>
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <div className="space-y-1">
-                                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-wider block">Payment Terms</label>
+                                <label className={fieldLabelClassName}>Payment Terms</label>
                                 <CreatableSelect
                                     options={paymentTerms.map(t => ({ value: String(t.id), label: `${t.payment_name} (${t.payment_days} days)` }))}
                                     value={paymentTermId}
                                     onValueChange={val => setPaymentTermId(val)}
                                     placeholder="Select Terms..."
                                     className="h-9 text-xs"
+                                    aria-label="Payment terms"
                                 />
                             </div>
 
                             <div className="space-y-1">
-                                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-wider block">Salesman</label>
+                                <label className={fieldLabelClassName}>Salesman</label>
                                 <CreatableSelect
                                     options={salesmen.map(s => ({ value: String(s.id), label: s.salesman_name }))}
                                     value={salesmanId}
                                     onValueChange={val => setSalesmanId(val)}
                                     placeholder="Select Salesman..."
                                     className="h-9 text-xs"
+                                    aria-label="Salesman"
                                 />
                             </div>
 
                             <div className="space-y-1">
-                                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-wider block">Supplier</label>
+                                <label className={fieldLabelClassName}>Supplier</label>
                                 <CreatableSelect
                                     options={suppliers.map(s => ({ value: String(s.id), label: s.supplier_name }))}
                                     value={supplierId}
                                     onValueChange={val => setSupplierId(val)}
                                     placeholder="Select Supplier..."
                                     className="h-9 text-xs"
+                                    aria-label="Supplier"
                                 />
                             </div>
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <div className="space-y-1">
-                                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-wider block">Delivery Date</label>
+                                <label htmlFor="direct-so-delivery-date" className={fieldLabelClassName}>Delivery Date</label>
                                 <input
+                                    id="direct-so-delivery-date"
                                     type="date"
                                     value={deliveryDate}
-                                    onChange={e => setDeliveryDate(e.target.value)}
-                                    className="w-full h-9 bg-background border rounded-lg px-3 py-2 text-xs text-foreground outline-none focus:ring-1 focus:ring-primary focus:border-primary font-semibold"
+                                    onChange={e => {
+                                        setDeliveryDate(e.target.value);
+                                        setFormErrors(prev => ({ ...prev, deliveryDate: undefined }));
+                                    }}
+                                    className={inputClassName}
+                                    aria-invalid={Boolean(formErrors.deliveryDate)}
                                 />
+                                {formErrors.deliveryDate && <p className="text-xs text-destructive mt-1">{formErrors.deliveryDate}</p>}
                             </div>
 
                             <div className="space-y-1">
-                                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-wider block">Due Date</label>
+                                <label htmlFor="direct-so-due-date" className={fieldLabelClassName}>Due Date</label>
                                 <input
+                                    id="direct-so-due-date"
                                     type="date"
                                     value={dueDate}
                                     onChange={e => setDueDate(e.target.value)}
-                                    className="w-full h-9 bg-background border rounded-lg px-3 py-2 text-xs text-foreground outline-none focus:ring-1 focus:ring-primary focus:border-primary font-semibold"
+                                    className={inputClassName}
                                 />
                             </div>
 
-                            <div className="space-y-1">
-                                <label className="text-[10px] font-black text-muted-foreground uppercase tracking-wider block">Discount Amount (PHP)</label>
+                            <div className="space-y-1.5">
+                                <label htmlFor="direct-so-discount" className={fieldLabelClassName}>Discount Amount (PHP)</label>
                                 <input
+                                    id="direct-so-discount"
                                     type="number"
                                     min={0}
                                     value={discountAmount}
-                                    onChange={e => setDiscountAmount(Number(e.target.value))}
-                                    className="w-full h-9 bg-background border rounded-lg px-3 py-2 text-xs text-foreground outline-none focus:ring-1 focus:ring-primary focus:border-primary font-semibold"
+                                    disabled
+                                    className="w-full bg-muted border rounded-lg px-3 py-2 text-xs text-muted-foreground outline-none cursor-not-allowed font-semibold"
                                 />
+                                <p className="text-[10px] text-muted-foreground mt-0.5">Manual flat discounts are disabled.</p>
                             </div>
+
+                            {/* Lead time feasibility warning alert */}
+                            {(() => {
+                                const leadTime = getLeadTimeStatus();
+                                if (leadTime.feasible) return null;
+                                return (
+                                    <div className="col-span-1 md:col-span-3 bg-amber-500/10 border border-amber-500/20 text-amber-600 rounded-lg p-3 text-xs flex flex-col gap-1.5 mt-1">
+                                        <div className="font-bold flex items-center gap-1.5">
+                                            ⚠️ Lead Time Feasibility Warning
+                                        </div>
+                                        <div>
+                                            The requested delivery date of <strong>{deliveryDate}</strong> is earlier than the standard manufacturing lead time of <strong>{leadTime.maxLeadDays} days</strong> (Earliest feasible date: <strong>{leadTime.requiredDate}</strong>).
+                                        </div>
+                                        <label className="flex items-center gap-1.5 mt-1 font-semibold cursor-pointer">
+                                            <input 
+                                                type="checkbox" 
+                                                checked={overrideLeadTime} 
+                                                onChange={e => {
+                                                    setOverrideLeadTime(e.target.checked);
+                                                    if (e.target.checked) {
+                                                        setFormErrors(prev => ({ ...prev, deliveryDate: undefined }));
+                                                    }
+                                                }}
+                                                className="rounded border-gray-300 text-primary focus:ring-primary h-3.5 w-3.5"
+                                            />
+                                            Override lead time feasibility constraint
+                                        </label>
+                                    </div>
+                                );
+                            })()}
                         </div>
 
                         <div className="space-y-1">
-                            <label className="text-[10px] font-black text-muted-foreground uppercase tracking-wider block">Remarks / Special Instructions</label>
+                            <label htmlFor="direct-so-remarks" className={fieldLabelClassName}>Remarks / Special Instructions</label>
                             <textarea
+                                id="direct-so-remarks"
                                 value={remarks}
                                 onChange={e => setRemarks(e.target.value)}
                                 placeholder="Add general remarks, freight instructions, or delivery guidelines here..."
@@ -399,91 +703,143 @@ export function CreateSalesOrderModal({
                         {/* Order Items Section */}
                         <div className="space-y-3 border-t pt-4">
                             <div className="flex items-center justify-between">
-                                <h5 className="text-xs font-black text-foreground uppercase tracking-wider">Ordered Products Catalog</h5>
+                                <h5 className="text-sm font-semibold text-foreground">Order Products</h5>
                                 <button
+                                    id="direct-so-add-product"
                                     type="button"
                                     onClick={handleAddItem}
-                                    className="inline-flex items-center gap-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary border-none px-3 py-1.5 text-xs font-bold cursor-pointer transition-all"
+                                    disabled={!lookupsReady}
+                                    aria-invalid={Boolean(formErrors.items?.[0]?.product)}
+                                    aria-describedby={formErrors.items?.[0]?.product ? "direct-so-items-error" : undefined}
+                                    className="inline-flex items-center gap-1.5 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary border-none px-3 py-1.5 text-xs font-bold cursor-pointer transition-all disabled:cursor-not-allowed disabled:opacity-50"
                                 >
-                                    <Plus className="h-3.5 w-3.5" /> Add Product SKU
+                                    <Plus className="h-3.5 w-3.5" /> Add Product
                                 </button>
                             </div>
+                            {formErrors.items?.[0]?.product && <p id="direct-so-items-error" className="text-xs text-destructive">{formErrors.items[0].product}</p>}
 
-                            <div className="border rounded-xl bg-card overflow-visible">
-                                <table className="w-full text-xs text-left">
-                                    <thead>
-                                        <tr className="bg-muted/40 border-b text-[9px] font-black uppercase text-muted-foreground">
-                                            <th className="py-2.5 px-4 w-1/2">Product finished good</th>
+                            <div className="overflow-visible rounded-md border bg-card">
+                                <table className="block w-full text-left text-xs md:table">
+                                    <thead className="hidden md:table-header-group">
+                                        <tr className="border-b bg-muted/40 text-xs font-semibold text-muted-foreground">
+                                            <th className="py-2.5 px-4 w-1/3">Parent product</th>
+                                            <th className="py-2.5 px-4 w-44">UOM</th>
                                             <th className="py-2.5 px-4 text-right">Unit Price (PHP)</th>
                                             <th className="py-2.5 px-4 text-right">Quantity</th>
                                             <th className="py-2.5 px-4 text-right">Total Net</th>
                                             <th className="py-2.5 px-4 text-center">Action</th>
                                         </tr>
                                     </thead>
-                                    <tbody className="divide-y">
+                                    <tbody className="block divide-y md:table-row-group">
                                         {items.length === 0 ? (
-                                            <tr>
-                                                <td colSpan={5} className="py-8 text-center text-muted-foreground italic font-semibold">
-                                                    No products added yet. Click &quot;Add Product SKU&quot; or press <kbd className="bg-muted px-1 border rounded text-[9px] font-mono mx-1">Alt + A</kbd> to begin.
+                                            <tr className="block md:table-row">
+                                                <td colSpan={6} className="py-8 text-center text-muted-foreground italic font-semibold">
+                                                    No products added.
                                                 </td>
                                             </tr>
                                         ) : (
                                             items.map((item, index) => {
                                                 const totalNet = Number(item.unit_price || 0) * Number(item.quantity || 0);
-                                                // Filter out product IDs selected in other rows
-                                                const otherSelectedProductIds = items
+                                                const otherSelectedVariantIds = items
                                                     .map((it, idx) => idx !== index ? it.product_id : 0)
                                                     .filter(id => id > 0);
-                                                const filteredOptions = products
-                                                    .filter(p => !otherSelectedProductIds.includes(p.product_id))
+                                                const parentOptions = products
+                                                    .filter(product => product.is_parent)
                                                     .map(p => ({
                                                         value: String(p.product_id),
                                                         label: `${p.product_name} (${p.product_code || `SKU-${p.product_id}`})`
                                                     }));
+                                                const uomOptions = products
+                                                    .filter(product => Number(product.parent_product_id) === Number(item.parent_product_id))
+                                                    .filter(product => Number(product.product_id) === Number(item.product_id)
+                                                        || !otherSelectedVariantIds.includes(Number(product.product_id)))
+                                                    .sort((a, b) => Number(b.is_parent) - Number(a.is_parent) || Number(a.unit_count) - Number(b.unit_count))
+                                                    .map(product => ({
+                                                        value: String(product.product_id),
+                                                        label: formatUomLabel(product, products)
+                                                    }));
                                                 return (
-                                                    <tr key={index} className="hover:bg-muted/5 font-semibold text-foreground">
-                                                        <td className="p-3 overflow-visible">
+                                                    <tr key={item.line_id} className="grid grid-cols-1 gap-3 p-3 font-semibold text-foreground hover:bg-muted/5 md:table-row md:p-0">
+                                                        <td className="block overflow-visible p-0 md:table-cell md:p-3">
+                                                            <span className="mb-1 block text-xs font-semibold md:hidden">Parent Product</span>
                                                             <CreatableSelect
-                                                                options={filteredOptions}
-                                                                value={item.product_id ? String(item.product_id) : ""}
-                                                                onValueChange={val => handleItemChange(index, "product_id", Number(val))}
-                                                                placeholder="Choose Product SKU..."
+                                                                options={parentOptions}
+                                                                value={item.parent_product_id ? String(item.parent_product_id) : ""}
+                                                                onValueChange={val => handleParentProductChange(index, Number(val))}
+                                                                placeholder="Choose Parent Product..."
                                                                 className="h-8 text-xs font-semibold"
+                                                                disabled={!lookupsReady}
+                                                                aria-label={`Parent product for line ${index + 1}`}
+                                                                aria-invalid={Boolean(formErrors.items?.[item.line_id]?.product)}
+                                                                aria-describedby={formErrors.items?.[item.line_id]?.product ? `line-${item.line_id}-product-error` : undefined}
                                                             />
+                                                            {formErrors.items?.[item.line_id]?.product && <p id={`line-${item.line_id}-product-error`} className="mt-1 text-xs text-destructive">{formErrors.items[item.line_id].product}</p>}
                                                             {Number(item.product_id) > 0 && (
                                                                 <div className="mt-1 flex items-center gap-1.5">
-                                                                    <span className="text-[9px] font-bold text-muted-foreground">Resolved Version:</span>
-                                                                    <span className="text-[9px] font-extrabold text-primary bg-primary/10 px-1.5 py-0.2 rounded border border-primary/20">
-                                                                        {resolvedVersionNames[Number(item.product_id)] || "Standard Active"}
-                                                                    </span>
+                                                                    <span className="text-xs text-muted-foreground">Version:</span>
+                                                                    {versionStates[item.product_id]?.status === "loading" ? (
+                                                                        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" /> Resolving...</span>
+                                                                    ) : versionStates[item.product_id]?.status === "resolved" ? (
+                                                                        <span className="text-xs font-semibold text-primary">{versionStates[item.product_id].label}</span>
+                                                                    ) : <span className="text-xs text-muted-foreground">Unavailable</span>}
                                                                 </div>
                                                             )}
                                                         </td>
-                                                        <td className="p-3 text-right w-32">
+                                                        <td className="block overflow-visible p-0 md:table-cell md:w-44 md:min-w-44 md:p-3">
+                                                            <span className="mb-1 block text-xs font-semibold md:hidden">Unit of Measure</span>
+                                                            <CreatableSelect
+                                                                options={uomOptions}
+                                                                value={item.product_id ? String(item.product_id) : ""}
+                                                                onValueChange={val => handleUomChange(index, Number(val))}
+                                                                placeholder="Choose UOM..."
+                                                                className="h-8 text-xs font-semibold"
+                                                                disabled={!item.parent_product_id || uomOptions.length === 0}
+                                                                aria-label={`Unit of measure for line ${index + 1}`}
+                                                                aria-invalid={Boolean(formErrors.items?.[item.line_id]?.uom)}
+                                                                aria-describedby={formErrors.items?.[item.line_id]?.uom ? `line-${item.line_id}-uom-error` : undefined}
+                                                            />
+                                                            {formErrors.items?.[item.line_id]?.uom && <p id={`line-${item.line_id}-uom-error`} className="mt-1 text-xs text-destructive">{formErrors.items[item.line_id].uom}</p>}
+                                                            {item.parent_product_id > 0 && uomOptions.length === 0 && <p className="mt-1 text-xs text-muted-foreground">No additional UOM is available.</p>}
+                                                        </td>
+                                                        <td className="block p-0 md:table-cell md:w-32 md:p-3 md:text-right">
+                                                            <label htmlFor={`line-${item.line_id}-price`} className="mb-1 block text-xs font-semibold md:sr-only">Unit Price</label>
                                                             <input
+                                                                id={`line-${item.line_id}-price`}
                                                                 type="number"
                                                                 min={0}
+                                                                step="any"
                                                                 value={item.unit_price}
                                                                 onChange={e => handleItemChange(index, "unit_price", Number(e.target.value))}
+                                                                aria-invalid={Boolean(formErrors.items?.[item.line_id]?.unit_price)}
+                                                                aria-describedby={formErrors.items?.[item.line_id]?.unit_price ? `line-${item.line_id}-price-error` : undefined}
                                                                 className="w-full bg-background border rounded-lg px-2 py-1 h-8 text-xs text-right outline-none focus:ring-1 focus:ring-primary focus:border-primary font-semibold"
                                                             />
+                                                            {formErrors.items?.[item.line_id]?.unit_price && <p id={`line-${item.line_id}-price-error`} className="mt-1 text-xs text-destructive">{formErrors.items[item.line_id].unit_price}</p>}
                                                         </td>
-                                                        <td className="p-3 text-right w-24">
+                                                        <td className="block p-0 md:table-cell md:w-24 md:p-3 md:text-right">
+                                                            <label htmlFor={`line-${item.line_id}-quantity`} className="mb-1 block text-xs font-semibold md:sr-only">Quantity</label>
                                                             <input
+                                                                id={`line-${item.line_id}-quantity`}
                                                                 type="number"
                                                                 min={1}
                                                                 value={item.quantity}
                                                                 onChange={e => handleItemChange(index, "quantity", Number(e.target.value))}
+                                                                aria-invalid={Boolean(formErrors.items?.[item.line_id]?.quantity)}
+                                                                aria-describedby={formErrors.items?.[item.line_id]?.quantity ? `line-${item.line_id}-quantity-error` : undefined}
                                                                 className="w-full bg-background border rounded-lg px-2 py-1 h-8 text-xs text-right outline-none focus:ring-1 focus:ring-primary focus:border-primary font-semibold"
                                                             />
+                                                            {formErrors.items?.[item.line_id]?.quantity && <p id={`line-${item.line_id}-quantity-error`} className="mt-1 text-xs text-destructive">{formErrors.items[item.line_id].quantity}</p>}
                                                         </td>
-                                                        <td className="p-3 text-right font-bold text-foreground">
+                                                        <td className="flex items-center justify-between p-0 text-right font-bold text-foreground md:table-cell md:p-3">
+                                                            <span className="text-xs md:hidden">Total</span>
                                                             ₱{totalNet.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                                         </td>
-                                                        <td className="p-3 text-center">
+                                                        <td className="block p-0 text-right md:table-cell md:p-3 md:text-center">
                                                             <button
                                                                 type="button"
                                                                 onClick={() => handleRemoveItem(index)}
+                                                                aria-label={`Remove line ${index + 1}`}
+                                                                title={`Remove line ${index + 1}`}
                                                                 className="p-1 hover:bg-rose-500/10 text-rose-500 hover:text-rose-600 rounded-lg border-none bg-transparent cursor-pointer transition-colors"
                                                             >
                                                                 <Trash2 className="h-4 w-4" />
@@ -498,9 +854,10 @@ export function CreateSalesOrderModal({
                             </div>
                         </div>
 
-                        {/* Summary panel */}
-                        <div className="flex justify-end pt-4 border-t">
-                            <div className="w-full md:w-64 space-y-2 border rounded-xl p-4 bg-muted/10">
+                        </div>
+                        <div className="shrink-0 border-t bg-background px-4 py-3 sm:px-6">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="grid grid-cols-3 gap-x-5 text-xs">
                                 <div className="flex justify-between text-xs text-muted-foreground font-bold">
                                     <span>Subtotal:</span>
                                     <span>₱{subTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
@@ -509,26 +866,24 @@ export function CreateSalesOrderModal({
                                     <span>Discount:</span>
                                     <span>-₱{discountAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                 </div>
-                                <div className="flex justify-between text-sm text-foreground font-black border-t pt-2">
+                                <div className="flex justify-between text-xs text-foreground font-black">
                                     <span>Grand Total:</span>
-                                    <span className="text-primary">₱{grandTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                    <span className={discountInvalid ? "text-destructive" : "text-primary"}>₱{grandTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                 </div>
                             </div>
-                        </div>
 
-                        {/* Action buttons */}
-                        <div className="flex justify-end gap-3 pt-2">
+                        <div className="flex justify-end gap-2">
                             <button
                                 type="button"
-                                onClick={onClose}
-                                className="bg-slate-850 hover:bg-slate-800 text-foreground border border-slate-700 text-xs font-bold px-4 py-2 rounded-lg cursor-pointer animate-all"
+                                onClick={requestClose}
+                                className="h-9 rounded-md border bg-background px-4 text-xs font-semibold transition-colors hover:bg-muted"
                             >
                                 Cancel
                             </button>
                             <button
                                 type="submit"
-                                disabled={submitting}
-                                className="bg-primary hover:bg-primary/95 text-primary-foreground text-xs font-bold px-4 py-2 rounded-lg flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
+                                disabled={submitting || !lookupsReady || discountInvalid}
+                                className="bg-primary hover:bg-primary/95 text-primary-foreground text-xs font-bold px-4 py-2 rounded-lg flex items-center gap-1.5 transition-all shadow-sm cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
                             >
                                 {submitting ? (
                                     <>
@@ -543,9 +898,26 @@ export function CreateSalesOrderModal({
                                 )}
                             </button>
                         </div>
+                            </div>
+                        </div>
                     </form>
                 )}
-            </div>
-        </div>
+                </DialogContent>
+            </Dialog>
+
+            <AlertDialog open={discardOpen} onOpenChange={setDiscardOpen}>
+                <AlertDialogContent size="sm">
+                    <AlertDialogHeader>
+                        <AlertTriangle className="h-5 w-5 text-destructive" aria-hidden="true" />
+                        <AlertDialogTitle>Discard sales order?</AlertDialogTitle>
+                        <AlertDialogDescription>Your entered sales order details will be lost.</AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Keep Editing</AlertDialogCancel>
+                        <AlertDialogAction variant="destructive" onClick={() => { setDiscardOpen(false); onClose(); }}>Discard</AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+        </>
     );
 }

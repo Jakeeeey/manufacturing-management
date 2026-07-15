@@ -1,4 +1,4 @@
-import { DIRECTUS_URL, headers } from "@/app/api/manufacturing/directus-api";
+import { DIRECTUS_URL, headers } from "../_directus";
 import { 
     DirectusProductPerSupplier 
 } from "@/modules/manufacturing-management/procurement/types";
@@ -182,7 +182,7 @@ export async function updateSupplier(supplierId: number, supplierData: Record<st
 
 export async function fetchProductsBySupplier(supplierId: number): Promise<DirectusProductPerSupplier[]> {
     try {
-        const url = `${DIRECTUS_URL}/items/product_per_supplier?filter[supplier_id][_eq]=${supplierId}&fields=id,supplier_id,product_id.*,product_id.unit_of_measurement.*&limit=-1`;
+        const url = `${DIRECTUS_URL}/items/product_per_supplier?filter[supplier_id][_eq]=${supplierId}&fields=id,supplier_id,discount_type.*,product_id.*,product_id.unit_of_measurement.*&limit=-1`;
         const res = await fetch(url, { headers, cache: "no-store" });
         if (!res.ok) throw new Error("Failed to fetch products for supplier");
         const json = await res.json();
