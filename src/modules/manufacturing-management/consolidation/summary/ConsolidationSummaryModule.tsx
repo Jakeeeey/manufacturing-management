@@ -16,6 +16,7 @@ import {
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
     Table,
@@ -229,20 +230,20 @@ export default function ConsolidationSummaryModule() {
                             </div>
                         </div>
                         <div className="grid w-full gap-3 sm:grid-cols-2 lg:w-auto lg:grid-cols-[220px_160px_160px_auto]">
-                            <label className="space-y-1.5 text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-                                Branch
-                                <select
-                                    value={branchId || ""}
-                                    onChange={(event) => setBranchId(Number(event.target.value))}
+                            <div className="space-y-1.5 text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                                <span>Branch</span>
+                                <SearchableSelect
+                                    value={branchId ? String(branchId) : ""}
+                                    onValueChange={(value) => setBranchId(Number(value))}
                                     disabled={loadingBranches}
-                                    className="h-10 w-full rounded-xl border border-input bg-background px-3 text-sm font-bold text-foreground outline-none transition focus:ring-2 focus:ring-primary/20"
-                                >
-                                    <option value="" disabled>{loadingBranches ? "Loading branches..." : "Select branch"}</option>
-                                    {branches.map((branch) => (
-                                        <option key={branch.id} value={branch.id}>{branch.branchName}</option>
-                                    ))}
-                                </select>
-                            </label>
+                                    options={branches.map((branch) => ({
+                                        value: String(branch.id),
+                                        label: `${branch.branchName} (${branch.branchCode})`,
+                                    }))}
+                                    placeholder={loadingBranches ? "Loading branches..." : "Search and select branch..."}
+                                    className="h-10 rounded-xl bg-background text-sm font-bold normal-case tracking-normal"
+                                />
+                            </div>
                             <label className="space-y-1.5 text-[10px] font-black uppercase tracking-widest text-muted-foreground">
                                 From
                                 <Input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} className="h-10 rounded-xl font-bold" />

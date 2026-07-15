@@ -21,6 +21,7 @@ import {
     RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import {
     AlertDialog,
     AlertDialogAction,
@@ -135,20 +136,19 @@ export default function InvoiceConsolidationModule() {
                         <Layers className="h-5 w-5 text-primary stroke-[3px] sm:hidden" />
                         Invoice <span className="text-primary">Consolidation</span>
                     </h2>
-                    <select
-                        value={selectedBranch?.id ?? ""}
-                        onChange={(e) => {
-                            const branch = branches.find((item) => item.id === Number(e.target.value));
+                    <SearchableSelect
+                        value={selectedBranch ? String(selectedBranch.id) : ""}
+                        onValueChange={(value) => {
+                            const branch = branches.find((item) => item.id === Number(value));
                             handleBranchChange(branch ?? null);
                         }}
-                        className="h-11 w-full rounded-xl border border-border/40 bg-card/40 px-3 text-sm font-bold shadow-inner outline-none backdrop-blur-md focus:ring-2 focus:ring-primary/20 sm:w-[260px]"
-                        suppressHydrationWarning
-                    >
-                        <option value="" disabled>Select Branch...</option>
-                        {branches.map((branch) => (
-                            <option key={branch.id} value={branch.id}>{branch.branchName} ({branch.branchCode})</option>
-                        ))}
-                    </select>
+                        options={branches.map((branch) => ({
+                            value: String(branch.id),
+                            label: `${branch.branchName} (${branch.branchCode})`,
+                        }))}
+                        placeholder="Search and select branch..."
+                        className="h-11 w-full border-border/40 bg-card/40 text-sm font-bold shadow-inner backdrop-blur-md sm:w-[260px]"
+                    />
                 </div>
             </div>
 

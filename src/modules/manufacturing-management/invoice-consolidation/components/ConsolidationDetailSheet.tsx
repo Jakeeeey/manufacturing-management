@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { toast } from "sonner";
 import {
     Box,
     Building2,
@@ -11,6 +12,7 @@ import {
     Clock,
     FileText,
     Layers,
+    MapPin,
     PackageCheck,
     Play,
     Printer,
@@ -24,7 +26,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { InvoiceConsolidation } from "../types";
 import { generateConsolidationPDF } from "../utils/ConsolidationSummaryPrint";
-import { fetchAllocations } from "../services/invoice-consolidation-api";
+import { fetchAllocations, type LotAllocation } from "../services/invoice-consolidation-api";
 
 type DetailAction = "revert" | "audit" | "start-picking";
 
@@ -36,15 +38,17 @@ interface Props {
 }
 
 async function handlePrint(c: InvoiceConsolidation) {
-    const [allocations] = await Promise.all([
-        fetchAllocations(c.id).catch(() => []),
-    ]);
+    const allocations = await fetchAllocations(c.id);
+    if (allocations.length === 0) {
+        throw new Error("This batch has no lot allocations to print");
+    }
     await generateConsolidationPDF({
         consolidatorNo: c.consolidatorNo,
         branchName: c.branchName,
         status: c.status,
         createdAt: c.createdAt,
         details: c.details.map((d) => ({
+            productId: d.productId,
             productName: d.productName,
             brand: d.brand || "Unbranded",
             category: d.category || "Uncategorized",
@@ -69,6 +73,27 @@ async function handlePrint(c: InvoiceConsolidation) {
 export default function ConsolidationDetailSheet({ consolidation, submitting, onClose, onRequestAction }: Props) {
     const [search, setSearch] = useState("");
     const [expandedInvoiceId, setExpandedInvoiceId] = useState<number | null>(null);
+    const [allocationState, setAllocationState] = useState<{
+        batchId: number;
+        allocations: LotAllocation[];
+        error: string | null;
+    } | null>(null);
+
+    useEffect(() => {
+        if (!consolidation) return;
+        const batchId = consolidation.id;
+        let active = true;
+        fetchAllocations(batchId)
+            .then((allocations) => {
+                if (active) setAllocationState({ batchId, allocations, error: null });
+            })
+            .catch((error: Error) => {
+                if (active) setAllocationState({ batchId, allocations: [], error: error.message });
+            });
+        return () => {
+            active = false;
+        };
+    }, [consolidation]);
 
     const filteredDetails = useMemo(() => {
         const query = search.trim().toLowerCase();
@@ -86,6 +111,9 @@ export default function ConsolidationDetailSheet({ consolidation, submitting, on
     const totalPicked = consolidation.details.reduce((sum, detail) => sum + detail.pickedQuantity, 0);
     const totalShort = Math.max(0, totalOrdered - totalPicked);
     const progress = totalOrdered > 0 ? (totalPicked / totalOrdered) * 100 : 0;
+    const allocations = allocationState?.batchId === consolidation.id ? allocationState.allocations : [];
+    const allocationsLoading = allocationState?.batchId !== consolidation.id;
+    const allocationError = allocationState?.batchId === consolidation.id ? allocationState.error : null;
 
     return (
         <Sheet open onOpenChange={(open) => !open && onClose()}>
@@ -160,6 +188,51 @@ export default function ConsolidationDetailSheet({ consolidation, submitting, on
                                     </div>
                                 );
                             })}
+
+                            <div className="sticky top-0 z-10 mt-5 flex items-center justify-between gap-2 border-b border-border/20 bg-background/95 py-2 backdrop-blur-sm">
+                                <div className="flex items-center gap-2">
+                                    <div className="rounded-md bg-primary/10 p-1"><MapPin className="h-3.5 w-3.5 text-primary" /></div>
+                                    <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-foreground/80">Allocated Lots</h3>
+                                </div>
+                                {!allocationsLoading && !allocationError && (
+                                    <Badge variant="outline" className="text-[8px] font-black uppercase tracking-widest">
+                                        {allocations.length} lot{allocations.length === 1 ? "" : "s"}
+                                    </Badge>
+                                )}
+                            </div>
+
+                            {allocationsLoading ? (
+                                <div className="flex items-center justify-center gap-2 rounded-xl border border-border/40 bg-card/40 py-5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                                    <Clock className="h-3.5 w-3.5 animate-pulse" /> Loading allocations
+                                </div>
+                            ) : allocationError ? (
+                                <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-xs text-destructive">
+                                    {allocationError}
+                                </div>
+                            ) : allocations.length === 0 ? (
+                                <div className="rounded-xl border border-border/40 bg-card/40 px-4 py-4 text-center text-xs text-muted-foreground">
+                                    No lot allocations are available for this batch.
+                                </div>
+                            ) : (
+                                allocations.map((allocation) => (
+                                    <div key={`${allocation.productId}-${allocation.lotId}-${allocation.batchNo}`} className="rounded-xl border border-border/40 bg-card/40 px-4 py-3">
+                                        <div className="flex items-start justify-between gap-4">
+                                            <div className="min-w-0">
+                                                <p className="truncate text-[11px] font-black uppercase tracking-tight text-foreground/90">{allocation.productName}</p>
+                                                <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[9px] font-bold text-muted-foreground">
+                                                    <span className="rounded bg-primary/5 px-1.5 py-0.5 text-primary">{allocation.lotName}</span>
+                                                    <span className="font-mono">{allocation.batchNo}</span>
+                                                    <span>{allocation.expiryDate ? `Exp ${new Date(allocation.expiryDate).toLocaleDateString()}` : "No expiry"}</span>
+                                                </div>
+                                            </div>
+                                            <div className="shrink-0 text-right">
+                                                <p className="font-mono text-sm font-black text-primary">{allocation.quantity}</p>
+                                                <p className="text-[8px] font-black uppercase tracking-widest text-muted-foreground/60">Allocated</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))
+                            )}
                         </TabsContent>
 
                         <TabsContent value="invoices" className="m-0 space-y-2 p-5">
@@ -180,7 +253,7 @@ export default function ConsolidationDetailSheet({ consolidation, submitting, on
                 </Tabs>
 
                 <div className="z-30 flex shrink-0 items-center gap-3 border-t border-border/50 bg-card/50 p-6">
-                    <Button variant="outline" onClick={() => handlePrint(consolidation)} className="h-12 flex-1 rounded-xl text-[10px] font-black uppercase tracking-widest" title="Print Summary"><Printer className="mr-2 h-4 w-4" />Print</Button>
+                    <Button variant="outline" onClick={() => handlePrint(consolidation).catch((error: Error) => toast.error(error.message))} className="h-12 flex-1 rounded-xl text-[10px] font-black uppercase tracking-widest" title="Print Summary"><Printer className="mr-2 h-4 w-4" />Print</Button>
                     {consolidation.status === "Pending" && <Button disabled={submitting} onClick={() => onRequestAction("start-picking", consolidation.id)} className="h-12 flex-1 rounded-xl text-[10px] font-black uppercase tracking-widest"><Play className="mr-2 h-4 w-4" />Initialize Picking</Button>}
                     {consolidation.status === "Picking" && <Button asChild className="h-12 flex-1 rounded-xl bg-blue-600 text-[10px] font-black uppercase tracking-widest hover:bg-blue-700"><Link href={`/mm/consolidation/picking/${encodeURIComponent(consolidation.consolidatorNo)}`}><Play className="mr-2 h-4 w-4" />Picking Active</Link></Button>}
                     {consolidation.status === "Picked" && <Button disabled={submitting} onClick={() => onRequestAction("audit", consolidation.id)} className="h-12 flex-1 rounded-xl bg-emerald-600 text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700"><ShieldCheck className="mr-2 h-4 w-4" />Verify Batch</Button>}

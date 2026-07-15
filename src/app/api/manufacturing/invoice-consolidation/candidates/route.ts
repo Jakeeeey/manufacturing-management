@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
         const filter: Record<string, unknown> = {
             _and: [
                 { branch_id: { _eq: Number(branchId) } },
-                { transaction_status: { _neq: "Cancelled" } },
+                { transaction_status: { _eq: "Prepared" } },
                 {
                     _or: [
                         { isDispatched: { _eq: false } },
@@ -91,10 +91,19 @@ export async function GET(req: NextRequest) {
 
         const invoiceIds = invoices.map((inv) => inv.invoice_id);
         const detsRes = await fetch(
-            `${DIRECTUS_URL}/items/sales_invoice_details?filter[invoice_no][_in]=${invoiceIds.join(",")}&limit=-1&fields=invoice_no,product_id,quantity`,
+            `${DIRECTUS_URL}/items/sales_invoice_details?filter[invoice_no][_in]=${invoiceIds.join(",")}&limit=-1&fields=detail_id,invoice_no,product_id,quantity`,
             { headers: directusHeaders, cache: "no-store" }
         );
-        const detsData: { invoice_no: number; product_id: number; quantity: number }[] = detsRes.ok ? (await detsRes.json()).data || [] : [];
+        const detsData: { detail_id: number; invoice_no: number; product_id: number; quantity: number }[] = detsRes.ok ? (await detsRes.json()).data || [] : [];
+
+        invoices = invoices.filter((invoice) => {
+            const invoiceDetails = detsData.filter((detail) => Number(detail.invoice_no) === Number(invoice.invoice_id));
+            return invoiceDetails.length > 0;
+        });
+
+        if (invoices.length === 0) {
+            return NextResponse.json([]);
+        }
 
         const prodIds = [...new Set(detsData.map((d) => d.product_id))];
         let prodMap = new Map<number, { product_name: string; product_code: string }>();

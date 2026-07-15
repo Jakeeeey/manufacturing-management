@@ -87,6 +87,25 @@ export interface CreateConsolidationPayload {
     invoiceIds: number[];
 }
 
+export interface AllocationPreview {
+    allocations: {
+        productId: number;
+        productName: string;
+        productCode: string;
+        inventoryLotId: number;
+        lotId: number;
+        lotName: string;
+        batchNo: string;
+        expiryDate: string | null;
+        quantity: number;
+    }[];
+    shortages: {
+        productId: number;
+        productName: string;
+        quantity: number;
+    }[];
+}
+
 export interface AuditPayload {
     batchId: number;
 }

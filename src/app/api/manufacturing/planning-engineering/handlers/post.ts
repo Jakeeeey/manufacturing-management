@@ -315,7 +315,8 @@ export async function handlePOST(request: Request) {
                     { product_id: { _eq: Number(productId) } },
                     { branch_id: { _eq: Number(branchId) } },
                     { qa_status: { _eq: "Passed" } },
-                    { quantity: { _gt: 0 } }
+                    { quantity: { _gt: 0 } },
+                    { source_type: { _in: ["manufacturing", "yield_ledger"] } }
                 ]
             }));
             const lotsRes = await fetch(`${DIRECTUS_URL}/items/inventory_lots?filter=${lotFilter}&limit=-1`, { headers, cache: "no-store" });
@@ -326,7 +327,7 @@ export async function handlePOST(request: Request) {
             const lots = (await lotsRes.json()).data || [];
 
             // 2. Trace lot's recipe version
-            const mfgLots = lots.filter((lot: any) => lot.source_type === "manufacturing" && lot.source_reference);
+            const mfgLots = lots.filter((lot: any) => ["manufacturing", "yield_ledger"].includes(lot.source_type) && lot.source_reference);
             const joNos = Array.from(new Set(mfgLots.map((lot: any) => lot.source_reference)));
             const joMap = new Map<string, number>();
 
@@ -351,7 +352,7 @@ export async function handlePOST(request: Request) {
 
             // Filter candidate lots matching target recipeVersionId
             const matchingLots = lots.filter((lot: any) => {
-                const resolvedVersionId = lot.source_type === "manufacturing" && lot.source_reference
+                const resolvedVersionId = ["manufacturing", "yield_ledger"].includes(lot.source_type) && lot.source_reference
                     ? (joMap.get(lot.source_reference) || activeVersionId)
                     : activeVersionId;
                 return resolvedVersionId === Number(recipeVersionId);
@@ -382,8 +383,8 @@ export async function handlePOST(request: Request) {
                 }, { status: 400 });
             }
 
-            // We do NOT deduct the lots from inventory_lots, product_ledger, or inventory_movements.
-            // We just record the allocation logically on the Sales Order detail lines.
+            // Sales Order allocation is logical only. Exact lot reservation and physical
+            // deduction are owned by invoice consolidation and picking.
             const parentOrderIdsToUpdate = new Set<number>();
 
             for (const line of lines) {

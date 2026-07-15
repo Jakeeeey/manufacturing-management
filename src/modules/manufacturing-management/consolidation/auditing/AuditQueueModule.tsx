@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Search, Loader2, ShieldCheck, Building2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useRouter } from "next/navigation";
 import { InvoiceConsolidation, Branch } from "../../invoice-consolidation/types";
 import { fetchConsolidations, fetchBranches } from "../../invoice-consolidation/services/invoice-consolidation-api";
@@ -77,17 +78,16 @@ export default function AuditQueueModule() {
                             QA <span className="text-blue-500">Auditing</span>
                         </h2>
                         <div className="mt-1 md:mt-0">
-                            <select
-                                value={selectedBranchId || ""}
-                                onChange={(e) => setSelectedBranchId(Number(e.target.value))}
-                                className="bg-card border border-input rounded-xl px-3 py-1.5 text-xs font-bold focus:ring-2 focus:ring-primary/20 outline-none"
-                                suppressHydrationWarning
-                            >
-                                <option value="" disabled>Select Branch...</option>
-                                {branches.map((b) => (
-                                    <option key={b.id} value={b.id}>{b.branchName}</option>
-                                ))}
-                            </select>
+                            <SearchableSelect
+                                value={selectedBranchId ? String(selectedBranchId) : ""}
+                                onValueChange={(value) => setSelectedBranchId(Number(value))}
+                                options={branches.map((branch) => ({
+                                    value: String(branch.id),
+                                    label: `${branch.branchName} (${branch.branchCode})`,
+                                }))}
+                                placeholder="Search and select branch..."
+                                className="h-9 bg-card text-xs font-bold md:w-[260px]"
+                            />
                         </div>
                     </div>
                 </div>

@@ -1,4 +1,4 @@
-import { InvoiceConsolidation, CandidateInvoice, StatusSummary, CreateConsolidationPayload, AuditPayload, PickingSavePayload, Branch } from "../types";
+import { InvoiceConsolidation, CandidateInvoice, StatusSummary, CreateConsolidationPayload, AuditPayload, PickingSavePayload, Branch, AllocationPreview } from "../types";
 
 let refreshPromise: Promise<boolean> | null = null;
 
@@ -81,6 +81,19 @@ export async function createConsolidation(payload: CreateConsolidationPayload): 
         body: JSON.stringify(payload),
     });
     return handleResponse(res, "Failed to create consolidation");
+}
+
+export async function fetchAllocationPreview(
+    payload: CreateConsolidationPayload,
+    signal?: AbortSignal
+): Promise<AllocationPreview> {
+    const res = await fetchWithSessionRetry("/api/manufacturing/invoice-consolidation/allocation-preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal,
+    });
+    return handleResponse(res, "Failed to preview lot allocations");
 }
 
 export async function auditBatch(payload: AuditPayload): Promise<{ success: boolean; message: string; checkedBy?: number }> {

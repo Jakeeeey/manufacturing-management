@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
-import { X, Search, Loader2, CheckSquare, Square, FileText, Building2, Package, ChevronRight, ChevronDown } from "lucide-react";
-import { CandidateInvoice, Branch } from "../types";
+import React, { useEffect, useState, useMemo } from "react";
+import { X, Search, Loader2, CheckSquare, Square, FileText, Building2, Package, ChevronRight, ChevronDown, MapPin, AlertTriangle } from "lucide-react";
+import { CandidateInvoice, Branch, AllocationPreview } from "../types";
+import { fetchAllocationPreview } from "../services/invoice-consolidation-api";
 
 interface Props {
     isOpen: boolean;
@@ -18,6 +19,43 @@ export default function CreateConsolidationModal({ isOpen, onClose, branch, cand
     const [expandedInvoiceIds, setExpandedInvoiceIds] = useState<Set<number>>(new Set());
     const [search, setSearch] = useState("");
     const [submitting, setSubmitting] = useState(false);
+    const [allocationPreview, setAllocationPreview] = useState<AllocationPreview | null>(null);
+    const [previewLoading, setPreviewLoading] = useState(false);
+    const [previewError, setPreviewError] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (!isOpen || selectedIds.size === 0) return;
+
+        const controller = new AbortController();
+        const invoiceIds = [...selectedIds].sort((a, b) => a - b);
+        const timer = window.setTimeout(() => {
+            setPreviewLoading(true);
+            setPreviewError(null);
+            fetchAllocationPreview({ branchId: branch.id, invoiceIds }, controller.signal)
+                .then((preview) => setAllocationPreview(preview))
+                .catch((error: Error) => {
+                    if (error.name !== "AbortError") {
+                        setAllocationPreview(null);
+                        setPreviewError(error.message);
+                    }
+                })
+                .finally(() => {
+                    if (!controller.signal.aborted) setPreviewLoading(false);
+                });
+        }, 200);
+
+        return () => {
+            window.clearTimeout(timer);
+            controller.abort();
+        };
+    }, [branch.id, isOpen, selectedIds]);
+
+    const setSelection = (next: Set<number>) => {
+        setSelectedIds(next);
+        setAllocationPreview(null);
+        setPreviewLoading(false);
+        setPreviewError(null);
+    };
 
     const filtered = useMemo(() => {
         if (!search.trim()) return candidates;
@@ -32,9 +70,9 @@ export default function CreateConsolidationModal({ isOpen, onClose, branch, cand
 
     const toggleAll = () => {
         if (selectedIds.size === filtered.length) {
-            setSelectedIds(new Set());
+            setSelection(new Set());
         } else {
-            setSelectedIds(new Set(filtered.map((c) => c.invoiceId)));
+            setSelection(new Set(filtered.map((c) => c.invoiceId)));
         }
     };
 
@@ -42,7 +80,7 @@ export default function CreateConsolidationModal({ isOpen, onClose, branch, cand
         const next = new Set(selectedIds);
         if (next.has(id)) next.delete(id);
         else next.add(id);
-        setSelectedIds(next);
+        setSelection(next);
     };
 
     const toggleExpand = (id: number) => {
@@ -288,6 +326,75 @@ export default function CreateConsolidationModal({ isOpen, onClose, branch, cand
                             </table>
                         </div>
                     )}
+
+                    {selectedIds.size > 0 && (
+                        <div className="mt-4 overflow-hidden rounded-xl border border-border/60 bg-card/40">
+                            <div className="flex items-center justify-between gap-3 border-b px-4 py-2.5">
+                                <div className="flex items-center gap-1.5">
+                                    <MapPin className="h-3.5 w-3.5 text-primary" />
+                                    <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                                        FEFO Lot Allocation Preview
+                                    </span>
+                                </div>
+                                {previewLoading && <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />}
+                            </div>
+
+                            {previewError ? (
+                                <div className="flex items-center gap-2 px-4 py-4 text-xs text-destructive">
+                                    <AlertTriangle className="h-4 w-4 shrink-0" />
+                                    {previewError}
+                                </div>
+                            ) : previewLoading && !allocationPreview ? (
+                                <div className="px-4 py-5 text-center text-xs text-muted-foreground">Calculating FEFO lots...</div>
+                            ) : allocationPreview && allocationPreview.allocations.length > 0 ? (
+                                <div className="overflow-x-auto">
+                                    <table className="min-w-[760px] w-full border-collapse text-left text-xs">
+                                        <thead>
+                                            <tr className="border-b bg-muted/20">
+                                                <th className="p-2.5 font-semibold text-muted-foreground">Product</th>
+                                                <th className="p-2.5 font-semibold text-muted-foreground">Storage Lot</th>
+                                                <th className="p-2.5 font-semibold text-muted-foreground">Batch</th>
+                                                <th className="p-2.5 font-semibold text-muted-foreground">Expiry</th>
+                                                <th className="p-2.5 text-right font-semibold text-muted-foreground">Allocated Qty</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y">
+                                            {allocationPreview.allocations.map((allocation) => (
+                                                <tr key={`${allocation.productId}-${allocation.inventoryLotId}`} className="hover:bg-muted/10">
+                                                    <td className="p-2.5">
+                                                        <p className="font-medium text-foreground">{allocation.productName}</p>
+                                                        <p className="font-mono text-[9px] text-muted-foreground">{allocation.productCode}</p>
+                                                    </td>
+                                                    <td className="p-2.5 font-medium text-foreground">{allocation.lotName}</td>
+                                                    <td className="p-2.5 font-mono text-[10px] text-muted-foreground">{allocation.batchNo}</td>
+                                                    <td className="p-2.5 text-muted-foreground">
+                                                        {allocation.expiryDate ? new Date(allocation.expiryDate).toLocaleDateString() : "No expiry"}
+                                                    </td>
+                                                    <td className="p-2.5 text-right font-black text-primary">{allocation.quantity}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            ) : (
+                                <div className="px-4 py-5 text-center text-xs text-muted-foreground">No eligible lot allocation found.</div>
+                            )}
+
+                            {allocationPreview && allocationPreview.shortages.length > 0 && (
+                                <div className="border-t border-amber-500/20 bg-amber-500/5 px-4 py-3">
+                                    <div className="mb-1.5 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wide text-amber-600">
+                                        <AlertTriangle className="h-3.5 w-3.5" />
+                                        Stock shortage
+                                    </div>
+                                    {allocationPreview.shortages.map((shortage) => (
+                                        <p key={shortage.productId} className="text-xs text-amber-700">
+                                            {shortage.productName}: {shortage.quantity} unallocated
+                                        </p>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
 
                 <div className="flex shrink-0 flex-col items-stretch justify-between gap-3 border-t bg-muted/20 px-4 py-4 sm:flex-row sm:items-center sm:px-6 sm:rounded-b-2xl">
@@ -313,7 +420,7 @@ export default function CreateConsolidationModal({ isOpen, onClose, branch, cand
                         </button>
                         <button
                             onClick={handleSubmit}
-                            disabled={selectedIds.size === 0 || submitting}
+                            disabled={selectedIds.size === 0 || submitting || previewLoading || !!previewError || !allocationPreview || allocationPreview.shortages.length > 0}
                             className="px-5 py-2 bg-primary text-primary-foreground text-xs font-bold rounded-lg hover:bg-primary/90 transition-colors cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
                             suppressHydrationWarning
                         >

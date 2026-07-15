@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { DIRECTUS_URL, headers as directusHeaders } from "../../directus-api";
-import { movementsExistForSource } from "../inventory-movements-client";
+import { fetchSourceMovements, movementsExistForSource } from "../inventory-movements-client";
+import { productLedgerMatchesQuantities } from "../product-ledger-client";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -65,6 +66,17 @@ export async function POST(req: NextRequest) {
         if (!hasMovements) {
             return NextResponse.json({ message: "Cannot audit: no inventory movements posted for this batch. Complete picking first." }, { status: 400 });
         }
+        const movements = await fetchSourceMovements(batchId, TXN_TYPE_SALES_ISSUE);
+        const movementByProduct = new Map<number, number>();
+        for (const movement of movements) {
+            movementByProduct.set(
+                Number(movement.product_id),
+                (movementByProduct.get(Number(movement.product_id)) || 0) + Number(movement.quantity || 0)
+            );
+        }
+        if (!await productLedgerMatchesQuantities(consolidator.consolidator_no, movementByProduct)) {
+            return NextResponse.json({ message: "Cannot audit: product ledger does not match inventory movements" }, { status: 409 });
+        }
 
         const [invRes, detRes] = await Promise.all([
             fetch(
@@ -83,19 +95,6 @@ export async function POST(req: NextRequest) {
 
         const junctions = (await invRes.json()).data || [];
         const details = (await detRes.json()).data || [];
-
-        const updateBody: Record<string, unknown> = {
-            status: "Audited",
-            checked_by: userId,
-        };
-        const patchRes = await fetch(`${DIRECTUS_URL}/items/consolidator/${batchId}`, {
-            method: "PATCH",
-            headers: directusHeaders,
-            body: JSON.stringify(updateBody),
-        });
-        if (!patchRes.ok) {
-            return NextResponse.json({ message: `Failed to update batch status (HTTP ${patchRes.status})` }, { status: patchRes.status });
-        }
 
         for (const d of details) {
             await fetch(`${DIRECTUS_URL}/items/consolidator_details/${d.id}`, {
@@ -116,13 +115,49 @@ export async function POST(req: NextRequest) {
                 }),
             });
             if (!bulkRes.ok) {
-                await fetch(`${DIRECTUS_URL}/items/consolidator/${batchId}`, {
-                    method: "PATCH",
-                    headers: directusHeaders,
-                    body: JSON.stringify({ status: "Picked", checked_by: consolidator.checked_by }),
-                }).catch(() => {});
                 return NextResponse.json({ message: `Failed to dispatch invoices (HTTP ${bulkRes.status})` }, { status: bulkRes.status });
             }
+
+            const invoiceDetailsRes = await fetch(
+                `${DIRECTUS_URL}/items/sales_invoice_details?filter[invoice_no][_in]=${invoiceIds.join(",")}&fields=detail_id&limit=-1`,
+                { headers: directusHeaders, cache: "no-store" }
+            );
+            if (!invoiceDetailsRes.ok) {
+                return NextResponse.json({ message: "Failed to load invoice reservations for audit" }, { status: 502 });
+            }
+            const invoiceDetailIds: number[] = ((await invoiceDetailsRes.json()).data || [])
+                .map((row: { detail_id: number }) => Number(row.detail_id))
+                .filter(Boolean);
+            if (invoiceDetailIds.length > 0) {
+                const reservationRes = await fetch(
+                    `${DIRECTUS_URL}/items/sales_invoice_reservation?filter[sales_invoice_detail_id][_in]=${invoiceDetailIds.join(",")}&filter[status][_eq]=Reserved&fields=id&limit=-1`,
+                    { headers: directusHeaders, cache: "no-store" }
+                );
+                if (!reservationRes.ok) {
+                    return NextResponse.json({ message: "Failed to load unused invoice reservations" }, { status: 502 });
+                }
+                const unusedReservations: { id: number }[] = (await reservationRes.json()).data || [];
+                const now = new Date().toISOString();
+                for (const reservation of unusedReservations) {
+                    const releaseRes = await fetch(`${DIRECTUS_URL}/items/sales_invoice_reservation/${reservation.id}`, {
+                        method: "PATCH",
+                        headers: directusHeaders,
+                        body: JSON.stringify({ status: "Released", updated_by: userId, updated_at: now }),
+                    });
+                    if (!releaseRes.ok) {
+                        return NextResponse.json({ message: `Failed to release reservation ${reservation.id}` }, { status: 502 });
+                    }
+                }
+            }
+        }
+
+        const patchRes = await fetch(`${DIRECTUS_URL}/items/consolidator/${batchId}`, {
+            method: "PATCH",
+            headers: directusHeaders,
+            body: JSON.stringify({ status: "Audited", checked_by: userId }),
+        });
+        if (!patchRes.ok) {
+            return NextResponse.json({ message: `Failed to update batch status (HTTP ${patchRes.status})` }, { status: patchRes.status });
         }
 
         return NextResponse.json({

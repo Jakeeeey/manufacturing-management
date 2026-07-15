@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { DIRECTUS_URL, headers as directusHeaders } from "../directus-api";
+import {
+    allocateInvoicesForConsolidation,
+    releaseReservationIds,
+} from "../invoicing/_reservation-service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -272,13 +276,13 @@ export async function POST(req: NextRequest) {
         }
 
         const siRes = await fetch(
-            `${DIRECTUS_URL}/items/sales_invoice?filter[invoice_id][_in]=${uniqueIds.join(",")}&fields=invoice_id,invoice_no,branch_id,total_amount,customer_code,isDispatched,transaction_status&limit=-1`,
+            `${DIRECTUS_URL}/items/sales_invoice?filter[invoice_id][_in]=${uniqueIds.join(",")}&fields=invoice_id,invoice_no,invoice_date,branch_id,total_amount,customer_code,isDispatched,transaction_status&limit=-1`,
             { headers: directusHeaders, cache: "no-store" }
         );
         if (!siRes.ok) {
             return NextResponse.json({ message: `Failed to verify invoices (HTTP ${siRes.status})` }, { status: siRes.status });
         }
-        const siData: { invoice_id: number; invoice_no: string; branch_id: number; total_amount: number; customer_code: string; isDispatched: boolean | null; transaction_status: string }[] = (await siRes.json()).data || [];
+        const siData: { invoice_id: number; invoice_no: string; invoice_date: string | null; branch_id: number; total_amount: number; customer_code: string; isDispatched: boolean | null; transaction_status: string }[] = (await siRes.json()).data || [];
 
         if (siData.length !== uniqueIds.length) {
             const found = new Set(siData.map((s) => s.invoice_id));
@@ -293,8 +297,8 @@ export async function POST(req: NextRequest) {
             if (inv.isDispatched === true) {
                 return NextResponse.json({ message: `Invoice ${inv.invoice_no} is already dispatched` }, { status: 400 });
             }
-            if (inv.transaction_status === "Cancelled") {
-                return NextResponse.json({ message: `Invoice ${inv.invoice_no} is cancelled` }, { status: 400 });
+            if (inv.transaction_status !== "Prepared") {
+                return NextResponse.json({ message: `Invoice ${inv.invoice_no} is not in Prepared status` }, { status: 400 });
             }
         }
 
@@ -309,6 +313,30 @@ export async function POST(req: NextRequest) {
         if (linked.length > 0) {
             const alreadyLinked = linked.map((l) => l.invoice_id);
             return NextResponse.json({ message: `Invoices already in another batch: ${alreadyLinked.join(", ")}` }, { status: 409 });
+        }
+
+        const allocationOrder = [...siData]
+            .sort((a, b) =>
+                (a.invoice_date || "9999-12-31").localeCompare(b.invoice_date || "9999-12-31")
+                || a.invoice_id - b.invoice_id
+            )
+            .map((invoice) => invoice.invoice_id);
+        let createdReservationIds: number[] = [];
+        try {
+            const allocation = await allocateInvoicesForConsolidation(allocationOrder, userId!);
+            createdReservationIds = allocation.createdReservationIds;
+        } catch (error) {
+            const message = error instanceof Error ? error.message : "Failed to reserve invoice stock";
+            return NextResponse.json({ message }, { status: 422 });
+        }
+
+        const recheckRes = await fetch(
+            `${DIRECTUS_URL}/items/consolidator_invoices?filter[invoice_id][_in]=${uniqueIds.join(",")}&filter[consolidator_id][consolidator_no][_starts_with]=CLINV-&filter[consolidator_id][is_delete][_eq]=0&limit=1&fields=invoice_id`,
+            { headers: directusHeaders, cache: "no-store" }
+        );
+        if (!recheckRes.ok || ((await recheckRes.json()).data || []).length > 0) {
+            await releaseReservationIds(createdReservationIds, userId!);
+            return NextResponse.json({ message: "One or more invoices entered another batch during allocation" }, { status: 409 });
         }
 
         const consolidatorNo = await generateConsolidatorNo();
@@ -326,6 +354,7 @@ export async function POST(req: NextRequest) {
             body: JSON.stringify(createBody),
         });
         if (!createRes.ok) {
+            await releaseReservationIds(createdReservationIds, userId!);
             return NextResponse.json({ message: `Failed to create consolidator: ${createRes.status}` }, { status: createRes.status });
         }
         const newConsolidator = (await createRes.json()).data;
@@ -352,13 +381,35 @@ export async function POST(req: NextRequest) {
             createdJunctionIds = linkData.map((j: { id: number }) => j.id);
 
             const detRes = await fetch(
-                `${DIRECTUS_URL}/items/sales_invoice_details?filter[invoice_no][_in]=${uniqueIds.join(",")}&limit=-1&fields=product_id,quantity`,
+                `${DIRECTUS_URL}/items/sales_invoice_details?filter[invoice_no][_in]=${uniqueIds.join(",")}&limit=-1&fields=detail_id,invoice_no,product_id,quantity`,
                 { headers: directusHeaders, cache: "no-store" }
             );
             if (!detRes.ok) {
                 throw new Error(`Failed to fetch invoice details (HTTP ${detRes.status})`);
             }
-            const detData: { product_id: number; quantity: number }[] = (await detRes.json()).data || [];
+            const detData: { detail_id: number; invoice_no: number; product_id: number; quantity: number }[] = (await detRes.json()).data || [];
+
+            const detailIds = detData.map((detail) => detail.detail_id);
+            const reservationRes = await fetch(
+                `${DIRECTUS_URL}/items/sales_invoice_reservation?filter[sales_invoice_detail_id][_in]=${detailIds.join(",")}&filter[status][_eq]=Reserved&fields=sales_invoice_detail_id,quantity&limit=-1`,
+                { headers: directusHeaders, cache: "no-store" }
+            );
+            if (!reservationRes.ok) {
+                throw new Error(`Failed to verify invoice reservations (HTTP ${reservationRes.status})`);
+            }
+            const reservationData: { sales_invoice_detail_id: number; quantity: number }[] = (await reservationRes.json()).data || [];
+            const reservedByDetail = new Map<number, number>();
+            for (const reservation of reservationData) {
+                const detailId = Number(reservation.sales_invoice_detail_id);
+                reservedByDetail.set(detailId, (reservedByDetail.get(detailId) || 0) + Number(reservation.quantity || 0));
+            }
+
+            const incompleteDetails = detData.filter((detail) =>
+                (reservedByDetail.get(detail.detail_id) || 0) < Number(detail.quantity || 0)
+            );
+            if (incompleteDetails.length > 0) {
+                throw new Error("One or more invoice lines could not be fully reserved during batch creation.");
+            }
 
             const aggMap = new Map<number, number>();
             for (const d of detData) {
@@ -467,6 +518,7 @@ export async function POST(req: NextRequest) {
                 headers: directusHeaders,
                 body: JSON.stringify({ is_delete: 1, deleted_at: new Date().toISOString(), deleted_by: userId }),
             }).catch(() => {});
+            await releaseReservationIds(createdReservationIds, userId!).catch(() => {});
 
             const msg = e instanceof Error ? e.message : "Failed to create consolidation";
             return NextResponse.json({ message: msg }, { status: 500 });

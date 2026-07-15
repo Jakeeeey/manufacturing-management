@@ -11,6 +11,7 @@ interface PrintInvoice {
 }
 
 interface PrintDetail {
+    productId: number;
     productName: string;
     brand: string;
     category: string;
@@ -20,6 +21,7 @@ interface PrintDetail {
 }
 
 interface PrintLotAllocation {
+    productId: number;
     productName: string;
     lotName: string;
     batchNo: string;
@@ -94,19 +96,25 @@ export async function generateConsolidationPDF(data: PrintData) {
         a.category.localeCompare(b.category, undefined, { sensitivity: "base" }) ||
         a.productName.localeCompare(b.productName, undefined, { sensitivity: "base" })
     );
-    const bodyRows = sortedDetails.map((d) => [
-        d.brand,
-        d.category,
-        d.productName,
-        d.unit,
-        String(d.orderedQuantity),
-        "",
-    ]);
+    const detailByProduct = new Map(sortedDetails.map((detail) => [detail.productId, detail]));
+    const bodyRows = data.allocations.map((allocation) => {
+        const detail = detailByProduct.get(allocation.productId);
+        return [
+            detail?.brand || "Unbranded",
+            detail?.category || "Uncategorized",
+            detail?.productName || allocation.productName,
+            `${allocation.lotName}\n${allocation.batchNo}`,
+            allocation.expiryDate || "-",
+            detail?.unit || "-",
+            String(allocation.quantity),
+            "",
+        ];
+    });
 
     autoTable(doc, {
         startY: 35,
         margin: { left: 8, right: 8 },
-        head: [["BRAND", "CATEGORY", "PRODUCT NAME", "UNIT", "ORD QTY", "PICKED"]],
+        head: [["BRAND", "CATEGORY", "PRODUCT", "LOT / BATCH", "EXPIRY", "UNIT", "PICK QTY", "PICKED"]],
         body: bodyRows,
         theme: "grid",
         headStyles: {
@@ -123,12 +131,14 @@ export async function generateConsolidationPDF(data: PrintData) {
             textColor: [0, 0, 0],
         },
         columnStyles: {
-            0: { cellWidth: 30 },
-            1: { cellWidth: 34 },
+            0: { cellWidth: 22 },
+            1: { cellWidth: 24 },
             2: { cellWidth: "auto" },
-            3: { cellWidth: 15, halign: "center" },
-            4: { cellWidth: 17, halign: "center" },
-            5: { cellWidth: 17, halign: "center" },
+            3: { cellWidth: 32 },
+            4: { cellWidth: 20, halign: "center" },
+            5: { cellWidth: 12, halign: "center" },
+            6: { cellWidth: 15, halign: "center" },
+            7: { cellWidth: 15, halign: "center" },
         },
         didDrawPage: (d: { pageNumber: number }) => {
             doc.setFontSize(7).setTextColor(161, 161, 170);
@@ -140,68 +150,8 @@ export async function generateConsolidationPDF(data: PrintData) {
         },
     });
 
-    // ── Lot Allocations Section ──
     const extDoc = doc as unknown as { lastAutoTable: { finalY: number } };
     let currentY = extDoc.lastAutoTable.finalY + 6;
-
-    if (data.allocations && data.allocations.length > 0) {
-        if (currentY > 235) {
-            doc.addPage();
-            currentY = 20;
-        }
-
-        doc.setFontSize(8).setFont("helvetica", "bold").setTextColor(0, 0, 0);
-        doc.text("INVENTORY LOT ALLOCATIONS", 8, currentY);
-        currentY += 3;
-
-        const allocRows = data.allocations.map((a) => [
-            a.productName,
-            a.lotName,
-            a.batchNo,
-            a.manufacturingDate || "-",
-            a.expiryDate || "-",
-            String(a.quantity),
-        ]);
-
-        autoTable(doc, {
-            startY: currentY,
-            margin: { left: 8, right: 8 },
-            head: [["PRODUCT", "STORAGE LOT", "BATCH NO", "MFG DATE", "EXPIRY", "QTY"]],
-            body: allocRows,
-            theme: "grid",
-            headStyles: {
-                textColor: [0, 0, 0],
-                fontStyle: "bold",
-                fontSize: 6.5,
-                fillColor: [240, 240, 240],
-                cellPadding: 1,
-                halign: "center",
-            },
-            styles: {
-                fontSize: 6.5,
-                cellPadding: 0.8,
-                textColor: [0, 0, 0],
-            },
-            columnStyles: {
-                0: { cellWidth: "auto" },
-                1: { cellWidth: 28 },
-                2: { cellWidth: 24 },
-                3: { cellWidth: 22, halign: "center" },
-                4: { cellWidth: 22, halign: "center" },
-                5: { cellWidth: 14, halign: "center" },
-            },
-            didDrawPage: (d: { pageNumber: number }) => {
-                doc.setFontSize(7).setTextColor(161, 161, 170);
-                doc.text(
-                    `${data.consolidatorNo} | Page ${d.pageNumber}`,
-                    14,
-                    doc.internal.pageSize.height - 8
-                );
-            },
-        });
-
-        currentY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
-    }
 
     // ── Invoice Summary Section ──
     currentY = currentY + 2;

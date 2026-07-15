@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { DIRECTUS_URL, headers as directusHeaders } from "../../../directus-api";
 import { fetchSourceMovements, postMovements, type PostMovementPayload } from "../../inventory-movements-client";
+import { syncProductLedgerToTarget } from "../../product-ledger-client";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -63,14 +64,26 @@ export async function POST(req: NextRequest) {
         // Fetch all sales-issue movements for this source document
         const movements = await fetchSourceMovements(batchId, TXN_TYPE_SALES_ISSUE);
 
-        // Build compensating movements: flip the sign of every negative movement
+        // Compensate only the outstanding net deduction for each exact lot identity.
+        // Historical negative lines from earlier pick cycles may already have a positive reversal.
         const compensations: PostMovementPayload[] = [];
         let compensatedCount = 0;
+        const movementGroups = new Map<string, { movement: typeof movements[number]; net: number }>();
+        for (const movement of movements) {
+            const key = [
+                movement.product_id,
+                movement.lot_id,
+                movement.batch_no,
+                movement.expiry_date || "",
+                movement.manufacturing_date || "",
+            ].join(":");
+            const group = movementGroups.get(key) || { movement, net: 0 };
+            group.net += Number(movement.quantity || 0);
+            movementGroups.set(key, group);
+        }
 
-        for (const m of movements) {
-            const qty = Number(m.quantity || 0);
-            if (qty >= 0) continue; // only compensate negative (deduction) lines
-
+        for (const { movement: m, net } of movementGroups.values()) {
+            if (net >= 0) continue;
             compensations.push({
                 product_id: m.product_id,
                 lot_id: m.lot_id,
@@ -81,12 +94,19 @@ export async function POST(req: NextRequest) {
                 batch_no: m.batch_no,
                 expiry_date: m.expiry_date,
                 manufacturing_date: m.manufacturing_date,
-                quantity: Math.abs(qty), // positive = add back to stock
+                quantity: Math.abs(net),
                 created_by: userId,
                 remarks: `Re-pick reversal - ${consolidator.consolidator_no}`,
             });
             compensatedCount++;
         }
+
+        await syncProductLedgerToTarget({
+            branchId: Number(consolidator.branch_id),
+            documentNo: consolidator.consolidator_no,
+            targetByProduct: new Map<number, number>(),
+            description: `Re-pick reversal - ${consolidator.consolidator_no}`,
+        });
 
         if (compensations.length === 0) {
             // No negative movements found — batch may have been picked with zero quantities
@@ -95,6 +115,72 @@ export async function POST(req: NextRequest) {
         } else {
             // Post compensating movements
             await postMovements(compensations);
+        }
+
+        // Restore the exact inventory lot balances and reactivate the sticky reservations.
+        const invoiceLinksRes = await fetch(
+            `${DIRECTUS_URL}/items/consolidator_invoices?filter[consolidator_id][_eq]=${batchId}&fields=invoice_id&limit=-1`,
+            { headers: directusHeaders, cache: "no-store" }
+        );
+        const invoiceIds: number[] = invoiceLinksRes.ok
+            ? ((await invoiceLinksRes.json()).data || []).map((row: { invoice_id: number }) => Number(row.invoice_id)).filter(Boolean)
+            : [];
+        if (invoiceIds.length > 0) {
+            const invoiceDetailsRes = await fetch(
+                `${DIRECTUS_URL}/items/sales_invoice_details?filter[invoice_no][_in]=${invoiceIds.join(",")}&fields=detail_id&limit=-1`,
+                { headers: directusHeaders, cache: "no-store" }
+            );
+            const invoiceDetailIds: number[] = invoiceDetailsRes.ok
+                ? ((await invoiceDetailsRes.json()).data || []).map((row: { detail_id: number }) => Number(row.detail_id)).filter(Boolean)
+                : [];
+
+            if (invoiceDetailIds.length > 0) {
+                const reservationRes = await fetch(
+                    `${DIRECTUS_URL}/items/sales_invoice_reservation?filter[sales_invoice_detail_id][_in]=${invoiceDetailIds.join(",")}&filter[status][_eq]=Consumed&fields=id,inventory_lot_id.id,inventory_lot_id.quantity,quantity&limit=-1`,
+                    { headers: directusHeaders, cache: "no-store" }
+                );
+                if (!reservationRes.ok) {
+                    return NextResponse.json({ message: "Movements compensated but consumed reservations could not be loaded" }, { status: 502 });
+                }
+
+                const consumedReservations: {
+                    id: number;
+                    inventory_lot_id: { id: number; quantity: number } | number;
+                    quantity: number;
+                }[] = (await reservationRes.json()).data || [];
+                const restoredByLot = new Map<number, { current: number; restore: number }>();
+                for (const reservation of consumedReservations) {
+                    const lot = typeof reservation.inventory_lot_id === "object" ? reservation.inventory_lot_id : null;
+                    const lotId = Number(lot?.id || reservation.inventory_lot_id || 0);
+                    if (!lotId) continue;
+                    const entry = restoredByLot.get(lotId) || { current: Number(lot?.quantity || 0), restore: 0 };
+                    entry.restore += Number(reservation.quantity || 0);
+                    restoredByLot.set(lotId, entry);
+                }
+
+                for (const [lotId, balance] of restoredByLot) {
+                    const lotPatchRes = await fetch(`${DIRECTUS_URL}/items/inventory_lots/${lotId}`, {
+                        method: "PATCH",
+                        headers: directusHeaders,
+                        body: JSON.stringify({ quantity: balance.current + balance.restore }),
+                    });
+                    if (!lotPatchRes.ok) {
+                        return NextResponse.json({ message: `Failed to restore inventory lot ${lotId}` }, { status: 502 });
+                    }
+                }
+
+                const reservationNow = new Date().toISOString();
+                for (const reservation of consumedReservations) {
+                    const reservationPatchRes = await fetch(`${DIRECTUS_URL}/items/sales_invoice_reservation/${reservation.id}`, {
+                        method: "PATCH",
+                        headers: directusHeaders,
+                        body: JSON.stringify({ status: "Reserved", updated_by: userId, updated_at: reservationNow }),
+                    });
+                    if (!reservationPatchRes.ok) {
+                        return NextResponse.json({ message: `Failed to reactivate reservation ${reservation.id}` }, { status: 502 });
+                    }
+                }
+            }
         }
 
         // Clear picked quantities on all details
