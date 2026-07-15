@@ -34,11 +34,15 @@ import { toast } from "sonner";
 interface ProducibleGood {
     product_id: number;
     product_name: string;
+    uom_name?: string;
     product_code: string;
     category: string;
     bom_name: string;
     base_quantity: number;
     max_producible: number;
+    producible_if_fulfilled?: number | null;
+    estimated_time_hours?: number;
+    estimated_time_hours_if_fulfilled?: number | null;
     components: Array<{
         product_id: number;
         component_name: string;
@@ -247,11 +251,37 @@ export default function DashboardModule() {
     // Colors for graphs
     const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6"];
 
-    // Format data for chart
-    const productionWastageChartData = data ? [
-        { name: "Total Produced", Value: data.production.totalValue, Volume: data.production.totalQuantity },
-        { name: "Total Wastage", Value: data.wastage.totalValue, Volume: data.wastage.totalQuantity }
-    ] : [];
+    // Format comparative data product-by-product for Top Products
+    const productionWastageChartData = data ? (() => {
+        const prodMap: Record<string, { name: string; Produced: number; Wasted: number }> = {};
+        
+        data.production.items.forEach(item => {
+            const name = item.name.length > 15 ? item.name.substring(0, 15) + "..." : item.name;
+            if (!prodMap[item.code]) {
+                prodMap[item.code] = { name, Produced: 0, Wasted: 0 };
+            }
+            prodMap[item.code].Produced += item.value;
+        });
+
+        data.wastage.items.forEach(item => {
+            const name = item.name.length > 15 ? item.name.substring(0, 15) + "..." : item.name;
+            if (!prodMap[item.code]) {
+                prodMap[item.code] = { name, Produced: 0, Wasted: 0 };
+            }
+            prodMap[item.code].Wasted += item.value;
+        });
+
+        return Object.values(prodMap)
+            .sort((a, b) => (b.Produced + b.Wasted) - (a.Produced + a.Wasted))
+            .slice(0, 6);
+    })() : [];
+
+    const yieldEfficiency = data ? (() => {
+        const prod = data.production.totalValue || 0;
+        const waste = data.wastage.totalValue || 0;
+        const total = prod + waste;
+        return total > 0 ? (prod / total) * 100 : 100;
+    })() : 100;
 
     const selloutChartData = data ? data.sellout.items.slice(0, 5).map(item => ({
         name: item.name.length > 15 ? item.name.substring(0, 15) + "..." : item.name,
@@ -551,16 +581,41 @@ export default function DashboardModule() {
                     {/* Tab 1: Production & Wastage Report */}
                     {activeTab === "production" && (
                         <div className="space-y-6">
+                            {/* KPI Metrics row */}
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                <div className="bg-card border border-slate-200 dark:border-slate-800/80 p-4 rounded-xl space-y-1">
+                                    <span className="text-[10px] text-muted-foreground uppercase font-black tracking-wider">Total Production Cost</span>
+                                    <div className="text-lg font-black text-emerald-500">
+                                        ₱{data?.production.totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                    </div>
+                                    <span className="text-[9px] text-muted-foreground block">{data?.production.totalQuantity.toLocaleString()} units produced</span>
+                                </div>
+                                <div className="bg-card border border-slate-200 dark:border-slate-800/80 p-4 rounded-xl space-y-1">
+                                    <span className="text-[10px] text-muted-foreground uppercase font-black tracking-wider">Total Wastage Cost</span>
+                                    <div className="text-lg font-black text-rose-500">
+                                        ₱{data?.wastage.totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                    </div>
+                                    <span className="text-[9px] text-muted-foreground block">{data?.wastage.totalQuantity.toLocaleString()} units wasted</span>
+                                </div>
+                                <div className="bg-card border border-slate-200 dark:border-slate-800/80 p-4 rounded-xl space-y-1">
+                                    <span className="text-[10px] text-muted-foreground uppercase font-black tracking-wider">Yield Efficiency Rate</span>
+                                    <div className={`text-lg font-black ${yieldEfficiency >= 90 ? "text-emerald-500" : yieldEfficiency >= 75 ? "text-amber-500" : "text-rose-500"}`}>
+                                        {yieldEfficiency.toFixed(1)}%
+                                    </div>
+                                    <span className="text-[9px] text-muted-foreground block">Cost balance ratio</span>
+                                </div>
+                            </div>
+
                             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                                 {/* chart */}
                                 <div className="lg:col-span-2 border border-slate-200 dark:border-slate-800 bg-slate-50/30 dark:bg-slate-900/5 p-4 rounded-xl">
-                                    <h3 className="text-xs font-bold text-foreground mb-3 uppercase tracking-wider">Production vs. Wastage Cost Valuation</h3>
+                                    <h3 className="text-xs font-bold text-foreground mb-3 uppercase tracking-wider">Production vs. Wastage Valuation (Top Products)</h3>
                                     <div className="h-[260px] w-full">
                                         <ResponsiveContainer width="100%" height="100%">
                                             <BarChart data={productionWastageChartData}>
                                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1e293b" opacity={0.3} />
-                                                <XAxis dataKey="name" stroke="#888888" fontSize={10} tickLine={false} axisLine={false} />
-                                                <YAxis stroke="#888888" fontSize={10} tickLine={false} axisLine={false} />
+                                                <XAxis dataKey="name" stroke="#888888" fontSize={9} tickLine={false} axisLine={false} />
+                                                <YAxis stroke="#888888" fontSize={9} tickLine={false} axisLine={false} tickFormatter={(val) => `₱${(val / 1000).toFixed(0)}k`} />
                                                 <Tooltip 
                                                     contentStyle={{ 
                                                         backgroundColor: "hsl(var(--card))", 
@@ -568,11 +623,17 @@ export default function DashboardModule() {
                                                         borderRadius: "8px",
                                                         fontSize: "11px"
                                                     }}
+                                                    formatter={(value: string | number) => [`₱${Number(value).toLocaleString(undefined, { maximumFractionDigits: 0 })}`, undefined]}
                                                 />
-                                                <Bar dataKey="Value" radius={[4, 4, 0, 0]}>
-                                                    <Cell fill="var(--primary)" />
-                                                    <Cell fill="#ef4444" />
-                                                </Bar>
+                                                <Legend 
+                                                    layout="horizontal" 
+                                                    align="right" 
+                                                    verticalAlign="top" 
+                                                    iconSize={8}
+                                                    wrapperStyle={{ fontSize: '10px', paddingBottom: '10px' }}
+                                                />
+                                                <Bar dataKey="Produced" fill="#10b981" radius={[3, 3, 0, 0]} name="Produced Cost" />
+                                                <Bar dataKey="Wasted" fill="#ef4444" radius={[3, 3, 0, 0]} name="Wastage Cost" />
                                             </BarChart>
                                         </ResponsiveContainer>
                                     </div>
@@ -984,137 +1045,85 @@ export default function DashboardModule() {
                                             No active recipe formulas (BOMs) loaded to compute MRP potentials.
                                         </div>
                                     ) : (
-                                        data.producibleGoods
-                                            .filter(good => 
-                                                good.product_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                                                good.product_code.toLowerCase().includes(searchQuery.toLowerCase())
-                                            )
-                                            .map((good: ProducibleGood, idx: number) => {
-                                                const isExpanded = expandedRows[good.product_id] || false;
-                                                return (
-                                                    <div key={`${good.product_id}-${idx}`} className="border border-slate-200/80 dark:border-slate-800/80 rounded-xl overflow-hidden bg-slate-50 dark:bg-slate-950/20">
-                                                        {/* Header summary line */}
-                                                        <div 
-                                                            onClick={() => toggleRow(String(good.product_id))}
-                                                            className="p-4 bg-card hover:bg-slate-100 dark:bg-slate-900/20 cursor-pointer flex flex-col sm:flex-row justify-between sm:items-center gap-4 transition-all"
-                                                        >
-                                                            <div className="space-y-1 min-w-0">
-                                                                <span className="font-extrabold text-xs text-foreground block truncate">{good.product_name}</span>
-                                                                <div className="flex gap-2 text-[10px] text-muted-foreground">
-                                                                    <span className="font-mono">Code: {good.product_code}</span>
-                                                                    <span>•</span>
-                                                                    <span>Category: {good.category}</span>
-                                                                    <span>•</span>
-                                                                    <span className="text-primary font-semibold">{good.bom_name}</span>
-                                                                </div>
-                                                            </div>
-                                                            <div className="flex items-center gap-3 shrink-0 self-end sm:self-center">
-                                                                <div className="text-right">
-                                                                    {good.max_producible > 0 ? (
-                                                                        <span className="bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider block">
-                                                                            {good.max_producible.toLocaleString()} Units Producible
-                                                                        </span>
-                                                                    ) : (
-                                                                        <span className="bg-rose-500/10 text-rose-500 border border-rose-500/20 px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider block">
-                                                                            0 Units (Shortage)
-                                                                        </span>
-                                                                    )}
-                                                                </div>
-                                                                {isExpanded ? <ChevronRight className="h-4 w-4 text-muted-foreground rotate-90 transition-transform" /> : <ChevronRight className="h-4 w-4 text-muted-foreground transition-transform" />}
-                                                            </div>
-                                                        </div>
-
-                                                        {/* Recipe components breakdown list */}
-                                                        {isExpanded && (
-                                                            <div className="p-4 bg-slate-50/50 dark:bg-slate-900/10 border-t border-slate-200/80 dark:border-slate-850/80">
-                                                                <h5 className="text-[10px] font-extrabold text-muted-foreground uppercase tracking-widest mb-3">Formula Ingredients & Availability</h5>
-                                                                
-                                                                {/* Component Cards for Mobile, Table for Desktop */}
-                                                                <div className="space-y-3 sm:hidden">
-                                                                    {good.components.map((c, ci: number) => {
-                                                                        const isBottleneck = c.max_producible_with_this === good.max_producible;
-                                                                        return (
-                                                                            <div key={ci} className={`bg-slate-100 dark:bg-slate-950/40 p-3 rounded-lg border text-xs space-y-2 ${
-                                                                                isBottleneck ? "border-rose-500/20 bg-rose-500/[0.02]" : "border-slate-200 dark:border-slate-800"
-                                                                            }`}>
-                                                                                <div className="flex justify-between items-start">
-                                                                                    <div className="font-bold text-foreground block truncate max-w-[200px]">{c.component_name}</div>
-                                                                                    {isBottleneck && (
-                                                                                        <span className="bg-rose-500/10 text-rose-500 border border-rose-500/20 text-[7px] font-black uppercase px-1.5 py-0.5 rounded tracking-wide">Bottleneck</span>
-                                                                                    )}
-                                                                                </div>
-                                                                                <div className="grid grid-cols-2 gap-2 text-[10px] text-muted-foreground font-semibold">
-                                                                                    <div>
-                                                                                        <span className="block font-bold text-[8px] uppercase tracking-wider text-muted-foreground/60">Formula Requirement</span>
-                                                                                        <span className="font-semibold text-foreground">{c.required_per_unit.toFixed(4)} {c.unit} / FG</span>
-                                                                                    </div>
-                                                                                    <div className="text-right">
-                                                                                        <span className="block font-bold text-[8px] uppercase tracking-wider text-muted-foreground/60">Available Inventory</span>
-                                                                                        <span className={`font-semibold ${c.available > 0 ? "text-foreground" : "text-rose-400 font-extrabold"}`}>{c.available.toLocaleString()} {c.unit}</span>
-                                                                                    </div>
-                                                                                    <div className="col-span-2 border-t border-slate-200 dark:border-slate-850 pt-2 flex justify-between">
-                                                                                        <span className="text-[8px] uppercase tracking-wider font-bold text-muted-foreground/60">Max Potential Producible</span>
-                                                                                        <span className={`font-black ${isBottleneck && good.max_producible === 0 ? "text-rose-500 font-black" : "text-foreground"}`}>{c.max_producible_with_this.toLocaleString()} Units</span>
-                                                                                    </div>
-                                                                                </div>
+                                        <div className="overflow-x-auto border border-slate-200 dark:border-slate-800 rounded-xl bg-card">
+                                            <table className="w-full border-collapse text-left text-xs">
+                                                <thead>
+                                                    <tr className="border-b border-slate-200 dark:border-slate-800 text-[10px] text-muted-foreground uppercase font-black bg-slate-50 dark:bg-slate-900/50">
+                                                        <th className="py-3 px-4 font-bold border-r border-slate-200/80 dark:border-slate-800/80">Category</th>
+                                                        <th className="py-3 px-4 font-bold border-r border-slate-200/80 dark:border-slate-800/80">SKU Code</th>
+                                                        <th className="py-3 px-4 font-bold border-r border-slate-200/80 dark:border-slate-800/80">Product</th>
+                                                        <th className="py-3 px-4 font-bold border-r border-slate-200/80 dark:border-slate-800/80">UOM</th>
+                                                        <th className="py-3 px-4 font-bold border-r border-slate-200/80 dark:border-slate-800/80">Recipe Version</th>
+                                                        <th className="py-3 px-4 font-bold border-r border-slate-200/80 dark:border-slate-800/80 text-right">Producible RN</th>
+                                                        <th className="py-3 px-4 font-bold border-r border-slate-200/80 dark:border-slate-800/80 text-right text-blue-500">If Bottleneck Solved</th>
+                                                        <th className="py-3 px-4 font-bold">Raw Mats Breakdown</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {data.producibleGoods
+                                                        .filter(good => 
+                                                            good.product_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                                                            good.product_code.toLowerCase().includes(searchQuery.toLowerCase())
+                                                        )
+                                                        .map((good: ProducibleGood, idx: number) => {
+                                                            return (
+                                                                <tr key={idx} className="border-b border-slate-200/60 dark:border-slate-800/60 hover:bg-slate-50/50 dark:hover:bg-slate-900/10 transition-colors font-mono">
+                                                                    <td className="py-2.5 px-4 text-muted-foreground border-r border-slate-200/60 dark:border-slate-800/60 font-sans">{good.category}</td>
+                                                                    <td className="py-2.5 px-4 text-muted-foreground border-r border-slate-200/60 dark:border-slate-800/60">{good.product_code}</td>
+                                                                    <td className="py-2.5 px-4 font-bold text-foreground border-r border-slate-200/60 dark:border-slate-800/60 font-sans">{good.product_name}</td>
+                                                                    <td className="py-2.5 px-4 text-muted-foreground border-r border-slate-200/60 dark:border-slate-800/60 font-sans">{good.uom_name || "-"}</td>
+                                                                    <td className="py-2.5 px-4 text-primary font-bold border-r border-slate-200/60 dark:border-slate-800/60 font-sans">{good.bom_name}</td>
+                                                                    <td className="py-2.5 px-4 text-right border-r border-slate-200/60 dark:border-slate-800/60">
+                                                                        <div>
+                                                                            {good.max_producible > 0 ? (
+                                                                                <span className="text-emerald-500 font-extrabold">{good.max_producible.toLocaleString()} units</span>
+                                                                            ) : (
+                                                                                <span className="text-rose-500 font-extrabold">0 (Shortage)</span>
+                                                                            )}
+                                                                        </div>
+                                                                        {good.max_producible > 0 && good.estimated_time_hours !== undefined && (
+                                                                            <div className="text-[10px] text-muted-foreground font-semibold mt-0.5">
+                                                                                Est: {good.estimated_time_hours.toLocaleString()} hrs
                                                                             </div>
-                                                                        );
-                                                                    })}
-                                                                </div>
-
-                                                                <div className="hidden sm:block overflow-x-auto">
-                                                                    <table className="w-full text-xs text-left">
-                                                                        <thead>
-                                                                            <tr className="border-b border-slate-200 dark:border-slate-800 text-[10px] text-muted-foreground uppercase font-black">
-                                                                                <th className="pb-2">Ingredient / Material</th>
-                                                                                <th className="pb-2 text-right">Req. per FG Unit</th>
-                                                                                <th className="pb-2 text-right">In Stock (Total)</th>
-                                                                                <th className="pb-2 text-right">Max Producible With This</th>
-                                                                                <th className="pb-2 text-center">Status</th>
-                                                                            </tr>
-                                                                        </thead>
-                                                                        <tbody>
-                                                                            {good.components.map((c, ci: number) => {
+                                                                        )}
+                                                                    </td>
+                                                                    <td className="py-2.5 px-4 text-right border-r border-slate-200/60 dark:border-slate-800/60 text-blue-500">
+                                                                        <div>
+                                                                            {good.producible_if_fulfilled !== undefined && good.producible_if_fulfilled !== null ? (
+                                                                                good.producible_if_fulfilled === Infinity ? (
+                                                                                    <span className="text-blue-500 font-extrabold">Unlimited</span>
+                                                                                ) : (
+                                                                                    <span className="text-blue-500 font-extrabold">{good.producible_if_fulfilled.toLocaleString()} units</span>
+                                                                                )
+                                                                            ) : (
+                                                                                <span className="text-muted-foreground">-</span>
+                                                                            )}
+                                                                        </div>
+                                                                        {good.producible_if_fulfilled !== undefined && good.producible_if_fulfilled !== null && good.estimated_time_hours_if_fulfilled !== undefined && good.estimated_time_hours_if_fulfilled !== null && (
+                                                                            <div className="text-[10px] text-muted-foreground font-semibold mt-0.5">
+                                                                                Est: {good.estimated_time_hours_if_fulfilled.toLocaleString()} hrs
+                                                                            </div>
+                                                                        )}
+                                                                    </td>
+                                                                    <td className="py-2.5 px-4">
+                                                                        <div className="space-y-1 font-sans text-[10px] min-w-[240px]">
+                                                                            {good.components.map((c, ci) => {
                                                                                 const isBottleneck = c.max_producible_with_this === good.max_producible;
                                                                                 return (
-                                                                                    <tr key={ci} className={`border-b border-slate-200/40 dark:border-slate-850/40 last:border-0 hover:bg-slate-50/50 dark:bg-slate-900/10 ${
-                                                                                        isBottleneck ? "bg-rose-500/[0.01]" : ""
-                                                                                    }`}>
-                                                                                        <td className="py-2.5 font-bold text-foreground">
-                                                                                            {c.component_name}
-                                                                                            <span className="block text-[9px] font-mono text-muted-foreground font-normal mt-0.5">{c.component_code}</span>
-                                                                                        </td>
-                                                                                        <td className="py-2.5 text-right font-mono text-slate-400 font-semibold">
-                                                                                            {c.required_per_unit.toFixed(4)} {c.unit}
-                                                                                        </td>
-                                                                                        <td className={`py-2.5 text-right font-mono font-bold ${
-                                                                                            c.available > 0 ? "text-foreground" : "text-rose-500 font-black"
-                                                                                        }`}>
-                                                                                            {c.available.toLocaleString()} {c.unit}
-                                                                                        </td>
-                                                                                        <td className={`py-2.5 text-right font-mono font-extrabold ${
-                                                                                            isBottleneck ? "text-rose-500" : "text-foreground"
-                                                                                        }`}>
-                                                                                            {c.max_producible_with_this.toLocaleString()} Units
-                                                                                        </td>
-                                                                                        <td className="py-2.5 text-center">
-                                                                                            {isBottleneck ? (
-                                                                                                <span className="bg-rose-500/10 text-rose-500 border border-rose-500/20 text-[8px] font-black uppercase px-2 py-0.5 rounded tracking-wider">Bottleneck</span>
-                                                                                            ) : (
-                                                                                                <span className="bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 text-[8px] font-black uppercase px-2 py-0.5 rounded tracking-wider">Sufficient</span>
-                                                                                            )}
-                                                                                        </td>
-                                                                                    </tr>
+                                                                                    <div key={ci} className={`flex justify-between items-center gap-2 border-b border-slate-100 dark:border-slate-800/40 pb-0.5 last:border-0 last:pb-0 ${isBottleneck ? "text-rose-500 font-extrabold bg-rose-500/[0.03] px-1 rounded" : "text-muted-foreground"}`}>
+                                                                                        <span className="truncate max-w-[120px] font-semibold" title={c.component_name}>{c.component_name}</span>
+                                                                                        <span className="font-mono text-[9px] font-semibold">{c.available.toLocaleString()} / {c.required_per_unit.toFixed(2)} ({c.max_producible_with_this.toLocaleString()})</span>
+                                                                                    </div>
                                                                                 );
                                                                             })}
-                                                                        </tbody>
-                                                                    </table>
-                                                                </div>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                );
-                                            })
+                                                                        </div>
+                                                                    </td>
+                                                                </tr>
+                                                            );
+                                                        })}
+                                                </tbody>
+                                            </table>
+                                        </div>
                                     )}
                                 </div>
                             </div>
