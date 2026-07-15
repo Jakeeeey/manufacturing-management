@@ -20,13 +20,14 @@ import {
 
 export interface PrintReceiptData {
     jo_no: string;
+    branch_name: string;
     product_code: string;
     product_name: string;
     recipe_version: string;
     yield_qty: number;
     lot_number: string;
+    manufacturing_date?: string;
     expiry_date: string;
-    branch_name: string;
     unit_cost: number;
 }
 
@@ -45,75 +46,118 @@ export const printYieldClosingReceipt = (data: PrintReceiptData) => {
         <head>
             <title>FG Receipt - ${data.jo_no}</title>
             <style>
+                @page { size: portrait; margin: 10mm; }
                 body {
-                    font-family: 'Courier New', Courier, monospace;
-                    font-size: 12px;
-                    color: #000;
+                    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+                    font-size: 11px;
+                    color: #0f172a;
                     margin: 0;
-                    padding: 20px;
-                    line-height: 1.4;
+                    padding: 10px;
+                    line-height: 1.5;
+                    background-color: #ffffff;
                 }
                 .receipt {
-                    border: 1px dashed #000;
-                    padding: 15px;
-                    max-width: 450px;
+                    border: 1px solid #e2e8f0;
+                    border-radius: 12px;
+                    padding: 20px;
+                    max-width: 380px;
                     margin: 0 auto;
+                    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
                 }
                 .header {
                     text-align: center;
-                    border-bottom: 2px double #000;
-                    padding-bottom: 10px;
+                    border-bottom: 2px solid #0f172a;
+                    padding-bottom: 12px;
                     margin-bottom: 15px;
                 }
                 .header h1 {
                     font-size: 16px;
-                    margin: 0 0 5px 0;
+                    font-weight: 800;
+                    margin: 0 0 4px 0;
                     text-transform: uppercase;
+                    letter-spacing: 0.5px;
+                    color: #0f172a;
                 }
                 .header p {
                     margin: 0;
-                    font-size: 10px;
+                    font-size: 9px;
+                    color: #64748b;
+                    font-weight: 600;
+                    text-transform: uppercase;
+                }
+                .section-title {
+                    font-size: 9px;
+                    font-weight: 800;
+                    text-transform: uppercase;
+                    color: #64748b;
+                    margin-top: 15px;
+                    margin-bottom: 6px;
+                    letter-spacing: 0.5px;
                 }
                 .row {
                     display: flex;
                     justify-content: space-between;
-                    margin-bottom: 6px;
-                }
-                .row.total {
-                    border-top: 1px dashed #000;
-                    border-bottom: 1px dashed #000;
-                    padding: 8px 0;
-                    font-weight: bold;
-                    font-size: 14px;
-                    margin-top: 15px;
+                    align-items: flex-start;
+                    margin-bottom: 5px;
                 }
                 .label {
-                    font-weight: bold;
+                    color: #64748b;
+                    font-weight: 500;
                 }
                 .value {
                     text-align: right;
+                    font-weight: 600;
+                    color: #0f172a;
                 }
-                .footer {
-                    margin-top: 30px;
-                    text-align: center;
-                    font-size: 10px;
+                .highlight-box {
+                    background-color: #f8fafc;
+                    border: 1px solid #e2e8f0;
+                    border-radius: 8px;
+                    padding: 10px 12px;
+                    margin: 15px 0;
+                }
+                .highlight-box .row.total {
+                    font-size: 13px;
+                    font-weight: 800;
+                    color: #0f172a;
+                    border-top: 1px dashed #cbd5e1;
+                    padding-top: 6px;
+                    margin-top: 6px;
+                }
+                .highlight-box .row.total .value {
+                    color: #0f172a;
+                    font-weight: 800;
                 }
                 .sig-box {
                     margin-top: 25px;
                     display: flex;
                     justify-content: space-between;
+                    gap: 15px;
                 }
                 .sig {
-                    border-top: 1px solid #000;
-                    width: 45%;
+                    border-top: 1px dashed #94a3b8;
+                    width: 48%;
                     text-align: center;
-                    padding-top: 5px;
-                    font-size: 9px;
-                    margin-top: 20px;
+                    padding-top: 6px;
+                    font-size: 8px;
+                    color: #64748b;
+                    font-weight: 600;
+                    text-transform: uppercase;
+                    margin-top: 15px;
+                }
+                .footer {
+                    margin-top: 25px;
+                    text-align: center;
+                    font-size: 8px;
+                    color: #94a3b8;
+                    font-weight: 500;
+                    border-top: 1px dashed #e2e8f0;
+                    padding-top: 10px;
                 }
                 @media print {
-                    body { padding: 0; }
-                    .receipt { border: none; }
+                    body { padding: 0; background: none; }
+                    .receipt { border: none; box-shadow: none; padding: 0; max-width: 100%; }
+                    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
                 }
             </style>
         </head>
@@ -121,10 +165,13 @@ export const printYieldClosingReceipt = (data: PrintReceiptData) => {
             <div class="receipt">
                 <div class="header">
                     <h1>Finished Goods Receipt</h1>
-                    <p>WMS LEDGER & RUN CLOSURE SLIP</p>
-                    <p>Printed: ${new Date().toLocaleString()}</p>
+                    <p>WMS Ledger & Run Closure Slip</p>
+                    <div style="font-size: 8px; color: #94a3b8; margin-top: 4px; font-weight: normal;">
+                        Printed: ${new Date().toLocaleString()}
+                    </div>
                 </div>
 
+                <div class="section-title">Production Details</div>
                 <div class="row">
                     <span class="label">Job Order No:</span>
                     <span class="value">${data.jo_no}</span>
@@ -137,37 +184,42 @@ export const printYieldClosingReceipt = (data: PrintReceiptData) => {
                     <span class="label">Product Code:</span>
                     <span class="value">${data.product_code}</span>
                 </div>
-                <div class="row" style="margin-bottom: 10px;">
+                <div class="row">
                     <span class="label">Product Name:</span>
-                    <span class="value" style="display: block; max-width: 250px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${data.product_name}</span>
+                    <span class="value" style="max-width: 220px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${data.product_name}">${data.product_name}</span>
                 </div>
                 <div class="row">
                     <span class="label">Recipe Version:</span>
                     <span class="value">${data.recipe_version}</span>
                 </div>
-                
-                <hr style="border: none; border-top: 1px dashed #000; margin: 12px 0;" />
 
+                <div class="section-title">Lot & Tracking</div>
                 <div class="row">
                     <span class="label">Lot/Batch Number:</span>
-                    <span class="value">${data.lot_number}</span>
+                    <span class="value font-mono">${data.lot_number}</span>
+                </div>
+                <div class="row">
+                    <span class="label">Manufacturing Date:</span>
+                    <span class="value">${data.manufacturing_date || "N/A"}</span>
                 </div>
                 <div class="row">
                     <span class="label">Expiration Date:</span>
-                    <span class="value">${data.expiry_date}</span>
-                </div>
-                <div class="row">
-                    <span class="label">Yield Produced:</span>
-                    <span class="value" style="font-size: 13px; font-weight: bold;">${data.yield_qty.toLocaleString()} units</span>
-                </div>
-                <div class="row">
-                    <span class="label">Landed Unit Cost:</span>
-                    <span class="value">PHP ${data.unit_cost.toFixed(2)}</span>
+                    <span class="value">${data.expiry_date || "N/A"}</span>
                 </div>
 
-                <div class="row total">
-                    <span class="label">TOTAL LOGGED COST:</span>
-                    <span class="value">PHP ${totalCost.toFixed(2)}</span>
+                <div class="highlight-box">
+                    <div class="row">
+                        <span class="label">Yield Produced:</span>
+                        <span class="value" style="font-size: 12px; color: #0f172a;">${data.yield_qty.toLocaleString()} units</span>
+                    </div>
+                    <div class="row">
+                        <span class="label">Landed Unit Cost:</span>
+                        <span class="value">PHP ${data.unit_cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    </div>
+                    <div class="row total">
+                        <span class="label">TOTAL LOGGED COST:</span>
+                        <span class="value">PHP ${totalCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    </div>
                 </div>
 
                 <div class="sig-box">
@@ -176,13 +228,14 @@ export const printYieldClosingReceipt = (data: PrintReceiptData) => {
                 </div>
 
                 <div class="footer">
-                    <p>*** End of Receipt ***</p>
+                    <div>ERP Automated Yield Ledger Receipt</div>
+                    <div style="font-size: 7px; color: #cbd5e1; margin-top: 2px;">*** End of Receipt ***</div>
                 </div>
             </div>
             <script>
                 window.onload = function() {
                     window.print();
-                    window.onafterprint = function() { window.close(); };
+                    window.close();
                 };
             </script>
         </body>
@@ -217,6 +270,7 @@ export function useManufacturingQA() {
     const [isYieldDialogOpen, setIsYieldDialogOpen] = useState(false);
     const [yieldQty, setYieldQty] = useState("");
     const [lotNumber, setLotNumber] = useState("");
+    const [manufacturingDate, setManufacturingDate] = useState("");
     const [expiryDate, setExpiryDate] = useState("");
     const [unitCost, setUnitCost] = useState("");
 
@@ -227,44 +281,50 @@ export function useManufacturingQA() {
     const [overrideComments, setOverrideComments] = useState("");
 
     // Load QA Logs
-    const loadQALogs = async () => {
-        setLoadingLogs(true);
+    const loadQALogs = async (silent = false) => {
+        if (!silent) setLoadingLogs(true);
         try {
             const data = await fetchQALogs();
             setQaLogs(data);
         } catch (e) {
-            console.error("QA Logs fetch error:", e);
-            toast.error("Failed to retrieve quality checkpoint logs.");
+            if (!silent) {
+                console.error("QA Logs fetch error:", e);
+                toast.error("Failed to retrieve quality checkpoint logs.");
+            }
         } finally {
-            setLoadingLogs(false);
+            if (!silent) setLoadingLogs(false);
         }
     };
 
     // Load Dispositions
-    const loadDispositions = async () => {
-        setLoadingDispositions(true);
+    const loadDispositions = async (silent = false) => {
+        if (!silent) setLoadingDispositions(true);
         try {
             const data = await fetchDispositions();
             setDispositions(data);
         } catch (e) {
-            console.error("Dispositions fetch error:", e);
-            toast.error("Failed to retrieve quarantine/holds list.");
+            if (!silent) {
+                console.error("Dispositions fetch error:", e);
+                toast.error("Failed to retrieve quarantine/holds list.");
+            }
         } finally {
-            setLoadingDispositions(false);
+            if (!silent) setLoadingDispositions(false);
         }
     };
 
     // Load Active Job Orders
-    const loadJobOrders = async () => {
-        setLoadingJobOrders(true);
+    const loadJobOrders = async (silent = false) => {
+        if (!silent) setLoadingJobOrders(true);
         try {
             const data = await fetchJobOrders();
             setJobOrders(data);
         } catch (e) {
-            console.error("Job Orders fetch error:", e);
-            toast.error("Failed to retrieve active job orders.");
+            if (!silent) {
+                console.error("Job Orders fetch error:", e);
+                toast.error("Failed to retrieve active job orders.");
+            }
         } finally {
-            setLoadingJobOrders(false);
+            if (!silent) setLoadingJobOrders(false);
         }
     };
 
@@ -316,8 +376,8 @@ export function useManufacturingQA() {
 
     // Imports from services are now at the top of the file
 
-    const loadDailyQAData = async () => {
-        setLoadingDailyQA(true);
+    const loadDailyQAData = async (silent = false) => {
+        if (!silent) setLoadingDailyQA(true);
         try {
             const ledger = await fetchYieldLedger();
             const inspections = await fetchDailyQAInspections();
@@ -333,12 +393,12 @@ export function useManufacturingQA() {
         } catch (e) {
             console.error("Error loading daily QA data:", e);
         } finally {
-            setLoadingDailyQA(false);
+            if (!silent) setLoadingDailyQA(false);
         }
     };
 
-    const loadFinalQAData = async () => {
-        setLoadingFinalQA(true);
+    const loadFinalQAData = async (silent = false) => {
+        if (!silent) setLoadingFinalQA(true);
         try {
             const releases = await fetchFinalQAReleases();
             const lotsData = await fetchInventoryLotsData();
@@ -348,23 +408,88 @@ export function useManufacturingQA() {
         } catch (e) {
             console.error("Error loading final QA data:", e);
         } finally {
-            setLoadingFinalQA(false);
+            if (!silent) setLoadingFinalQA(false);
         }
     };
 
     // Refresh all data
-    const refreshAll = () => {
-        loadQALogs();
-        loadDispositions();
-        loadJobOrders();
-        loadDailyQAData();
-        loadFinalQAData();
+    const refreshAll = (silent: boolean | any = false) => {
+        const isSilent = silent === true;
+        loadQALogs(isSilent);
+        loadDispositions(isSilent);
+        loadJobOrders(isSilent);
+        loadDailyQAData(isSilent);
+        loadFinalQAData(isSilent);
     };
 
     // Mount lifecycle
     useEffect(() => {
-        refreshAll();
+        refreshAll(false);
         loadBranches();
+    }, []);
+
+    // Establish Realtime SSE (Server-Sent Events) Connection for inventory movements
+    useEffect(() => {
+        let eventSource: EventSource | null = null;
+        let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+        let isDisposed = false;
+        let reconnectAttempts = 0;
+
+        const connectSSE = () => {
+            if (isDisposed) return;
+            if (reconnectAttempts >= 10) {
+                console.warn("[QA Realtime SSE] Maximum reconnect attempts reached (10). Standing by.");
+                return;
+            }
+
+            try {
+                eventSource = new EventSource("/api/manufacturing/inventory/movements/stream");
+
+                eventSource.addEventListener("movement", (event) => {
+                    try {
+                        const movement = JSON.parse(event.data);
+                        console.log(`[QA Realtime SSE] Inventory movement detected (ID: ${movement.movement_id}). Refreshing QA dashboard data...`);
+                        
+                        // Silent reload to update QA dashboard data
+                        refreshAll(true);
+                    } catch (e) {
+                        console.error("[QA Realtime SSE] Error parsing movement event data:", e);
+                    }
+                });
+
+                eventSource.onerror = () => {
+                    if (eventSource) {
+                        eventSource.close();
+                        eventSource = null;
+                    }
+                    if (!isDisposed && reconnectAttempts < 10) {
+                        reconnectAttempts++;
+                        const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+                        reconnectTimeout = setTimeout(connectSSE, delay);
+                    }
+                };
+
+            } catch (err) {
+                console.error("[QA Realtime SSE] Error initializing EventSource:", err);
+                if (!isDisposed && reconnectAttempts < 10) {
+                    reconnectAttempts++;
+                    const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+                    reconnectTimeout = setTimeout(connectSSE, delay);
+                }
+            }
+        };
+
+        connectSSE();
+
+        return () => {
+            isDisposed = true;
+            if (eventSource) {
+                eventSource.close();
+            }
+            if (reconnectTimeout) {
+                clearTimeout(reconnectTimeout);
+            }
+        };
     }, []);
 
     // Resolve Branch Name from ID
@@ -430,11 +555,8 @@ export function useManufacturingQA() {
         setSelectedJO(jo);
         setYieldQty(String(jo.quantity));
         setLotNumber(`MFG-${jo.jo_id}`);
-        
-        const nextYear = new Date();
-        nextYear.setFullYear(nextYear.getFullYear() + 1);
-        setExpiryDate(nextYear.toISOString().split("T")[0]);
-        
+        setManufacturingDate("");
+        setExpiryDate("");
         setUnitCost("0");
         setIsYieldDialogOpen(true);
     };
@@ -460,6 +582,7 @@ export function useManufacturingQA() {
             yield_qty: log ? Number(log.yield_quantity || jo.producedQty || jo.produced_quantity || 0) : Number(jo.producedQty || jo.produced_quantity || jo.quantity || 0),
             lot_number: log ? (log.lot_number || log.lot_no || `MFG-${jo.jo_id}`) : `MFG-${jo.jo_id}`,
             expiry_date: log ? (log.expiry_date || "N/A") : "N/A",
+            manufacturing_date: log ? (log.manufacturing_date || "N/A") : "N/A",
             branch_name: branchName,
             unit_cost: log ? Number(log.unit_cost || 0) : 0
         });
@@ -470,6 +593,14 @@ export function useManufacturingQA() {
         if (!selectedJO) return;
         if (!yieldQty || isNaN(Number(yieldQty)) || Number(yieldQty) <= 0) {
             toast.error("Please enter a valid yield quantity.");
+            return;
+        }
+        if (!manufacturingDate) {
+            toast.error("Please select a manufacturing date.");
+            return;
+        }
+        if (!expiryDate) {
+            toast.error("Please select an expiration date.");
             return;
         }
 
@@ -493,14 +624,20 @@ export function useManufacturingQA() {
                 console.warn("Failed to load materials for yield closing consumption:", err);
             }
 
+            if (!selectedJO.branch_id) {
+                toast.error("Error: Job Order is missing branch_id allocation.");
+                return;
+            }
+
             await postFinishedGoodsReceipt({
                 joId: selectedJO.jo_id,
                 productId: selectedJO.product_id,
                 productName: selectedJO.product_name,
                 quantityProduced: Number(yieldQty),
-                branchId: selectedJO.branch_id || 1,
+                branchId: Number(selectedJO.branch_id),
                 lotNumber: lotNumber || `MFG-${selectedJO.jo_id}`,
                 expirationDate: expiryDate || null,
+                manufacturingDate: manufacturingDate || null,
                 unitCost: Number(unitCost || 0),
                 componentsConsumed: componentsConsumed,
                 completeJobOrder: true
@@ -528,6 +665,7 @@ export function useManufacturingQA() {
                     yield_qty: Number(yieldQty),
                     lot_number: lotNumber || `MFG-${selectedJO.jo_id}`,
                     expiry_date: expiryDate || "N/A",
+                    manufacturing_date: manufacturingDate || "N/A",
                     branch_name: branchName,
                     unit_cost: Number(unitCost || 0)
                 });
@@ -781,6 +919,8 @@ export function useManufacturingQA() {
         setYieldQty,
         lotNumber,
         setLotNumber,
+        manufacturingDate,
+        setManufacturingDate,
         expiryDate,
         setExpiryDate,
         unitCost,

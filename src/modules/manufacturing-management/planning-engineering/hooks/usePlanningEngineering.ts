@@ -28,6 +28,11 @@ export function usePlanningEngineering() {
     const [selectedBranchId, setSelectedBranchId] = useState<number | null>(null);
     const [selectedDetailIds, setSelectedDetailIds] = useState<number[]>([]);
 
+    // Clear selected detail IDs when changing branches to prevent invalid operations
+    useEffect(() => {
+        setSelectedDetailIds([]);
+    }, [selectedBranchId]);
+
     // Release Modal state
     const [isConfirmOpen, setIsConfirmOpen] = useState(false);
     const [targetQuantity, setTargetQuantity] = useState<number>(0);
@@ -37,9 +42,17 @@ export function usePlanningEngineering() {
     const [joNumber, setJoNumber] = useState<string>("");
     const [assignments, setAssignments] = useState<Record<number, number[]>>({});
 
-    const [unreleasedJobs, setUnreleasedJobs] = useState<any[]>([]);
+    const [rawUnreleasedJobs, setRawUnreleasedJobs] = useState<any[]>([]);
     const [loadingJobs, setLoadingJobs] = useState(false);
     const [releasingDraftId, setReleasingDraftId] = useState<string | null>(null);
+
+    // Filter unreleased jobs based on selected branch
+    const unreleasedJobs = useMemo(() => {
+        if (selectedBranchId === null) return [];
+        return rawUnreleasedJobs.filter(
+            (jo) => jo.branch_id !== undefined && jo.branch_id !== null && Number(jo.branch_id) === Number(selectedBranchId)
+        );
+    }, [rawUnreleasedJobs, selectedBranchId]);
 
     const loadUnreleasedJobs = async () => {
         setLoadingJobs(true);
@@ -48,7 +61,7 @@ export function usePlanningEngineering() {
             if (res.ok) {
                 const data = await res.json();
                 const draftOrPlanned = data.filter((j: any) => j.status === "Draft" || j.status === "Planned" || j.status === "Planning");
-                setUnreleasedJobs(draftOrPlanned);
+                setRawUnreleasedJobs(draftOrPlanned);
             }
         } catch (err) {
             console.error("Error loading unreleased job orders:", err);
@@ -128,7 +141,7 @@ export function usePlanningEngineering() {
 
             setSalesOrders(soResult.data || []);
             setDetailsMap(soResult.detailsMap || {});
-            setUnreleasedJobs(draftOrPlanned);
+            setRawUnreleasedJobs(draftOrPlanned);
         } catch (err: any) {
             console.error("Error loading initial data:", err);
             toast.error(err.message || "An error occurred while loading planning data.");
@@ -145,10 +158,78 @@ export function usePlanningEngineering() {
         loadInitialData();
     }, []);
 
-    // Flatten all sales order details for list display
+    // Establish Realtime SSE (Server-Sent Events) Connection for inventory movements
+    useEffect(() => {
+        let eventSource: EventSource | null = null;
+        let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+        let isDisposed = false;
+        let reconnectAttempts = 0;
+
+        const connectSSE = () => {
+            if (isDisposed) return;
+            if (reconnectAttempts >= 10) {
+                console.warn("[Planning Realtime SSE] Maximum reconnect attempts reached (10). Standing by.");
+                return;
+            }
+
+            try {
+                eventSource = new EventSource("/api/manufacturing/inventory/movements/stream");
+
+                eventSource.addEventListener("movement", (event) => {
+                    try {
+                        const movement = JSON.parse(event.data);
+                        console.log(`[Planning Realtime SSE] Inventory movement detected (ID: ${movement.movement_id}). Refreshing planning data...`);
+                        
+                        // Silent reload to update demand lines, requirements, and unreleased job orders
+                        loadInitialData(true);
+                    } catch (e) {
+                        console.error("[Planning Realtime SSE] Error parsing movement event data:", e);
+                    }
+                });
+
+                eventSource.onerror = () => {
+                    if (eventSource) {
+                        eventSource.close();
+                        eventSource = null;
+                    }
+                    if (!isDisposed && reconnectAttempts < 10) {
+                        reconnectAttempts++;
+                        const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+                        reconnectTimeout = setTimeout(connectSSE, delay);
+                    }
+                };
+
+            } catch (err) {
+                console.error("[Planning Realtime SSE] Error initializing EventSource:", err);
+                if (!isDisposed && reconnectAttempts < 10) {
+                    reconnectAttempts++;
+                    const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+                    reconnectTimeout = setTimeout(connectSSE, delay);
+                }
+            }
+        };
+
+        connectSSE();
+
+        return () => {
+            isDisposed = true;
+            if (eventSource) {
+                eventSource.close();
+            }
+            if (reconnectTimeout) {
+                clearTimeout(reconnectTimeout);
+            }
+        };
+    }, []);
+
+    // Flatten all sales order details for list display, filtered by selectedBranchId
     const salesOrderLines = useMemo(() => {
+        if (selectedBranchId === null) return [];
         const lines: SalesOrderDetail[] = [];
         salesOrders.forEach((so) => {
+            if (so.branch_id === undefined || so.branch_id === null || Number(so.branch_id) !== Number(selectedBranchId)) {
+                return;
+            }
             const details = detailsMap[so.order_id] || [];
             details.forEach((det) => {
                 lines.push({
@@ -159,7 +240,7 @@ export function usePlanningEngineering() {
             });
         });
         return lines;
-    }, [salesOrders, detailsMap]);
+    }, [salesOrders, detailsMap, selectedBranchId]);
 
     // Fetch BOM components for all unique product IDs in sales orders to find sub-assemblies
     useEffect(() => {

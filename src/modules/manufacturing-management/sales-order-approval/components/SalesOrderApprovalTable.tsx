@@ -110,9 +110,9 @@ export function SalesOrderApprovalTable({
     return (
         <div className="space-y-4">
             {/* Filters Header */}
-            <div className="flex flex-col gap-3 bg-card p-4 rounded-xl border shadow-sm">
-                <div className="flex flex-col md:flex-row items-center justify-between gap-3 w-full">
-                    <form onSubmit={handleSearchSubmit} className="relative w-full md:max-w-xs flex gap-2">
+            <div className="flex flex-col gap-4 bg-card p-5 rounded-2xl border border-slate-200/80 shadow-sm border-t-2 border-t-amber-600">
+                <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 w-full">
+                    <form onSubmit={handleSearchSubmit} className="relative w-full xl:max-w-md flex gap-2">
                         <div className="relative flex-1">
                             <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                             <input
@@ -125,18 +125,19 @@ export function SalesOrderApprovalTable({
                                         setSearchQuery("");
                                     }
                                 }}
-                                className="w-full bg-background pl-9 pr-3 py-2 text-xs rounded-lg border border-input focus:ring-1 focus:ring-primary focus:border-primary outline-none text-foreground font-medium"
+                                className="w-full bg-background pl-9 pr-3 py-2 text-xs rounded-lg border border-input focus:ring-1 focus:ring-primary focus:border-primary outline-none text-foreground font-semibold transition-all duration-200 shadow-xs"
                             />
                         </div>
                         <button
                             type="submit"
-                            className="bg-primary hover:bg-primary/95 text-primary-foreground font-bold px-3 py-2 rounded-lg text-xs transition-all shadow-xs"
+                            className="bg-slate-900 hover:bg-slate-800 text-white font-bold px-4 py-2 rounded-lg text-xs transition-all shadow-md cursor-pointer border-none"
                         >
                             Search
                         </button>
                     </form>
 
-                    <div className="flex flex-wrap items-center gap-2 w-full md:w-auto justify-end">
+                    <div className="flex flex-wrap items-center gap-3 w-full xl:w-auto justify-start xl:justify-end">
+                        {/* Customer Search Dropdown */}
                         <div className="relative w-full sm:w-48">
                             <input
                                 type="text"
@@ -150,49 +151,57 @@ export function SalesOrderApprovalTable({
                                         setCustomerCodeFilter("");
                                     }
                                 }}
-                                className="w-full bg-background px-3 py-2 text-xs rounded-lg border border-input focus:ring-1 focus:ring-primary focus:border-primary outline-none text-foreground font-medium"
+                                className="w-full bg-background px-3 py-2 text-xs rounded-lg border border-input focus:ring-1 focus:ring-primary focus:border-primary outline-none text-foreground font-semibold transition-all duration-200 shadow-xs"
                             />
                             {isCustomerFocused && (
-                                <div className="absolute z-50 left-0 right-0 mt-1 max-h-40 overflow-y-auto rounded-lg border bg-card shadow-xl divide-y">
-                                    {filteredCustomers.map(c => (
-                                        <button
-                                            type="button"
-                                            key={c.id}
-                                            onClick={() => {
-                                                setLocalCustomerSearch(c.customer_name);
-                                                setIsCustomerFocused(false);
-                                                if (setCustomerCodeFilter) setCustomerCodeFilter(c.customer_code);
-                                            }}
-                                            className="w-full text-left px-3 py-2 text-xs hover:bg-primary hover:text-primary-foreground text-foreground transition-colors"
-                                        >
-                                            {c.customer_name} ({c.customer_code})
-                                        </button>
-                                    ))}
+                                <div className="absolute z-50 left-0 right-0 mt-1 max-h-48 overflow-y-auto rounded-lg border bg-card shadow-2xl divide-y border-slate-200">
+                                    {filteredCustomers.length === 0 ? (
+                                        <div className="px-3 py-2 text-xs text-muted-foreground italic">No customers found</div>
+                                    ) : (
+                                        filteredCustomers.map(c => (
+                                            <button
+                                                type="button"
+                                                key={c.id}
+                                                onClick={() => {
+                                                    setLocalCustomerSearch(c.customer_name);
+                                                    setIsCustomerFocused(false);
+                                                    if (setCustomerCodeFilter) setCustomerCodeFilter(c.customer_code);
+                                                }}
+                                                className="w-full text-left px-3 py-2.5 text-xs hover:bg-slate-100 text-slate-800 transition-colors font-medium"
+                                            >
+                                                {c.customer_name} <span className="text-[10px] text-muted-foreground font-mono">({c.customer_code})</span>
+                                            </button>
+                                        ))
+                                    )}
                                 </div>
                             )}
                         </div>
 
-                        <input
-                            type="date"
-                            value={dateFromFilter || ""}
-                            onChange={(e) => setDateFromFilter && setDateFromFilter(e.target.value)}
-                            title="Start Date"
-                            className="bg-background border border-input rounded-lg px-2 py-2 text-xs font-medium text-foreground focus:ring-1 focus:ring-primary outline-none"
-                        />
-                        <span className="text-muted-foreground text-xs font-bold">-</span>
-                        <input
-                            type="date"
-                            value={dateToFilter || ""}
-                            onChange={(e) => setDateToFilter && setDateToFilter(e.target.value)}
-                            title="End Date"
-                            className="bg-background border border-input rounded-lg px-2 py-2 text-xs font-medium text-foreground focus:ring-1 focus:ring-primary outline-none"
-                        />
-                        
-                        <div className="flex items-center gap-1.5 ml-2">
+                        {/* Date Range Filters */}
+                        <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg p-1 shadow-xs">
+                            <input
+                                type="date"
+                                value={dateFromFilter || ""}
+                                onChange={(e) => setDateFromFilter && setDateFromFilter(e.target.value)}
+                                title="Start Date"
+                                className="bg-transparent border-none rounded-md px-1.5 py-1 text-xs font-semibold text-slate-700 outline-none cursor-pointer focus:bg-background"
+                            />
+                            <span className="text-slate-400 text-xs font-bold">to</span>
+                            <input
+                                type="date"
+                                value={dateToFilter || ""}
+                                onChange={(e) => setDateToFilter && setDateToFilter(e.target.value)}
+                                title="End Date"
+                                className="bg-transparent border-none rounded-md px-1.5 py-1 text-xs font-semibold text-slate-700 outline-none cursor-pointer focus:bg-background"
+                            />
+                        </div>
+
+                        {/* Status Filter */}
+                        <div className="flex items-center gap-2">
                             <select
                                 value={statusFilter || "For Approval"}
                                 onChange={(e) => setStatusFilter && setStatusFilter(e.target.value)}
-                                className="bg-background border border-input rounded-lg px-3 py-2 text-xs font-bold text-foreground focus:ring-1 focus:ring-primary outline-none cursor-pointer"
+                                className="bg-background border border-input rounded-lg px-3 py-2 text-xs font-bold text-foreground focus:ring-1 focus:ring-primary outline-none cursor-pointer transition-all shadow-xs"
                             >
                                 <option value="All">All Statuses</option>
                                 <option value="For Approval">For Approval</option>
@@ -201,16 +210,16 @@ export function SalesOrderApprovalTable({
                     </div>
                 </div>
 
-                <div className="text-xs text-muted-foreground font-bold bg-muted/30 px-3 py-2 rounded-lg border">
-                    Queue: <span className="text-foreground">{totalCount} results</span>
+                <div className="text-xs text-amber-800 font-extrabold bg-amber-50 px-3 py-2 rounded-xl border border-amber-200/50 self-start shadow-xs">
+                    Queue: <span className="font-mono text-sm">{totalCount} pending orders</span>
                 </div>
             </div>
 
             {salesOrders.length === 0 ? (
-                <div className="text-center p-12 border rounded-xl bg-card shadow-sm">
-                    <DollarSign className="h-10 w-10 text-muted-foreground/30 mx-auto mb-2" />
-                    <h4 className="text-xs font-bold text-foreground">All Sales Orders Approved</h4>
-                    <p className="text-[11px] text-muted-foreground mt-1">
+                <div className="text-center p-16 border rounded-2xl bg-card shadow-xs border-dashed border-slate-300">
+                    <DollarSign className="h-10 w-10 text-slate-400/40 mx-auto mb-3" />
+                    <h4 className="text-sm font-bold text-foreground">All Sales Orders Approved</h4>
+                    <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
                         {searchQuery 
                             ? "No pending approval matches your search query." 
                             : "There are no sales orders currently waiting for approval."}
@@ -221,83 +230,88 @@ export function SalesOrderApprovalTable({
                                 setLocalSearch("");
                                 setSearchQuery("");
                             }}
-                            className="mt-3 bg-muted border hover:bg-muted/80 text-foreground font-bold px-3 py-1.5 rounded-lg text-xs transition-all"
+                            className="mt-4 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 font-bold px-4 py-2 rounded-lg text-xs transition-all cursor-pointer"
                         >
                             Clear Filters
                         </button>
                     )}
                 </div>
             ) : (
-                <div className="overflow-hidden border rounded-xl bg-card shadow-sm">
+                <div className="overflow-hidden border border-slate-200/80 rounded-2xl bg-card shadow-sm">
                     <div className="overflow-x-auto">
                         <table className="w-full border-collapse text-left text-xs">
-                            <thead className="bg-muted/50 border-b">
+                            <thead className="bg-slate-50 border-b border-slate-200">
                                 <tr>
-                                    <th className="p-3 font-semibold text-muted-foreground uppercase">Order No.</th>
-                                    <th className="p-3 font-semibold text-muted-foreground uppercase">Customer</th>
-                                    <th className="p-3 font-semibold text-muted-foreground uppercase">Order Date</th>
-                                    <th className="p-3 font-semibold text-muted-foreground uppercase">Delivery Date</th>
-                                    <th className="p-3 font-semibold text-muted-foreground uppercase text-right">Selling Total</th>
-                                    <th className="p-3 font-semibold text-muted-foreground uppercase text-right">Gross Total</th>
-                                    <th className="p-3 font-semibold text-muted-foreground uppercase text-center">Status</th>
-                                    <th className="p-3 font-semibold text-muted-foreground uppercase text-center">Actions</th>
+                                    <th className="p-4.5 font-extrabold text-slate-500 uppercase tracking-wider text-[10px]">Order No.</th>
+                                    <th className="p-4.5 font-extrabold text-slate-500 uppercase tracking-wider text-[10px]">Customer</th>
+                                    <th className="p-4.5 font-extrabold text-slate-500 uppercase tracking-wider text-[10px]">Order Date</th>
+                                    <th className="p-4.5 font-extrabold text-slate-500 uppercase tracking-wider text-[10px]">Delivery Date</th>
+                                    <th className="p-4.5 font-extrabold text-slate-500 uppercase tracking-wider text-[10px] text-right">Selling Total</th>
+                                    <th className="p-4.5 font-extrabold text-slate-500 uppercase tracking-wider text-[10px] text-right">Gross Total</th>
+                                    <th className="p-4.5 font-extrabold text-slate-500 uppercase tracking-wider text-[10px] text-center">Status</th>
+                                    <th className="p-4.5 font-extrabold text-slate-500 uppercase tracking-wider text-[10px] text-center">Actions</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y">
+                            <tbody className="divide-y divide-slate-100">
                                 {salesOrders.map(so => (
-                                    <tr key={so.order_id} className="hover:bg-muted/30 transition-colors">
-                                        <td className="p-3 font-bold text-foreground">{so.order_no}</td>
-                                        <td className="p-3 font-semibold text-foreground">
+                                    <tr key={so.order_id} className="hover:bg-slate-50/50 transition-colors">
+                                        <td className="p-4 font-extrabold text-slate-900">{so.order_no}</td>
+                                        <td className="p-4 font-semibold text-slate-800">
                                             {so.customer_name ? (
-                                                <span>
-                                                    {so.customer_name}{" "}
-                                                    <span className="text-[10px] text-muted-foreground font-mono font-normal">({so.customer_code})</span>
-                                                </span>
+                                                <div className="flex flex-col">
+                                                    <span className="font-bold text-slate-800">{so.customer_name}</span>
+                                                    <span className="text-[9px] text-muted-foreground font-mono font-normal">({so.customer_code})</span>
+                                                </div>
                                             ) : (
-                                                so.customer_code
+                                                <span className="font-mono">{so.customer_code}</span>
                                             )}
                                         </td>
-                                        <td className="p-3 text-muted-foreground">
+                                        <td className="p-4 text-slate-500 font-medium">
                                             {so.order_date ? new Date(so.order_date).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "N/A"}
                                         </td>
-                                        <td className="p-3 text-muted-foreground">
+                                        <td className="p-4 text-slate-500 font-medium">
                                             {so.delivery_date ? new Date(so.delivery_date).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "N/A"}
                                         </td>
-                                        <td className="p-3 text-right font-bold text-primary">₱{(Number(so.net_amount) || 0).toFixed(2)}</td>
-                                        <td className="p-3 text-right font-bold text-muted-foreground">₱{(Number(so.total_amount) || 0).toFixed(2)}</td>
-                                        <td className="p-3 text-center">
-                                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-600 border border-amber-500/20 whitespace-nowrap">
+                                        <td className="p-4 text-right font-black text-slate-900 text-sm">
+                                            ₱{(Number(so.net_amount) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        </td>
+                                        <td className="p-4 text-right font-bold text-slate-400 font-mono">
+                                            ₱{(Number(so.total_amount) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        </td>
+                                        <td className="p-4 text-center">
+                                            <span className="inline-flex px-2.5 py-1 rounded-full text-[9px] font-black bg-amber-50 text-amber-700 border border-amber-200/60 whitespace-nowrap uppercase tracking-wider">
                                                 {so.order_status || "For Approval"}
                                             </span>
                                         </td>
-                                        <td className="p-3 text-center">
-                                            <div className="flex items-center justify-center gap-1.5">
+                                        <td className="p-4 text-center">
+                                            <div className="flex items-center justify-center gap-2">
                                                 <button
                                                     onClick={() => viewOrderDetails(so)}
-                                                    className="inline-flex items-center justify-center p-1.5 rounded-md border bg-background hover:bg-muted text-muted-foreground transition-all"
+                                                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 hover:border-slate-300 text-slate-650 font-bold transition-all text-[11px] shadow-xs cursor-pointer"
                                                     title="Review details"
                                                 >
-                                                    <Eye className="h-4 w-4" />
+                                                    <Eye className="h-3.5 w-3.5" />
+                                                    Review
                                                 </button>
                                                 <button
                                                     disabled={updatingStatusId !== null}
                                                     onClick={() => handleApprove(so.order_id)}
-                                                    className="inline-flex items-center justify-center p-1.5 rounded-md border border-emerald-200 hover:bg-emerald-50 text-emerald-600 dark:border-emerald-950 dark:hover:bg-emerald-950/20 transition-all disabled:opacity-50"
+                                                    className="inline-flex items-center justify-center p-2 rounded-lg border border-emerald-250 bg-emerald-50/50 hover:bg-emerald-100 hover:border-emerald-300 text-emerald-700 transition-all cursor-pointer shadow-xs disabled:opacity-50"
                                                     title="Approving the SO will lock this record for Master Schedule Planning."
                                                 >
                                                     {updatingStatusId === so.order_id ? (
-                                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                                        <Loader2 className="h-4 w-4 animate-spin text-emerald-700" />
                                                     ) : (
-                                                        <Check className="h-4 w-4" />
+                                                        <Check className="h-4 w-4 stroke-[3]" />
                                                     )}
                                                 </button>
                                                 <button
                                                     disabled={updatingStatusId !== null}
                                                     onClick={() => handleReject(so.order_id)}
-                                                    className="inline-flex items-center justify-center p-1.5 rounded-md border border-rose-200 hover:bg-rose-50 text-rose-600 dark:border-rose-950 dark:hover:bg-rose-950/20 transition-all disabled:opacity-50"
+                                                    className="inline-flex items-center justify-center p-2 rounded-lg border border-rose-250 bg-rose-50/50 hover:bg-rose-100 hover:border-rose-300 text-rose-700 transition-all cursor-pointer shadow-xs disabled:opacity-50"
                                                     title="Reject & Edit"
                                                 >
-                                                    <X className="h-4 w-4" />
+                                                    <X className="h-4 w-4 stroke-[3]" />
                                                 </button>
                                             </div>
                                         </td>

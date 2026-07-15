@@ -171,6 +171,11 @@ export default function InventoryModule() {
             return;
         }
 
+        if (!jo.branch_id) {
+            toast.error("Error: Job Order is missing branch_id allocation.");
+            return;
+        }
+
         setPickingSubmitting(true);
         try {
             const res = await fetch("/api/manufacturing/inventory/picking", {
@@ -178,7 +183,7 @@ export default function InventoryModule() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     joId: jo.jo_id,
-                    branchId: jo.branch_id || 1,
+                    branchId: Number(jo.branch_id),
                     items: itemsToPick
                 })
             });

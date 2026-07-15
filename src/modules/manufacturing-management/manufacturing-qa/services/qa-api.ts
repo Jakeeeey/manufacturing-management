@@ -40,6 +40,7 @@ export interface FinishedGoodsReceiptPayload {
     branchId: number;
     lotNumber: string;
     expirationDate: string | null;
+    manufacturingDate?: string | null;
     unitCost: number;
     componentsConsumed: Array<{
         component_product_id: number;

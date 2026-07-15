@@ -25,6 +25,7 @@ interface InventoryLot {
     unit_cost?: string | number;
     quantity?: string | number;
     created_on?: string;
+    qa_status?: string;
 }
 
 interface ConsumeComponentBody {
@@ -75,8 +76,8 @@ export async function GET(request: Request) {
 
         // Fetch products and inventory lots to resolve names, lot number details and unit cost
         const [productsRes, porRes] = await Promise.all([
-            fetch(`${DIRECTUS_URL}/items/products?limit=500&fields=product_id,product_name,cost_per_unit`, { headers, cache: "no-store" }),
-            fetch(`${DIRECTUS_URL}/items/inventory_lots?limit=500`, { headers, cache: "no-store" })
+            fetch(`${DIRECTUS_URL}/items/products?limit=-1&fields=product_id,product_name,cost_per_unit`, { headers, cache: "no-store" }),
+            fetch(`${DIRECTUS_URL}/items/inventory_lots?limit=-1`, { headers, cache: "no-store" })
         ]);
 
         const products: Product[] = productsRes.ok ? (await productsRes.json()).data || [] : [];
@@ -91,13 +92,15 @@ export async function GET(request: Request) {
             const matchedPOR = porData.find((p: InventoryLot) => p.lot_number === lotNumber);
 
             return {
-                id: entry.id,
+                id: matchedPOR?.id || entry.id,
                 jo_id: entry.documentNo,
                 product_id: Number(entry.productId),
                 product_name: matchedProduct?.product_name || "Manufactured Good",
                 quantity_produced: Number(entry.quantity),
+                quantity: Number(entry.quantity),
                 branch_id: Number(entry.branchId),
                 lot_number: lotNumber,
+                qa_status: matchedPOR?.qa_status || "Pending",
                 expiration_date: matchedPOR?.expiry_date || entry.documentDate || new Date().toISOString().split('T')[0],
                 unit_cost: Number(matchedPOR?.unit_cost || matchedProduct?.cost_per_unit || 0),
                 date_received: entry.documentDate ? `${entry.documentDate}T12:00:00.000Z` : new Date().toISOString()
@@ -114,7 +117,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
     try {
         const body = await request.json();
-        const { joId, productId, productName, quantityProduced, branchId, lotNumber, expirationDate, unitCost, componentsConsumed, completeJobOrder = true } = body;
+        const { joId, productId, productName, quantityProduced, branchId, lotNumber, expirationDate, manufacturingDate, unitCost, componentsConsumed, completeJobOrder = true } = body;
 
         if (!joId || !productId || !quantityProduced || !branchId) {
             return NextResponse.json({ error: "Missing required fields (joId, productId, quantityProduced, branchId)" }, { status: 400 });
@@ -271,10 +274,10 @@ export async function POST(request: Request) {
                 expiry_date: finalExpDate,
                 quantity: qty,
                 unit_cost: Number(unitCost || 0),
-                qa_status: "Passed",
+                qa_status: "Pending",
                 source_type: "manufacturing",
                 source_reference: joId,
-                created_on: new Date().toISOString()
+                created_on: manufacturingDate ? new Date(manufacturingDate).toISOString() : new Date().toISOString()
             };
 
             const lotRes = await fetch(`${DIRECTUS_URL}/items/inventory_lots`, {
@@ -307,7 +310,7 @@ export async function POST(request: Request) {
                 source_document_no: joId,
                 batch_no: finalLotNo,
                 expiry_date: finalExpDate,
-                manufacturing_date: new Date().toISOString().split('T')[0],
+                manufacturing_date: manufacturingDate || new Date().toISOString().split('T')[0],
                 quantity: qty,
                 created_by: 24,
                 remarks: `Finished yield output from Job Order ${joId}`

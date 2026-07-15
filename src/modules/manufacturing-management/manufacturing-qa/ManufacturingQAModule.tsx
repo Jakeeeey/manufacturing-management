@@ -53,6 +53,8 @@ export default function ManufacturingQAModule() {
         setYieldQty,
         lotNumber,
         setLotNumber,
+        manufacturingDate,
+        setManufacturingDate,
         expiryDate,
         setExpiryDate,
         unitCost,
@@ -336,6 +338,8 @@ export default function ManufacturingQAModule() {
                 setYieldQty={setYieldQty}
                 lotNumber={lotNumber}
                 setLotNumber={setLotNumber}
+                manufacturingDate={manufacturingDate}
+                setManufacturingDate={setManufacturingDate}
                 expiryDate={expiryDate}
                 setExpiryDate={setExpiryDate}
                 unitCost={unitCost}

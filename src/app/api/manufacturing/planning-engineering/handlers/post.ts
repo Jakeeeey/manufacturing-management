@@ -382,71 +382,8 @@ export async function handlePOST(request: Request) {
                 }, { status: 400 });
             }
 
-            // Deduct quantities
-            let remainingToDeduct = totalRequested;
-            const lotDeductions: Array<{ lotNumber: string; quantity: number }> = [];
-
-            for (const lot of matchingLots) {
-                if (remainingToDeduct <= 0) break;
-                const available = Number(lot.quantity || 0);
-                if (available <= 0) continue;
-                const deduct = Math.min(available, remainingToDeduct);
-                const newQty = available - deduct;
-                remainingToDeduct -= deduct;
-
-                const patchRes = await fetch(`${DIRECTUS_URL}/items/inventory_lots/${lot.id}`, {
-                    method: "PATCH",
-                    headers,
-                    body: JSON.stringify({ quantity: newQty })
-                });
-                if (!patchRes.ok) {
-                    const errTxt = await patchRes.text();
-                    return NextResponse.json({ error: `Failed to deduct lot: ${patchRes.status} - ${errTxt}` }, { status: 500 });
-                }
-
-                lotDeductions.push({
-                    lotNumber: lot.lot_number,
-                    quantity: deduct
-                });
-            }
-
-            // Apportion and update Sales Order Detail lines and create negative product_ledger entries
-            // Helper function to resolve or create master lot in the lots table
-            const resolveMasterLotId = async (name: string, typeId: number) => {
-                let lotId = 49; // Default fallback to a valid existing lot ID (e.g. 49) instead of 1
-                const mappedTypeId = typeId === 1 ? 390 : 389;
-                try {
-                    const lotQuery = encodeURIComponent(JSON.stringify({ lot_name: { _eq: name } }));
-                    const lotLookupRes = await fetch(`${DIRECTUS_URL}/items/lots?filter=${lotQuery}&limit=1`, { headers, cache: "no-store" });
-                    const lotLookup = lotLookupRes.ok ? (await lotLookupRes.json()).data || [] : [];
-                    if (lotLookup.length > 0) {
-                        lotId = lotLookup[0].lot_id;
-                    } else {
-                        const createLotRes = await fetch(`${DIRECTUS_URL}/items/lots`, {
-                            method: "POST",
-                            headers,
-                            body: JSON.stringify({
-                                lot_name: name,
-                                inventory_type_id: mappedTypeId,
-                                max_batch_capacity: 100000,
-                                created_by: 24
-                            })
-                        });
-                        if (createLotRes.ok) {
-                            lotId = (await createLotRes.json()).data.lot_id;
-                        } else {
-                            console.error(`Failed to create master lot ${name}:`, await createLotRes.text());
-                        }
-                    }
-                } catch (err) {
-                    console.error(`Error resolving master lot ID for ${name}:`, err);
-                }
-                return lotId;
-            };
-
-            let deductionIdx = 0;
-            let deductionRemaining = lotDeductions.length > 0 ? lotDeductions[0].quantity : 0;
-
+            // We do NOT deduct the lots from inventory_lots, product_ledger, or inventory_movements.
+            // We just record the allocation logically on the Sales Order detail lines.
             const parentOrderIdsToUpdate = new Set<number>();
 
             for (const line of lines) {
@@ -473,76 +410,8 @@ export async function handlePOST(request: Request) {
                 }
 
                 const parentOrderId = detailData.order_id;
-                let parentOrderNo = "";
                 if (parentOrderId) {
-                    const parentSoRes = await fetch(`${DIRECTUS_URL}/items/sales_order/${parentOrderId}`, { headers, cache: "no-store" });
-                    if (parentSoRes.ok) {
-                        const parentSo = (await parentSoRes.json()).data;
-                        parentOrderNo = parentSo?.order_no || "";
-                    }
                     parentOrderIdsToUpdate.add(Number(parentOrderId));
-                }
-
-                let lineRemaining = orderedQty;
-                while (lineRemaining > 0 && deductionIdx < lotDeductions.length) {
-                    const currentLotDeduction = lotDeductions[deductionIdx];
-                    const take = Math.min(lineRemaining, deductionRemaining);
-
-                    const ledgerRes = await fetch(`${DIRECTUS_URL}/items/product_ledger`, {
-                        method: "POST",
-                        headers,
-                        body: JSON.stringify({
-                            branchId: Number(branchId),
-                            productId: Number(productId),
-                            quantity: -take,
-                            documentType: "Sales Order Issue",
-                            documentNo: parentOrderNo || `SO-${parentOrderId}`,
-                            documentDescription: `Direct Allocation Lot: ${currentLotDeduction.lotNumber}`,
-                            documentDate: new Date().toISOString().split("T")[0]
-                        })
-                    });
-                    if (!ledgerRes.ok) {
-                        console.error("Failed to post ledger entry:", await ledgerRes.text());
-                    }
-
-                    // Write negative shipment/issue movement to inventory_movements ledger
-                    try {
-                        const masterLotId = await resolveMasterLotId(currentLotDeduction.lotNumber, 2); // 2 = Finished Goods
-                        const physicalLot = matchingLots.find((l: any) => l.lot_number === currentLotDeduction.lotNumber);
-                        const movementPayload = {
-                            product_id: Number(productId),
-                            lot_id: masterLotId,
-                            branch_id: Number(branchId),
-                            transaction_type_id: 4, // Sales Order Issue / Dispatch
-                            source_document_id: physicalLot ? physicalLot.id : 0,
-                            source_document_no: parentOrderNo || `SO-${parentOrderId}`,
-                            batch_no: currentLotDeduction.lotNumber,
-                            expiry_date: physicalLot ? physicalLot.expiry_date : null,
-                            manufacturing_date: physicalLot && physicalLot.created_on ? physicalLot.created_on.split("T")[0] : null,
-                            quantity: -take, // negative for issue
-                            created_by: 24,
-                            remarks: `Direct Allocation Shipment for Sales Order ${parentOrderNo || `SO-${parentOrderId}`}`
-                        };
-                        const movRes = await fetch(`${DIRECTUS_URL}/items/inventory_movements`, {
-                            method: "POST",
-                            headers,
-                            body: JSON.stringify(movementPayload)
-                        });
-                        if (!movRes.ok) {
-                            console.error("Failed to post negative inventory movement for Sales Order Issue:", await movRes.text());
-                        }
-                    } catch (movErr) {
-                        console.error("Error posting negative inventory movement for Sales Order Issue:", movErr);
-                    }
-
-                    lineRemaining -= take;
-                    deductionRemaining -= take;
-                    if (deductionRemaining <= 0) {
-                        deductionIdx++;
-                        if (deductionIdx < lotDeductions.length) {
-                            deductionRemaining = lotDeductions[deductionIdx].quantity;
-                        }
-                    }
                 }
             }
 
@@ -579,7 +448,7 @@ export async function handlePOST(request: Request) {
                 }
             }
 
-            return NextResponse.json({ success: true });
+            return NextResponse.json({ success: true, message: "Sales order allocation marked successfully." });
         }
 
         const { jo, salesOrderIds } = body;

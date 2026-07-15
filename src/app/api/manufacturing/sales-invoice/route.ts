@@ -489,7 +489,10 @@ export async function POST(request: Request) {
                     if (soData) {
                         customerCode = soData.customer_code || "GEN";
                         salesmanId = soData.salesman_id || null;
-                        branchId = soData.branch_id || 1;
+                        if (!soData.branch_id) {
+                            return NextResponse.json({ error: `Sales Order ${sales_order_id} has no branch_id` }, { status: 400 });
+                        }
+                        branchId = soData.branch_id;
                         paymentTerms = soData.payment_terms || null;
                     }
                 }
