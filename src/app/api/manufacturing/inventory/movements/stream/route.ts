@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
  * and streams new inventory movements to the client dashboard in real-time.
  */
 export async function GET(request: Request) {
-    let responseStream = new ReadableStream({
+    const responseStream = new ReadableStream({
         async start(controller) {
             const encoder = new TextEncoder();
             
