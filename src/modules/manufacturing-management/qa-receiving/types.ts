@@ -4,6 +4,13 @@ export interface Branch {
     branch_code: string;
 }
 
+export interface StorageLot {
+    lot_id: number;
+    lot_name: string;
+    inventory_type_id?: number | null;
+    max_batch_capacity: number;
+}
+
 export interface Shipment {
     shipment_id: number;
     reference_number: string;
@@ -49,7 +56,8 @@ export interface InspectionRow {
     receivedQty: number | string;
     acceptedQty: number | string;
     boQty: number | string;
-    lotNumber: string;
+    batchNumber: string;
+    lotId: string;
     expirationDate: string;
     rejectionReason: string;
     qaStatus: string;

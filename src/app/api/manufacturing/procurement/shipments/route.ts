@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { DIRECTUS_URL, headers } from "@/app/api/manufacturing/directus-api";
+import { DIRECTUS_URL, headers } from "../_directus";
+import { canTransitionInventoryStatus, calculatePurchaseLineAmounts, INVENTORY_STATUS, shipmentStatusToInventoryStatus } from "../_domain";
 import { 
     fetchIncomingShipments, 
     fetchShipmentLineItems, 
     createIncomingShipment,
-    updateIncomingShipmentStatus,
-    receiveIncomingShipment
+    updateIncomingShipmentStatus
 } from "./shipments-helper";
+
+class InvalidTransitionError extends Error {}
 
 async function getUserIdFromSession(): Promise<number | null> {
     try {
@@ -34,6 +36,15 @@ async function getUserIdFromSession(): Promise<number | null> {
     return null;
 }
 
+async function requireAllowedTransition(shipmentId: number, targetStatus: number): Promise<void> {
+    const response = await fetch(`${DIRECTUS_URL}/items/purchase_order/${shipmentId}?fields=inventory_status`, { headers, cache: "no-store" });
+    if (!response.ok) throw new Error("Failed to load the current purchase order status.");
+    const currentStatus = Number((await response.json()).data?.inventory_status || 0);
+    if (!canTransitionInventoryStatus(currentStatus, targetStatus)) {
+        throw new InvalidTransitionError(`Invalid purchase order status transition from ${currentStatus} to ${targetStatus}.`);
+    }
+}
+
 export async function GET(request: Request) {
     try {
         const { searchParams } = new URL(request.url);
@@ -55,16 +66,15 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
     try {
         const body = await request.json();
-        const { shipmentData, lineItems, isReceiveLog, branchId } = body;
+        const { shipmentData, lineItems, isReceiveLog } = body;
 
         const userId = await getUserIdFromSession();
 
         if (isReceiveLog) {
-            if (!shipmentData || !shipmentData.shipment_id || !branchId || !lineItems) {
-                return NextResponse.json({ error: "Missing required fields for receive transaction" }, { status: 400 });
-            }
-            const result = await receiveIncomingShipment(shipmentData.shipment_id, branchId, lineItems, userId);
-            return NextResponse.json(result);
+            return NextResponse.json(
+                { error: "Direct receiving is disabled. Submit inspected receipts through the QA receiving endpoint." },
+                { status: 410 }
+            );
         }
 
         if (!shipmentData || !shipmentData.reference_number || !shipmentData.supplier_id || !lineItems) {
@@ -91,6 +101,7 @@ export async function PATCH(request: Request) {
         const userId = await getUserIdFromSession();
 
         if (action === "approve") {
+            await requireAllowedTransition(Number(shipmentId), INVENTORY_STATUS.APPROVED);
             let approvedTotal = 0;
             const popRes = await fetch(`${DIRECTUS_URL}/items/purchase_order_products?filter[purchase_order_id][_eq]=${shipmentId}&limit=-1`, { headers });
             const pops = (await popRes.json()).data || [];
@@ -105,7 +116,9 @@ export async function PATCH(request: Request) {
                     }
                     price = approvedPrices[pop.product_id];
                 }
-                const totalAmt = Number(price) * Number(pop.ordered_quantity || 0);
+                const totalAmt = pop.net_amount == null
+                    ? Number(price) * Number(pop.ordered_quantity || 0)
+                    : Number(pop.net_amount);
                 approvedTotal += totalAmt;
 
                 if (approvedPrices && typeof approvedPrices === "object" && approvedPrices[pop.product_id] !== undefined) {
@@ -113,8 +126,7 @@ export async function PATCH(request: Request) {
                         method: "PATCH",
                         headers,
                         body: JSON.stringify({
-                            approved_price: Number(price),
-                            total_amount: totalAmt
+                            approved_price: Number(price)
                         })
                     });
                 }
@@ -122,7 +134,7 @@ export async function PATCH(request: Request) {
 
             // Update PO header status to Approved (3) and ETA, plus approved/revised amount values
             const poPayload = {
-                inventory_status: 3,
+                inventory_status: INVENTORY_STATUS.APPROVED,
                 lead_time_receiving: lead_time_receiving || null,
                 approver_id: userId || null,
                 date_approved: new Date().toISOString(),
@@ -146,9 +158,9 @@ export async function PATCH(request: Request) {
                 return NextResponse.json({ error: "Remarks/Reason for rejection is mandatory." }, { status: 400 });
             }
 
-            // Set PO status back to 13 (Rejected) and update comment
+            await requireAllowedTransition(Number(shipmentId), INVENTORY_STATUS.CANCELLED);
             const poPayload = {
-                inventory_status: 13, // Status 13 for Rejected
+                inventory_status: INVENTORY_STATUS.CANCELLED,
                 approver_id: null,
                 date_approved: null,
                 remark: `REJECTED: ${remarks}`
@@ -167,11 +179,17 @@ export async function PATCH(request: Request) {
             return NextResponse.json({ error: "Missing status for standard update" }, { status: 400 });
         }
 
+
+        await requireAllowedTransition(Number(shipmentId), shipmentStatusToInventoryStatus(status));
+
         const result = await updateIncomingShipmentStatus(parseInt(shipmentId), status, userId, lead_time_receiving);
         return NextResponse.json(result);
     } catch (e) {
         console.error("API Error updating shipment status:", e);
-        return NextResponse.json({ error: (e as Error).message || "Failed to update shipment status" }, { status: 500 });
+        return NextResponse.json(
+            { error: (e as Error).message || "Failed to update shipment status" },
+            { status: e instanceof InvalidTransitionError ? 400 : 500 }
+        );
     }
 }
 
@@ -238,6 +256,8 @@ export async function PUT(request: Request) {
         for (const item of lineItems) {
             const qty = Number((item as { quantity_ordered?: number | string }).quantity_ordered || 0);
             const price = Number(item.base_unit_cost_php || 0);
+            const discountPercent = Number((item as { discount_percent?: number }).discount_percent || 0);
+            const amounts = calculatePurchaseLineAmounts(qty, price, discountPercent);
 
             await fetch(`${DIRECTUS_URL}/items/purchase_order_products`, {
                 method: "POST",
@@ -248,7 +268,12 @@ export async function PUT(request: Request) {
                     ordered_quantity: qty,
                     unit_price: price,
                     approved_price: price,
-                    total_amount: qty * price
+                    discount_type: (item as { discount_type?: number | null }).discount_type || null,
+                    gross_amount: amounts.grossAmount,
+                    discounted_price: amounts.discountedPrice,
+                    discounted_amount: amounts.discountedAmount,
+                    net_amount: amounts.netAmount,
+                    total_amount: amounts.netAmount
                 })
             }).catch(err => console.error("Failed to create PO product:", err));
         }

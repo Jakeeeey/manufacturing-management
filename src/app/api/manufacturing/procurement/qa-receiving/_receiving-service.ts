@@ -1,0 +1,272 @@
+import { NextResponse } from "next/server";
+import { DIRECTUS_URL, headers } from "../_directus";
+import { evaluateShelfLife, INVENTORY_STATUS, todayInManila } from "../_domain";
+import { receivingSubmissionSchema } from "../_schemas";
+import { calculateLandedCostAllocations, fetchShipmentExpenses, normalizeAllocationMethod } from "../expenses/expenses-helper";
+
+class ReceivingError extends Error {
+    constructor(message: string, readonly status: number) {
+        super(message);
+    }
+}
+
+const activeShipments = new Set<number>();
+
+function relationId(value: unknown, key: string): number {
+    return Number(value && typeof value === "object" ? (value as Record<string, unknown>)[key] : value);
+}
+
+async function mutate(collection: string, id: number, method: "PATCH" | "DELETE", body?: Record<string, unknown>) {
+    return fetch(`${DIRECTUS_URL}/items/${collection}/${id}`, {
+        method,
+        headers,
+        body: body ? JSON.stringify(body) : undefined
+    });
+}
+
+export async function handleQaReceivingPost(request: Request) {
+    let lockedShipmentId: number | null = null;
+    try {
+        const parsed = receivingSubmissionSchema.safeParse(await request.json());
+        if (!parsed.success) {
+            return NextResponse.json({ error: "Invalid receiving submission.", details: parsed.error.flatten() }, { status: 400 });
+        }
+
+        const { shipmentId, referenceNumber, branchId, lineItemUpdates } = parsed.data;
+        lockedShipmentId = shipmentId;
+        if (activeShipments.has(shipmentId)) throw new ReceivingError("This shipment is already being received.", 409);
+        activeShipments.add(shipmentId);
+
+        const lineIds = lineItemUpdates.map(item => item.line_id);
+        if (new Set(lineIds).size !== lineIds.length) throw new ReceivingError("Duplicate purchase-order lines are not allowed.", 400);
+        const requestedLotIds = [...new Set(lineItemUpdates.map(item => item.lot_id))];
+
+        const [headerRes, linesRes, lotsRes, branchesRes] = await Promise.all([
+            fetch(`${DIRECTUS_URL}/items/purchase_order/${shipmentId}?fields=purchase_order_id,inventory_status,date_received`, { headers, cache: "no-store" }),
+            fetch(`${DIRECTUS_URL}/items/purchase_order_products?filter[purchase_order_product_id][_in]=${lineIds.join(",")}&fields=*&limit=-1`, { headers, cache: "no-store" }),
+            fetch(`${DIRECTUS_URL}/items/lots?filter[lot_id][_in]=${requestedLotIds.join(",")}&fields=lot_id&limit=-1`, { headers, cache: "no-store" }),
+            fetch(`${DIRECTUS_URL}/items/branches?limit=200&fields=id,branch_name,branch_code`, { headers, cache: "no-store" })
+        ]);
+        if (!headerRes.ok) throw new ReceivingError("Purchase order not found.", 404);
+        if (!linesRes.ok || !lotsRes.ok || !branchesRes.ok) throw new Error("Failed to validate receiving reference data.");
+
+        const shipment = (await headerRes.json()).data as Record<string, unknown>;
+        const poLines = ((await linesRes.json()).data || []) as Record<string, unknown>[];
+        const validLotIds = new Set(((await lotsRes.json()).data || []).map((lot: { lot_id: number }) => Number(lot.lot_id)));
+        const branches = ((await branchesRes.json()).data || []) as Array<{ id: number; branch_name: string; branch_code: string }>;
+        if (poLines.length !== lineIds.length) throw new ReceivingError("One or more purchase-order lines do not exist.", 400);
+        if (lineItemUpdates.some(item => !validLotIds.has(item.lot_id))) throw new ReceivingError("One or more storage lots do not exist.", 400);
+        if (!branches.some(branch => Number(branch.id) === branchId)) throw new ReceivingError("The selected receiving branch does not exist.", 400);
+
+        const receiptNumbers = lineItemUpdates.map(item => `REC-${shipmentId}-${item.line_id}-${item.lot_id}`);
+        const receiptsRes = await fetch(`${DIRECTUS_URL}/items/purchase_order_receiving?filter[receipt_no][_in]=${receiptNumbers.join(",")}&fields=purchase_order_product_id,receipt_no&limit=-1`, { headers, cache: "no-store" });
+        if (!receiptsRes.ok) throw new Error("Failed to validate previous receiving attempts.");
+        const existingReceipts = (await receiptsRes.json()).data || [];
+        if (Number(shipment.inventory_status) === INVENTORY_STATUS.RECEIVED && existingReceipts.length === receiptNumbers.length) {
+            return NextResponse.json({ success: true, idempotent: true });
+        }
+        const receivableStatuses: number[] = [INVENTORY_STATUS.EN_ROUTE, INVENTORY_STATUS.PARTIALLY_RECEIVED];
+        if (existingReceipts.length > 0 || !receivableStatuses.includes(Number(shipment.inventory_status))) {
+            throw new ReceivingError("The shipment is not in a receivable state or has a partial previous attempt.", 409);
+        }
+
+        const poLineMap = new Map(poLines.map(line => [Number(line.purchase_order_product_id), line]));
+        const productIds = [...new Set(poLines.map(line => relationId(line.product_id, "product_id")))];
+        const productsRes = await fetch(`${DIRECTUS_URL}/items/products?filter[product_id][_in]=${productIds.join(",")}&fields=product_id,product_type,product_shelf_life,weight,product_weight,cbm_height,cbm_width,cbm_length,cost_per_unit,estimated_unit_cost&limit=-1`, { headers, cache: "no-store" });
+        if (!productsRes.ok) throw new Error("Failed to validate received products.");
+        const products = ((await productsRes.json()).data || []) as Record<string, unknown>[];
+        const productMap = new Map(products.map(product => [Number(product.product_id), product]));
+
+        const prepared = lineItemUpdates.map(item => {
+            const poLine = poLineMap.get(item.line_id);
+            if (!poLine || relationId(poLine.purchase_order_id, "purchase_order_id") !== shipmentId) {
+                throw new ReceivingError(`Line ${item.line_id} does not belong to this purchase order.`, 400);
+            }
+            const productId = relationId(poLine.product_id, "product_id");
+            if (productId !== item.product_id) throw new ReceivingError(`Product mismatch for line ${item.line_id}.`, 400);
+            const product = productMap.get(productId);
+            if (!product) throw new ReceivingError(`Product ${productId} does not exist.`, 400);
+
+            const received = Number(item.quantity_received);
+            const accepted = Number(item.quantity_accepted);
+            const rejected = Number(item.quantity_rejected);
+            const ordered = Number(poLine.ordered_quantity || 0);
+            if (accepted <= received && received !== accepted + rejected) {
+                throw new ReceivingError(`Received must equal accepted plus rejected for product ${productId}.`, 400);
+            }
+            if ((received !== ordered || accepted > received || rejected > 0) && !item.rejection_reason?.trim()) {
+                throw new ReceivingError(`Remarks are required for the quantity discrepancy on product ${productId}.`, 400);
+            }
+            if (accepted > 0 && relationId(product.product_type, "id") !== 390 && !item.expiration_date) {
+                throw new ReceivingError(`Expiration date is required for product ${productId}.`, 400);
+            }
+            if (item.expiration_date && !evaluateShelfLife(todayInManila(), item.expiration_date, Number(product.product_shelf_life || 0)).valid) {
+                throw new ReceivingError(`Expiry date must be after the receipt date for product ${productId}.`, 400);
+            }
+
+            const orderedQuantity = Math.max(1, Number(poLine.ordered_quantity || 1));
+            const baseUnitCost = Number(poLine.net_amount ?? poLine.total_amount ?? poLine.unit_price ?? 0) / orderedQuantity;
+            return { item, poLine, product, productId, received, accepted, rejected, baseUnitCost };
+        });
+
+        const expenses = await fetchShipmentExpenses(shipmentId);
+        const allocationMethod = normalizeAllocationMethod(String(expenses[0]?.allocation_method || "Value"));
+        const allocations = calculateLandedCostAllocations(prepared.map(line => ({
+            key: line.item.line_id,
+            quantity: line.accepted,
+            baseUnitCost: line.baseUnitCost,
+            weight: Number(line.product.weight || line.product.product_weight || 0),
+            volume: Number(line.product.cbm_height || 0) * Number(line.product.cbm_width || 0) * Number(line.product.cbm_length || 0)
+        })), expenses.reduce((sum, expense) => sum + Number(expense.amount_php || 0), 0), allocationMethod);
+
+        const receivingBranch = branches.find(branch => Number(branch.id) === branchId)!;
+        const badKeywords = ["bad", "quarantine", "holding", "damaged"];
+        const badBranches = branches.filter(branch => badKeywords.some(keyword => `${branch.branch_name} ${branch.branch_code}`.toLowerCase().includes(keyword)));
+        const prefix = receivingBranch.branch_name.toLowerCase().replace(/\b(branch|hub|warehouse|plant|store)\b.*/i, "").trim();
+        const badBranch = badBranches.find(branch => branch.branch_code.toUpperCase() === `${receivingBranch.branch_code.toUpperCase()}-BAD`)
+            || badBranches.find(branch => prefix && branch.branch_name.toLowerCase().startsWith(prefix))
+            || badBranches[0];
+        if (prepared.some(line => line.rejected > 0) && !badBranch) throw new ReceivingError("No quarantine branch is configured for rejected stock.", 400);
+
+        const receiptIds: number[] = [];
+        const ledgerIds: number[] = [];
+        const inventoryChanges: Array<{ id: number; created: boolean; previous?: Record<string, unknown> }> = [];
+        const lineChanges: Array<{ id: number; received: unknown }> = [];
+        const productChanges = new Map<number, { cost_per_unit: unknown; estimated_unit_cost: unknown }>();
+
+        const rollback = async () => {
+            for (const change of [...inventoryChanges].reverse()) {
+                const response = change.created
+                    ? await mutate("inventory_lots", change.id, "DELETE")
+                    : await mutate("inventory_lots", change.id, "PATCH", change.previous);
+                if (!response.ok) return false;
+            }
+            for (const [productId, previous] of [...productChanges.entries()].reverse()) {
+                const response = await mutate("products", productId, "PATCH", previous);
+                if (!response.ok) return false;
+            }
+            const headerRestore = await mutate("purchase_order", shipmentId, "PATCH", {
+                inventory_status: shipment.inventory_status,
+                date_received: shipment.date_received
+            });
+            if (!headerRestore.ok) return false;
+            for (const change of [...lineChanges].reverse()) await mutate("purchase_order_products", change.id, "PATCH", { received: change.received });
+            for (const id of [...ledgerIds].reverse()) await mutate("product_ledger", id, "DELETE");
+            for (const id of [...receiptIds].reverse()) await mutate("purchase_order_receiving", id, "DELETE");
+            return true;
+        };
+
+        try {
+            for (const line of prepared) {
+                const allocation = allocations.get(line.item.line_id)!;
+                const receiptRes = await fetch(`${DIRECTUS_URL}/items/purchase_order_receiving`, { method: "POST", headers, body: JSON.stringify({
+                    purchase_order_id: shipmentId, product_id: line.productId, batch_no: line.item.batch_no, lot_id: line.item.lot_id,
+                    expiry_date: line.item.expiration_date, received_quantity: line.received, unit_price: line.baseUnitCost,
+                    discounted_amount: Number(line.poLine.discounted_amount || 0), discount_type: line.poLine.discount_type || null,
+                    total_amount: Number(line.poLine.net_amount ?? line.poLine.total_amount ?? 0), allocated_expense_php: allocation.allocatedExpense,
+                    final_landed_unit_cost: allocation.finalLandedUnitCost, branch_id: branchId,
+                    receipt_no: `REC-${shipmentId}-${line.item.line_id}-${line.item.lot_id}`, received_date: new Date().toISOString(),
+                    isPosted: 1, qa_status: line.item.qa_status, quantity_rejected: line.rejected, rejection_reason: line.item.rejection_reason
+                }) });
+                if (!receiptRes.ok) throw new Error(`Failed to create receiving record for product ${line.productId}: ${await receiptRes.text()}`);
+                const receiptId = Number((await receiptRes.json()).data.purchase_order_product_id);
+                if (!receiptId) throw new Error("Directus did not return the created receiving-record ID.");
+                receiptIds.push(receiptId);
+
+                const saveInventory = async (targetBranchId: number, quantity: number, qaStatus: string, reason: string | null) => {
+                    if (quantity <= 0) return;
+                    const filter = encodeURIComponent(JSON.stringify({ _and: [
+                        { source_type: { _eq: "procurement" } }, { source_reference: { _eq: String(shipmentId) } },
+                        { product_id: { _eq: line.productId } }, { branch_id: { _eq: targetBranchId } },
+                        { batch_no: { _eq: line.item.batch_no } }, { lot_id: { _eq: line.item.lot_id } }
+                    ] }));
+                    const existingRes = await fetch(`${DIRECTUS_URL}/items/inventory_lots?filter=${filter}&fields=*&limit=1`, { headers });
+                    if (!existingRes.ok) throw new Error(`Failed to load inventory for product ${line.productId}.`);
+                    const existing = ((await existingRes.json()).data || [])[0] as Record<string, unknown> | undefined;
+                    const payload = {
+                        source_type: "procurement", source_reference: String(shipmentId), product_id: line.productId,
+                        batch_no: line.item.batch_no, lot_id: line.item.lot_id, expiry_date: line.item.expiration_date || null,
+                        quantity: Number(existing?.quantity || 0) + quantity, unit_cost: allocation.finalLandedUnitCost,
+                        branch_id: targetBranchId, qa_status: qaStatus, rejection_reason: reason
+                    };
+                    if (existing) {
+                        inventoryChanges.push({ id: Number(existing.id), created: false, previous: {
+                            source_type: existing.source_type, source_reference: existing.source_reference,
+                            product_id: relationId(existing.product_id, "product_id"), batch_no: existing.batch_no,
+                            lot_id: relationId(existing.lot_id, "lot_id") || null, expiry_date: existing.expiry_date,
+                            quantity: existing.quantity, unit_cost: existing.unit_cost, branch_id: relationId(existing.branch_id, "id"),
+                            qa_status: existing.qa_status, rejection_reason: existing.rejection_reason
+                        } });
+                        const updateRes = await mutate("inventory_lots", Number(existing.id), "PATCH", payload);
+                        if (!updateRes.ok) throw new Error(`Failed to update inventory lot ${existing.id}.`);
+                    } else {
+                        const createRes = await fetch(`${DIRECTUS_URL}/items/inventory_lots`, { method: "POST", headers, body: JSON.stringify({ ...payload, created_on: new Date().toISOString() }) });
+                        if (!createRes.ok) throw new Error(`Failed to create inventory lot for product ${line.productId}.`);
+                        const inventoryId = Number((await createRes.json()).data.id);
+                        if (!inventoryId) throw new Error("Directus did not return the created inventory-lot ID.");
+                        inventoryChanges.push({ id: inventoryId, created: true });
+                    }
+                };
+
+                await saveInventory(branchId, line.accepted, line.item.qa_status, null);
+                await saveInventory(Number(badBranch?.id), line.rejected, "Rejected", line.item.rejection_reason);
+                const ledgerEntries = [
+                    line.accepted > 0 ? { branchId, quantity: line.accepted, type: "QA Receive", description: `QA Inspection Batch: ${line.item.batch_no} (${line.item.qa_status})` } : null,
+                    line.rejected > 0 ? { branchId: Number(badBranch!.id), quantity: line.rejected, type: "QA Reject (BO)", description: `QA Bad Order Batch: ${line.item.batch_no} (Remarks: ${line.item.rejection_reason})` } : null
+                ].filter(Boolean) as Array<{ branchId: number; quantity: number; type: string; description: string }>;
+                for (const entry of ledgerEntries) {
+                    const ledgerRes = await fetch(`${DIRECTUS_URL}/items/product_ledger`, { method: "POST", headers, body: JSON.stringify({
+                        branchId: entry.branchId, productId: line.productId, quantity: entry.quantity, documentType: entry.type,
+                        documentNo: referenceNumber, documentDescription: entry.description, documentDate: todayInManila()
+                    }) });
+                    if (!ledgerRes.ok) throw new Error(`Failed to create inventory ledger for product ${line.productId}.`);
+                    const ledgerId = Number((await ledgerRes.json()).data.id);
+                    if (!ledgerId) throw new Error("Directus did not return the created ledger ID.");
+                    ledgerIds.push(ledgerId);
+                }
+
+                lineChanges.push({ id: line.item.line_id, received: line.poLine.received });
+                const lineUpdateRes = await mutate("purchase_order_products", line.item.line_id, "PATCH", { received: 1 });
+                if (!lineUpdateRes.ok) throw new Error(`Failed to mark line ${line.item.line_id} as received.`);
+            }
+
+            for (const productId of productIds) {
+                const productLines = prepared.filter(line => line.productId === productId && line.accepted > 0);
+                if (productLines.length === 0) continue;
+                const totalAccepted = productLines.reduce((sum, line) => sum + line.accepted, 0);
+                const weightedCost = productLines.reduce((sum, line) => sum + allocations.get(line.item.line_id)!.finalLandedUnitCost * line.accepted, 0) / totalAccepted;
+                const product = productMap.get(productId)!;
+                productChanges.set(productId, {
+                    cost_per_unit: product.cost_per_unit,
+                    estimated_unit_cost: product.estimated_unit_cost
+                });
+                const productUpdateRes = await mutate("products", productId, "PATCH", {
+                    cost_per_unit: weightedCost,
+                    estimated_unit_cost: weightedCost
+                });
+                if (!productUpdateRes.ok) throw new Error(`Failed to update landed cost for product ${productId}.`);
+            }
+
+            const allRejected = prepared.every(line => line.accepted === 0 && line.rejected > 0);
+            const statusRes = await mutate("purchase_order", shipmentId, "PATCH", {
+                inventory_status: allRejected ? INVENTORY_STATUS.REJECTED : INVENTORY_STATUS.RECEIVED,
+                date_received: todayInManila()
+            });
+            if (!statusRes.ok) throw new Error(`Failed to update purchase-order status (${statusRes.status}).`);
+        } catch (error) {
+            if (!await rollback()) {
+                throw new Error(`Receiving failed and stock could not be restored. Audit records were retained for reconciliation. Original error: ${(error as Error).message}`);
+            }
+            throw error;
+        }
+
+        return NextResponse.json({ success: true, idempotent: false });
+    } catch (error) {
+        console.error("API Error submitting QA Receiving:", error);
+        return NextResponse.json({ error: (error as Error).message || "Failed to process QA receiving" }, {
+            status: error instanceof ReceivingError ? error.status : 500
+        });
+    } finally {
+        if (lockedShipmentId !== null) activeShipments.delete(lockedShipmentId);
+    }
+}

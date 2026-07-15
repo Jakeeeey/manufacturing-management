@@ -1,12 +1,13 @@
 import { useState, useEffect, useMemo } from "react";
 import { toast } from "sonner";
-import { Shipment, Branch, ShipmentLineItem, Product, InspectionRow } from "../types";
+import { Shipment, Branch, ShipmentLineItem, Product, InspectionRow, StorageLot } from "../types";
 import { 
     fetchActiveShipments, 
     fetchBranches, 
     fetchShipmentDetails, 
     submitInspection, 
-    fetchFifoInventory 
+    fetchFifoInventory,
+    fetchStorageLots
 } from "../services/qa-api";
 
 export function useQAReceiving() {
@@ -15,6 +16,7 @@ export function useQAReceiving() {
     // Core data lists
     const [shipments, setShipments] = useState<Shipment[]>([]);
     const [branches, setBranches] = useState<Branch[]>([]);
+    const [storageLots, setStorageLots] = useState<StorageLot[]>([]);
     const [loadingShipments, setLoadingShipments] = useState(false);
     const [loadingBranches, setLoadingBranches] = useState(false);
 
@@ -76,6 +78,7 @@ export function useQAReceiving() {
     useEffect(() => {
         loadShipments();
         loadBranches();
+        loadStorageLots();
     }, []);
 
     const loadShipments = async () => {
@@ -106,18 +109,31 @@ export function useQAReceiving() {
         }
     };
 
+    const loadStorageLots = async () => {
+        try {
+            setStorageLots(await fetchStorageLots());
+        } catch (e) {
+            console.error(e);
+            toast.error("Failed to load storage lots");
+        }
+    };
+
     const handleSelectShipment = async (shipment: Shipment) => {
         setSelectedShipment(shipment);
         setLoadingLines(true);
         try {
             // Auto transition status to "Receiving (QA)" when opened/inspected
-            if (shipment.status !== "Receiving (QA)" && shipment.status !== "Received") {
+            if (shipment.status === "En Route") {
                 try {
-                    await fetch("/api/manufacturing/procurement/shipments", {
+                    const transitionResponse = await fetch("/api/manufacturing/procurement/shipments", {
                         method: "PATCH",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ shipmentId: shipment.shipment_id, status: "Receiving (QA)" })
                     });
+                    if (!transitionResponse.ok) {
+                        const error = await transitionResponse.json().catch(() => ({}));
+                        throw new Error(error.error || "Failed to start receiving inspection.");
+                    }
                     // Update state locally
                     setShipments(prev => prev.map(s => s.shipment_id === shipment.shipment_id ? { ...s, status: "Receiving (QA)" } : s));
                     shipment.status = "Receiving (QA)";
@@ -140,7 +156,8 @@ export function useQAReceiving() {
                     receivedQty: "",
                     acceptedQty: "",
                     boQty: "",
-                    lotNumber: "",
+                    batchNumber: "",
+                    lotId: "",
                     expirationDate: "",
                     rejectionReason: l.rejection_reason || "",
                     qaStatus: "", // Must default to an unselected placeholder state
@@ -184,9 +201,6 @@ export function useQAReceiving() {
                     // If accepted > received, BO = 0 (over-acceptance; all received plus extras are logged as accepted)
                     const newBoQty = Math.max(0, Number(recVal) - Number(accVal));
                     updatedRow.boQty = newBoQty;
-                    if (newBoQty === 0) {
-                        updatedRow.rejectionReason = "";
-                    }
                 } else {
                     updatedRow.boQty = "";
                 }
@@ -229,8 +243,13 @@ export function useQAReceiving() {
                 return;
             }
 
-            if (!row.lotNumber || !row.lotNumber.trim()) {
-                toast.error(`Please enter Lot / Batch ID for: ${name}`);
+            if (!row.batchNumber || !row.batchNumber.trim()) {
+                toast.error(`Please enter Supplier Batch Number for: ${name}`);
+                return;
+            }
+
+            if (!row.lotId || !Number.isInteger(Number(row.lotId)) || Number(row.lotId) <= 0) {
+                toast.error(`Please select a Storage Lot for: ${name}`);
                 return;
             }
 
@@ -276,7 +295,13 @@ export function useQAReceiving() {
                 return;
             }
 
-            // 2. If Accepted Qty > Received Qty (over-acceptance / bonus stock), remarks field is mandatory
+            // 2. Any logistics discrepancy needs an audit explanation.
+            if (received !== ordered && (!row.rejectionReason || !row.rejectionReason.trim())) {
+                toast.error(`Remarks are mandatory for ${name} due to logistics discrepancy (Received: ${received}, Ordered: ${ordered}).`);
+                return;
+            }
+
+            // 3. If Accepted Qty > Received Qty (over-acceptance / bonus stock), remarks field is mandatory
             if (accepted > received && (!row.rejectionReason || !row.rejectionReason.trim())) {
                 toast.error(`Remarks are mandatory for ${name} because Accepted Qty (${accepted}) exceeds Received Qty (${received}). Please document the source of extra units.`);
                 return;
@@ -301,7 +326,8 @@ export function useQAReceiving() {
                     quantity_received: received,
                     quantity_accepted: accepted,
                     quantity_rejected: bo, // BO Qty (shortfall, non-negative)
-                    lot_number: row.lotNumber || null,
+                    batch_no: row.batchNumber.trim(),
+                    lot_id: Number(row.lotId),
                     expiration_date: row.expirationDate ? row.expirationDate.replace(/\//g, "-") : null,
                     rejection_reason: row.rejectionReason || null,
                     qa_status: row.qaStatus
@@ -428,6 +454,7 @@ export function useQAReceiving() {
         setActiveTab,
         shipments,
         branches,
+        storageLots,
         loadingShipments,
         loadingBranches,
         selectedShipment,
