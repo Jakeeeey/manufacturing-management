@@ -146,17 +146,30 @@ export async function GET(req: NextRequest) {
         }
 
         const allInvoiceIds = [...new Set(invJunctions.map((j) => j.invoice_id))];
-        let invoiceMap = new Map<number, { invoice_no: string; branch_id: number; total_amount: number }>();
+        let invoiceMap = new Map<number, { invoice_no: string; branch_id: number; total_amount: number; customer_code: string }>();
+        let customerNameMap = new Map<string, string>();
         if (allInvoiceIds.length > 0) {
             const siRes = await fetch(
-                `${DIRECTUS_URL}/items/sales_invoice?filter[invoice_id][_in]=${allInvoiceIds.join(",")}&fields=invoice_id,invoice_no,branch_id,total_amount&limit=-1`,
+                `${DIRECTUS_URL}/items/sales_invoice?filter[invoice_id][_in]=${allInvoiceIds.join(",")}&fields=invoice_id,invoice_no,branch_id,total_amount,customer_code&limit=-1`,
                 { headers: directusHeaders, cache: "no-store" }
             );
             if (!siRes.ok) {
                 return NextResponse.json({ message: `Directus error (HTTP ${siRes.status})` }, { status: siRes.status });
             }
-            const siData = (await siRes.json()).data || [];
-            invoiceMap = new Map(siData.map((s: { invoice_id: number; invoice_no: string; branch_id: number; total_amount: number }) => [s.invoice_id, s]));
+            const siData: { invoice_id: number; invoice_no: string; branch_id: number; total_amount: number; customer_code: string }[] = (await siRes.json()).data || [];
+            invoiceMap = new Map(siData.map((s) => [s.invoice_id, s]));
+
+            const customerCodes = [...new Set(siData.map((s) => s.customer_code).filter(Boolean))];
+            if (customerCodes.length > 0) {
+                const custRes = await fetch(
+                    `${DIRECTUS_URL}/items/customer?filter[customer_code][_in]=${customerCodes.map((c) => encodeURIComponent(c)).join(",")}&limit=-1&fields=customer_code,customer_name`,
+                    { headers: directusHeaders, cache: "no-store" }
+                );
+                if (custRes.ok) {
+                    const custData: { customer_code: string; customer_name: string }[] = (await custRes.json()).data || [];
+                    customerNameMap = new Map(custData.map((c) => [c.customer_code, c.customer_name]));
+                }
+            }
         }
 
         const allProductIds = [...new Set(detJunctions.map((d) => d.product_id))];
@@ -183,6 +196,7 @@ export async function GET(req: NextRequest) {
                     invoiceId: j.invoice_id,
                     invoiceNo: si?.invoice_no || `#${j.invoice_id}`,
                     branchId: si?.branch_id ?? c.branch_id,
+                    customerName: (si?.customer_code && customerNameMap.get(si.customer_code)) || si?.customer_code || "",
                     createdAt: j.created_at,
                 };
             });
@@ -258,13 +272,13 @@ export async function POST(req: NextRequest) {
         }
 
         const siRes = await fetch(
-            `${DIRECTUS_URL}/items/sales_invoice?filter[invoice_id][_in]=${uniqueIds.join(",")}&fields=invoice_id,invoice_no,branch_id,isDispatched,transaction_status&limit=-1`,
+            `${DIRECTUS_URL}/items/sales_invoice?filter[invoice_id][_in]=${uniqueIds.join(",")}&fields=invoice_id,invoice_no,branch_id,total_amount,customer_code,isDispatched,transaction_status&limit=-1`,
             { headers: directusHeaders, cache: "no-store" }
         );
         if (!siRes.ok) {
             return NextResponse.json({ message: `Failed to verify invoices (HTTP ${siRes.status})` }, { status: siRes.status });
         }
-        const siData: { invoice_id: number; invoice_no: string; branch_id: number; total_amount: number; isDispatched: boolean | null; transaction_status: string }[] = (await siRes.json()).data || [];
+        const siData: { invoice_id: number; invoice_no: string; branch_id: number; total_amount: number; customer_code: string; isDispatched: boolean | null; transaction_status: string }[] = (await siRes.json()).data || [];
 
         if (siData.length !== uniqueIds.length) {
             const found = new Set(siData.map((s) => s.invoice_id));
@@ -400,6 +414,18 @@ export async function POST(req: NextRequest) {
             });
 
             const branchMap = await getBranchesMap();
+            let postCustomerMap = new Map<string, string>();
+            const postCustomerCodes = [...new Set(siData.map((s) => s.customer_code).filter(Boolean))];
+            if (postCustomerCodes.length > 0) {
+                const custRes = await fetch(
+                    `${DIRECTUS_URL}/items/customer?filter[customer_code][_in]=${postCustomerCodes.map((c) => encodeURIComponent(c)).join(",")}&limit=-1&fields=customer_code,customer_name`,
+                    { headers: directusHeaders, cache: "no-store" }
+                );
+                if (custRes.ok) {
+                    const custData: { customer_code: string; customer_name: string }[] = (await custRes.json()).data || [];
+                    postCustomerMap = new Map(custData.map((c) => [c.customer_code, c.customer_name]));
+                }
+            }
             return NextResponse.json({
                 id: newId,
                 consolidatorNo,
@@ -419,6 +445,7 @@ export async function POST(req: NextRequest) {
                     invoiceId: s.invoice_id,
                     invoiceNo: s.invoice_no,
                     branchId: s.branch_id,
+                    customerName: postCustomerMap.get(s.customer_code) || s.customer_code || "",
                     createdAt: new Date().toISOString(),
                 })),
             });

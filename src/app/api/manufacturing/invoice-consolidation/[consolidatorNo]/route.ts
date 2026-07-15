@@ -87,16 +87,37 @@ export async function GET(
             invoiceMap = new Map(siData.map((s: { invoice_id: number; invoice_no: string; branch_id: number; total_amount: number; customer_code: string }) => [s.invoice_id, s]));
         }
 
+        // Load customer names
+const customerCodes = [...new Set(Array.from(invoiceMap.values()).map((s) => s.customer_code).filter(Boolean))];
+let customerMap = new Map<string, { id: number; customer_name: string }>();
+if (customerCodes.length > 0) {
+    const custRes = await fetch(
+        `${DIRECTUS_URL}/items/customer?filter[customer_code][_in]=${customerCodes.map((c) => encodeURIComponent(c)).join(",")}&limit=-1&fields=id,customer_code,customer_name`,
+        { headers: directusHeaders, cache: "no-store" }
+    );
+    if (custRes.ok) {
+        const custData = (await custRes.json()).data || [];
+        customerMap = new Map(custData.map((c: { id: number; customer_code: string; customer_name: string }) => [c.customer_code, { id: c.id, customer_name: c.customer_name }]));
+    }
+}
+
         const productIds = [...new Set(detJunctions.map((d) => d.product_id))];
-        let productMap = new Map<number, { product_name: string; product_code: string }>();
+        interface ProductPrintDetails {
+            product_name: string;
+            product_code: string;
+            product_brand?: { brand_name?: string } | null;
+            product_category?: { category_name?: string } | null;
+            unit_of_measurement?: { unit_shortcut?: string; unit_name?: string } | null;
+        }
+        let productMap = new Map<number, ProductPrintDetails>();
         if (productIds.length > 0) {
             const prodRes = await fetch(
-                `${DIRECTUS_URL}/items/products?filter[product_id][_in]=${productIds.join(",")}&fields=product_id,product_name,product_code&limit=-1`,
+                `${DIRECTUS_URL}/items/products?filter[product_id][_in]=${productIds.join(",")}&fields=product_id,product_name,product_code,product_brand.brand_name,product_category.category_name,unit_of_measurement.unit_shortcut,unit_of_measurement.unit_name&limit=-1`,
                 { headers: directusHeaders, cache: "no-store" }
             );
             if (prodRes.ok) {
                 const prodData = (await prodRes.json()).data || [];
-                productMap = new Map(prodData.map((p: { product_id: number; product_name: string; product_code: string }) => [p.product_id, p]));
+                productMap = new Map(prodData.map((p: ProductPrintDetails & { product_id: number }) => [p.product_id, p]));
             }
         }
 
@@ -110,20 +131,6 @@ export async function GET(
             );
             if (siDetRes.ok) {
                 invDetailsRaw = (await siDetRes.json()).data || [];
-            }
-        }
-
-        // Load customer info for version resolution
-        const customerCodes = [...new Set(Array.from(invoiceMap.values()).map((s) => s.customer_code).filter(Boolean))];
-        let customerMap = new Map<string, { id: number }>();
-        if (customerCodes.length > 0) {
-            const custRes = await fetch(
-                `${DIRECTUS_URL}/items/customer?filter[customer_code][_in]=${customerCodes.map((c) => encodeURIComponent(c)).join(",")}&limit=-1&fields=id,customer_code`,
-                { headers: directusHeaders, cache: "no-store" }
-            );
-            if (custRes.ok) {
-                const custData = (await custRes.json()).data || [];
-                customerMap = new Map(custData.map((c: { id: number; customer_code: string }) => [c.customer_code, c]));
             }
         }
 
@@ -170,12 +177,14 @@ export async function GET(
 
         const invoices = invJunctions.map((j) => {
             const si = invoiceMap.get(j.invoice_id);
+            const cust = si ? customerMap.get(si.customer_code) : undefined;
             return {
                 id: j.id,
                 consolidatorId: j.consolidator_id,
                 invoiceId: j.invoice_id,
                 invoiceNo: si?.invoice_no || `#${j.invoice_id}`,
                 branchId: si?.branch_id ?? c.branch_id,
+                customerName: cust?.customer_name || si?.customer_code || "",
                 createdAt: j.created_at,
                 products: invoiceProductsMap.get(j.invoice_id) || [],
             };
@@ -189,6 +198,9 @@ export async function GET(
                 productId: d.product_id,
                 productName: prod?.product_name || `Product #${d.product_id}`,
                 productCode: prod?.product_code || "",
+                brand: prod?.product_brand?.brand_name || "Unbranded",
+                category: prod?.product_category?.category_name || "Uncategorized",
+                unit: prod?.unit_of_measurement?.unit_shortcut || prod?.unit_of_measurement?.unit_name || "-",
                 orderedQuantity: Number(d.ordered_quantity || 0),
                 pickedQuantity: Number(d.picked_quantity || 0),
                 appliedQuantity: Number(d.applied_quantity || 0),

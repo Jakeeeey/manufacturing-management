@@ -15,6 +15,7 @@ export interface ConsolidatorInvoice {
     invoiceId: number;
     invoiceNo: string;
     branchId: number;
+    customerName: string;
     createdAt: string;
     products?: ConsolidatorInvoiceProduct[];
 }
@@ -25,6 +26,9 @@ export interface ConsolidatorDetail {
     productId: number;
     productName: string;
     productCode: string;
+    brand: string;
+    category: string;
+    unit: string;
     orderedQuantity: number;
     pickedQuantity: number;
     appliedQuantity: number;
