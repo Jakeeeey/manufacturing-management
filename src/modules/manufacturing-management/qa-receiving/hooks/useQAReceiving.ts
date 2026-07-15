@@ -1,13 +1,14 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { toast } from "sonner";
-import { Shipment, Branch, ShipmentLineItem, Product, InspectionRow, StorageLot } from "../types";
+import { Shipment, Branch, ShipmentLineItem, Product, InspectionRow, StorageLot, QaSpecificationLoadState, QaSpecificationReadings } from "../types";
 import { 
     fetchActiveShipments, 
     fetchBranches, 
     fetchShipmentDetails, 
     submitInspection, 
     fetchFifoInventory,
-    fetchStorageLots
+    fetchStorageLots,
+    fetchProductQaSpecifications
 } from "../services/qa-api";
 
 const receivingQueueStatuses = new Set(["En Route", "Receiving (QA)", "Partially Received", "Received"]);
@@ -33,6 +34,8 @@ export function useQAReceiving() {
     // Inspection form state
     const [selectedBranchId, setSelectedBranchId] = useState<string>("");
     const [inspectionRows, setInspectionRows] = useState<Record<number, InspectionRow>>({});
+    const [qaSpecificationStates, setQaSpecificationStates] = useState<Record<number, QaSpecificationLoadState>>({});
+    const [qaReadings, setQaReadings] = useState<QaSpecificationReadings>({});
 
     // FIFO inventory screen states
     const [fifoBranchId, setFifoBranchId] = useState<string>("");
@@ -42,6 +45,17 @@ export function useQAReceiving() {
     const [expandedProducts, setExpandedProducts] = useState<Record<number, boolean>>({});
     const [fifoSearch, setFifoSearch] = useState("");
     const [showReceived, setShowReceived] = useState(false);
+
+    const clearInspection = useCallback(() => {
+        detailController.current?.abort();
+        setSelectedShipment(null);
+        setLineItems([]);
+        setLoadingLines(false);
+        setInspectionRows({});
+        setSelectedBranchId("");
+        setQaSpecificationStates({});
+        setQaReadings({});
+    }, []);
 
     // Filter states for shipments queue
     const [searchPO, setSearchPO] = useState("");
@@ -124,11 +138,8 @@ export function useQAReceiving() {
 
     useEffect(() => {
         if (!selectedShipment || shipments.some(shipment => shipment.shipment_id === selectedShipment.shipment_id)) return;
-        detailController.current?.abort();
-        setSelectedShipment(null);
-        setLineItems([]);
-        setInspectionRows({});
-    }, [shipments, selectedShipment]);
+        clearInspection();
+    }, [shipments, selectedShipment, clearInspection]);
 
     const loadBranches = async () => {
         setLoadingBranches(true);
@@ -156,15 +167,15 @@ export function useQAReceiving() {
     const handleSelectShipment = async (shipment: Shipment) => {
         if (!receivingQueueStatuses.has(shipment.status)) {
             toast.error("This purchase order is not eligible for receiving.");
-            setSelectedShipment(null);
-            setLineItems([]);
-            setInspectionRows({});
+            clearInspection();
             return;
         }
         detailController.current?.abort();
         const controller = new AbortController();
         detailController.current = controller;
         setSelectedShipment(shipment);
+        setQaSpecificationStates({});
+        setQaReadings({});
         setLoadingLines(true);
         try {
             // Auto transition status to "Receiving (QA)" when opened/inspected
@@ -185,9 +196,7 @@ export function useQAReceiving() {
                 } catch (err) {
                     console.error("Failed to auto-transition shipment status to Receiving (QA):", err);
                     toast.error((err as Error).message || "Failed to start receiving inspection.");
-                    setSelectedShipment(null);
-                    setLineItems([]);
-                    setInspectionRows({});
+                    clearInspection();
                     return;
                 }
             }
@@ -215,7 +224,7 @@ export function useQAReceiving() {
                 };
             });
             setInspectionRows(rowsInit);
-            
+
             // Pre-select the receiving branch defined in the original Purchase Order / Procurement record
             if (shipment.branch_id) {
                 setSelectedBranchId(shipment.branch_id.toString());
@@ -224,6 +233,35 @@ export function useQAReceiving() {
             } else {
                 setSelectedBranchId("");
             }
+
+            const productIds = [...new Set(lines.map(line => Number(line.product_id?.product_id)).filter(productId => Number.isSafeInteger(productId) && productId > 0))];
+            setQaSpecificationStates(Object.fromEntries(productIds.map(productId => [productId, {
+                status: "loading" as const,
+                specifications: [],
+                error: null
+            }])));
+            setLoadingLines(false);
+
+            await Promise.all(productIds.map(async productId => {
+                try {
+                    const specifications = await fetchProductQaSpecifications(productId, controller.signal);
+                    if (controller.signal.aborted) return;
+                    setQaSpecificationStates(previous => ({
+                        ...previous,
+                        [productId]: { status: "loaded", specifications, error: null }
+                    }));
+                } catch (error) {
+                    if (controller.signal.aborted || (error as Error).name === "AbortError") return;
+                    setQaSpecificationStates(previous => ({
+                        ...previous,
+                        [productId]: {
+                            status: "error",
+                            specifications: [],
+                            error: (error as Error).message || "Failed to load the product QA checklist."
+                        }
+                    }));
+                }
+            }));
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
             if (e.name !== "AbortError") {
@@ -265,9 +303,37 @@ export function useQAReceiving() {
         });
     };
 
+    const handleUpdateQaReading = (lineId: number, specId: number, value: string) => {
+        setQaReadings(previous => ({
+            ...previous,
+            [lineId]: {
+                ...previous[lineId],
+                [specId]: value
+            }
+        }));
+    };
+
+    const qaSubmissionBlockReason = useMemo(() => {
+        if (lineItems.length === 0) return null;
+        const productIds = [...new Set(lineItems.map(line => Number(line.product_id?.product_id)))];
+        for (const productId of productIds) {
+            const state = qaSpecificationStates[productId];
+            if (!state || state.status === "loading") return "Wait for all applicable QA checklists to finish loading.";
+            if (state.status === "error") return "QA checklist configuration could not be verified. Receiving is blocked to protect inventory records.";
+        }
+        if (productIds.some(productId => qaSpecificationStates[productId]?.specifications.length > 0)) {
+            return "This shipment uses dynamic QA specifications. Complete movement preview and transactional QA result persistence before posting it to inventory.";
+        }
+        return null;
+    }, [lineItems, qaSpecificationStates]);
+
     const handleSubmitInspection = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!selectedShipment) return;
+        if (qaSubmissionBlockReason) {
+            toast.error(qaSubmissionBlockReason);
+            return;
+        }
         if (!selectedBranchId) {
             toast.error("Please select a receiving warehouse branch");
             return;
@@ -395,8 +461,7 @@ export function useQAReceiving() {
             });
 
             toast.success(`Shipment successfully logged to ${branchName} and transitioned to 'Received'.`);
-            setSelectedShipment(null);
-            setLineItems([]);
+            clearInspection();
             loadShipments();
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
@@ -522,9 +587,14 @@ export function useQAReceiving() {
         selectedBranchId,
         setSelectedBranchId,
         inspectionRows,
+        qaSpecificationStates,
+        qaReadings,
+        qaSubmissionBlockReason,
         handleSelectShipment,
         handleUpdateRow,
+        handleUpdateQaReading,
         handleSubmitInspection,
+        clearInspection,
         fifoBranchId,
         fifoInventory,
         loadingFifo,

@@ -64,6 +64,17 @@ export interface InspectionRow {
     isPackaging: boolean;
 }
 
+export type QaSpecification = import("@/app/api/manufacturing/qa/_purchase-specification-domain").ProductQaSpecification;
+export type QaSpecificationLoadStatus = "loading" | "loaded" | "error";
+
+export interface QaSpecificationLoadState {
+    status: QaSpecificationLoadStatus;
+    specifications: QaSpecification[];
+    error: string | null;
+}
+
+export type QaSpecificationReadings = Record<number, Record<number, string>>;
+
 export interface FIFOBatch {
     lot_number: string;
     expiration_date?: string;

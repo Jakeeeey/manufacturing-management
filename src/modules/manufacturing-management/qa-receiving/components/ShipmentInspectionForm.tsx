@@ -1,7 +1,8 @@
 import React from "react";
 import Image from "next/image";
 import { ArrowLeft, MapPin, AlertTriangle, CheckCircle2, Search, ChevronDown, Image as ImageIcon, Plus, Minus, Loader2 } from "lucide-react";
-import { Shipment, ShipmentLineItem, Branch, InspectionRow, StorageLot } from "../types";
+import { Shipment, ShipmentLineItem, Branch, InspectionRow, StorageLot, QaSpecificationLoadState, QaSpecificationReadings } from "../types";
+import ProductQaChecklist from "./ProductQaChecklist";
 
 interface ShipmentInspectionFormProps {
     selectedShipment: Shipment;
@@ -11,8 +12,12 @@ interface ShipmentInspectionFormProps {
     selectedBranchId: string;
     setSelectedBranchId: (val: string) => void;
     inspectionRows: Record<number, InspectionRow>;
+    qaSpecificationStates: Record<number, QaSpecificationLoadState>;
+    qaReadings: QaSpecificationReadings;
+    qaSubmissionBlockReason: string | null;
     loadingLines: boolean;
     handleUpdateRow: (lineId: number, field: string, value: string | number | boolean) => void;
+    handleUpdateQaReading: (lineId: number, specId: number, value: string) => void;
     handleSubmitInspection: (e: React.FormEvent) => void;
     onCancel: () => void;
 }
@@ -25,8 +30,12 @@ export default function ShipmentInspectionForm({
     selectedBranchId,
     setSelectedBranchId,
     inspectionRows,
+    qaSpecificationStates,
+    qaReadings,
+    qaSubmissionBlockReason,
     loadingLines,
     handleUpdateRow,
+    handleUpdateQaReading,
     handleSubmitInspection,
     onCancel
 }: ShipmentInspectionFormProps) {
@@ -266,6 +275,13 @@ export default function ShipmentInspectionForm({
                                         </button>
                                     </div>
                                 </div>
+
+                                <ProductQaChecklist
+                                    lineId={line.line_id}
+                                    loadState={qaSpecificationStates[prod.product_id]}
+                                    readings={qaReadings[line.line_id] || {}}
+                                    onReadingChange={handleUpdateQaReading}
+                                />
 
                                  {/* QA Inputs Grid - Touch Optimized layout */}
                                  {(() => {
@@ -519,7 +535,14 @@ export default function ShipmentInspectionForm({
                 )}
             </div>
 
-            <div className="p-4 border-t bg-muted/15 flex justify-end gap-3 shrink-0">
+            <div className="p-4 border-t bg-muted/15 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 shrink-0">
+                {qaSubmissionBlockReason ? (
+                    <div className="flex items-start gap-2 text-[10px] text-amber-700 max-w-xl" role="alert">
+                        <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                        <span>{qaSubmissionBlockReason}</span>
+                    </div>
+                ) : <span />}
+                <div className="flex justify-end gap-3">
                 <button
                     type="button"
                     onClick={onCancel}
@@ -529,11 +552,12 @@ export default function ShipmentInspectionForm({
                 </button>
                 <button
                     type="submit"
-                    disabled={loadingLines}
+                    disabled={loadingLines || Boolean(qaSubmissionBlockReason)}
                     className="px-5 py-2.5 bg-primary text-primary-foreground rounded-xl text-xs font-bold flex items-center gap-1.5 shadow h-11 justify-center cursor-pointer disabled:opacity-60 disabled:cursor-wait"
                 >
-                    {loadingLines ? <><Loader2 className="h-4 w-4 animate-spin" /> Processing...</> : <><CheckCircle2 className="h-4 w-4" /> Complete QA Receiving & Write Ledger</>}
+                    {loadingLines ? <><Loader2 className="h-4 w-4 animate-spin" /> Processing...</> : qaSubmissionBlockReason ? <><AlertTriangle className="h-4 w-4" /> Movement Preview Required</> : <><CheckCircle2 className="h-4 w-4" /> Complete QA Receiving & Write Ledger</>}
                 </button>
+                </div>
             </div>
         </form>
     );
