@@ -2,9 +2,12 @@
 import { DIRECTUS_URL, headers } from "./shared";
 import { getActiveVersionForProduct } from "../../finished-goods/versions/versions-helper";
 
-export async function getProductInventoryAndSafetyStock(productIds: number[], branchId?: number) {
+export async function getProductInventoryAndSafetyStock(productIds: number[], branchId: number) {
+    if (!branchId) {
+        throw new Error("Missing required branchId in getProductInventoryAndSafetyStock");
+    }
     try {
-        const bId = branchId ? Number(branchId) : 1;
+        const bId = Number(branchId);
         const prodFilter = productIds.length > 0 ? `&filter[product_id][_in]=${productIds.join(",")}` : "";
         const prodRes = await fetch(`${DIRECTUS_URL}/items/products?limit=-1${prodFilter}&fields=product_id,product_name,product_code,maintaining_quantity`, { headers, cache: "no-store" });
         const products = prodRes.ok ? (await prodRes.json()).data || [] : [];
@@ -53,11 +56,10 @@ export async function getProductInventoryAndSafetyStock(productIds: number[], br
 
         // Compute onHand stock per product (summing only Passed lots)
         const onHandMap: Record<number, number> = {};
-        movementStockMap.forEach((qty, key) => {
-            if (qty > 0 && passedLotsSet.has(key)) {
-                const [pIdStr] = key.split(":");
-                const pId = Number(pIdStr);
-                onHandMap[pId] = (onHandMap[pId] || 0) + qty;
+        lots.forEach((lot: any) => {
+            const pId = Number(lot.product_id?.product_id || lot.product_id);
+            if (pId) {
+                onHandMap[pId] = (onHandMap[pId] || 0) + Number(lot.quantity || 0);
             }
         });
 
@@ -121,16 +123,14 @@ export async function getProductInventoryAndSafetyStock(productIds: number[], br
                     }
                 });
             } else {
-                // If it is a sub-assembly, we can recommend its manufactured batches directly from movementStockMap!
-                movementStockMap.forEach((qty, key) => {
-                    if (qty > 0 && passedLotsSet.has(key)) {
-                        const [keyPIdStr, lotNo] = key.split(":");
-                        if (Number(keyPIdStr) === pId) {
-                            recommendedLots.push({
-                                lot_no: lotNo,
-                                available: qty
-                            });
-                        }
+                // If it is a sub-assembly, we can recommend its manufactured batches directly from lots!
+                lots.forEach((lot: any) => {
+                    const keyPId = Number(lot.product_id?.product_id || lot.product_id);
+                    if (keyPId === pId && Number(lot.quantity || 0) > 0) {
+                        recommendedLots.push({
+                            lot_no: lot.lot_number,
+                            available: Number(lot.quantity || 0)
+                        });
                     }
                 });
             }

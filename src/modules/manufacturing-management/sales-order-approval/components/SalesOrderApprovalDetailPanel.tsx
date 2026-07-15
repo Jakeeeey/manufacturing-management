@@ -39,15 +39,15 @@ export function SalesOrderApprovalDetailPanel({
     const netSum = Math.max(0, grossSum - discount);
 
     return (
-        <div className="border rounded-xl bg-card p-5 shadow-sm space-y-5">
+        <div className="border border-slate-200/80 rounded-2xl bg-card p-6 shadow-sm space-y-6 border-t-2 border-t-amber-600">
             {/* Header info */}
-            <div className="flex justify-between items-start border-b pb-3.5">
+            <div className="flex justify-between items-start border-b border-slate-100 pb-4">
                 <div>
-                    <div className="flex items-center gap-2">
-                        <h4 className="text-xs font-black text-foreground uppercase tracking-wider">
+                    <div className="flex items-center gap-2.5">
+                        <h4 className="text-sm font-black text-slate-900 uppercase tracking-wider">
                             {selectedOrder.order_no}
                         </h4>
-                        <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-500/10 text-amber-600 border border-amber-500/20">
+                        <span className="inline-flex px-2 py-0.5 rounded-full text-[8.5px] font-black uppercase tracking-wider bg-amber-50 text-amber-705 border border-amber-200/60 whitespace-nowrap">
                             Pending Approval
                         </span>
                     </div>
@@ -55,22 +55,22 @@ export function SalesOrderApprovalDetailPanel({
                 </div>
                 <button
                     onClick={() => setSelectedOrder(null)}
-                    className="text-muted-foreground hover:text-foreground text-xs font-bold px-2 py-1 rounded-md hover:bg-muted transition-all"
+                    className="text-slate-400 hover:text-slate-600 text-xs font-bold px-2.5 py-1.5 rounded-lg hover:bg-slate-100 transition-all cursor-pointer border-none bg-transparent"
                 >
                     Close
                 </button>
             </div>
 
             {/* Metadata Grid */}
-            <div className="grid grid-cols-2 gap-3 text-xs bg-muted/20 p-4 rounded-xl border border-border">
-                <div className="space-y-0.5 col-span-2">
-                    <span className="text-muted-foreground block text-[10px] font-bold uppercase tracking-wider">Customer</span>
-                    <span className="font-bold text-foreground flex items-center gap-1.5">
-                        <Building2 className="h-3.5 w-3.5 text-primary" />
+            <div className="grid grid-cols-2 gap-3.5 bg-slate-50/50 p-4.5 rounded-xl border border-slate-200/60 text-xs">
+                <div className="space-y-1 col-span-2">
+                    <span className="text-slate-400 block text-[9.5px] font-bold uppercase tracking-wider">Customer</span>
+                    <span className="font-extrabold text-slate-800 flex items-center gap-2">
+                        <Building2 className="h-4 w-4 text-amber-500" />
                         {selectedOrder.customer_name ? (
                             <span>
                                 {selectedOrder.customer_name}{" "}
-                                <span className="text-[10px] font-mono text-muted-foreground font-normal">({selectedOrder.customer_code})</span>
+                                <span className="text-[9.5px] font-mono text-slate-400 font-normal">({selectedOrder.customer_code})</span>
                             </span>
                         ) : (
                             selectedOrder.customer_code
@@ -78,53 +78,53 @@ export function SalesOrderApprovalDetailPanel({
                     </span>
                 </div>
                 
-                <div className="space-y-0.5">
-                    <span className="text-muted-foreground block text-[10px] font-bold uppercase tracking-wider">PO Number</span>
-                    <span className="font-semibold text-foreground flex items-center gap-1.5">
-                        <FileText className="h-3.5 w-3.5 text-muted-foreground" />
-                        {selectedOrder.po_no || <span className="text-muted-foreground italic text-[11px]">N/A</span>}
+                <div className="space-y-1">
+                    <span className="text-slate-400 block text-[9.5px] font-bold uppercase tracking-wider">PO Number</span>
+                    <span className="font-bold text-slate-800 flex items-center gap-2">
+                        <FileText className="h-4 w-4 text-slate-400" />
+                        {selectedOrder.po_no || <span className="text-slate-400 italic font-normal">N/A</span>}
                     </span>
                 </div>
 
-                <div className="space-y-0.5">
-                    <span className="text-muted-foreground block text-[10px] font-bold uppercase tracking-wider">Payment Terms</span>
-                    <span className="font-semibold text-foreground flex items-center gap-1.5">
-                        <CreditCard className="h-3.5 w-3.5 text-muted-foreground" />
+                <div className="space-y-1">
+                    <span className="text-slate-400 block text-[9.5px] font-bold uppercase tracking-wider">Payment Terms</span>
+                    <span className="font-bold text-slate-800 flex items-center gap-2">
+                        <CreditCard className="h-4 w-4 text-slate-400" />
                         {selectedOrder.payment_term_name ? (
-                            <span>
+                            <span className="truncate">
                                 {selectedOrder.payment_term_name}
                                 {selectedOrder.payment_term_days !== undefined && selectedOrder.payment_term_days !== null && (
-                                    <span className="text-[10px] text-muted-foreground font-normal">
-                                        {" "}({selectedOrder.payment_term_days} Days)
+                                    <span className="text-[9.5px] text-slate-400 font-normal">
+                                        {" "}({selectedOrder.payment_term_days}d)
                                     </span>
                                 )}
                             </span>
                         ) : (
-                            selectedOrder.payment_terms ? `${selectedOrder.payment_terms} Days` : "COD / Net 0"
+                            selectedOrder.payment_terms ? `${selectedOrder.payment_terms} Days` : "COD"
                         )}
                     </span>
                 </div>
 
-                <div className="space-y-0.5">
-                    <span className="text-muted-foreground block text-[10px] font-bold uppercase tracking-wider">Order Date</span>
-                    <span className="font-semibold text-foreground flex items-center gap-1.5">
-                        <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
+                <div className="space-y-1">
+                    <span className="text-slate-400 block text-[9.5px] font-bold uppercase tracking-wider">Order Date</span>
+                    <span className="font-bold text-slate-800 flex items-center gap-2">
+                        <Calendar className="h-4 w-4 text-slate-400" />
                         {selectedOrder.order_date ? new Date(selectedOrder.order_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "N/A"}
                     </span>
                 </div>
 
-                <div className="space-y-0.5">
-                    <span className="text-muted-foreground block text-[10px] font-bold uppercase tracking-wider">Delivery Date</span>
-                    <span className="font-semibold text-foreground flex items-center gap-1.5">
-                        <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
-                        {selectedOrder.delivery_date ? new Date(selectedOrder.delivery_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : <span className="text-muted-foreground italic text-[11px]">N/A</span>}
+                <div className="space-y-1">
+                    <span className="text-slate-400 block text-[9.5px] font-bold uppercase tracking-wider">Delivery Date</span>
+                    <span className="font-bold text-slate-800 flex items-center gap-2">
+                        <Calendar className="h-4 w-4 text-slate-400" />
+                        {selectedOrder.delivery_date ? new Date(selectedOrder.delivery_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : <span className="text-slate-400 italic font-normal">N/A</span>}
                     </span>
                 </div>
 
                 {selectedOrder.remarks && (
-                    <div className="space-y-0.5 col-span-2 pt-2.5 border-t border-dashed mt-1">
-                        <span className="text-muted-foreground block text-[10px] font-bold uppercase tracking-wider">Remarks / Notes</span>
-                        <p className="text-[11px] text-muted-foreground leading-relaxed italic">
+                    <div className="space-y-1 col-span-2 pt-3 border-t border-slate-200/60 border-dashed mt-1.5">
+                        <span className="text-slate-400 block text-[9.5px] font-bold uppercase tracking-wider">Remarks / Notes</span>
+                        <p className="text-[11px] text-slate-500 leading-relaxed italic">
                             &ldquo;{selectedOrder.remarks}&rdquo;
                         </p>
                     </div>
@@ -132,22 +132,22 @@ export function SalesOrderApprovalDetailPanel({
             </div>
 
             {/* Line items section */}
-            <div className="space-y-3">
-                <h5 className="text-[10px] font-extrabold uppercase text-muted-foreground tracking-wider">
+            <div className="space-y-3.5">
+                <h5 className="text-[9.5px] font-extrabold uppercase text-slate-400 tracking-wider">
                     Agreement Line Items
                 </h5>
 
                 {loadingDetails ? (
-                    <div className="flex flex-col items-center justify-center p-8 gap-1.5 border border-dashed rounded-xl bg-card">
-                        <Loader2 className="h-5 w-5 animate-spin text-primary" />
-                        <span className="text-[10px] text-muted-foreground">Fetching agreement items...</span>
+                    <div className="flex flex-col items-center justify-center p-12 gap-2 border border-dashed rounded-xl bg-slate-50/50">
+                        <Loader2 className="h-5 w-5 animate-spin text-amber-600" />
+                        <span className="text-[10px] text-muted-foreground font-semibold">Fetching agreement items...</span>
                     </div>
                 ) : orderDetails.length === 0 ? (
-                    <div className="text-center p-6 border border-dashed rounded-xl bg-card text-xs text-muted-foreground">
+                    <div className="text-center p-8 border border-dashed rounded-xl bg-slate-50/50 text-xs text-muted-foreground italic">
                         No items logged in detail.
                     </div>
                 ) : (
-                    <div className="space-y-2.5">
+                    <div className="space-y-3">
                         {orderDetails.map(item => {
                             const pId = item.product_id;
                             const name = pId?.product_name || `Product #${item.product_id}`;
@@ -160,43 +160,43 @@ export function SalesOrderApprovalDetailPanel({
                             return (
                                 <div 
                                     key={item.detail_id} 
-                                    className="border rounded-xl p-3 bg-muted/5 flex flex-col justify-between gap-2.5 hover:bg-muted/10 transition-all"
+                                    className="border border-slate-200/80 rounded-xl p-4 bg-white flex flex-col justify-between gap-3 hover:border-slate-350 hover:shadow-xs transition-all duration-200"
                                 >
-                                    <div className="flex items-start justify-between gap-1.5">
-                                        <div className="space-y-1">
-                                            <div className="text-xs font-bold text-foreground leading-snug">{name}</div>
+                                    <div className="flex items-start justify-between gap-2.5">
+                                        <div className="space-y-1.5">
+                                            <div className="text-xs font-bold text-slate-800 leading-snug">{name}</div>
                                             <div className="flex flex-wrap items-center gap-1.5">
-                                                <span className="text-[9px] font-mono bg-muted border px-1.5 py-0.2 rounded text-muted-foreground uppercase font-semibold">
+                                                <span className="text-[9px] font-mono bg-slate-100 border border-slate-200 px-1.5 py-0.2 rounded text-slate-600 uppercase font-semibold">
                                                     {code}
                                                 </span>
                                                 {brand !== "N/A" && (
-                                                    <span className="text-[9px] bg-primary/10 text-primary px-1.5 py-0.2 rounded font-semibold">
+                                                    <span className="text-[9px] bg-indigo-500/10 text-indigo-650 px-1.5 py-0.2 rounded font-semibold">
                                                         {brand}
                                                     </span>
                                                 )}
                                                 {category !== "N/A" && (
-                                                    <span className="text-[9px] bg-muted px-1.5 py-0.2 rounded text-muted-foreground font-semibold">
+                                                    <span className="text-[9px] bg-slate-100 px-1.5 py-0.2 rounded text-slate-500 font-semibold">
                                                         {category}
                                                     </span>
                                                 )}
                                             </div>
                                         </div>
-                                        <div className="text-right">
-                                            <div className="text-xs font-black text-primary font-mono">
-                                                ₱{totalCost.toFixed(2)}
+                                        <div className="text-right shrink-0">
+                                            <div className="text-xs font-black text-slate-900 font-mono">
+                                                ₱{totalCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                             </div>
-                                            <div className="text-[9px] text-muted-foreground font-medium mt-0.5">
+                                            <div className="text-[9px] text-muted-foreground font-semibold mt-0.5">
                                                 ₱{item.unit_price.toFixed(2)} / {uom}
                                             </div>
                                         </div>
                                     </div>
 
-                                    <div className="flex items-center justify-between pt-2 border-t border-dashed">
-                                        <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider">
+                                    <div className="flex items-center justify-between pt-2.5 border-t border-slate-100 border-dashed">
+                                        <span className="text-[9.5px] text-slate-400 font-bold uppercase tracking-wider">
                                             Quantity
                                         </span>
-                                        <span className="text-xs font-black text-foreground font-mono">
-                                            {item.ordered_quantity} <span className="text-[10px] text-muted-foreground font-normal">{uom}</span>
+                                        <span className="text-xs font-extrabold text-slate-850 font-mono">
+                                            {item.ordered_quantity} <span className="text-[10px] text-slate-400 font-normal">{uom}</span>
                                         </span>
                                     </div>
                                 </div>
@@ -207,54 +207,56 @@ export function SalesOrderApprovalDetailPanel({
             </div>
 
             {/* Financial Breakdown card */}
-            <div className="bg-muted/30 border rounded-xl p-4 space-y-2.5 shadow-inner">
+            <div className="bg-slate-900 text-slate-100 rounded-xl p-4.5 space-y-3 shadow-md relative overflow-hidden">
                 <div className="flex justify-between items-center text-xs">
-                    <span className="text-muted-foreground font-semibold">Subtotal Gross</span>
-                    <span className="font-bold text-foreground font-mono">
-                        ₱{grossSum.toFixed(2)}
+                    <span className="text-slate-400 font-medium">Subtotal Gross</span>
+                    <span className="font-bold font-mono">
+                        ₱{grossSum.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                     </span>
                 </div>
                 {selectedOrder.discount_amount ? (
-                    <div className="flex justify-between items-center text-xs text-rose-600 dark:text-rose-400">
-                        <span className="font-semibold">Discount</span>
+                    <div className="flex justify-between items-center text-xs text-rose-400">
+                        <span className="font-medium">Discount Code</span>
                         <span className="font-bold font-mono">
-                            - ₱{discount.toFixed(2)}
+                            - ₱{discount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                         </span>
                     </div>
                 ) : null}
-                <div className="border-t border-dashed my-2 pt-2 flex justify-between items-center">
-                    <span className="text-xs font-bold text-foreground uppercase tracking-wider">
+                <div className="border-t border-slate-800 my-2 pt-3 flex justify-between items-center">
+                    <span className="text-xs font-extrabold uppercase tracking-wider text-slate-300">
                         Net Amount Locked
                     </span>
-                    <span className="text-sm font-black text-primary font-mono bg-primary/5 px-2.5 py-1 rounded border border-primary/25">
-                        ₱{netSum.toFixed(2)}
+                    <span className="text-sm font-black text-emerald-400 font-mono bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20">
+                        ₱{netSum.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                     </span>
                 </div>
+                {/* Visual decoration inside the breakdown card */}
+                <div className="absolute right-0 bottom-0 -mb-6 -mr-6 w-16 h-16 bg-emerald-500/5 rounded-full blur-lg"></div>
             </div>
 
             {/* Action buttons */}
-            <div className="flex flex-col gap-2 pt-1">
+            <div className="flex flex-col gap-2.5 pt-1">
                 <button
                     disabled={updatingStatusId === selectedOrder.order_id}
                     onClick={() => handleApprove(selectedOrder.order_id)}
-                    className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 py-2.5 text-xs font-bold text-white shadow-md transition-all cursor-pointer disabled:opacity-50"
+                    className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 py-3.5 text-xs font-black text-white shadow-md shadow-emerald-500/10 hover:shadow-emerald-500/25 transition-all active:scale-[0.98] cursor-pointer disabled:opacity-50 border-none"
                 >
                     {updatingStatusId === selectedOrder.order_id ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
-                        <ShieldCheck className="h-4 w-4" />
+                        <ShieldCheck className="h-4 w-4 stroke-[3]" />
                     )}
                     Approve & Release to Floor
                 </button>
                 <button
                     disabled={updatingStatusId === selectedOrder.order_id}
                     onClick={() => handleReject(selectedOrder.order_id)}
-                    className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg border border-rose-200 hover:bg-rose-50 text-rose-600 dark:border-rose-950 dark:hover:bg-rose-950/20 py-2.5 text-xs font-bold shadow-xs transition-all cursor-pointer disabled:opacity-50"
+                    className="w-full inline-flex items-center justify-semibold gap-2 rounded-xl border border-rose-250 bg-white hover:bg-rose-50/50 text-rose-700 py-3 text-xs font-bold transition-all active:scale-[0.98] cursor-pointer disabled:opacity-50"
                 >
                     {updatingStatusId === selectedOrder.order_id ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <Loader2 className="h-4 w-4 animate-spin text-rose-700" />
                     ) : (
-                        <X className="h-4 w-4" />
+                        <X className="h-4 w-4 stroke-[3]" />
                     )}
                     Reject & Return to Draft
                 </button>

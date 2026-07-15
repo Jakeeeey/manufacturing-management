@@ -267,7 +267,10 @@ export async function POST(request: Request) {
                         if (joData) {
                             const jobOrderNo = joData.job_order_no;
                             const producedProductId = joData.product_id;
-                            const branchId = joData.branch_id || 1;
+                            if (!joData.branch_id) {
+                                return NextResponse.json({ error: `Job Order ${jobOrderNo} has no branch_id` }, { status: 400 });
+                            }
+                            const branchId = joData.branch_id;
 
                             // Find matching lots using source_type/source_reference OR remarks/product/branch
                             const lotFilter = encodeURIComponent(JSON.stringify({

@@ -47,7 +47,7 @@ export function JobOrderShiftLogModal({
     const [shiftYieldQty, setShiftYieldQty] = useState("");
     const [batchNo, setBatchNo] = useState("");
     const [expiryDate, setExpiryDate] = useState("");
-    const [manufacturingDate, setManufacturingDate] = useState(new Date().toISOString().split("T")[0]);
+    const [manufacturingDate, setManufacturingDate] = useState("");
     const [lots, setLots] = useState<any[]>([]);
     const [selectedLotId, setSelectedLotId] = useState<string>("");
     const [shiftQAStatus, setShiftQAStatus] = useState<"Passed" | "QA Hold" | "Pending">("Pending");
@@ -94,7 +94,7 @@ export function JobOrderShiftLogModal({
             setProductionDay("1");
             
             const todayStr = new Date().toISOString().split("T")[0];
-            setManufacturingDate(todayStr);
+            setManufacturingDate("");
             setBatchNo(`${selectedJobOrder.order_no || "JO"}-YLD-${todayStr.replace(/-/g, "")}`);
             setExpiryDate(""); // Let operator enter it
 
@@ -109,9 +109,7 @@ export function JobOrderShiftLogModal({
                 .then((data) => {
                     setLots(data);
                     if (data && data.length > 0) {
-                        // Find first lot representing finished goods or fallback to first
-                        const fgLot = data.find((l: any) => l.inventory_type_id === 2);
-                        setSelectedLotId(String(fgLot ? fgLot.lot_id : data[0].lot_id));
+                        setSelectedLotId("");
                     }
                 })
                 .catch((err) => console.error("Error loading physical lots:", err));
@@ -216,6 +214,10 @@ export function JobOrderShiftLogModal({
         }
         if (!manufacturingDate) {
             toast.error("Please select a manufacturing date.");
+            return;
+        }
+        if (!expiryDate) {
+            toast.error("Please select an expiration date.");
             return;
         }
 
@@ -565,6 +567,7 @@ export function JobOrderShiftLogModal({
                                                     className="flex h-9 w-full rounded-lg border border-input bg-background text-foreground px-3 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 transition-all duration-200 cursor-pointer"
                                                     required
                                                 >
+                                                    <option value="" disabled>Select Location</option>
                                                     {lots.map((l) => (
                                                         <option key={l.lot_id} value={l.lot_id}>
                                                             {l.lot_name}
@@ -600,22 +603,7 @@ export function JobOrderShiftLogModal({
                                                 />
                                             </div>
 
-                                            <div className="space-y-1.5">
-                                                <Label htmlFor="qaStatusSelect" className="flex items-center gap-1.5 text-muted-foreground font-semibold text-[11px]">
-                                                    <ClipboardCheck className="h-3.5 w-3.5 text-emerald-500" /> QA Status
-                                                </Label>
-                                                <select
-                                                    id="qaStatusSelect"
-                                                    value={shiftQAStatus}
-                                                    onChange={(e) => setShiftQAStatus(e.target.value as any)}
-                                                    className="flex h-9 w-full rounded-lg border border-input bg-background text-foreground px-3 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 transition-all duration-200 cursor-pointer"
-                                                    required
-                                                >
-                                                    <option value="Pending">Pending</option>
-                                                    <option value="Passed">Passed</option>
-                                                    <option value="QA Hold">QA Hold</option>
-                                                </select>
-                                            </div>
+                                            {/* QA Status selection removed, always defaults to Pending */}
                                         </div>
                                     </div>
                                 </div>
