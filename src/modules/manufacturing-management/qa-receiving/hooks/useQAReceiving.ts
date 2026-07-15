@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { toast } from "sonner";
 import { Shipment, Branch, ShipmentLineItem, Product, InspectionRow, StorageLot } from "../types";
 import { 
@@ -10,7 +10,12 @@ import {
     fetchStorageLots
 } from "../services/qa-api";
 
+const receivingQueueStatuses = new Set(["En Route", "Receiving (QA)", "Partially Received", "Received"]);
+
 export function useQAReceiving() {
+    const listController = useRef<AbortController | null>(null);
+    const detailController = useRef<AbortController | null>(null);
+    const fifoController = useRef<AbortController | null>(null);
     const [activeTab, setActiveTab] = useState<"inbound" | "fifo">("inbound");
     
     // Core data lists
@@ -74,26 +79,56 @@ export function useQAReceiving() {
         });
     }, [shipments, searchPO, searchStatus, startDate, endDate, showReceived]);
 
-    // Load base data
-    useEffect(() => {
-        loadShipments();
-        loadBranches();
-        loadStorageLots();
-    }, []);
-
-    const loadShipments = async () => {
+    const loadShipments = useCallback(async (filters: { search?: string; status?: string; startDate?: string; endDate?: string; includeReceived?: boolean } = {}) => {
+        listController.current?.abort();
+        const controller = new AbortController();
+        listController.current = controller;
         setLoadingShipments(true);
         try {
-            const data = await fetchActiveShipments();
+            const data = await fetchActiveShipments(filters, controller.signal);
             setShipments(data || []);
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
-            console.error(e);
-            toast.error(e.message || "Failed to load active shipments");
+            if (e.name !== "AbortError") {
+                console.error(e);
+                toast.error(e.message || "Failed to load active shipments");
+            }
         } finally {
-            setLoadingShipments(false);
+            if (!controller.signal.aborted) setLoadingShipments(false);
         }
-    };
+    }, []);
+
+    // Load base data
+    useEffect(() => {
+        loadBranches();
+        loadStorageLots();
+        return () => {
+            listController.current?.abort();
+            detailController.current?.abort();
+            fifoController.current?.abort();
+        };
+    }, []);
+
+    useEffect(() => {
+        const timeout = window.setTimeout(() => {
+            void loadShipments({
+                search: searchPO.trim() || undefined,
+                status: searchStatus || undefined,
+                startDate: startDate || undefined,
+                endDate: endDate || undefined,
+                includeReceived: showReceived
+            });
+        }, 250);
+        return () => window.clearTimeout(timeout);
+    }, [searchPO, searchStatus, startDate, endDate, showReceived, loadShipments]);
+
+    useEffect(() => {
+        if (!selectedShipment || shipments.some(shipment => shipment.shipment_id === selectedShipment.shipment_id)) return;
+        detailController.current?.abort();
+        setSelectedShipment(null);
+        setLineItems([]);
+        setInspectionRows({});
+    }, [shipments, selectedShipment]);
 
     const loadBranches = async () => {
         setLoadingBranches(true);
@@ -119,16 +154,26 @@ export function useQAReceiving() {
     };
 
     const handleSelectShipment = async (shipment: Shipment) => {
+        if (!receivingQueueStatuses.has(shipment.status)) {
+            toast.error("This purchase order is not eligible for receiving.");
+            setSelectedShipment(null);
+            setLineItems([]);
+            setInspectionRows({});
+            return;
+        }
+        detailController.current?.abort();
+        const controller = new AbortController();
+        detailController.current = controller;
         setSelectedShipment(shipment);
         setLoadingLines(true);
         try {
             // Auto transition status to "Receiving (QA)" when opened/inspected
             if (shipment.status === "En Route") {
                 try {
-                    const transitionResponse = await fetch("/api/manufacturing/procurement/shipments", {
+                    const transitionResponse = await fetch(`/api/manufacturing/purchase-orders/${shipment.shipment_id}/status`, {
                         method: "PATCH",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ shipmentId: shipment.shipment_id, status: "Receiving (QA)" })
+                        body: JSON.stringify({ status: "Receiving (QA)" })
                     });
                     if (!transitionResponse.ok) {
                         const error = await transitionResponse.json().catch(() => ({}));
@@ -139,10 +184,15 @@ export function useQAReceiving() {
                     shipment.status = "Receiving (QA)";
                 } catch (err) {
                     console.error("Failed to auto-transition shipment status to Receiving (QA):", err);
+                    toast.error((err as Error).message || "Failed to start receiving inspection.");
+                    setSelectedShipment(null);
+                    setLineItems([]);
+                    setInspectionRows({});
+                    return;
                 }
             }
 
-            const lines = await fetchShipmentDetails(shipment.shipment_id);
+            const lines = await fetchShipmentDetails(shipment.shipment_id, controller.signal);
             setLineItems(lines);
 
             // Prepopulate form states
@@ -176,10 +226,12 @@ export function useQAReceiving() {
             }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
-            console.error(e);
-            toast.error(e.message || "Failed to load shipment lines");
+            if (e.name !== "AbortError") {
+                console.error(e);
+                toast.error(e.message || "Failed to load shipment lines");
+            }
         } finally {
-            setLoadingLines(false);
+            if (!controller.signal.aborted) setLoadingLines(false);
         }
     };
 
@@ -357,15 +409,18 @@ export function useQAReceiving() {
 
     // Load FIFO inventory breakdown
     const handleLoadFifoInventory = async (branchId: string) => {
+        fifoController.current?.abort();
         setFifoBranchId(branchId);
         if (!branchId) {
             setFifoInventory([]);
             return;
         }
 
+        const controller = new AbortController();
+        fifoController.current = controller;
         setLoadingFifo(true);
         try {
-            const items = await fetchFifoInventory(branchId);
+            const items = await fetchFifoInventory(branchId, controller.signal);
 
             // Group by product and create batches list
             const groupedMap: Record<number, {
@@ -425,10 +480,12 @@ export function useQAReceiving() {
             setFifoInventory(groupedList);
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } catch (e: any) {
-            console.error(e);
-            toast.error(e.message || "Failed to load branch inventory ledger");
+            if (e.name !== "AbortError") {
+                console.error(e);
+                toast.error(e.message || "Failed to load branch inventory ledger");
+            }
         } finally {
-            setLoadingFifo(false);
+            if (!controller.signal.aborted) setLoadingFifo(false);
         }
     };
 

@@ -25,6 +25,11 @@ export interface ManifestLineFormItem {
     selected_uom?: string;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     uom_options?: any[];
+    purchase_intent?: "MRP_Demand" | "Buffer_Stock";
+    job_order_id?: string;
+    discount_percent?: string;
+    vat_percent?: string;
+    withholding_percent?: string;
 }
 
 export interface ShipmentFormState {
@@ -38,6 +43,7 @@ export interface ShipmentFormState {
     branch_id: number | null;
     payment_type: number | null;
     price_type: string | null;
+    currency_code?: "PHP" | "USD";
 }
 
 interface IncomingShipmentsProps {
@@ -59,6 +65,13 @@ interface IncomingShipmentsProps {
     onEditShipment: (shipmentId: number, shipmentData: ShipmentFormState, lineItems: ManifestLineFormItem[]) => void;
     onUpdateShipmentStatus: (shipmentId: number, status: "Ordered" | "Approved" | "Cancelled" | "For Pickup" | "En Route" | "Receiving (QA)" | "Partially Received" | "Received" | "Rejected") => void;
     loading?: boolean;
+    serverList?: {
+        total: number;
+        totalPages: number;
+        onQueryChange: (query: { page: number; limit: number; search: string; status?: string }) => void;
+    };
+    canonicalDrafting?: boolean;
+    jobOrders?: Array<{ job_order_id: number; job_order_no?: string }>;
 }
 
 interface RawProductSelectorProps {
@@ -450,8 +463,12 @@ export default function IncomingShipments({
     onCreateShipment,
     onEditShipment,
     onUpdateShipmentStatus,
-    loading = false
+    loading = false,
+    serverList,
+    canonicalDrafting = false,
+    jobOrders = []
 }: IncomingShipmentsProps) {
+    const onServerQueryChange = serverList?.onQueryChange;
     const [editingShipmentId, setEditingShipmentId] = useState<number | null>(null);
     const [statusLoading, setStatusLoading] = useState<"en-route" | "arrived" | null>(null);
     const [search, setSearch] = useState("");
@@ -465,12 +482,25 @@ export default function IncomingShipments({
         setCurrentPage(1);
     }, [search, statusFilter, itemsPerPage]);
 
+    useEffect(() => {
+        if (!onServerQueryChange) return;
+        const timeout = window.setTimeout(() => {
+            onServerQueryChange({
+                page: currentPage,
+                limit: itemsPerPage,
+                search,
+                status: statusFilter === "All" ? undefined : statusFilter
+            });
+        }, 250);
+        return () => window.clearTimeout(timeout);
+    }, [currentPage, itemsPerPage, onServerQueryChange, search, statusFilter]);
+
     const handleStartEdit = async () => {
         if (!activeShipment) return;
 
         setShipmentForm({
             reference_number: activeShipment.reference_number,
-            supplier_id: String(typeof activeShipment.supplier_id === "object" ? activeShipment.supplier_id.id : activeShipment.supplier_id),
+            supplier_id: String(activeShipment.supplier_id && typeof activeShipment.supplier_id === "object" ? activeShipment.supplier_id.id : activeShipment.supplier_id || ""),
             date_received: activeShipment.date_received || new Date().toISOString().split("T")[0],
             total_foreign_currency: String(activeShipment.total_foreign_currency),
             exchange_rate: String(activeShipment.exchange_rate),
@@ -479,15 +509,16 @@ export default function IncomingShipments({
             branch_id: activeShipment.branch_id || 182,
             payment_type: activeShipment.payment_type || 1,
             price_type: activeShipment.price_type || "Internal"
+            ,currency_code: (activeShipment as IncomingShipment & { currency_code?: "PHP" | "USD" }).currency_code || "PHP"
         });
 
         // Always re-fetch lines fresh to guarantee quantity_ordered is populated
         let freshLines: ShipmentLineItem[] = [];
         try {
-            const res = await fetch(`/api/manufacturing/procurement/shipments?shipmentId=${activeShipment.shipment_id}`);
+            const res = await fetch(`/api/manufacturing/purchase-orders/${activeShipment.shipment_id}`);
             if (res.ok) {
                 const data = await res.json();
-                freshLines = Array.isArray(data) ? data : (data.lines || []);
+                freshLines = Array.isArray(data) ? data : (data.data || data.lines || []);
             }
         } catch (e) {
             console.error("Failed to fetch fresh lines for edit:", e);
@@ -508,6 +539,11 @@ export default function IncomingShipments({
             parent_product_id: "",
             selected_uom: l.product_id && typeof l.product_id === "object" && l.product_id.unit_of_measurement ? l.product_id.unit_of_measurement.unit_shortcut : "PCS",
             uom_options: []
+            ,purchase_intent: (l as ShipmentLineItem & { purchase_intent?: "MRP_Demand" | "Buffer_Stock" }).purchase_intent || "Buffer_Stock"
+            ,job_order_id: String((l as ShipmentLineItem & { job_order_id?: number }).job_order_id || "")
+            ,discount_percent: String((l as ShipmentLineItem & { discount_percent?: number }).discount_percent || 0)
+            ,vat_percent: String((l as ShipmentLineItem & { vat_percent?: number }).vat_percent || 0)
+            ,withholding_percent: String((l as ShipmentLineItem & { withholding_percent?: number }).withholding_percent || 0)
         })));
 
         setEditingShipmentId(activeShipment.shipment_id);
@@ -528,6 +564,7 @@ export default function IncomingShipments({
             branch_id: null,
             payment_type: null,
             price_type: ""
+            ,currency_code: "PHP"
         });
         setLinesForm([]);
     };
@@ -597,7 +634,11 @@ export default function IncomingShipments({
                     if (!line.product_id) return line;
                     const specialPrice = map[Number(line.product_id)];
                     if (specialPrice !== undefined && specialPrice > 0) {
-                        return { ...line, base_unit_cost_php: String(specialPrice) };
+                        const rate = Number(shipmentForm.exchange_rate) || 1;
+                        const transactionPrice = canonicalDrafting && shipmentForm.currency_code === "USD"
+                            ? specialPrice / rate
+                            : specialPrice;
+                        return { ...line, base_unit_cost_php: String(transactionPrice) };
                     }
                     return line;
                 }));
@@ -607,7 +648,7 @@ export default function IncomingShipments({
             });
 
         return () => { active = false; };
-    }, [shipmentForm.price_type, priceTypes, setLinesForm]);
+    }, [canonicalDrafting, shipmentForm.currency_code, shipmentForm.exchange_rate, shipmentForm.price_type, priceTypes, setLinesForm]);
 
 
 
@@ -666,7 +707,7 @@ export default function IncomingShipments({
         return () => window.removeEventListener("keydown", handleGlobalKeyDown);
     }, [isModalOpen, setIsModalOpen]);
 
-    const filteredShipments = shipments.filter(s => {
+    const filteredShipments = serverList ? shipments : shipments.filter(s => {
         const poNo = s.purchase_order_no || "";
         const matchesSearch = s.reference_number.toLowerCase().includes(search.toLowerCase()) ||
             poNo.toLowerCase().includes(search.toLowerCase()) ||
@@ -676,9 +717,11 @@ export default function IncomingShipments({
         return matchesSearch && matchesStatus;
     });
 
-    const totalItems = filteredShipments.length;
-    const totalPages = Math.ceil(totalItems / itemsPerPage) || 1;
-    const paginatedShipments = filteredShipments.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+    const totalItems = serverList?.total ?? filteredShipments.length;
+    const totalPages = serverList?.totalPages ?? (Math.ceil(totalItems / itemsPerPage) || 1);
+    const paginatedShipments = serverList
+        ? filteredShipments
+        : filteredShipments.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
     const activeShipment = selectedShipment || null;
 
@@ -697,9 +740,9 @@ export default function IncomingShipments({
             })
             .filter((id): id is number => id !== null && !isNaN(id));
 
-        // If no linked products are registered or resolved, show all raw materials as fallback
+        // Legacy screens retain their historical fallback; canonical PO drafting fails closed.
         if (linkedIds.length === 0) {
-            return rawMaterials;
+            return canonicalDrafting ? [] : rawMaterials;
         }
 
         return rawMaterials.filter(rm => {
@@ -707,7 +750,7 @@ export default function IncomingShipments({
             const rmParentId = rm.parent_id ? Number(rm.parent_id) : null;
             return linkedIds.includes(rmId) || (rmParentId !== null && linkedIds.includes(rmParentId));
         });
-    }, [rawMaterials, shipmentForm.supplier_id, supplierLinkedProducts]);
+    }, [canonicalDrafting, rawMaterials, shipmentForm.supplier_id, supplierLinkedProducts]);
 
     const totalPhpValue = React.useMemo(() => {
         return linesForm.reduce((acc, curr) => {
@@ -723,8 +766,32 @@ export default function IncomingShipments({
         return totalPhpValue / rate;
     }, [totalPhpValue, shipmentForm.exchange_rate]);
 
+    const draftSummary = React.useMemo(() => {
+        const exchangeRate = Number(shipmentForm.exchange_rate) || 0;
+        const round = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
+        return linesForm.reduce((summary, line) => {
+            const grossForeign = round((Number(line.quantity_ordered) || 0) * (Number(line.base_unit_cost_php) || 0));
+            const discountForeign = round(grossForeign * (Number(line.discount_percent) || 0) / 100);
+            const subtotalForeign = round(grossForeign - discountForeign);
+            const vatForeign = round(subtotalForeign * (Number(line.vat_percent) || 0) / 100);
+            const withholdingForeign = round(subtotalForeign * (Number(line.withholding_percent) || 0) / 100);
+            const netForeign = round(subtotalForeign + vatForeign - withholdingForeign);
+            return {
+                grossPhp: round(summary.grossPhp + grossForeign * exchangeRate),
+                discountPhp: round(summary.discountPhp + discountForeign * exchangeRate),
+                vatPhp: round(summary.vatPhp + vatForeign * exchangeRate),
+                withholdingPhp: round(summary.withholdingPhp + withholdingForeign * exchangeRate),
+                netPhp: round(summary.netPhp + netForeign * exchangeRate),
+                netForeign: round(summary.netForeign + netForeign)
+            };
+        }, { grossPhp: 0, discountPhp: 0, vatPhp: 0, withholdingPhp: 0, netPhp: 0, netForeign: 0 });
+    }, [linesForm, shipmentForm.exchange_rate]);
+
     const handleAddLineForm = () => {
-        setLinesForm([...linesForm, { parent_product_id: "", product_id: "", quantity_ordered: "", base_unit_cost_php: "" }]);
+        setLinesForm([...linesForm, {
+            parent_product_id: "", product_id: "", quantity_ordered: "", base_unit_cost_php: "",
+            purchase_intent: "Buffer_Stock", job_order_id: "", discount_percent: "0", vat_percent: "0", withholding_percent: "0"
+        }]);
     };
 
     const handleRemoveLineForm = (index: number) => {
@@ -745,8 +812,10 @@ export default function IncomingShipments({
 
     const getStatusBadge = (status: string) => {
         switch (status) {
+            case "Requested":
+                return <span className="bg-blue-500/10 text-blue-600 border border-blue-500/20 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase">Requested</span>;
             case "Ordered":
-                return <span className="bg-blue-500/10 text-blue-600 border border-blue-500/20 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase">Ordered</span>;
+                return <span className="bg-blue-500/10 text-blue-600 border border-blue-500/20 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase">{canonicalDrafting ? "Requested" : "Ordered"}</span>;
             case "Approved":
                 return <span className="bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase">Approved</span>;
             case "Cancelled":
@@ -777,13 +846,13 @@ export default function IncomingShipments({
                         <h3 className="font-bold text-sm text-foreground flex items-center gap-1.5 min-w-0">
                             <Anchor className="h-4 w-4 text-primary shrink-0" />
                             <span className="truncate">Procurement Registry</span>
-                            <span className="text-[10px] text-muted-foreground shrink-0">({filteredShipments.length})</span>
+                            <span className="text-[10px] text-muted-foreground shrink-0">({totalItems})</span>
                         </h3>
                         <button
                             onClick={() => { setIsOverridden(false); setIsModalOpen(true); }}
                             className="inline-flex items-center gap-1 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold px-2.5 py-1.5 rounded-lg text-xs transition-all shadow-sm shrink-0 cursor-pointer"
                         >
-                            <Plus className="h-3.5 w-3.5" /> Log Cargo
+                            <Plus className="h-3.5 w-3.5" /> {canonicalDrafting ? "Create PO" : "Log Cargo"}
                         </button>
                     </div>                    <div className="flex gap-2">
                         <div className="relative flex-1">
@@ -811,7 +880,7 @@ export default function IncomingShipments({
                             className="rounded-lg border bg-background px-2.5 py-1.5 text-xs outline-none focus:ring-1 focus:ring-primary font-semibold text-foreground h-9 w-32"
                         >
                             <option value="All">All Statuses</option>
-                            <option value="Ordered">Ordered</option>
+                            <option value={canonicalDrafting ? "Requested" : "Ordered"}>{canonicalDrafting ? "Requested" : "Ordered"}</option>
                             <option value="Approved">Approved</option>
                             <option value="Cancelled">Cancelled</option>
                             <option value="For Pickup">For Pickup</option>
@@ -827,7 +896,7 @@ export default function IncomingShipments({
                 <div className="flex-1 overflow-y-auto divide-y">
                     {paginatedShipments.length === 0 ? (
                         <div className="p-8 text-center text-xs text-muted-foreground">
-                            No shipments logged. Click &quot;Log Cargo&quot; to add one.
+                            {canonicalDrafting ? "No purchase orders found. Click Create PO to add one." : "No shipments logged. Click Log Cargo to add one."}
                         </div>
                     ) : (
                         paginatedShipments.map(s => {
@@ -844,7 +913,7 @@ export default function IncomingShipments({
                                     }`}
                                 >
                                     <div className="flex items-start justify-between gap-2">
-                                        <span className="font-bold text-xs text-foreground truncate">BL/PO: {s.reference_number}</span>
+                                        <span className="font-bold text-xs text-foreground truncate">{canonicalDrafting ? `PO: ${s.purchase_order_no || s.reference_number}` : `BL/PO: ${s.reference_number}`}</span>
                                         {getStatusBadge(s.status)}
                                     </div>
                                     <div className="flex items-center justify-between text-[11px] text-muted-foreground font-semibold">
@@ -921,7 +990,7 @@ export default function IncomingShipments({
                         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 border-b pb-5">
                             <div className="space-y-1.5">
                                 <div className="flex items-center gap-2">
-                                    <h2 className="text-base font-extrabold text-foreground leading-tight">Cargo Invoice / BL: {activeShipment.reference_number}</h2>
+                                    <h2 className="text-base font-extrabold text-foreground leading-tight">{canonicalDrafting ? `Purchase Order: ${activeShipment.purchase_order_no || activeShipment.reference_number}` : `Cargo Invoice / BL: ${activeShipment.reference_number}`}</h2>
                                     {getStatusBadge(activeShipment.status)}
                                 </div>
                                 <p className="text-xs text-muted-foreground">
@@ -978,14 +1047,15 @@ export default function IncomingShipments({
                                 </div>
                                 {/* Status Progress Stepper (Read-Only) */}
                                 <div className="mt-4 border bg-muted/20 rounded-xl p-4 space-y-3">
-                                    <div className="text-[10px] font-extrabold text-muted-foreground uppercase tracking-wider block">Shipment Life Cycle Progress</div>
+                                    <div className="text-[10px] font-extrabold text-muted-foreground uppercase tracking-wider block">{canonicalDrafting ? "Purchase Order Workflow Progress" : "Shipment Life Cycle Progress"}</div>
                                     <div className="flex items-center w-full relative">
                                         {(activeShipment.status === "For Pickup"
                                             ? ["Ordered", "Approved", "For Pickup", "En Route", "Receiving (QA)", "Received"]
                                             : ["Ordered", "Approved", "En Route", "Receiving (QA)", "Received"]
                                         ).map((st, idx, arr) => {
                                             const statuses = arr;
-                                            const currentIdx = statuses.indexOf(activeShipment.status);
+                                            const currentStatus = activeShipment.status === "Requested" ? "Ordered" : activeShipment.status;
+                                            const currentIdx = statuses.indexOf(currentStatus);
                                             const stepIdx = statuses.indexOf(st);
                                             
                                             const isCompleted = stepIdx < currentIdx;
@@ -1005,7 +1075,7 @@ export default function IncomingShipments({
                                                         </div>
                                                         <span className={`text-[9px] font-bold mt-1.5 truncate max-w-[70px] ${
                                                             isActive ? "text-primary animate-pulse" : "text-muted-foreground"
-                                                        }`}>{st}</span>
+                                                        }`}>{canonicalDrafting && st === "Ordered" ? "Requested" : st}</span>
                                                     </div>
                                                     {idx < arr.length - 1 && (
                                                         <div className={`flex-1 h-[2px] -mt-4 transition-all ${
@@ -1033,14 +1103,29 @@ export default function IncomingShipments({
                                         </button>
                                     )}
 
-                                    {activeShipment.status === "Ordered" && (
-                                        <button
-                                            type="button"
-                                            onClick={handleStartEdit}
-                                            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-3 rounded-lg text-xs transition-all shadow-sm cursor-pointer mt-3 inline-flex items-center justify-center gap-1.5"
-                                        >
-                                            Edit Purchase Order
-                                        </button>
+                                    {(activeShipment.status === "Requested" || activeShipment.status === "Ordered") && (
+                                        <div className="grid grid-cols-2 gap-2 mt-3">
+                                            <button
+                                                type="button"
+                                                onClick={handleStartEdit}
+                                                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-3 rounded-lg text-xs transition-all shadow-sm cursor-pointer inline-flex items-center justify-center gap-1.5"
+                                            >
+                                                Edit Purchase Order
+                                            </button>
+                                            {canonicalDrafting && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        if (window.confirm("Cancel this Requested purchase order? This action cannot be undone.")) {
+                                                            onUpdateShipmentStatus(activeShipment.shipment_id, "Cancelled");
+                                                        }
+                                                    }}
+                                                    className="w-full border border-red-500/30 bg-red-500/10 text-red-700 hover:bg-red-500/20 font-bold py-2.5 px-3 rounded-lg text-xs transition-all"
+                                                >
+                                                    Cancel PO
+                                                </button>
+                                            )}
+                                        </div>
                                     )}
 
                                     {activeShipment.status === "En Route" && (
@@ -1064,7 +1149,7 @@ export default function IncomingShipments({
                         {/* Totals Summary */}
                         <div className="grid gap-4 grid-cols-2 sm:grid-cols-4">
                             <div className="border p-4 rounded-xl bg-muted/5 space-y-1">
-                                <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Raw FOB Cost</span>
+                                <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">{canonicalDrafting ? "Net Total" : "Raw FOB Cost"}</span>
                                 <span className="text-xs font-extrabold text-foreground">
                                     ₱{Number(activeShipment.total_php_value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </span>
@@ -1072,7 +1157,7 @@ export default function IncomingShipments({
                             <div className="border p-4 rounded-xl bg-muted/5 space-y-1">
                                 <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Foreign Currency</span>
                                 <span className="text-xs font-extrabold text-foreground">
-                                    ${Number(activeShipment.total_foreign_currency).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
+                                    {Number(activeShipment.total_foreign_currency).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {activeShipment.currency_code || "PHP"}
                                 </span>
                             </div>
                             <div className="border p-4 rounded-xl bg-muted/5 space-y-1">
@@ -1107,7 +1192,7 @@ export default function IncomingShipments({
                         <div className="space-y-3">
                             <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1 border-b pb-2">
                                 <Layers className="h-4 w-4 text-primary" />
-                                Shipment Manifest & Contents
+                                {canonicalDrafting ? "Purchase Order Lines" : "Shipment Manifest & Contents"}
                             </h3>
                             <div className="border rounded-lg overflow-hidden">
                                 <table className="w-full text-left border-collapse text-xs">
@@ -1189,11 +1274,11 @@ export default function IncomingShipments({
             {/* Modal to Log Shipment Cargo */}
             {isModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 overflow-y-auto">
-                    <div className="bg-card text-foreground w-full max-w-2xl border rounded-xl shadow-lg p-6 space-y-4 max-h-[90vh] flex flex-col">
+                    <div className={`bg-card text-foreground w-full ${canonicalDrafting ? "max-w-6xl" : "max-w-2xl"} border rounded-xl shadow-lg p-6 space-y-4 max-h-[90vh] flex flex-col`}>
                         <div className="flex items-center justify-between border-b pb-3 shrink-0">
                             <h3 className="font-bold text-sm flex items-center gap-2">
                                 <Anchor className="h-4.5 w-4.5 text-primary" />
-                                {editingShipmentId ? "Edit & Resubmit Purchase Order" : "Log Incoming Cargo & PO Line Items"}
+                                {editingShipmentId ? "Edit Requested Purchase Order" : canonicalDrafting ? "Create Purchase Order" : "Log Incoming Cargo & PO Line Items"}
                             </h3>
                             <button
                                 onClick={handleCloseModal}
@@ -1208,19 +1293,34 @@ export default function IncomingShipments({
                             <div className="space-y-4 overflow-y-auto pr-1 flex-1 pb-44">
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-1.5">
-                                    <label className="text-[11px] font-semibold text-muted-foreground">PO / Bill of Lading Number *</label>
+                                    <label className="text-[11px] font-semibold text-muted-foreground">{canonicalDrafting ? "PO Number" : "PO / Bill of Lading Number *"}</label>
                                     <input
                                         type="text"
-                                        required
-                                        placeholder="e.g. BL-NABATI-2026-004"
-                                        value={shipmentForm.reference_number}
+                                        required={!canonicalDrafting}
+                                        readOnly={canonicalDrafting}
+                                        placeholder={canonicalDrafting ? "Assigned on submission" : "e.g. BL-NABATI-2026-004"}
+                                        value={canonicalDrafting ? (editingShipmentId ? activeShipment?.purchase_order_no || "" : "") : shipmentForm.reference_number}
                                         onChange={e => setShipmentForm({...shipmentForm, reference_number: e.target.value})}
-                                        className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary"
+                                        className={`w-full rounded-lg border px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary ${canonicalDrafting ? "bg-muted text-muted-foreground" : "bg-background"}`}
                                     />
                                 </div>
 
+                                {canonicalDrafting && (
+                                    <div className="space-y-1.5">
+                                        <label className="text-[11px] font-semibold text-muted-foreground">External Reference (optional)</label>
+                                        <input
+                                            type="text"
+                                            maxLength={255}
+                                            placeholder="Supplier quote, request, or logistics reference"
+                                            value={shipmentForm.reference_number}
+                                            onChange={e => setShipmentForm({...shipmentForm, reference_number: e.target.value})}
+                                            className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary"
+                                        />
+                                    </div>
+                                )}
+
                                 <div className="space-y-1.5 flex flex-col">
-                                    <label className="text-[11px] font-semibold text-muted-foreground">Select Vendor / Supplier *</label>
+                                    <label className="text-[11px] font-semibold text-muted-foreground">Supplier *</label>
                                     <CreatableSelect
                                         options={suppliers.map(s => ({ value: String(s.id), label: s.supplier_name }))}
                                         value={String(shipmentForm.supplier_id)}
@@ -1232,8 +1332,12 @@ export default function IncomingShipments({
 
                                 <div className="space-y-1.5">
                                     <div className="flex items-center justify-between">
-                                        <label className="text-[11px] font-semibold text-muted-foreground">Customs FX Rate Used (USD to PHP)</label>
-                                        {isFinanceManager ? (
+                                        <label className="text-[11px] font-semibold text-muted-foreground">Exchange Rate to PHP</label>
+                                        {canonicalDrafting ? (
+                                            <span className="text-[9px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded font-mono">
+                                                {editingShipmentId ? "Locked" : "Locks on submission"}
+                                            </span>
+                                        ) : isFinanceManager ? (
                                             <label className="flex items-center gap-1 text-[10px] text-primary cursor-pointer select-none font-semibold">
                                                 <input 
                                                     type="checkbox" 
@@ -1252,20 +1356,43 @@ export default function IncomingShipments({
                                     <input
                                         type="number"
                                         step="0.0001"
-                                        readOnly={!isOverridden || !isFinanceManager}
+                                        readOnly={canonicalDrafting ? shipmentForm.currency_code === "PHP" || Boolean(editingShipmentId) : !isOverridden || !isFinanceManager}
                                         value={String(shipmentForm.exchange_rate)}
                                         onChange={e => setShipmentForm({...shipmentForm, exchange_rate: e.target.value})}
                                         className={`w-full rounded-lg border px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary font-mono font-semibold ${
-                                            (!isOverridden || !isFinanceManager) ? "bg-muted text-muted-foreground cursor-not-allowed" : "bg-background text-foreground"
+                                            (canonicalDrafting
+                                                ? shipmentForm.currency_code === "PHP" || Boolean(editingShipmentId)
+                                                : !isOverridden || !isFinanceManager)
+                                                ? "bg-muted text-muted-foreground cursor-not-allowed"
+                                                : "bg-background text-foreground"
                                         }`}
                                     />
-                                    {isOverridden && isFinanceManager && (
+                                    {!canonicalDrafting && isOverridden && isFinanceManager && (
                                         <p className="text-[10px] text-amber-600 font-semibold mt-1 flex items-start gap-1">
                                             <AlertCircle className="h-3.5 w-3.5 shrink-0" />
                                             Warning: You are overriding the standard Customs FX Rate. This may affect standard landed cost calculations.
                                         </p>
                                     )}
                                 </div>
+
+                                {canonicalDrafting && (
+                                    <div className="space-y-1.5 flex flex-col">
+                                        <label className="text-[11px] font-semibold text-muted-foreground">Currency *</label>
+                                        <select
+                                            value={shipmentForm.currency_code || "PHP"}
+                                            disabled={Boolean(editingShipmentId)}
+                                            onChange={event => {
+                                                const currency = event.target.value as "PHP" | "USD";
+                                                const savedRate = typeof window === "undefined" ? "" : localStorage.getItem("vos_locked_forex_rate") || "";
+                                                setShipmentForm({ ...shipmentForm, currency_code: currency, exchange_rate: currency === "PHP" ? "1" : savedRate });
+                                            }}
+                                            className="w-full rounded-lg border bg-background px-3 py-2 text-xs font-semibold h-9 disabled:bg-muted"
+                                        >
+                                            <option value="PHP">PHP - Philippine Peso</option>
+                                            <option value="USD">USD - US Dollar</option>
+                                        </select>
+                                    </div>
+                                )}
 
                                 <div className="space-y-1.5 flex flex-col">
                                     <label className="text-[11px] font-semibold text-muted-foreground">Destination Branch *</label>
@@ -1315,7 +1442,7 @@ export default function IncomingShipments({
                                     </select>
                                 </div>
 
-                                <div className="space-y-1.5 col-span-2">
+                                {!canonicalDrafting && <div className="space-y-1.5 col-span-2">
                                     <label className="text-[11px] font-semibold text-muted-foreground">Receive Date / ETA *</label>
                                     <input
                                         type="date"
@@ -1324,13 +1451,13 @@ export default function IncomingShipments({
                                         onChange={e => setShipmentForm({...shipmentForm, date_received: e.target.value})}
                                         className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary font-semibold text-foreground text-left"
                                     />
-                                </div>
+                                </div>}
                             </div>
 
                             {/* Cargo Manifest builder */}
                             <div className="space-y-3 pt-3 border-t">
                                 <div className="flex items-center justify-between">
-                                    <h4 className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Cargo Manifest Contents</h4>
+                                    <h4 className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider">{canonicalDrafting ? "Purchase Order Lines" : "Cargo Manifest Contents"}</h4>
                                     {shipmentForm.supplier_id && (
                                         <button
                                             type="button"
@@ -1351,7 +1478,7 @@ export default function IncomingShipments({
                                 ) : (
                                     <div className="space-y-3 animate-in fade-in duration-200">
                                         {linesForm.map((line, idx) => (
-                                            <div key={idx} className="flex gap-3 items-end bg-muted/10 border p-3 pr-10 rounded-lg relative flex-wrap sm:flex-nowrap">
+                                            <div key={idx} className="flex gap-3 items-end bg-muted/10 border p-3 pr-10 rounded-lg relative flex-wrap">
                                                 <div className="flex-[3] space-y-1.5 min-w-[200px] flex flex-col relative">
                                                     <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Raw Product Name <span className="text-red-500">*</span></label>
                                                     <RawProductSelector
@@ -1389,6 +1516,11 @@ export default function IncomingShipments({
                                                             if (specialPrice !== undefined && specialPrice > 0) {
                                                                 finalSelected.base_unit_cost_php = String(specialPrice);
                                                             }
+                                                            if (canonicalDrafting && shipmentForm.currency_code === "USD") {
+                                                                finalSelected.base_unit_cost_php = String(
+                                                                    Number(finalSelected.base_unit_cost_php) / (Number(shipmentForm.exchange_rate) || 1)
+                                                                );
+                                                            }
 
                                                             handleLineFormChange(idx, finalSelected);
                                                             // Move focus to Qty Ordered input of the same row
@@ -1424,6 +1556,9 @@ export default function IncomingShipments({
                                                                     if (specialPrice !== undefined && specialPrice > 0) {
                                                                         costVal = specialPrice;
                                                                     }
+                                                                    if (canonicalDrafting && shipmentForm.currency_code === "USD") {
+                                                                        costVal /= Number(shipmentForm.exchange_rate) || 1;
+                                                                    }
                                                                     handleLineFormChange(idx, {
                                                                         product_id: String(selectedId),
                                                                         selected_uom: opt.unit_shortcut,
@@ -1435,7 +1570,11 @@ export default function IncomingShipments({
                                                         >
                                                             {line.uom_options.map((o: UOMOption) => (
                                                                 <option key={o.product_id} value={o.product_id}>
-                                                                    {o.unit_shortcut} (₱{Number(o.cost_per_unit || 0).toFixed(2)})
+                                                                    {o.unit_shortcut} ({shipmentForm.currency_code || "PHP"} {Number(
+                                                                        canonicalDrafting && shipmentForm.currency_code === "USD"
+                                                                            ? Number(o.cost_per_unit || 0) / (Number(shipmentForm.exchange_rate) || 1)
+                                                                            : o.cost_per_unit || 0
+                                                                    ).toFixed(2)})
                                                                 </option>
                                                             ))}
                                                         </select>
@@ -1491,7 +1630,7 @@ export default function IncomingShipments({
                                                 </div>
 
                                                 <div className="w-28 space-y-1.5 shrink-0">
-                                                    <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">FOB Unit Cost (PHP) <span className="text-red-500">*</span></label>
+                                                    <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Unit Price ({shipmentForm.currency_code || "PHP"}) <span className="text-red-500">*</span></label>
                                                     <input
                                                         id={`cost-input-${idx}`}
                                                         type="number"
@@ -1519,6 +1658,57 @@ export default function IncomingShipments({
                                                         className="w-full rounded-lg border bg-background px-2.5 py-1.5 text-xs outline-none font-mono h-9"
                                                     />
                                                 </div>
+                                                {canonicalDrafting && (
+                                                    <>
+                                                        <div className="w-36 space-y-1.5 shrink-0">
+                                                            <label className="text-[10px] text-muted-foreground font-bold uppercase">Purchase Intent</label>
+                                                            <select
+                                                                value={line.purchase_intent || "Buffer_Stock"}
+                                                                onChange={event => handleLineFormChange(idx, {
+                                                                    purchase_intent: event.target.value,
+                                                                    job_order_id: event.target.value === "Buffer_Stock" ? "" : line.job_order_id || ""
+                                                                })}
+                                                                className="w-full rounded-lg border bg-background px-2 py-1.5 text-xs h-9"
+                                                            >
+                                                                <option value="Buffer_Stock">Buffer Stock</option>
+                                                                <option value="MRP_Demand">MRP Demand</option>
+                                                            </select>
+                                                        </div>
+                                                        <div className="w-44 space-y-1.5 shrink-0">
+                                                            <label className="text-[10px] text-muted-foreground font-bold uppercase">Job Order</label>
+                                                            <select
+                                                                value={line.job_order_id || ""}
+                                                                disabled={(line.purchase_intent || "Buffer_Stock") !== "MRP_Demand"}
+                                                                required={line.purchase_intent === "MRP_Demand"}
+                                                                onChange={event => handleLineFormChange(idx, "job_order_id", event.target.value)}
+                                                                className="w-full rounded-lg border bg-background px-2 py-1.5 text-xs h-9 disabled:bg-muted"
+                                                            >
+                                                                <option value="">Select job order</option>
+                                                                {jobOrders.map(jobOrder => (
+                                                                    <option key={jobOrder.job_order_id} value={jobOrder.job_order_id}>
+                                                                        {jobOrder.job_order_no || `JO-${jobOrder.job_order_id}`}
+                                                                    </option>
+                                                                ))}
+                                                            </select>
+                                                        </div>
+                                                        {(["discount_percent", "vat_percent", "withholding_percent"] as const).map(field => (
+                                                            <div key={field} className="w-24 space-y-1.5 shrink-0">
+                                                                <label className="text-[10px] text-muted-foreground font-bold uppercase">
+                                                                    {field === "discount_percent" ? "Discount %" : field === "vat_percent" ? "VAT %" : "Withhold %"}
+                                                                </label>
+                                                                <input
+                                                                    type="number"
+                                                                    min="0"
+                                                                    max="100"
+                                                                    step="0.01"
+                                                                    value={line[field] || "0"}
+                                                                    onChange={event => handleLineFormChange(idx, field, event.target.value)}
+                                                                    className="w-full rounded-lg border bg-background px-2 py-1.5 text-xs h-9 font-mono"
+                                                                />
+                                                            </div>
+                                                        ))}
+                                                    </>
+                                                )}
                                                 {linesForm.length > 1 && (
                                                     <button
                                                         type="button"
@@ -1536,20 +1726,40 @@ export default function IncomingShipments({
                             </div>
 
                             {/* Live calculations display */}
-                            {totalPhpValue > 0 && (
+                            {(canonicalDrafting ? draftSummary.netPhp : totalPhpValue) > 0 && (
                                 <div className="p-3.5 bg-muted/40 border rounded-xl space-y-2 animate-in fade-in duration-200 shadow-inner">
+                                    {canonicalDrafting ? (
+                                        <>
+                                            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-xs">
+                                                <span>Gross <strong className="block font-mono text-foreground">PHP {draftSummary.grossPhp.toFixed(2)}</strong></span>
+                                                <span>Discount <strong className="block font-mono text-foreground">PHP {draftSummary.discountPhp.toFixed(2)}</strong></span>
+                                                <span>VAT <strong className="block font-mono text-foreground">PHP {draftSummary.vatPhp.toFixed(2)}</strong></span>
+                                                <span>Withholding <strong className="block font-mono text-foreground">PHP {draftSummary.withholdingPhp.toFixed(2)}</strong></span>
+                                                <span>Net <strong className="block font-mono text-foreground">PHP {draftSummary.netPhp.toFixed(2)}</strong></span>
+                                            </div>
+                                            <div className="flex justify-between border-t pt-2 text-xs font-bold">
+                                                <span>Locked {shipmentForm.currency_code || "PHP"} total</span>
+                                                <span className="font-mono">{draftSummary.netForeign.toFixed(2)} {shipmentForm.currency_code || "PHP"}</span>
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <>
                                     <div className="flex justify-between text-xs font-bold text-muted-foreground">
                                         <span>Total Cargo Value (PHP)</span>
                                         <span className="font-mono text-foreground text-sm font-extrabold">
                                             ₱{totalPhpValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                         </span>
                                     </div>
-                                    <div className="flex justify-between text-xs font-bold text-muted-foreground border-t pt-1.5">
-                                        <span>Total Cargo Value (USD @ {parseFloat(shipmentForm.exchange_rate) || "N/A"})</span>
-                                        <span className="font-mono text-foreground text-sm font-extrabold">
-                                            ${totalUsdValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                        </span>
-                                    </div>
+                                        </>
+                                    )}
+                                    {!canonicalDrafting && (
+                                        <div className="flex justify-between text-xs font-bold text-muted-foreground border-t pt-1.5">
+                                            <span>Total Cargo Value (USD @ {parseFloat(shipmentForm.exchange_rate) || "N/A"})</span>
+                                            <span className="font-mono text-foreground text-sm font-extrabold">
+                                                ${totalUsdValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            </span>
+                                        </div>
+                                    )}
                                 </div>
                             )}
 
@@ -1570,12 +1780,12 @@ export default function IncomingShipments({
                                     disabled={loading}
                                     className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground hover:bg-primary/95 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
-                                    {loading ? (
+                                            {loading ? (
                                         <>
                                             <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                            {editingShipmentId ? "Saving Changes..." : "Registering Shipment..."}
+                                            {editingShipmentId ? "Saving Changes..." : canonicalDrafting ? "Creating Purchase Order..." : "Registering Shipment..."}
                                         </>
-                                    ) : (editingShipmentId ? "Save & Resubmit PO" : "Register Shipment")}
+                                    ) : (editingShipmentId ? "Save Requested PO" : canonicalDrafting ? "Create Purchase Order" : "Register Shipment")}
                                 </button>
                             </div>
                         </form>

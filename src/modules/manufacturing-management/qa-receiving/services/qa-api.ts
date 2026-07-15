@@ -1,27 +1,44 @@
 import { Shipment, ShipmentLineItem, Branch, StorageLot } from "../types";
 
-export async function fetchActiveShipments(): Promise<Shipment[]> {
-    const res = await fetch("/api/manufacturing/procurement/shipments");
+export async function fetchActiveShipments(filters: {
+    search?: string;
+    status?: string;
+    startDate?: string;
+    endDate?: string;
+    includeReceived?: boolean;
+} = {}, signal?: AbortSignal): Promise<Shipment[]> {
+    const params = new URLSearchParams({
+        limit: "100",
+        queue: "receiving",
+        includeReceived: String(Boolean(filters.includeReceived))
+    });
+    if (filters.search) params.set("search", filters.search);
+    if (filters.status) params.set("status", filters.status);
+    if (filters.startDate) params.set("startDate", filters.startDate);
+    if (filters.endDate) params.set("endDate", filters.endDate);
+    const res = await fetch(`/api/manufacturing/purchase-orders?${params.toString()}`, { signal });
     if (!res.ok) throw new Error("Failed to load active shipments");
-    return res.json();
+    const body = await res.json();
+    return body.data || [];
 }
 
-export async function fetchBranches(): Promise<Branch[]> {
-    const res = await fetch("/api/manufacturing/procurement/qa-receiving?action=branches");
+export async function fetchBranches(signal?: AbortSignal): Promise<Branch[]> {
+    const res = await fetch("/api/manufacturing/qa-receiving?action=branches", { signal });
     if (!res.ok) throw new Error("Failed to load branch list");
     return res.json();
 }
 
-export async function fetchStorageLots(): Promise<StorageLot[]> {
-    const res = await fetch("/api/manufacturing/procurement/qa-receiving?action=lots");
+export async function fetchStorageLots(signal?: AbortSignal): Promise<StorageLot[]> {
+    const res = await fetch("/api/manufacturing/qa-receiving?action=lots", { signal });
     if (!res.ok) throw new Error("Failed to load storage lots");
     return res.json();
 }
 
-export async function fetchShipmentDetails(shipmentId: number): Promise<ShipmentLineItem[]> {
-    const res = await fetch(`/api/manufacturing/procurement/shipments?shipmentId=${shipmentId}`);
+export async function fetchShipmentDetails(shipmentId: number, signal?: AbortSignal): Promise<ShipmentLineItem[]> {
+    const res = await fetch(`/api/manufacturing/purchase-orders/${shipmentId}`, { signal });
     if (!res.ok) throw new Error("Failed to load shipment lines");
-    return res.json();
+    const body = await res.json();
+    return body.data || [];
 }
 
 export async function submitInspection(payload: {
@@ -42,7 +59,7 @@ export async function submitInspection(payload: {
         qa_status: string;
     }>;
 }): Promise<void> {
-    const res = await fetch("/api/manufacturing/procurement/qa-receiving", {
+    const res = await fetch("/api/manufacturing/qa-receiving", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
@@ -54,8 +71,8 @@ export async function submitInspection(payload: {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function fetchFifoInventory(branchId: string): Promise<any[]> {
-    const res = await fetch(`/api/manufacturing/procurement/qa-receiving?branchId=${branchId}`);
+export async function fetchFifoInventory(branchId: string, signal?: AbortSignal): Promise<any[]> {
+    const res = await fetch(`/api/manufacturing/qa-receiving?branchId=${branchId}`, { signal });
     if (!res.ok) throw new Error("Failed to load branch inventory ledger");
     return res.json();
 }

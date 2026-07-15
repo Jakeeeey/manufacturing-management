@@ -3,6 +3,11 @@ import { NextResponse } from "next/server";
 import { DIRECTUS_URL, headers } from "../_directus";
 import { canonicalBatchNumber } from "../_domain";
 import { handleQaReceivingPost } from "./_receiving-service";
+import {
+    PURCHASE_ORDER_MODULE_PATHS,
+    PurchaseOrderAuthorizationError,
+    requirePurchaseOrderModuleAccess
+} from "../../purchase-orders/_auth";
 
 interface DirectusLotLog {
     id: number;
@@ -38,6 +43,7 @@ interface DirectusPurchaseOrderMin {
 
 export async function GET(request: Request) {
     try {
+        await requirePurchaseOrderModuleAccess({ modulePath: PURCHASE_ORDER_MODULE_PATHS.receiving });
         const { searchParams } = new URL(request.url);
         const branchId = searchParams.get("branchId");
         const productId = searchParams.get("productId");
@@ -226,10 +232,19 @@ export async function GET(request: Request) {
         return NextResponse.json({ error: "Missing parameter branchId or action=branches" }, { status: 400 });
     } catch (e) {
         console.error("API Error in QA Receiving route:", e);
-        return NextResponse.json({ error: (e as { message?: string }).message || "Internal server error" }, { status: 500 });
+        return NextResponse.json({ error: (e as { message?: string }).message || "Internal server error" }, {
+            status: e instanceof PurchaseOrderAuthorizationError ? e.status : 500
+        });
     }
 }
 
 export async function POST(request: Request) {
-    return handleQaReceivingPost(request);
+    try {
+        await requirePurchaseOrderModuleAccess({ modulePath: PURCHASE_ORDER_MODULE_PATHS.receiving });
+        return handleQaReceivingPost(request);
+    } catch (error) {
+        return NextResponse.json({ error: (error as Error).message || "Failed to process QA receiving." }, {
+            status: error instanceof PurchaseOrderAuthorizationError ? error.status : 500
+        });
+    }
 }

@@ -10,7 +10,7 @@ import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { NavUser } from "@/components/shared/app-sidebar/nav-user";
 import { cookies } from "next/headers";
-import ProcurementModule from "@/modules/manufacturing-management/procurement/ProcurementModule";
+import PurchaseOrderModule from "@/modules/manufacturing-management/purchase-order/PurchaseOrderModule";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -107,7 +107,7 @@ export default async function IncomingShipmentsPage() {
             </header>
 
             <main className="min-h-0 min-w-0 flex-1 flex flex-col p-2 sm:p-4 bg-background overflow-hidden">
-                <ProcurementModule initialTab="incoming-shipments" />
+                <PurchaseOrderModule />
             </main>
         </div>
     );

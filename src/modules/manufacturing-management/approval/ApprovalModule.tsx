@@ -1,10 +1,45 @@
-/* eslint-disable */
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { Anchor, Calendar, Layers, Search, ShieldAlert, CheckCircle, Loader2 } from "lucide-react";
-import { useProcurement } from "../procurement/hooks/useProcurement";
+import { useEffect, useMemo, useState } from "react";
+import {
+    CalendarDays,
+    Check,
+    CheckCircle2,
+    Clock3,
+    FileCheck2,
+    History,
+    Loader2,
+    Search,
+    ShieldCheck,
+    X
+} from "lucide-react";
 import { toast } from "sonner";
+import { usePurchaseOrderApproval } from "../purchase-order-approval/hooks/usePurchaseOrderApproval";
+
+type QueueTab = "Requested" | "Approved" | "Rejected";
+
+const queueTabs: Array<{ value: QueueTab; label: string; icon: typeof Clock3 }> = [
+    { value: "Requested", label: "Pending", icon: Clock3 },
+    { value: "Approved", label: "Approved", icon: CheckCircle2 },
+    { value: "Rejected", label: "Rejected", icon: X }
+];
+
+function money(value: unknown, currency = "PHP") {
+    return new Intl.NumberFormat("en-PH", { style: "currency", currency, maximumFractionDigits: 2 }).format(Number(value || 0));
+}
+
+function dateTime(value?: string | null) {
+    return value ? new Date(value).toLocaleString("en-PH", { dateStyle: "medium", timeStyle: "short" }) : "-";
+}
+
+function statusBadge(status: string) {
+    const styles: Record<string, string> = {
+        Requested: "border-amber-300 bg-amber-50 text-amber-700",
+        Approved: "border-emerald-300 bg-emerald-50 text-emerald-700",
+        Rejected: "border-red-300 bg-red-50 text-red-700"
+    };
+    return <span className={`rounded border px-2 py-1 text-[10px] font-bold uppercase ${styles[status] || "border-border bg-muted text-muted-foreground"}`}>{status}</span>;
+}
 
 export default function ApprovalModule() {
     const {
@@ -14,409 +49,255 @@ export default function ApprovalModule() {
         selectedShipment,
         setSelectedShipment,
         selectedShipmentLines,
-        handleUpdateShipmentStatus,
-    } = useProcurement("incoming-shipments");
-
+        approvalDetail,
+        approve,
+        reject,
+        load
+    } = usePurchaseOrderApproval();
+    const [tab, setTab] = useState<QueueTab>("Requested");
     const [search, setSearch] = useState("");
-    const [etaDate, setEtaDate] = useState("");
-    const [approvedPrices, setApprovedPrices] = useState<Record<number, number>>({});
-    const [isApproving, setIsApproving] = useState(false);
-    const [rejectRemarks, setRejectRemarks] = useState("");
-    const [isRejecting, setIsRejecting] = useState(false);
-
-    // Filter shipments: only show Ordered (Pending Approval) or Approved status
-    const filteredShipments = shipments.filter(s => {
-        const matchesSearch = s.reference_number.toLowerCase().includes(search.toLowerCase()) ||
-            (s.supplier_id && typeof s.supplier_id === "object" && s.supplier_id.supplier_name.toLowerCase().includes(search.toLowerCase()));
-        const matchesStatus = s.status === "Ordered" || s.status === "Approved";
-        return matchesSearch && matchesStatus;
-    });
-
-    const activeShipment = selectedShipment || null;
-
-    // Hydrate ETA Date and item prices when active shipment changes
-    useEffect(() => {
-        if (activeShipment) {
-            setEtaDate(activeShipment.lead_time_receiving ? new Date(activeShipment.lead_time_receiving).toISOString().split('T')[0] : "");
-        }
-    }, [activeShipment]);
+    const [eta, setEta] = useState("");
+    const [remarks, setRemarks] = useState("");
+    const [submitting, setSubmitting] = useState<"approve" | "reject" | null>(null);
 
     useEffect(() => {
-        if (selectedShipmentLines.length > 0) {
-            const prices: Record<number, number> = {};
-            selectedShipmentLines.forEach((line) => {
-                const pId = typeof line.product_id === "object" && line.product_id ? line.product_id.product_id : Number(line.product_id);
-                prices[pId] = Number(line.base_unit_cost_php || 0);
-            });
-            setApprovedPrices(prices);
-        }
-    }, [selectedShipmentLines]);
+        const timeout = window.setTimeout(() => {
+            setSelectedShipment(null);
+            void load({ status: tab, search, limit: 100 });
+        }, 250);
+        return () => window.clearTimeout(timeout);
+    }, [load, search, setSelectedShipment, tab]);
+
+    useEffect(() => {
+        setEta(approvalDetail?.order.lead_time_receiving?.slice(0, 10) || "");
+        setRemarks("");
+    }, [approvalDetail]);
+
+    const supplierName = useMemo(() => {
+        const value = selectedShipment?.supplier_id;
+        if (value && typeof value === "object") return value.supplier_name;
+        return suppliers.find(supplier => supplier.id === Number(value))?.supplier_name || "Unknown supplier";
+    }, [selectedShipment, suppliers]);
 
     const handleApprove = async () => {
-        if (!activeShipment) return;
-        if (!etaDate) {
-            toast.error("Please set the Estimated Date of Arrival (ETA) before approving.");
+        if (!selectedShipment || !approvalDetail) return;
+        if (approvalDetail.stage === "Plant" && !eta) {
+            toast.error("Set the estimated arrival date before Plant approval.");
             return;
         }
-
         try {
-            setIsApproving(true);
-            const res = await fetch(`/api/manufacturing/procurement/shipments`, {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    shipmentId: activeShipment.shipment_id,
-                    lead_time_receiving: etaDate,
-                    approvedPrices,
-                    action: "approve"
-                })
-            });
-
-            if (!res.ok) throw new Error("Approval submission failed");
-            toast.success("Purchase Order approved and ETA scheduled successfully.");
-            window.location.reload();
-        } catch {
-            toast.error("Failed to approve Purchase Order.");
+            setSubmitting("approve");
+            await approve(selectedShipment.shipment_id, approvalDetail.stage === "Plant" ? eta : undefined);
+            toast.success(approvalDetail.stage === "Finance" ? "Finance approval completed." : "Plant approval completed.");
+        } catch (error) {
+            const message = (error as Error).message || "Approval failed.";
+            toast.error(message);
+            if (/changed|reload|pending approval/i.test(message)) {
+                setSelectedShipment(null);
+                await load();
+            }
         } finally {
-            setIsApproving(false);
+            setSubmitting(null);
         }
     };
 
     const handleReject = async () => {
-        if (!activeShipment) return;
-        if (!rejectRemarks.trim()) {
-            toast.error("Please specify a reason/remarks for rejecting this Purchase Order.");
+        if (!selectedShipment || !approvalDetail) return;
+        if (!remarks.trim()) {
+            toast.error("Enter a rejection reason.");
             return;
         }
-
         try {
-            setIsRejecting(true);
-            const res = await fetch(`/api/manufacturing/procurement/shipments`, {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    shipmentId: activeShipment.shipment_id,
-                    remarks: rejectRemarks,
-                    action: "reject"
-                })
-            });
-
-            if (!res.ok) {
-                const errJson = await res.json();
-                throw new Error(errJson.error || "Rejection failed");
+            setSubmitting("reject");
+            await reject(selectedShipment.shipment_id, remarks.trim());
+            toast.success("Purchase order rejected.");
+        } catch (error) {
+            const message = (error as Error).message || "Rejection failed.";
+            toast.error(message);
+            if (/changed|reload|pending approval/i.test(message)) {
+                setSelectedShipment(null);
+                await load();
             }
-            toast.success("Purchase Order rejected successfully.");
-            window.location.reload();
-        } catch (e: any) {
-            toast.error(e.message || "Failed to reject Purchase Order.");
         } finally {
-            setIsRejecting(false);
+            setSubmitting(null);
         }
     };
 
-    const getStatusBadge = (status: string) => {
-        switch (status) {
-            case "Ordered":
-                return <span className="bg-amber-500/10 text-amber-500 border border-amber-500/25 px-2 py-0.5 rounded text-[10px] font-bold uppercase">Pending Approval</span>;
-            case "Approved":
-                return <span className="bg-emerald-500/10 text-emerald-500 border border-emerald-500/25 px-2 py-0.5 rounded text-[10px] font-bold uppercase">Approved</span>;
-            case "Rejected":
-                return <span className="bg-red-500/10 text-red-500 border border-red-500/25 px-2 py-0.5 rounded text-[10px] font-bold uppercase">Rejected</span>;
-            case "Cancelled":
-                return <span className="bg-zinc-500/10 text-zinc-600 border border-zinc-500/25 px-2 py-0.5 rounded text-[10px] font-bold uppercase">Cancelled</span>;
-            default:
-                return <span className="bg-muted text-muted-foreground border px-2 py-0.5 rounded text-[10px] font-bold uppercase">{status}</span>;
-        }
-    };
+    const actionable = approvalDetail?.stage === "Plant" || approvalDetail?.stage === "Finance";
 
     return (
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden space-y-4">
-            <div className="flex flex-col lg:flex-row gap-6 h-full min-h-0">
-                {/* Left Column: PO queues list */}
-                <div className="w-full lg:w-2/5 flex flex-col border rounded-xl bg-card overflow-hidden shadow-sm">
-                    <div className="p-4 border-b space-y-3 shrink-0 bg-muted/20">
-                        <div className="flex items-center justify-between">
-                            <h3 className="font-bold text-sm text-foreground flex items-center gap-1.5 min-w-0">
-                                <Anchor className="h-4 w-4 text-primary shrink-0" />
-                                <span className="truncate">PO Approval Queue</span>
-                                <span className="text-[10px] text-muted-foreground shrink-0">({filteredShipments.length})</span>
-                            </h3>
-                        </div>
+        <div className="flex min-h-0 flex-1 flex-col gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                    <h1 className="text-base font-bold">Purchase Order Approval</h1>
+                    <p className="text-xs text-muted-foreground">Review Plant and Finance decisions against the matched approval rule.</p>
+                </div>
+                <div className="inline-flex rounded-md border bg-muted/30 p-1">
+                    {queueTabs.map(item => {
+                        const Icon = item.icon;
+                        return (
+                            <button
+                                key={item.value}
+                                type="button"
+                                onClick={() => setTab(item.value)}
+                                className={`inline-flex h-8 items-center gap-1.5 rounded px-3 text-xs font-semibold ${tab === item.value ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+                            >
+                                <Icon className="h-3.5 w-3.5" />
+                                {item.label}
+                            </button>
+                        );
+                    })}
+                </div>
+            </div>
+
+            <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[minmax(280px,34%)_1fr]">
+                <section className="flex min-h-[420px] flex-col overflow-hidden rounded-md border bg-card">
+                    <div className="border-b p-3">
                         <div className="relative">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                             <input
-                                type="text"
-                                placeholder="Search PO/BL Reference, Supplier..."
                                 value={search}
-                                onChange={e => setSearch(e.target.value)}
-                                className="w-full pl-9 pr-4 py-2 border rounded-lg text-xs bg-background outline-none focus:ring-1 focus:ring-primary font-medium"
+                                onChange={event => setSearch(event.target.value)}
+                                placeholder="Search PO, reference, or supplier"
+                                className="h-9 w-full rounded-md border bg-background pl-9 pr-3 text-xs outline-none focus:ring-2 focus:ring-ring"
                             />
                         </div>
                     </div>
-
-                    <div className="flex-1 overflow-y-auto divide-y">
-                        {filteredShipments.length === 0 ? (
-                            <div className="p-8 text-center text-xs text-muted-foreground">
-                                {loading ? "Loading queue..." : "No pending purchase orders in approval queue."}
-                            </div>
-                        ) : (
-                            filteredShipments.map(s => {
-                                const matchedSupplier = typeof s.supplier_id !== "object"
-                                    ? suppliers.find(sup => sup.id === Number(s.supplier_id))
-                                    : s.supplier_id;
-                                const supName = matchedSupplier ? matchedSupplier.supplier_name : `Supplier ID: ${s.supplier_id}`;
-                                const isSelected = activeShipment && activeShipment.shipment_id === s.shipment_id;
-
-                                return (
-                                    <div
-                                        key={s.shipment_id}
-                                        onClick={() => setSelectedShipment(s)}
-                                        className={`p-4 text-left cursor-pointer transition-all ${isSelected ? "bg-primary/5 border-l-4 border-l-primary" : "hover:bg-muted/10 border-l-4 border-l-transparent"
-                                            }`}
-                                    >
-                                        <div className="flex items-center justify-between gap-2 mb-1.5">
-                                            <span className="font-extrabold text-xs text-foreground tracking-tight">{s.reference_number}</span>
-                                            {getStatusBadge(s.status)}
+                    <div className="min-h-0 flex-1 overflow-y-auto">
+                        {loading ? (
+                            <div className="flex h-36 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-primary" /></div>
+                        ) : shipments.length === 0 ? (
+                            <div className="p-8 text-center text-xs text-muted-foreground">No purchase orders found.</div>
+                        ) : shipments.map(order => {
+                            const supplier = typeof order.supplier_id === "object"
+                                ? order.supplier_id?.supplier_name
+                                : suppliers.find(item => item.id === Number(order.supplier_id))?.supplier_name;
+                            const selected = selectedShipment?.shipment_id === order.shipment_id;
+                            const stage = order.status === "Requested"
+                                ? order.approver_id && order.approval_requires_finance ? "Finance" : "Plant"
+                                : order.status;
+                            return (
+                                <button
+                                    key={order.shipment_id}
+                                    type="button"
+                                    onClick={() => setSelectedShipment(order)}
+                                    className={`block w-full border-b p-3 text-left transition-colors ${selected ? "bg-primary/5 shadow-[inset_3px_0_0_hsl(var(--primary))]" : "hover:bg-muted/40"}`}
+                                >
+                                    <div className="flex items-start justify-between gap-2">
+                                        <div className="min-w-0">
+                                            <div className="truncate text-xs font-bold">{order.purchase_order_no || order.reference_number}</div>
+                                            <div className="mt-1 truncate text-[11px] text-muted-foreground">{supplier || "Unknown supplier"}</div>
                                         </div>
-                                        <div className="text-xs text-muted-foreground font-semibold truncate mb-2">{supName}</div>
-                                        <div className="flex items-center justify-between text-[10px] text-muted-foreground font-semibold font-mono">
-                                            <span>₱{Number(s.total_php_value).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
-                                            <span>{new Date(s.created_at || new Date()).toLocaleDateString()}</span>
-                                        </div>
+                                        {statusBadge(order.status)}
                                     </div>
-                                );
-                            })
-                        )}
+                                    <div className="mt-2 flex items-center justify-between text-[10px] text-muted-foreground">
+                                        <span>{stage}</span>
+                                        <span className="font-mono font-semibold text-foreground">{money(order.total_php_value)}</span>
+                                    </div>
+                                </button>
+                            );
+                        })}
                     </div>
-                </div>
+                </section>
 
-                <div className="flex-1 border rounded-xl bg-card overflow-hidden shadow-sm flex flex-col min-h-0 relative">
-                    {loading && (
-                        <div className="absolute inset-0 bg-background/40 backdrop-blur-[2px] z-50 flex items-center justify-center rounded-xl">
-                            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                <section className="min-h-[420px] overflow-y-auto rounded-md border bg-card">
+                    {!selectedShipment ? (
+                        <div className="flex h-full min-h-[420px] flex-col items-center justify-center gap-2 p-8 text-center text-muted-foreground">
+                            <FileCheck2 className="h-10 w-10 opacity-30" />
+                            <p className="text-xs">Select a purchase order to review its workflow.</p>
                         </div>
-                    )}
-                    {activeShipment ? (
-                        <div className="p-6 overflow-y-auto space-y-6 flex-1 text-left">
-                            <div className="flex items-center justify-between border-b pb-4">
-                                <div className="space-y-1">
-                                    <h2 className="text-base font-extrabold tracking-tight text-foreground">{activeShipment.reference_number}</h2>
-                                    <p className="text-xs text-muted-foreground font-semibold">
-                                        Supplier: <strong className="text-foreground">
-                                            {(() => {
-                                                const matchedSupplier = typeof activeShipment.supplier_id !== "object"
-                                                    ? suppliers.find(sup => sup.id === Number(activeShipment.supplier_id))
-                                                    : activeShipment.supplier_id;
-                                                return matchedSupplier ? matchedSupplier.supplier_name : `Supplier ID: ${activeShipment.supplier_id}`;
-                                            })()}
-                                        </strong>
-                                    </p>
+                    ) : !approvalDetail ? (
+                        <div className="flex h-56 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
+                    ) : (
+                        <div className="space-y-5 p-4 sm:p-5">
+                            <div className="flex flex-wrap items-start justify-between gap-3 border-b pb-4">
+                                <div>
+                                    <div className="flex items-center gap-2">
+                                        <h2 className="text-sm font-bold">{approvalDetail.order.purchase_order_no || selectedShipment.reference_number}</h2>
+                                        {statusBadge(selectedShipment.status)}
+                                    </div>
+                                    <p className="mt-1 text-xs text-muted-foreground">{supplierName}</p>
                                 </div>
                                 <div className="text-right">
-                                    {getStatusBadge(activeShipment.status)}
+                                    <div className="text-[10px] font-semibold uppercase text-muted-foreground">Current stage</div>
+                                    <div className="mt-1 inline-flex items-center gap-1.5 text-xs font-bold text-primary">
+                                        <ShieldCheck className="h-4 w-4" /> {approvalDetail.stage}
+                                    </div>
                                 </div>
                             </div>
 
-                            {/* Approval actions form */}
-                            {activeShipment.status === "Ordered" ? (
-                                <div className="p-4 border border-amber-200 bg-amber-50/15 dark:bg-amber-950/5 rounded-xl space-y-4 animate-in fade-in duration-200">
-                                    <div className="text-xs font-bold text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
-                                        <ShieldAlert className="h-4 w-4" /> Review & Approve Shipment PO
-                                    </div>
+                            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                                <div><div className="text-[10px] uppercase text-muted-foreground">PHP total</div><div className="mt-1 text-sm font-bold">{money(approvalDetail.order.total_amount)}</div></div>
+                                <div><div className="text-[10px] uppercase text-muted-foreground">Foreign total</div><div className="mt-1 text-sm font-bold">{money(approvalDetail.order.total_foreign_currency, approvalDetail.order.currency_code || "PHP")}</div></div>
+                                <div><div className="text-[10px] uppercase text-muted-foreground">Exchange rate</div><div className="mt-1 text-sm font-bold">{Number(approvalDetail.order.exchange_rate || 1).toFixed(4)}</div></div>
+                                <div><div className="text-[10px] uppercase text-muted-foreground">Revision</div><div className="mt-1 text-sm font-bold">{approvalDetail.order.workflow_revision || 0}</div></div>
+                            </div>
 
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                        <div className="space-y-1.5 text-left">
-                                            <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Set Estimated Arrival Date (ETA) *</label>
-                                            <input
-                                                type="date"
-                                                required
-                                                value={etaDate}
-                                                onChange={(e) => setEtaDate(e.target.value)}
-                                                className="w-full rounded-lg border bg-background px-3 py-2 text-xs font-semibold outline-none focus:ring-1 focus:ring-amber-500 cursor-pointer"
-                                            />
-                                        </div>
-
-                                        {/* List of item prices to approve */}
-                                        <div className="space-y-2 text-left sm:col-span-2">
-                                            <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Verify Approved Price Per Unit (PHP)</label>
-                                            <div className="divide-y border rounded-lg bg-background max-h-[160px] overflow-y-auto">
-                                                {selectedShipmentLines.map((line) => {
-                                                    const pId = typeof line.product_id === "object" && line.product_id ? line.product_id.product_id : Number(line.product_id);
-                                                    const pName = typeof line.product_id === "object" && line.product_id ? line.product_id.product_name : `Item ID: ${pId}`;
-                                                    const currentPrice = approvedPrices[pId] !== undefined ? approvedPrices[pId] : Number(line.base_unit_cost_php || 0);
-                                                    return (
-                                                        <div key={pId} className="p-2 flex items-center justify-between gap-3 text-xs">
-                                                            <span className="font-semibold text-muted-foreground truncate">{pName}</span>
-                                                            <div className="flex items-center gap-1.5 shrink-0">
-                                                                <span className="text-[10px] text-muted-foreground">₱</span>
-                                                                <input
-                                                                    type="number"
-                                                                    disabled
-                                                                    value={currentPrice}
-                                                                    className="w-20 rounded border bg-muted/20 px-1.5 py-0.5 text-right font-mono font-bold outline-none cursor-not-allowed text-muted-foreground opacity-70"
-                                                                />
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        </div>
+                            <div className="rounded-md border bg-muted/20 p-3">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <div>
+                                        <div className="text-[10px] font-semibold uppercase text-muted-foreground">Matched rule</div>
+                                        <div className="mt-1 text-xs font-bold">{approvalDetail.matchedRule.ruleName}</div>
                                     </div>
-
-                                    {/* Rejection remarks field */}
-                                    <div className="space-y-1.5 text-left pt-3 border-t border-dashed col-span-2">
-                                        <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Rejection Remarks / Reason *</label>
-                                        <textarea
-                                            placeholder="Specify reason for rejection (required to reject)..."
-                                            value={rejectRemarks}
-                                            onChange={(e) => setRejectRemarks(e.target.value)}
-                                            className="w-full rounded-lg border bg-background px-3 py-2 text-xs font-semibold outline-none focus:ring-1 focus:ring-red-500 h-16 resize-none"
-                                        />
-                                    </div>
-
-                                    <div className="flex justify-end pt-1 gap-2 col-span-2">
-                                        <button
-                                            type="button"
-                                            onClick={handleReject}
-                                            disabled={isRejecting}
-                                            className="inline-flex items-center gap-1 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white font-bold px-4 py-2 rounded-lg text-xs transition-all shadow-sm cursor-pointer"
-                                        >
-                                            {isRejecting ? "Rejecting..." : "Reject PO"}
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={handleApprove}
-                                            disabled={isApproving}
-                                            className="inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold px-4 py-2 rounded-lg text-xs transition-all shadow-sm cursor-pointer"
-                                        >
-                                            {isApproving ? "Approving..." : "Confirm & Approve PO"}
-                                        </button>
-                                    </div>
+                                    <span className={`rounded border px-2 py-1 text-[10px] font-bold ${approvalDetail.matchedRule.requiresFinance ? "border-blue-300 bg-blue-50 text-blue-700" : "border-emerald-300 bg-emerald-50 text-emerald-700"}`}>
+                                        {approvalDetail.matchedRule.requiresFinance ? "Plant + Finance" : "Plant only"}
+                                    </span>
                                 </div>
-                            ) : (
-                                <div className="p-4 border border-emerald-200 bg-emerald-500/5 rounded-xl flex flex-col gap-3">
-                                    <div className="flex items-start gap-3">
-                                        <CheckCircle className="h-5 w-5 text-emerald-600 shrink-0 mt-0.5" />
-                                        <div className="space-y-1">
-                                            <h4 className="text-xs font-bold text-emerald-800 dark:text-emerald-400">PO Approved & ETA Scheduled</h4>
-                                            <p className="text-[11px] text-muted-foreground leading-relaxed">
-                                                This purchase order has been reviewed, prices locked, and scheduled for arrival on{" "}
-                                                <strong>{activeShipment.lead_time_receiving ? new Date(activeShipment.lead_time_receiving).toLocaleDateString() : "Pending"}</strong>.
-                                            </p>
-                                        </div>
+                                <div className="mt-2 text-[11px] text-muted-foreground">
+                                    Categories: {approvalDetail.categoryIds.length ? approvalDetail.categoryIds.join(", ") : "Uncategorized"} | Self-approval: Permitted
+                                </div>
+                            </div>
+
+                            {actionable && (
+                                <div className="space-y-3 border-y py-4">
+                                    {approvalDetail.stage === "Plant" && (
+                                        <label className="block max-w-xs">
+                                            <span className="mb-1.5 flex items-center gap-1 text-[10px] font-semibold uppercase text-muted-foreground"><CalendarDays className="h-3.5 w-3.5" /> Estimated arrival *</span>
+                                            <input type="date" value={eta} onChange={event => setEta(event.target.value)} className="h-9 w-full rounded-md border bg-background px-3 text-xs" />
+                                        </label>
+                                    )}
+                                    <label className="block">
+                                        <span className="mb-1.5 block text-[10px] font-semibold uppercase text-muted-foreground">Rejection reason</span>
+                                        <textarea value={remarks} onChange={event => setRemarks(event.target.value)} maxLength={1000} placeholder="Required only when rejecting" className="min-h-20 w-full resize-y rounded-md border bg-background p-3 text-xs" />
+                                    </label>
+                                    <div className="flex flex-wrap justify-end gap-2">
+                                        <button type="button" onClick={handleReject} disabled={submitting !== null} className="inline-flex h-9 items-center gap-1.5 rounded-md bg-red-600 px-3 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50">
+                                            {submitting === "reject" ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />} Reject
+                                        </button>
+                                        <button type="button" onClick={handleApprove} disabled={submitting !== null} className="inline-flex h-9 items-center gap-1.5 rounded-md bg-emerald-600 px-3 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">
+                                            {submitting === "approve" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Approve {approvalDetail.stage}
+                                        </button>
                                     </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => handleUpdateShipmentStatus(activeShipment.shipment_id, "En Route")}
-                                        className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-3 rounded-lg text-xs transition-all shadow-sm cursor-pointer mt-1"
-                                    >
-                                        Mark Cargo as En Route (Departed)
-                                    </button>
                                 </div>
                             )}
 
-                            {/* Totals Summary */}
-                            <div className="grid gap-4 grid-cols-2 sm:grid-cols-4 pt-4 border-t">
-                                <div className="border p-4 rounded-xl bg-muted/5 space-y-1">
-                                    <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Raw FOB Cost</span>
-                                    <span className="text-xs font-extrabold text-foreground">
-                                        ₱{Number(activeShipment.total_php_value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                    </span>
-                                </div>
-                                <div className="border p-4 rounded-xl bg-muted/5 space-y-1">
-                                    <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Foreign Currency</span>
-                                    <span className="text-xs font-extrabold text-foreground">
-                                        ${Number(activeShipment.total_foreign_currency).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
-                                    </span>
-                                </div>
-                                <div className="border p-4 rounded-xl bg-muted/5 space-y-1">
-                                    <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Exchange Rate</span>
-                                    <span className="text-xs font-extrabold text-foreground">₱{Number(activeShipment.exchange_rate).toFixed(2)}</span>
-                                </div>
-                                <div className="border p-4 rounded-xl bg-muted/5 space-y-1">
-                                    <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">
-                                        ETA / Expected
-                                    </span>
-                                    <span className="text-xs font-semibold text-foreground flex items-center gap-1">
-                                        <Calendar className="h-3.5 w-3.5 text-primary" />
-                                        {activeShipment.lead_time_receiving
-                                            ? new Date(activeShipment.lead_time_receiving).toLocaleDateString()
-                                            : "Pending"}
-                                    </span>
-                                </div>
-                            </div>
-
-                            {/* Shipment Cargo Lines List */}
-                            <div className="space-y-3">
-                                <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1 border-b pb-2">
-                                    <Layers className="h-4 w-4 text-primary" />
-                                    Shipment Manifest & Contents
-                                </h3>
-                                <div className="border rounded-lg overflow-hidden">
-                                    <table className="w-full text-left border-collapse text-xs">
-                                        <thead>
-                                            <tr className="bg-muted/50 border-b">
-                                                <th className="p-3 font-semibold text-muted-foreground">Product Name</th>
-                                                <th className="p-3 font-semibold text-muted-foreground">UOM</th>
-                                                <th className="p-3 font-semibold text-muted-foreground text-right">Qty</th>
-                                                <th className="p-3 font-semibold text-muted-foreground text-right">Unit Price</th>
-                                                <th className="p-3 font-semibold text-muted-foreground text-right">ImpFreight Cost</th>
-                                                <th className="p-3 font-semibold text-muted-foreground text-right">Total Cost</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y">
-                                            {selectedShipmentLines.length === 0 ? (
-                                                <tr>
-                                                    <td colSpan={6} className="p-8 text-center text-muted-foreground">
-                                                        No items registered in this container.
-                                                    </td>
-                                                </tr>
-                                            ) : (
-                                                selectedShipmentLines.map(line => {
-                                                    const prod = line.product_id && typeof line.product_id === "object"
-                                                        ? line.product_id
-                                                        : { product_name: `ID: ${line.product_id}`, product_code: "N/A", unit_of_measurement: { unit_shortcut: "PCS" } };
-                                                    const qty = Number(line.quantity_ordered || 0);
-                                                    const price = Number(line.base_unit_cost_php || 0);
-                                                    const freight = Number(line.allocated_expense_php || 0);
-                                                    const totalCost = (qty * price) + freight;
-                                                    return (
-                                                        <tr key={line.line_id} className="hover:bg-muted/20">
-                                                            <td className="p-3">
-                                                                <div className="font-semibold text-foreground">{prod.product_name}</div>
-                                                                <div className="text-[10px] text-muted-foreground font-mono">Code: {prod.product_code}</div>
-                                                            </td>
-                                                            <td className="p-3 text-muted-foreground font-semibold">
-                                                                {prod.unit_of_measurement?.unit_shortcut || "PCS"}
-                                                            </td>
-                                                            <td className="p-3 text-right font-semibold">
-                                                                {qty.toLocaleString()} (Ordered)
-                                                            </td>
-                                                            <td className="p-3 text-right font-mono text-[11px]">
-                                                                ₱{price.toFixed(2)}
-                                                            </td>
-                                                            <td className="p-3 text-right font-mono text-[11px] text-muted-foreground">
-                                                                +₱{freight.toFixed(2)}
-                                                            </td>
-                                                            <td className="p-3 text-right font-mono text-[11px] font-bold text-foreground">
-                                                                ₱{totalCost.toFixed(2)}
-                                                            </td>
-                                                        </tr>
-                                                    );
-                                                })
-                                            )}
-                                        </tbody>
+                            <div>
+                                <h3 className="mb-2 flex items-center gap-1.5 text-xs font-bold"><FileCheck2 className="h-4 w-4 text-primary" /> Purchase-order lines</h3>
+                                <div className="overflow-x-auto rounded-md border">
+                                    <table className="w-full min-w-[560px] text-xs">
+                                        <thead className="bg-muted/50 text-left text-[10px] uppercase text-muted-foreground"><tr><th className="p-2.5">Product</th><th className="p-2.5">Intent</th><th className="p-2.5 text-right">Quantity</th><th className="p-2.5 text-right">Unit price</th></tr></thead>
+                                        <tbody className="divide-y">{selectedShipmentLines.map(line => {
+                                            const product = typeof line.product_id === "object" ? line.product_id : null;
+                                            return <tr key={line.line_id}><td className="p-2.5 font-medium">{product?.product_name || `Product ${line.product_id}`}</td><td className="p-2.5 text-muted-foreground">{line.purchase_intent || "Buffer_Stock"}</td><td className="p-2.5 text-right">{Number(line.quantity_ordered || 0).toLocaleString()}</td><td className="p-2.5 text-right font-mono">{money(line.base_unit_cost_php)}</td></tr>;
+                                        })}</tbody>
                                     </table>
                                 </div>
                             </div>
-                        </div>
-                    ) : (
-                        <div className="flex flex-col items-center justify-center p-20 text-center text-muted-foreground h-full">
-                            <Anchor className="h-16 w-16 mb-4 text-muted-foreground/30" />
-                            {filteredShipments.length > 0 ? "Select a purchase order from the queue to view details." : "No purchase orders in approval queue."}
+
+                            <div>
+                                <h3 className="mb-2 flex items-center gap-1.5 text-xs font-bold"><History className="h-4 w-4 text-primary" /> Approval history</h3>
+                                {approvalDetail.history.length === 0 ? <p className="text-xs text-muted-foreground">No workflow actions recorded.</p> : (
+                                    <div className="divide-y rounded-md border">{approvalDetail.history.map(entry => (
+                                        <div key={entry.history_id} className="flex flex-wrap items-start justify-between gap-2 p-3 text-xs">
+                                            <div><div className="font-semibold">{entry.action} <span className="text-muted-foreground">({entry.approval_stage})</span></div><div className="mt-1 text-[11px] text-muted-foreground">Actor #{entry.actor_id}{entry.remarks ? ` | ${entry.remarks}` : ""}</div></div>
+                                            <div className="text-right text-[10px] text-muted-foreground"><div>{dateTime(entry.created_at)}</div><div className="mt-1">Revision {entry.revision_before} to {entry.revision_after}</div></div>
+                                        </div>
+                                    ))}</div>
+                                )}
+                            </div>
                         </div>
                     )}
-                </div>
+                </section>
             </div>
         </div>
     );
