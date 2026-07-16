@@ -49,31 +49,39 @@ export const PdfEngine = {
     async generateWithFrame(
         templateName: string, 
         data: PdfData | null, 
-        renderBody: (doc: jsPDF, startY: number, config: PdfConfig) => void | Promise<void>
+        renderBody: (doc: jsPDF, startY: number, config: PdfConfig) => void | Promise<void>,
+        options?: { orientation?: 'portrait' | 'landscape', skipHeader?: boolean }
     ): Promise<jsPDF> {
         // 1. Fetch template config to get paper size/orientation
         const templates = await pdfTemplateService.fetchTemplates();
         const template = templates.find(t => t.name === templateName);
-        const config = template?.config;
+        const config = template ? { ...template.config } : { orientation: 'portrait' } as PdfConfig;
+
+        if (options?.orientation) {
+            config.orientation = options.orientation;
+        }
 
         // 2. Initialize jsPDF
-        const orientation = config?.orientation || 'portrait';
+        const orientation = config.orientation;
         const unit = 'mm';
-        let format: string | [number, number] = config?.paperSize?.toLowerCase() || 'a4';
-        if (format === 'custom' && config?.customSize) {
+        let format: string | [number, number] = config.paperSize?.toLowerCase() || 'a4';
+        if (format === 'custom' && config.customSize) {
             format = [config.customSize.width, config.customSize.height];
         }
 
         const doc = new jsPDF({ orientation, unit, format });
 
         // 3. Apply the Template Frame (Header/Footer)
-        const startY = await this.applyTemplate(doc, templateName, data);
+        let startY = config.margins?.top || 15;
+        if (!options?.skipHeader) {
+            startY = await this.applyTemplate(doc, templateName, data);
+        }
 
         // 4. Call the module-specific body renderer
-        await renderBody(doc, startY, config || {} as PdfConfig);
+        await renderBody(doc, startY, config);
 
         // 5. Draw page numbers over all pages
-        if (config?.pageNumber?.show) {
+        if (config.pageNumber?.show) {
             drawPageNumbers(doc, config);
         }
 
