@@ -74,6 +74,21 @@ interface DirectusInventoryLot {
     branch_id?: number;
 }
 
+interface DirectusReceivingRecord {
+    purchase_order_product_id: number;
+    product_id: number | { product_id: number };
+    batch_no?: string | null;
+    lot_id?: number | { lot_id: number } | null;
+}
+
+interface DirectusInventoryMovement {
+    source_document_id: number | { purchase_order_product_id: number };
+    product_id: number | { product_id: number };
+    lot_id: number | { lot_id: number };
+    batch_no?: string | null;
+    manufacturing_date?: string | null;
+}
+
 export interface ExtendedShipmentLineItem {
     line_id?: number;
     shipment_id?: number;
@@ -89,6 +104,7 @@ export interface ExtendedShipmentLineItem {
     lot_number?: string;
     batch_no?: string;
     lot_id?: number | null;
+    manufacturing_date?: string | null;
     expiration_date?: string;
     discount_type?: number | null;
     discount_percent?: number;
@@ -99,6 +115,14 @@ export interface ExtendedShipmentLineItem {
 function resolveInventoryLotId(value: DirectusInventoryLot["lot_id"]): number | null {
     if (typeof value === "number") return value;
     return value?.lot_id || null;
+}
+
+function relationId(value: unknown, key: string): number | null {
+    const raw = value && typeof value === "object"
+        ? (value as Record<string, unknown>)[key]
+        : value;
+    const parsed = Number(raw);
+    return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
 interface ExtendedShipment extends Partial<DirectusShipment> {
@@ -267,6 +291,23 @@ export async function fetchShipmentLineItems(shipmentId: number): Promise<Extend
         const porRes = await fetch(porUrl, { headers, cache: "no-store" });
         const porData = (porRes.ok ? (await porRes.json()).data || [] : []) as DirectusInventoryLot[];
 
+        // Manufacturing dates are persisted on inventory movements. Resolve them through
+        // the receiving-record IDs instead of substituting the inventory lot creation date.
+        const receivingUrl = `${DIRECTUS_URL}/items/purchase_order_receiving?filter[purchase_order_id][_eq]=${shipmentId}&fields=purchase_order_product_id,product_id,batch_no,lot_id&limit=-1`;
+        const receivingRes = await fetch(receivingUrl, { headers, cache: "no-store" });
+        const receivingData = (receivingRes.ok ? (await receivingRes.json()).data || [] : []) as DirectusReceivingRecord[];
+        const receivingIds = receivingData.map(row => row.purchase_order_product_id).filter(id => Number.isSafeInteger(id) && id > 0);
+        let movementData: DirectusInventoryMovement[] = [];
+        if (receivingIds.length > 0) {
+            const movementParams = new URLSearchParams({
+                "filter[source_document_id][_in]": receivingIds.join(","),
+                fields: "source_document_id,product_id,lot_id,batch_no,manufacturing_date",
+                limit: "-1"
+            });
+            const movementRes = await fetch(`${DIRECTUS_URL}/items/inventory_movements?${movementParams.toString()}`, { headers, cache: "no-store" });
+            movementData = (movementRes.ok ? (await movementRes.json()).data || [] : []) as DirectusInventoryMovement[];
+        }
+
         // Fetch actual product details from products table as a fallback/guarantee
         const productIds = popData.map((p) => typeof p.product_id === "object" && p.product_id ? p.product_id.product_id : p.product_id).filter(Boolean);
         let products: ProductMin[] = [];
@@ -290,6 +331,19 @@ export async function fetchShipmentLineItems(shipmentId: number): Promise<Extend
             const totalQtyReceived = matchingLots.reduce((sum, lot) => sum + Number(lot.quantity || 0), 0);
             const acceptedLot = matchingLots.find(lot => Number(lot.branch_id) !== 182);
             const activeLot = acceptedLot || matchingLots[0];
+            const receivingIdsForProduct = receivingData
+                .filter(row => relationId(row.product_id, "product_id") === Number(rawProdId))
+                .map(row => row.purchase_order_product_id);
+            const movementForProduct = movementData.filter(row => receivingIdsForProduct.includes(relationId(row.source_document_id, "purchase_order_product_id") || 0));
+            const activeLotId = resolveInventoryLotId(activeLot?.lot_id);
+            const activeBatch = activeLot ? canonicalBatchNumber(activeLot.batch_no, activeLot.lot_number) : null;
+            const matchingMovement = movementForProduct.find(row => {
+                const movementLotId = relationId(row.lot_id, "lot_id");
+                const movementBatch = canonicalBatchNumber(row.batch_no, null);
+                return (!activeLotId || movementLotId === activeLotId)
+                    && (!activeBatch || movementBatch === activeBatch)
+                    && Boolean(row.manufacturing_date);
+            }) || movementForProduct.find(row => Boolean(row.manufacturing_date));
 
             return {
                 line_id: pop.purchase_order_product_id, // map line_id to pop.purchase_order_product_id so QA receiving can update it
@@ -306,6 +360,7 @@ export async function fetchShipmentLineItems(shipmentId: number): Promise<Extend
                 batch_no: activeLot ? canonicalBatchNumber(activeLot.batch_no, activeLot.lot_number) || "" : "",
                 lot_number: activeLot ? canonicalBatchNumber(activeLot.batch_no, activeLot.lot_number) || "" : "",
                 lot_id: resolveInventoryLotId(activeLot?.lot_id),
+                manufacturing_date: matchingMovement?.manufacturing_date || null,
                 expiration_date: activeLot ? activeLot.expiry_date || "" : "",
                 purchase_intent: pop.purchase_intent || "Buffer_Stock",
                 job_order_id: pop.job_order_id || null,

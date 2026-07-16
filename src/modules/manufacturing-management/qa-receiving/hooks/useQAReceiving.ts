@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { toast } from "sonner";
-import { Shipment, Branch, ShipmentLineItem, Product, InspectionRow, StorageLot, QaSpecificationLoadState, QaSpecificationReadings, ReceivingCommitPayload, ReceivingQaEvaluation, ReceivingPreview } from "../types";
+import { Shipment, Branch, ShipmentLineItem, Product, InspectionRow, StorageLot, QaSpecificationLoadState, QaSpecificationReadings, ReceivingCommitPayload, ReceivingQaEvaluation, ReceivingPreview, ReceivingCommitResult } from "../types";
 import {
     fetchActiveShipments, 
     fetchBranches, 
@@ -42,6 +42,7 @@ export function useQAReceiving() {
     const [qaReadings, setQaReadings] = useState<QaSpecificationReadings>({});
     const [qaEvaluationResults, setQaEvaluationResults] = useState<Record<number, ReceivingQaEvaluation>>({});
     const [receivingPreview, setReceivingPreview] = useState<ReceivingPreview | null>(null);
+    const [committedResult, setCommittedResult] = useState<ReceivingCommitResult | null>(null);
     const [previewOpen, setPreviewOpen] = useState(false);
     const [previewAcknowledged, setPreviewAcknowledged] = useState(false);
     const [validatingInspection, setValidatingInspection] = useState(false);
@@ -54,6 +55,7 @@ export function useQAReceiving() {
         setReceiptNumber(value);
         setQaEvaluationResults({});
         setReceivingPreview(null);
+        setCommittedResult(null);
         setPreviewOpen(false);
         setPreviewAcknowledged(false);
         setValidatingInspection(false);
@@ -66,6 +68,7 @@ export function useQAReceiving() {
         setSelectedBranchId(value);
         setQaEvaluationResults({});
         setReceivingPreview(null);
+        setCommittedResult(null);
         setPreviewOpen(false);
         setPreviewAcknowledged(false);
         setValidatingInspection(false);
@@ -95,6 +98,7 @@ export function useQAReceiving() {
         setQaReadings({});
         setQaEvaluationResults({});
         setReceivingPreview(null);
+        setCommittedResult(null);
         setPreviewOpen(false);
         setPreviewAcknowledged(false);
         setValidatingInspection(false);
@@ -212,7 +216,8 @@ export function useQAReceiving() {
     };
 
     const handleSelectShipment = async (shipment: Shipment) => {
-        if (!isReceivingQueueShipmentStatus(shipment.status)) {
+        const isReceived = shipment.status === "Received";
+        if (!isReceivingQueueShipmentStatus(shipment.status) && !isReceived) {
             toast.error("This purchase order is not eligible for receiving.");
             clearInspection();
             return;
@@ -226,6 +231,7 @@ export function useQAReceiving() {
         setQaReadings({});
         setQaEvaluationResults({});
         setReceivingPreview(null);
+        setCommittedResult(null);
         setPreviewOpen(false);
         setPreviewAcknowledged(false);
         setLoadingLines(true);
@@ -241,13 +247,13 @@ export function useQAReceiving() {
                 const isPkg = prodName.includes("box") || prodName.includes("bottle") || prodName.includes("cap") || prodName.includes("sticker") || prodName.includes("packaging") || prodName.includes("plastic") || prodName.includes("wrapper");
                 
                 rowsInit[l.line_id] = {
-                    receivedQty: "",
-                    acceptedQty: "",
-                    rejectedQty: "",
-                    batchNumber: "",
-                    lotId: "",
-                    manufacturingDate: "",
-                    expirationDate: "",
+                    receivedQty: isReceived ? Number(l.quantity_received || 0) : "",
+                    acceptedQty: isReceived ? Math.max(0, Number(l.quantity_received || 0) - Number(l.quantity_rejected || 0)) : "",
+                    rejectedQty: isReceived ? Number(l.quantity_rejected || 0) : "",
+                    batchNumber: isReceived ? (l.batch_no || l.lot_number || "") : "",
+                    lotId: isReceived && l.lot_id ? String(l.lot_id) : "",
+                    manufacturingDate: isReceived ? (l.manufacturing_date || "") : "",
+                    expirationDate: isReceived ? (l.expiration_date || "") : "",
                     rejectionReason: l.rejection_reason || "",
                     isPackaging: isPkg
                 };
@@ -304,9 +310,11 @@ export function useQAReceiving() {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const handleUpdateRow = (lineId: number, field: string, value: any) => {
+        if (selectedShipment?.status === "Received") return;
         previewController.current?.abort();
         setValidatingInspection(false);
         setReceivingPreview(null);
+        setCommittedResult(null);
         setPreviewOpen(false);
         setPreviewAcknowledged(false);
         setQaEvaluationResults(previous => {
@@ -328,9 +336,11 @@ export function useQAReceiving() {
     };
 
     const handleUpdateQaReading = (lineId: number, specId: number, value: string) => {
+        if (selectedShipment?.status === "Received") return;
         previewController.current?.abort();
         setValidatingInspection(false);
         setReceivingPreview(null);
+        setCommittedResult(null);
         setPreviewOpen(false);
         setPreviewAcknowledged(false);
         setQaEvaluationResults(previous => {
@@ -361,7 +371,7 @@ export function useQAReceiving() {
 
     const handleSubmitInspection = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!selectedShipment) return;
+        if (!selectedShipment || selectedShipment.status === "Received") return;
 
         const metadataError = validateReceivingMetadata(receiptNumber, selectedBranchId, lineItems.map(line => {
             const row = inspectionRows[line.line_id];
@@ -520,7 +530,8 @@ export function useQAReceiving() {
         try {
             const result = await commitReceivingQa(receivingCommitPayload, receivingIdempotencyKey);
             toast.success(`Receiving ${result.commitReference} posted as ${result.status}.`);
-            clearInspection();
+            setCommittedResult(result);
+            setPreviewOpen(true);
             await loadShipments({
                 search: searchPO.trim() || undefined,
                 status: searchStatus || undefined,
@@ -533,7 +544,12 @@ export function useQAReceiving() {
         } finally {
             setPostingInspection(false);
         }
-    }, [receivingPreview, receivingCommitPayload, receivingIdempotencyKey, clearInspection, loadShipments, searchPO, searchStatus, startDate, endDate, showReceived]);
+    }, [receivingPreview, receivingCommitPayload, receivingIdempotencyKey, loadShipments, searchPO, searchStatus, startDate, endDate, showReceived]);
+
+    const handlePreviewOpenChange = useCallback((open: boolean) => {
+        setPreviewOpen(open);
+        if (!open && committedResult) clearInspection();
+    }, [committedResult, clearInspection]);
 
     // Load FIFO inventory breakdown
     const handleLoadFifoInventory = async (branchId: string) => {
@@ -643,6 +659,7 @@ export function useQAReceiving() {
         loadingShipments,
         loadingBranches,
         selectedShipment,
+        readOnly: selectedShipment?.status === "Received",
         setSelectedShipment,
         lineItems,
         setLineItems,
@@ -656,8 +673,11 @@ export function useQAReceiving() {
         qaReadings,
         qaEvaluationResults,
         receivingPreview,
+        committedResult,
         previewOpen,
-        setPreviewOpen,
+        setPreviewOpen: handlePreviewOpenChange,
+        handlePreviewOpenChange,
+        handleFinishCommitted: clearInspection,
         previewAcknowledged,
         postingInspection,
         handleCommitReceiving,

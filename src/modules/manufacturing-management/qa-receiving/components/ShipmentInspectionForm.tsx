@@ -6,6 +6,7 @@ import ProductQaChecklist from "./ProductQaChecklist";
 
 interface ShipmentInspectionFormProps {
     selectedShipment: Shipment;
+    readOnly: boolean;
     lineItems: ShipmentLineItem[];
     branches: Branch[];
     storageLots: StorageLot[];
@@ -31,6 +32,7 @@ interface ShipmentInspectionFormProps {
 
 export default function ShipmentInspectionForm({
     selectedShipment,
+    readOnly,
     lineItems,
     branches,
     storageLots,
@@ -144,6 +146,11 @@ export default function ShipmentInspectionForm({
                         </h3>
                         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5">
                             <p className="text-[10px] text-muted-foreground">Verify physical quantities, tag batch IDs, and set Expiration limits.</p>
+                            {readOnly && (
+                                <span className="text-[9px] bg-emerald-500/10 text-emerald-700 px-1.5 py-0.5 rounded font-extrabold whitespace-nowrap">
+                                    Received - View Only
+                                </span>
+                            )}
                             <span className="text-[9px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-extrabold whitespace-nowrap">
                                 Original PO Branch: {originalBranchName}
                             </span>
@@ -217,6 +224,7 @@ export default function ShipmentInspectionForm({
                             placeholder="Enter supplier receipt or DR number"
                             value={receiptNumber}
                             onChange={(event) => setReceiptNumber(event.target.value)}
+                            disabled={readOnly}
                             className="w-full h-10 rounded-xl border bg-background text-foreground text-xs font-semibold pl-9 pr-3 py-2 outline-none focus:ring-1 focus:ring-primary"
                         />
                     </div>
@@ -233,6 +241,7 @@ export default function ShipmentInspectionForm({
                             required
                             value={selectedBranchId}
                             onChange={(event) => setSelectedBranchId(event.target.value)}
+                            disabled={readOnly}
                             className="w-full h-10 rounded-xl border bg-background text-foreground text-xs font-semibold pl-9 pr-3 py-2 outline-none focus:ring-1 focus:ring-primary cursor-pointer"
                         >
                             <option value="">Select receiving branch...</option>
@@ -308,6 +317,7 @@ export default function ShipmentInspectionForm({
                                         <button
                                             type="button"
                                             onClick={() => handleUpdateRow(line.line_id, "isPackaging", !row.isPackaging)}
+                                            disabled={readOnly}
                                             className={`px-2.5 py-1 rounded-lg text-[8px] uppercase font-extrabold border transition-all ${row.isPackaging
                                                     ? "bg-purple-500/10 text-purple-600 border-purple-500/20"
                                                     : "bg-amber-500/10 text-amber-600 border-amber-500/20"
@@ -318,12 +328,21 @@ export default function ShipmentInspectionForm({
                                     </div>
                                 </div>
 
-                                <ProductQaChecklist
-                                    lineId={line.line_id}
-                                    loadState={qaSpecificationStates[prod.product_id]}
-                                    readings={qaReadings[line.line_id] || {}}
-                                    onReadingChange={handleUpdateQaReading}
-                                />
+                                {readOnly ? (
+                                    <div className="border-t pt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[10px] text-muted-foreground">
+                                        <span><strong className="text-foreground">Recorded QA status:</strong> {line.qa_status || "Received"}</span>
+                                        <span><strong className="text-foreground">Received:</strong> {Number(line.quantity_received || 0).toLocaleString()}</span>
+                                        <span><strong className="text-foreground">Rejected:</strong> {Number(line.quantity_rejected || 0).toLocaleString()}</span>
+                                    </div>
+                                ) : (
+                                    <ProductQaChecklist
+                                        lineId={line.line_id}
+                                        loadState={qaSpecificationStates[prod.product_id]}
+                                        readings={qaReadings[line.line_id] || {}}
+                                        onReadingChange={handleUpdateQaReading}
+                                        readOnly={readOnly}
+                                    />
+                                )}
 
                                  {/* QA Inputs Grid - Touch Optimized layout */}
                                  {(() => {
@@ -350,6 +369,7 @@ export default function ShipmentInspectionForm({
                                                      <button
                                                          type="button"
                                                          onClick={() => handleUpdateRow(line.line_id, "receivedQty", Math.max(0, receivedVal - 1))}
+                                                         disabled={readOnly}
                                                          className="w-10 h-10 border border-r-0 bg-background text-foreground rounded-l-lg hover:bg-muted font-extrabold flex items-center justify-center transition-colors text-base select-none shrink-0"
                                                      >
                                                          <Minus className="h-3.5 w-3.5" />
@@ -361,6 +381,7 @@ export default function ShipmentInspectionForm({
                                                          placeholder="Manually count"
                                                          value={row.receivedQty}
                                                          onChange={e => handleUpdateRow(line.line_id, "receivedQty", e.target.value === "" ? "" : Number(e.target.value))}
+                                                         disabled={readOnly}
                                                          className={`w-full h-10 border text-center text-xs font-semibold text-foreground outline-none focus:ring-0 transition-all ${
                                                              row.receivedQty !== "" && receivedVal > orderedVal
                                                                  ? "border-red-500 bg-red-500/5 focus:bg-red-500/5"
@@ -370,6 +391,7 @@ export default function ShipmentInspectionForm({
                                                      <button
                                                          type="button"
                                                          onClick={() => handleUpdateRow(line.line_id, "receivedQty", receivedVal + 1)}
+                                                         disabled={readOnly}
                                                          className="w-10 h-10 border border-l-0 bg-background text-foreground rounded-r-lg hover:bg-muted font-extrabold flex items-center justify-center transition-colors text-base select-none shrink-0"
                                                      >
                                                          <Plus className="h-3.5 w-3.5" />
@@ -396,6 +418,7 @@ export default function ShipmentInspectionForm({
                                                     <button
                                                         type="button"
                                                         onClick={() => handleUpdateRow(line.line_id, "acceptedQty", Math.max(0, acceptedVal - 1))}
+                                                        disabled={readOnly}
                                                         className="w-10 h-10 border border-r-0 bg-background text-foreground rounded-l-lg hover:bg-muted font-extrabold flex items-center justify-center transition-colors text-base select-none shrink-0"
                                                     >
                                                         <Minus className="h-3.5 w-3.5" />
@@ -408,11 +431,13 @@ export default function ShipmentInspectionForm({
                                                         placeholder="Accepted qty"
                                                         value={row.acceptedQty}
                                                         onChange={e => handleUpdateRow(line.line_id, "acceptedQty", e.target.value === "" ? "" : Number(e.target.value))}
+                                                        disabled={readOnly}
                                                         className="w-full h-10 border bg-background text-center text-xs font-semibold text-foreground outline-none focus:ring-0"
                                                     />
                                                     <button
                                                         type="button"
                                                         onClick={() => handleUpdateRow(line.line_id, "acceptedQty", Math.min(receivedVal, acceptedVal + 1))}
+                                                        disabled={readOnly}
                                                         className="w-10 h-10 border border-l-0 bg-background text-foreground rounded-r-lg hover:bg-muted font-extrabold flex items-center justify-center transition-colors text-base select-none shrink-0"
                                                     >
                                                         <Plus className="h-3.5 w-3.5" />
@@ -434,6 +459,7 @@ export default function ShipmentInspectionForm({
                                                     <button
                                                         type="button"
                                                         onClick={() => handleUpdateRow(line.line_id, "rejectedQty", Math.max(0, rejectedVal - 1))}
+                                                        disabled={readOnly}
                                                         className="w-10 h-10 border border-r-0 bg-background text-foreground rounded-l-lg hover:bg-muted font-extrabold flex items-center justify-center transition-colors shrink-0"
                                                     >
                                                         <Minus className="h-3.5 w-3.5" />
@@ -446,11 +472,13 @@ export default function ShipmentInspectionForm({
                                                         placeholder="Rejected qty"
                                                         value={row.rejectedQty}
                                                         onChange={event => handleUpdateRow(line.line_id, "rejectedQty", event.target.value === "" ? "" : Number(event.target.value))}
+                                                        disabled={readOnly}
                                                         className="w-full h-10 border bg-background text-center text-xs font-semibold text-foreground outline-none focus:ring-0"
                                                     />
                                                     <button
                                                         type="button"
                                                         onClick={() => handleUpdateRow(line.line_id, "rejectedQty", Math.min(receivedVal, rejectedVal + 1))}
+                                                        disabled={readOnly}
                                                         className="w-10 h-10 border border-l-0 bg-background text-foreground rounded-r-lg hover:bg-muted font-extrabold flex items-center justify-center transition-colors shrink-0"
                                                     >
                                                         <Plus className="h-3.5 w-3.5" />
@@ -478,6 +506,7 @@ export default function ShipmentInspectionForm({
                                             placeholder="Supplier batch number"
                                             value={row.batchNumber}
                                             onChange={e => handleUpdateRow(line.line_id, "batchNumber", e.target.value)}
+                                            disabled={readOnly}
                                             className="w-full h-10 bg-background border text-foreground rounded-lg px-3 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-primary"
                                         />
                                     </div>
@@ -490,6 +519,7 @@ export default function ShipmentInspectionForm({
                                             required={receivedVal > 0}
                                             value={row.lotId}
                                             onChange={e => handleUpdateRow(line.line_id, "lotId", e.target.value)}
+                                            disabled={readOnly}
                                             className="w-full h-10 bg-background border text-foreground rounded-lg px-3 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-primary"
                                         >
                                             <option value="">Select storage lot...</option>
@@ -505,14 +535,20 @@ export default function ShipmentInspectionForm({
                                         <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">
                                             Manufacturing Date {receivedVal > 0 && !row.isPackaging && <span className="text-red-500">*</span>}
                                         </label>
-                                        <input
-                                            type="date"
-                                            required={receivedVal > 0 && !row.isPackaging}
-                                            max={row.expirationDate || undefined}
-                                            value={row.manufacturingDate}
-                                            onChange={event => handleUpdateRow(line.line_id, "manufacturingDate", event.target.value)}
-                                            className="w-full h-10 bg-background border text-foreground rounded-lg px-3 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-primary"
-                                        />
+                                        {readOnly ? (
+                                            <div className="w-full h-10 bg-muted/40 border text-foreground rounded-lg px-3 py-1.5 text-xs font-semibold flex items-center">
+                                                {row.manufacturingDate || "Not recorded"}
+                                            </div>
+                                        ) : (
+                                            <input
+                                                type="date"
+                                                required={receivedVal > 0 && !row.isPackaging}
+                                                max={row.expirationDate || undefined}
+                                                value={row.manufacturingDate}
+                                                onChange={event => handleUpdateRow(line.line_id, "manufacturingDate", event.target.value)}
+                                                className="w-full h-10 bg-background border text-foreground rounded-lg px-3 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-primary"
+                                            />
+                                        )}
                                     </div>
 
                                     <div className="space-y-1">
@@ -525,6 +561,7 @@ export default function ShipmentInspectionForm({
                                             min={row.manufacturingDate || undefined}
                                             value={row.expirationDate}
                                             onChange={e => handleUpdateRow(line.line_id, "expirationDate", e.target.value)}
+                                            disabled={readOnly}
                                             className="w-full h-10 bg-background border text-foreground rounded-lg px-3 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-primary"
                                         />
                                     </div>
@@ -534,7 +571,9 @@ export default function ShipmentInspectionForm({
                                             Server Disposition
                                         </label>
                                         <div className={`h-10 rounded-xl border px-3 flex items-center text-[10px] font-extrabold ${
-                                            evaluation?.disposition === "Passed"
+                                            readOnly
+                                                ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-700"
+                                                : evaluation?.disposition === "Passed"
                                                 ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-700"
                                                 : evaluation?.disposition === "Partially Accepted"
                                                     ? "bg-amber-500/10 border-amber-500/20 text-amber-700"
@@ -544,7 +583,11 @@ export default function ShipmentInspectionForm({
                                                             ? "bg-muted text-muted-foreground"
                                                             : "bg-muted/40 text-muted-foreground"
                                         }`}>
-                                            {evaluation ? `${evaluation.disposition} - Server verified` : "Pending server validation"}
+                                            {readOnly
+                                                ? `${line.qa_status || "Received"} - Recorded`
+                                                : evaluation
+                                                    ? `${evaluation.disposition} - Server verified`
+                                                    : "Pending server validation"}
                                         </div>
                                     </div>
                                 </div>
@@ -582,6 +625,7 @@ export default function ShipmentInspectionForm({
                                         placeholder={isRemarksMandatory ? "Logistics discrepancy or bad order explanation is mandatory" : "Reason for discrepancy or failure"}
                                         value={row.rejectionReason}
                                         onChange={e => handleUpdateRow(line.line_id, "rejectionReason", e.target.value)}
+                                        disabled={readOnly}
                                         className="w-full h-10 bg-background border text-foreground rounded-lg px-3 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-primary"
                                     />
                                 </div>
@@ -618,7 +662,12 @@ export default function ShipmentInspectionForm({
             </div>
 
             <div className="p-4 border-t bg-muted/15 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 shrink-0">
-                {qaSubmissionBlockReason ? (
+                {readOnly ? (
+                    <div className="flex items-start gap-2 text-[10px] text-emerald-700 max-w-xl" role="status">
+                        <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" />
+                        <span>This purchase order has already been received. The details are available for viewing only.</span>
+                    </div>
+                ) : qaSubmissionBlockReason ? (
                     <div className="flex items-start gap-2 text-[10px] text-amber-700 max-w-xl" role="alert">
                         <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
                         <span>{qaSubmissionBlockReason}</span>
@@ -635,16 +684,18 @@ export default function ShipmentInspectionForm({
                     onClick={onCancel}
                     className="px-5 py-2.5 border rounded-xl text-xs font-bold text-muted-foreground hover:bg-muted h-11 flex items-center justify-center cursor-pointer"
                 >
-                    Cancel Inspection
+                    {readOnly ? "Back to Queue" : "Cancel Inspection"}
                 </button>
-                <button
-                    type={hasPreview ? "button" : "submit"}
-                    onClick={hasPreview ? onReviewPreview : undefined}
-                    disabled={loadingLines || validatingInspection || Boolean(qaSubmissionBlockReason)}
-                    className="px-5 py-2.5 bg-primary text-primary-foreground rounded-xl text-xs font-bold flex items-center gap-1.5 shadow h-11 justify-center cursor-pointer disabled:opacity-60 disabled:cursor-wait"
-                >
-                    {validatingInspection ? <><Loader2 className="h-4 w-4 animate-spin" /> Generating...</> : qaSubmissionBlockReason ? <><AlertTriangle className="h-4 w-4" /> QA Configuration Required</> : hasPreview ? <><ReceiptText className="h-4 w-4" /> Review Movement Preview</> : <><CheckCircle2 className="h-4 w-4" /> Preview QA & Routes</>}
-                </button>
+                {!readOnly && (
+                    <button
+                        type={hasPreview ? "button" : "submit"}
+                        onClick={hasPreview ? onReviewPreview : undefined}
+                        disabled={loadingLines || validatingInspection || Boolean(qaSubmissionBlockReason)}
+                        className="px-5 py-2.5 bg-primary text-primary-foreground rounded-xl text-xs font-bold flex items-center gap-1.5 shadow h-11 justify-center cursor-pointer disabled:opacity-60 disabled:cursor-wait"
+                    >
+                        {validatingInspection ? <><Loader2 className="h-4 w-4 animate-spin" /> Generating...</> : qaSubmissionBlockReason ? <><AlertTriangle className="h-4 w-4" /> QA Configuration Required</> : hasPreview ? <><ReceiptText className="h-4 w-4" /> Review Movement Preview</> : <><CheckCircle2 className="h-4 w-4" /> Preview QA & Routes</>}
+                    </button>
+                )}
                 </div>
             </div>
         </form>
