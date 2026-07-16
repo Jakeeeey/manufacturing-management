@@ -8,6 +8,16 @@ interface UOMOption {
     cost_per_unit: number;
     unit_of_measurement_count?: number;
 }
+
+function formatMoney(value: number | string | null | undefined, currency = "PHP") {
+    const amount = Number(value || 0);
+    return new Intl.NumberFormat("en-PH", {
+        style: "currency",
+        currency,
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+    }).format(Number.isFinite(amount) ? amount : 0);
+}
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { Search, Plus, Calendar, ShieldCheck, Truck, Layers, Anchor, AlertCircle, Info, Landmark, Edit, RefreshCw, Loader2, Trash2, CheckCircle2, CheckSquare, X } from "lucide-react";
 import { toast } from "sonner";
@@ -65,6 +75,7 @@ interface IncomingShipmentsProps {
     onEditShipment: (shipmentId: number, shipmentData: ShipmentFormState, lineItems: ManifestLineFormItem[]) => void;
     onUpdateShipmentStatus: (shipmentId: number, status: "Ordered" | "Approved" | "Cancelled" | "For Pickup" | "En Route" | "Receiving (QA)" | "Partially Received" | "Received" | "Rejected") => void;
     loading?: boolean;
+    listLoading?: boolean;
     serverList?: {
         total: number;
         totalPages: number;
@@ -436,7 +447,7 @@ function RawProductSelector({
                         })}
                         {groupedResults.length === 0 && (
                             <div className="p-4 text-center text-xs text-muted-foreground italic">
-                                No ingredients found matching &quot;{searchQuery}&quot;
+                                No compatible products found matching &quot;{searchQuery}&quot;
                             </div>
                         )}
                     </div>
@@ -464,6 +475,7 @@ export default function IncomingShipments({
     onEditShipment,
     onUpdateShipmentStatus,
     loading = false,
+    listLoading = false,
     serverList,
     canonicalDrafting = false,
     jobOrders = []
@@ -476,11 +488,9 @@ export default function IncomingShipments({
     const [statusFilter, setStatusFilter] = useState("All");
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(5);
-
-    useEffect(() => {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setCurrentPage(1);
-    }, [search, statusFilter, itemsPerPage]);
+    const [hasSubmitted, setHasSubmitted] = useState(false);
+    const modalRef = React.useRef<HTMLDivElement>(null);
+    const restoreFocusRef = React.useRef<HTMLElement | null>(null);
 
     useEffect(() => {
         if (!onServerQueryChange) return;
@@ -495,8 +505,24 @@ export default function IncomingShipments({
         return () => window.clearTimeout(timeout);
     }, [currentPage, itemsPerPage, onServerQueryChange, search, statusFilter]);
 
+    useEffect(() => {
+        if (!isModalOpen) return;
+        restoreFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        const timeout = window.setTimeout(() => {
+            const firstControl = modalRef.current?.querySelector<HTMLElement>("input, select, textarea, button:not([aria-label='Close dialog'])");
+            firstControl?.focus();
+        }, 0);
+        return () => {
+            window.clearTimeout(timeout);
+            restoreFocusRef.current?.focus();
+            restoreFocusRef.current = null;
+        };
+    }, [isModalOpen]);
+
     const handleStartEdit = async () => {
         if (!activeShipment) return;
+
+        setHasSubmitted(false);
 
         setShipmentForm({
             reference_number: activeShipment.reference_number,
@@ -550,9 +576,10 @@ export default function IncomingShipments({
         setIsModalOpen(true);
     };
 
-    const handleCloseModal = () => {
+    const handleCloseModal = React.useCallback(() => {
         setIsModalOpen(false);
         setEditingShipmentId(null);
+        setHasSubmitted(false);
         setShipmentForm({
             reference_number: "",
             supplier_id: "",
@@ -567,14 +594,20 @@ export default function IncomingShipments({
             ,currency_code: "PHP"
         });
         setLinesForm([]);
-    };
+    }, [setIsModalOpen, setLinesForm, setShipmentForm]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        setHasSubmitted(true);
         
         const hasBlankProduct = linesForm.some(l => !l.product_id || l.product_id.trim() === "");
         if (hasBlankProduct) {
             toast.error("Please select a valid Raw Product Name for all rows in the cargo manifest.");
+            return;
+        }
+
+        if (linesForm.some(line => getLineErrors(line).length > 0)) {
+            toast.error("Review the highlighted purchase-order line fields before continuing.");
             return;
         }
 
@@ -693,19 +726,20 @@ export default function IncomingShipments({
             if (e.altKey && e.key.toLowerCase() === "n") {
                 e.preventDefault();
                 setIsOverridden(false);
+                setHasSubmitted(false);
                 setIsModalOpen(true);
             }
             if (e.key === "Escape" && isModalOpen) {
                 const activeDropdown = document.querySelector('[data-dropdown-open="true"]');
                 if (!activeDropdown) {
                     setIsOverridden(false);
-                    setIsModalOpen(false);
+                    handleCloseModal();
                 }
             }
         };
         window.addEventListener("keydown", handleGlobalKeyDown);
         return () => window.removeEventListener("keydown", handleGlobalKeyDown);
-    }, [isModalOpen, setIsModalOpen]);
+    }, [handleCloseModal, isModalOpen, setIsModalOpen]);
 
     const filteredShipments = serverList ? shipments : shipments.filter(s => {
         const poNo = s.purchase_order_no || "";
@@ -724,6 +758,7 @@ export default function IncomingShipments({
         : filteredShipments.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
     const activeShipment = selectedShipment || null;
+    const hasListFilters = Boolean(search.trim() || statusFilter !== "All");
 
     const supplierRawMaterials = React.useMemo(() => {
         if (!shipmentForm.supplier_id) return [];
@@ -810,6 +845,27 @@ export default function IncomingShipments({
         setLinesForm(copy);
     };
 
+    const getLineErrors = (line: ManifestLineFormItem) => {
+        const errors: string[] = [];
+        const quantity = Number(line.quantity_ordered);
+        const unitPrice = Number(line.base_unit_cost_php);
+        const discount = Number(line.discount_percent || 0);
+        const vat = Number(line.vat_percent || 0);
+        const withholding = Number(line.withholding_percent || 0);
+
+        if (!line.product_id) errors.push("Select a product");
+        if (!Number.isInteger(quantity) || quantity <= 0) errors.push("Quantity must be a positive whole number");
+        if (line.base_unit_cost_php === "" || !Number.isFinite(unitPrice) || unitPrice < 0) errors.push("Unit price must be non-negative");
+        if (!Number.isFinite(discount) || discount < 0 || discount > 100) errors.push("Discount must be 0-100");
+        if (!Number.isFinite(vat) || vat < 0 || vat > 100) errors.push("VAT must be 0-100");
+        if (!Number.isFinite(withholding) || withholding < 0 || withholding > 100) errors.push("Withholding must be 0-100");
+        if (line.purchase_intent === "MRP_Demand" && (!Number.isInteger(Number(line.job_order_id)) || Number(line.job_order_id) <= 0)) {
+            errors.push("Select a Job Order for MRP Demand");
+        }
+        if (line.purchase_intent === "Buffer_Stock" && line.job_order_id) errors.push("Remove the Job Order for Buffer Stock");
+        return errors;
+    };
+
     const getStatusBadge = (status: string) => {
         switch (status) {
             case "Requested":
@@ -848,8 +904,8 @@ export default function IncomingShipments({
                             <span className="truncate">Procurement Registry</span>
                             <span className="text-[10px] text-muted-foreground shrink-0">({totalItems})</span>
                         </h3>
-                        <button
-                            onClick={() => { setIsOverridden(false); setIsModalOpen(true); }}
+                         <button
+                             onClick={() => { setIsOverridden(false); setHasSubmitted(false); setIsModalOpen(true); }}
                             className="inline-flex items-center gap-1 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold px-2.5 py-1.5 rounded-lg text-xs transition-all shadow-sm shrink-0 cursor-pointer"
                         >
                             <Plus className="h-3.5 w-3.5" /> {canonicalDrafting ? "Create PO" : "Log Cargo"}
@@ -861,7 +917,10 @@ export default function IncomingShipments({
                                 type="text"
                                 placeholder="Search BL/Reference, Supplier..."
                                 value={search}
-                                onChange={e => setSearch(e.target.value)}
+                                onChange={e => {
+                                    setSearch(e.target.value);
+                                    setCurrentPage(1);
+                                }}
                                 className="w-full pl-9 pr-8 py-2 border rounded-lg text-xs bg-background outline-none focus:ring-1 focus:ring-primary font-medium h-9"
                             />
                             {search && (
@@ -876,7 +935,10 @@ export default function IncomingShipments({
                         </div>
                         <select
                             value={statusFilter}
-                            onChange={e => setStatusFilter(e.target.value)}
+                            onChange={e => {
+                                setStatusFilter(e.target.value);
+                                setCurrentPage(1);
+                            }}
                             className="rounded-lg border bg-background px-2.5 py-1.5 text-xs outline-none focus:ring-1 focus:ring-primary font-semibold text-foreground h-9 w-32"
                         >
                             <option value="All">All Statuses</option>
@@ -893,10 +955,40 @@ export default function IncomingShipments({
                     </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto divide-y">
-                    {paginatedShipments.length === 0 ? (
-                        <div className="p-8 text-center text-xs text-muted-foreground">
-                            {canonicalDrafting ? "No purchase orders found. Click Create PO to add one." : "No shipments logged. Click Log Cargo to add one."}
+                <div className="relative flex-1 overflow-y-auto divide-y">
+                    {listLoading ? (
+                        <div className="space-y-3 p-4" aria-label="Loading purchase orders" role="status">
+                            {Array.from({ length: 4 }).map((_, index) => (
+                                <div key={index} className="animate-pulse space-y-2 rounded-lg border p-3">
+                                    <div className="h-3 w-3/5 rounded bg-muted" />
+                                    <div className="h-3 w-4/5 rounded bg-muted" />
+                                    <div className="h-2 w-2/5 rounded bg-muted" />
+                                </div>
+                            ))}
+                        </div>
+                    ) : paginatedShipments.length === 0 ? (
+                        <div className="flex min-h-48 flex-col items-center justify-center gap-2 p-8 text-center text-xs text-muted-foreground">
+                            <Search className="h-8 w-8 text-muted-foreground/30" />
+                            <p className="font-semibold">
+                                {hasListFilters
+                                    ? "No purchase orders match the current filters."
+                                    : canonicalDrafting ? "No purchase orders found yet." : "No shipments logged yet."}
+                            </p>
+                            {hasListFilters ? (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setSearch("");
+                                        setStatusFilter("All");
+                                        setCurrentPage(1);
+                                    }}
+                                    className="text-primary font-semibold hover:underline"
+                                >
+                                    Clear filters
+                                </button>
+                            ) : (
+                                <p className="text-[11px]">{canonicalDrafting ? "Click Create PO to add one." : "Click Log Cargo to add one."}</p>
+                            )}
                         </div>
                     ) : (
                         paginatedShipments.map(s => {
@@ -908,6 +1000,7 @@ export default function IncomingShipments({
                                 <button
                                     key={s.shipment_id}
                                     onClick={() => setSelectedShipment(s)}
+                                    aria-current={activeShipment?.shipment_id === s.shipment_id ? "true" : undefined}
                                     className={`w-full text-left p-4 hover:bg-muted/40 transition-all flex flex-col gap-2 hover:-translate-y-0.5 hover:shadow-[0_4px_12px_rgba(0,0,0,0.03)] focus:bg-primary/5 active:translate-y-0 ${
                                         activeShipment?.shipment_id === s.shipment_id ? "bg-primary/5 border-l-2 border-primary" : ""
                                     }`}
@@ -918,10 +1011,10 @@ export default function IncomingShipments({
                                     </div>
                                     <div className="flex items-center justify-between text-[11px] text-muted-foreground font-semibold">
                                         <span>{supName}</span>
-                                        <span className="font-mono">{s.total_php_value ? `₱${Number(s.total_php_value).toLocaleString(undefined, { minimumFractionDigits: 2 })}` : "₱0.00"}</span>
+                                        <span className="font-mono">{formatMoney(s.total_php_value)}</span>
                                     </div>
                                     <div className="text-[10px] text-muted-foreground flex justify-between">
-                                        <span>Status: {s.status}</span>
+                                        <span>{s.created_at ? `Created: ${new Date(s.created_at).toLocaleDateString()}` : "Purchase order"}</span>
                                         <span>
                                             {s.status === "Received" 
                                                 ? `Received: ${s.date_received ? new Date(s.date_received).toLocaleDateString() : "N/A"}` 
@@ -941,7 +1034,10 @@ export default function IncomingShipments({
                             <span>Show</span>
                             <select
                                 value={itemsPerPage}
-                                onChange={e => setItemsPerPage(Number(e.target.value))}
+                                onChange={e => {
+                                    setItemsPerPage(Number(e.target.value));
+                                    setCurrentPage(1);
+                                }}
                                 className="rounded border bg-background px-1.5 py-0.5 outline-none font-semibold text-foreground focus:ring-1 focus:ring-primary text-[11px]"
                             >
                                 <option value={5}>5</option>
@@ -1151,18 +1247,18 @@ export default function IncomingShipments({
                             <div className="border p-4 rounded-xl bg-muted/5 space-y-1">
                                 <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">{canonicalDrafting ? "Net Total" : "Raw FOB Cost"}</span>
                                 <span className="text-xs font-extrabold text-foreground">
-                                    ₱{Number(activeShipment.total_php_value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    {formatMoney(activeShipment.total_php_value)}
                                 </span>
                             </div>
                             <div className="border p-4 rounded-xl bg-muted/5 space-y-1">
                                 <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Foreign Currency</span>
                                 <span className="text-xs font-extrabold text-foreground">
-                                    {Number(activeShipment.total_foreign_currency).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {activeShipment.currency_code || "PHP"}
+                                    {formatMoney(activeShipment.total_foreign_currency, activeShipment.currency_code || "PHP")}
                                 </span>
                             </div>
                             <div className="border p-4 rounded-xl bg-muted/5 space-y-1">
                                 <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Exchange Rate</span>
-                                <span className="text-xs font-extrabold text-foreground">₱{Number(activeShipment.exchange_rate).toFixed(2)}</span>
+                                <span className="text-xs font-extrabold text-foreground">{formatMoney(activeShipment.exchange_rate)}</span>
                             </div>
                             <div className="border p-4 rounded-xl bg-muted/5 space-y-1">
                                 <span className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">
@@ -1256,12 +1352,12 @@ export default function IncomingShipments({
                                 <Info className="h-4.5 w-4.5 text-blue-500 shrink-0 mt-0.5" />
                                 <div className="space-y-1">
                                     <h5 className="text-xs font-bold text-blue-800 dark:text-blue-300">Pending Landed Cost Recalculation</h5>
-                                    <p className="text-[11px] text-muted-foreground leading-relaxed">
-                                        This cargo is currently marked as <strong className="text-foreground">{activeShipment.status}</strong>. Custom duties, ARR, brokerages, and shipping lines must be added/allocated. Marking this shipment as <strong>Received</strong> will commit the computed landed costs to the raw inventory database to update standard BOM prices.
-                                    </p>
-                                </div>
-                            </div>
-                        )}
+                                     <p className="text-[11px] text-muted-foreground leading-relaxed">
+                                         This cargo is currently marked as <strong className="text-foreground">{activeShipment.status}</strong>. Custom duties, ARR, brokerages, and shipping lines must be added/allocated. Marking this shipment as <strong>Received</strong> will commit the computed landed costs to the raw inventory database to update standard BOM prices.
+                                     </p>
+                                 </div>
+                             </div>
+                         )}
                     </>
                 ) : (
                     <div className="flex flex-col items-center justify-center p-20 text-center text-muted-foreground h-full">
@@ -1274,23 +1370,35 @@ export default function IncomingShipments({
             {/* Modal to Log Shipment Cargo */}
             {isModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 overflow-y-auto">
-                    <div className={`bg-card text-foreground w-full ${canonicalDrafting ? "max-w-6xl" : "max-w-2xl"} border rounded-xl shadow-lg p-6 space-y-4 max-h-[90vh] flex flex-col`}>
+                    <div
+                        ref={modalRef}
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="purchase-order-dialog-title"
+                        tabIndex={-1}
+                        className={`bg-card text-foreground w-full ${canonicalDrafting ? "max-w-6xl" : "max-w-2xl"} border rounded-xl shadow-lg p-6 space-y-4 max-h-[90vh] flex flex-col`}
+                    >
                         <div className="flex items-center justify-between border-b pb-3 shrink-0">
-                            <h3 className="font-bold text-sm flex items-center gap-2">
+                            <h3 id="purchase-order-dialog-title" className="font-bold text-sm flex items-center gap-2">
                                 <Anchor className="h-4.5 w-4.5 text-primary" />
                                 {editingShipmentId ? "Edit Requested Purchase Order" : canonicalDrafting ? "Create Purchase Order" : "Log Incoming Cargo & PO Line Items"}
                             </h3>
                             <button
                                 onClick={handleCloseModal}
-                                className="text-muted-foreground hover:text-foreground text-xs font-bold"
+                                type="button"
+                                aria-label="Close dialog"
+                                title="Close dialog"
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
                             >
-                                Close
+                                <X className="h-4 w-4" />
                             </button>
                         </div>
 
                         <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
-                            {/* Set overflow-y-auto but add generous bottom padding so that dropdowns at the bottom have room to display without being cut off */}
-                            <div className="space-y-4 overflow-y-auto pr-1 flex-1 pb-44">
+                            <div className="space-y-4 overflow-y-auto pr-1 flex-1 pb-4">
+                            <div className="border-b pb-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                                Purchase Order Details
+                            </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-1.5">
                                     <label className="text-[11px] font-semibold text-muted-foreground">{canonicalDrafting ? "PO Number" : "PO / Bill of Lading Number *"}</label>
@@ -1475,11 +1583,14 @@ export default function IncomingShipments({
                                         <p className="text-xs text-amber-700 font-extrabold uppercase tracking-wider">Vendor Selection Required</p>
                                         <p className="text-[10px] text-amber-600/90 font-semibold leading-relaxed">Please select a supplier first to view and search their registered raw materials.</p>
                                     </div>
-                                ) : (
-                                    <div className="space-y-3 animate-in fade-in duration-200">
-                                        {linesForm.map((line, idx) => (
-                                            <div key={idx} className="flex gap-3 items-end bg-muted/10 border p-3 pr-10 rounded-lg relative flex-wrap">
-                                                <div className="flex-[3] space-y-1.5 min-w-[200px] flex flex-col relative">
+                                 ) : (
+                                     <div className="space-y-3 animate-in fade-in duration-200">
+                                         <div className="space-y-3">
+                                          {linesForm.map((line, idx) => {
+                                             const lineErrors = getLineErrors(line);
+                                             return (
+                                             <div key={idx} className={`grid grid-cols-1 gap-3 bg-muted/10 border p-3 pr-10 rounded-lg relative sm:grid-cols-2 lg:grid-cols-4 ${hasSubmitted && lineErrors.length > 0 ? "border-red-500/50 bg-red-500/5" : ""}`}>
+                                                <div className="w-full min-w-0 space-y-1.5 flex flex-col relative">
                                                     <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Raw Product Name <span className="text-red-500">*</span></label>
                                                     <RawProductSelector
                                                         id={`search-input-${idx}`}
@@ -1538,7 +1649,7 @@ export default function IncomingShipments({
                                                 </div>
 
                                                 {line.uom_options && line.uom_options.length > 0 && (
-                                                    <div className="w-40 min-w-[10rem] space-y-1.5 shrink-0">
+                                                     <div className="w-full min-w-0 space-y-1.5">
                                                         <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block whitespace-nowrap">Packaging / UOM</label>
                                                         <select
                                                             value={line.product_id}
@@ -1574,14 +1685,14 @@ export default function IncomingShipments({
                                                                         canonicalDrafting && shipmentForm.currency_code === "USD"
                                                                             ? Number(o.cost_per_unit || 0) / (Number(shipmentForm.exchange_rate) || 1)
                                                                             : o.cost_per_unit || 0
-                                                                    ).toFixed(2)})
-                                                                </option>
-                                                            ))}
-                                                        </select>
+                                                                 ).toFixed(2)})
+                                                                 </option>
+                                                             ))}
+                                                         </select>
                                                     </div>
                                                 )}
 
-                                                <div className="w-24 space-y-1.5 shrink-0 relative">
+                                                <div className="w-full min-w-0 space-y-1.5 relative">
                                                     <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">
                                                         Qty Ordered {line.selected_uom ? `(${line.selected_uom})` : ""} <span className="text-red-500">*</span>
                                                     </label>
@@ -1620,7 +1731,7 @@ export default function IncomingShipments({
                                                         
                                                         if (equivQty > 0 && convFactor !== 1) {
                                                             return (
-                                                                <span className="absolute right-0 top-full pt-0.5 text-[9px] text-primary font-bold whitespace-nowrap bg-primary/5 px-1 py-0.5 rounded border border-primary/10 select-none">
+                                                                 <span className="mt-1 block w-fit text-[9px] text-primary font-bold whitespace-nowrap bg-primary/5 px-1 py-0.5 rounded border border-primary/10 select-none">
                                                                     = {equivQty.toLocaleString()} {baseUomShortcut}
                                                                 </span>
                                                             );
@@ -1629,7 +1740,7 @@ export default function IncomingShipments({
                                                     })()}
                                                 </div>
 
-                                                <div className="w-28 space-y-1.5 shrink-0">
+                                                <div className="w-full min-w-0 space-y-1.5">
                                                     <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Unit Price ({shipmentForm.currency_code || "PHP"}) <span className="text-red-500">*</span></label>
                                                     <input
                                                         id={`cost-input-${idx}`}
@@ -1660,7 +1771,7 @@ export default function IncomingShipments({
                                                 </div>
                                                 {canonicalDrafting && (
                                                     <>
-                                                        <div className="w-36 space-y-1.5 shrink-0">
+                                                         <div className="w-full min-w-0 space-y-1.5">
                                                             <label className="text-[10px] text-muted-foreground font-bold uppercase">Purchase Intent</label>
                                                             <select
                                                                 value={line.purchase_intent || "Buffer_Stock"}
@@ -1675,7 +1786,7 @@ export default function IncomingShipments({
                                                             </select>
                                                         </div>
                                                         {line.purchase_intent === "MRP_Demand" && (
-                                                            <div className="w-44 space-y-1.5 shrink-0">
+                                                             <div className="w-full min-w-0 space-y-1.5">
                                                                 <label className="text-[10px] text-muted-foreground font-bold uppercase">Job Order</label>
                                                                 <select
                                                                     value={line.job_order_id || ""}
@@ -1693,7 +1804,7 @@ export default function IncomingShipments({
                                                             </div>
                                                         )}
                                                         {(["discount_percent", "vat_percent", "withholding_percent"] as const).map(field => (
-                                                            <div key={field} className="w-24 space-y-1.5 shrink-0">
+                                                             <div key={field} className="w-full min-w-0 space-y-1.5">
                                                                 <label className="text-[10px] text-muted-foreground font-bold uppercase">
                                                                     {field === "discount_percent" ? "Discount %" : field === "vat_percent" ? "VAT %" : "Withhold %"}
                                                                 </label>
@@ -1710,46 +1821,54 @@ export default function IncomingShipments({
                                                         ))}
                                                     </>
                                                 )}
-                                                {linesForm.length > 1 && (
-                                                    <button
+                                                 {linesForm.length > 1 && (
+                                                     <button
                                                         type="button"
                                                         onClick={() => handleRemoveLineForm(idx)}
                                                         className="absolute top-2 right-2 text-red-500 hover:text-red-600 hover:bg-red-500/10 p-1.5 rounded-lg transition-all shrink-0 animate-in fade-in zoom-in-95 duration-150"
                                                         title="Remove Row"
                                                     >
-                                                        <Trash2 className="h-4 w-4" />
-                                                    </button>
-                                                )}
-                                            </div>
-                                        ))}
-                                        <div className="flex justify-end pt-1">
-                                            <button
-                                                type="button"
-                                                onClick={handleAddLineForm}
-                                                className="inline-flex items-center gap-1 text-primary hover:text-primary/80 text-xs font-semibold"
-                                            >
-                                                <Plus className="h-3.5 w-3.5" /> Add Row
-                                            </button>
-                                        </div>
-                                    </div>
+                                                         <Trash2 className="h-4 w-4" />
+                                                     </button>
+                                                 )}
+                                                 {hasSubmitted && lineErrors.length > 0 && (
+                                                     <p className="col-span-full text-[10px] font-semibold leading-relaxed text-red-600" role="alert">
+                                                         {lineErrors.join("; ")}
+                                                     </p>
+                                                 )}
+                                             </div>
+                                             );
+                                          })}
+                                         </div>
+                                         <div className="mt-2 flex justify-end self-end border-t pt-3">
+                                             <button
+                                                 type="button"
+                                                 onClick={handleAddLineForm}
+                                                 className="inline-flex items-center gap-1 text-primary hover:text-primary/80 text-xs font-semibold"
+                                             >
+                                                 <Plus className="h-3.5 w-3.5" /> Add Row
+                                             </button>
+                                         </div>
+                                     </div>
                                 )}
                             </div>
 
                             {/* Live calculations display */}
-                            {(canonicalDrafting ? draftSummary.netPhp : totalPhpValue) > 0 && (
-                                <div className="p-3.5 bg-muted/40 border rounded-xl space-y-2 animate-in fade-in duration-200 shadow-inner">
+                            {linesForm.length > 0 && (
+                                <div className="p-3.5 bg-muted/40 border rounded-xl space-y-2 animate-in fade-in duration-200 shadow-inner" aria-live="polite">
+                                    <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Live Totals Preview</div>
                                     {canonicalDrafting ? (
                                         <>
                                             <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-xs">
-                                                <span>Gross <strong className="block font-mono text-foreground">PHP {draftSummary.grossPhp.toFixed(2)}</strong></span>
-                                                <span>Discount <strong className="block font-mono text-foreground">PHP {draftSummary.discountPhp.toFixed(2)}</strong></span>
-                                                <span>VAT <strong className="block font-mono text-foreground">PHP {draftSummary.vatPhp.toFixed(2)}</strong></span>
-                                                <span>Withholding <strong className="block font-mono text-foreground">PHP {draftSummary.withholdingPhp.toFixed(2)}</strong></span>
-                                                <span>Net <strong className="block font-mono text-foreground">PHP {draftSummary.netPhp.toFixed(2)}</strong></span>
+                                                <span>Gross <strong className="block font-mono text-foreground">{formatMoney(draftSummary.grossPhp)}</strong></span>
+                                                <span>Discount <strong className="block font-mono text-foreground">{formatMoney(draftSummary.discountPhp)}</strong></span>
+                                                <span>VAT <strong className="block font-mono text-foreground">{formatMoney(draftSummary.vatPhp)}</strong></span>
+                                                <span>Withholding <strong className="block font-mono text-foreground">{formatMoney(draftSummary.withholdingPhp)}</strong></span>
+                                                <span>Net <strong className="block font-mono text-foreground">{formatMoney(draftSummary.netPhp)}</strong></span>
                                             </div>
                                             <div className="flex justify-between border-t pt-2 text-xs font-bold">
                                                 <span>Locked {shipmentForm.currency_code || "PHP"} total</span>
-                                                <span className="font-mono">{draftSummary.netForeign.toFixed(2)} {shipmentForm.currency_code || "PHP"}</span>
+                                                <span className="font-mono">{formatMoney(draftSummary.netForeign, shipmentForm.currency_code || "PHP")}</span>
                                             </div>
                                         </>
                                     ) : (
@@ -1757,7 +1876,7 @@ export default function IncomingShipments({
                                     <div className="flex justify-between text-xs font-bold text-muted-foreground">
                                         <span>Total Cargo Value (PHP)</span>
                                         <span className="font-mono text-foreground text-sm font-extrabold">
-                                            ₱{totalPhpValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            {formatMoney(totalPhpValue)}
                                         </span>
                                     </div>
                                         </>
@@ -1766,7 +1885,7 @@ export default function IncomingShipments({
                                         <div className="flex justify-between text-xs font-bold text-muted-foreground border-t pt-1.5">
                                             <span>Total Cargo Value (USD @ {parseFloat(shipmentForm.exchange_rate) || "N/A"})</span>
                                             <span className="font-mono text-foreground text-sm font-extrabold">
-                                                ${totalUsdValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                {formatMoney(totalUsdValue, "USD")}
                                             </span>
                                         </div>
                                     )}
@@ -1776,7 +1895,7 @@ export default function IncomingShipments({
                             </div>
 
                             {/* Sticky Footer */}
-                            <div className="border-t pt-3 flex justify-end gap-2 shrink-0 bg-card mt-auto">
+                            <div className="sticky bottom-0 border-t pt-3 flex justify-end gap-2 shrink-0 bg-card mt-auto">
                                 <button
                                     onClick={handleCloseModal}
                                     type="button"
@@ -1787,7 +1906,7 @@ export default function IncomingShipments({
                                 <button
                                     id="register-shipment-btn"
                                     type="submit"
-                                    disabled={loading}
+                                    disabled={loading || listLoading}
                                     className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground hover:bg-primary/95 transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                             {loading ? (

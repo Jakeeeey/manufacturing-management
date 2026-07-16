@@ -47,6 +47,7 @@ function calculateDraftTotals(lines: PurchaseOrderDraftPayload["lines"], exchang
 
 export function usePurchaseOrder() {
     const [loading, setLoading] = useState(false);
+    const [listLoading, setListLoading] = useState(false);
     const [suppliers, setSuppliers] = useState<Supplier[]>([]);
     const [shipments, setShipments] = useState<IncomingShipment[]>([]);
     const [rawMaterials, setRawMaterials] = useState<RawMaterial[]>([]);
@@ -67,6 +68,7 @@ export function usePurchaseOrder() {
         listController.current?.abort();
         const controller = new AbortController();
         listController.current = controller;
+        setListLoading(true);
         try {
             const result = await fetchPurchaseOrders(query, controller.signal);
             setShipments(result.data);
@@ -75,6 +77,8 @@ export function usePurchaseOrder() {
         } catch (error) {
             if ((error as Error).name !== "AbortError") toast.error((error as Error).message || "Failed to load purchase orders.");
             return [];
+        } finally {
+            if (!controller.signal.aborted) setListLoading(false);
         }
     }, []);
 
@@ -138,7 +142,33 @@ export function usePurchaseOrder() {
 
     const handleCreateShipment = async (event: React.FormEvent) => {
         event.preventDefault();
-        const lines = shipmentLinesForm.filter(line => line.product_id && line.quantity_ordered && line.base_unit_cost_php);
+        const invalidRows = shipmentLinesForm.flatMap((line, index) => {
+            const errors: string[] = [];
+            const quantity = Number(line.quantity_ordered);
+            const unitPrice = Number(line.base_unit_cost_php);
+            const discount = Number(line.discount_percent || 0);
+            const vat = Number(line.vat_percent || 0);
+            const withholding = Number(line.withholding_percent || 0);
+
+            if (!line.product_id) errors.push("select a product");
+            if (!Number.isInteger(quantity) || quantity <= 0) errors.push("enter a positive whole quantity");
+            if (line.base_unit_cost_php === "" || !Number.isFinite(unitPrice) || unitPrice < 0) errors.push("enter a non-negative unit price");
+            if (!Number.isFinite(discount) || discount < 0 || discount > 100) errors.push("set Discount between 0 and 100");
+            if (!Number.isFinite(vat) || vat < 0 || vat > 100) errors.push("set VAT between 0 and 100");
+            if (!Number.isFinite(withholding) || withholding < 0 || withholding > 100) errors.push("set Withholding between 0 and 100");
+            if (line.purchase_intent === "MRP_Demand" && (!Number.isInteger(Number(line.job_order_id)) || Number(line.job_order_id) <= 0)) {
+                errors.push("select a valid Job Order for MRP Demand");
+            }
+            if (line.purchase_intent === "Buffer_Stock" && line.job_order_id) errors.push("remove the Job Order for Buffer Stock");
+
+            return errors.length > 0 ? [`Row ${index + 1}: ${errors.join(", ")}.`] : [];
+        });
+        if (invalidRows.length > 0) {
+            toast.error(invalidRows[0]);
+            return;
+        }
+
+        const lines = shipmentLinesForm;
         if (!shipmentForm.supplier_id || !shipmentForm.branch_id || !shipmentForm.payment_type || !shipmentForm.price_type || lines.length === 0) {
             toast.error("Complete the purchase-order header and all required line fields.");
             return;
@@ -220,7 +250,7 @@ export function usePurchaseOrder() {
     };
 
     return {
-        loading, suppliers, shipments, rawMaterials, supplierLinkedProducts, jobOrders, listMeta, loadShipments,
+        loading, listLoading, suppliers, shipments, rawMaterials, supplierLinkedProducts, jobOrders, listMeta, loadShipments,
         selectedShipment, setSelectedShipment, selectedShipmentLines,
         isShipmentModalOpen, setIsShipmentModalOpen,
         shipmentForm, setShipmentForm, shipmentLinesForm, setShipmentLinesForm,

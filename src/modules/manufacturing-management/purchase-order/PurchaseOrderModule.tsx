@@ -26,6 +26,7 @@ export default function PurchaseOrderModule() {
                 onUpdateShipmentStatus={purchaseOrder.handleUpdateShipmentStatus}
                 onTriggerAllocation={() => undefined}
                 loading={purchaseOrder.loading}
+                listLoading={purchaseOrder.listLoading}
                 serverList={{
                     total: purchaseOrder.listMeta.total,
                     totalPages: purchaseOrder.listMeta.totalPages,
