@@ -626,7 +626,7 @@ export default function ShipmentInspectionForm({
                 ) : (
                     <div className="flex items-start gap-2 text-[10px] text-muted-foreground max-w-xl">
                         <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" />
-                        <span>{previewAcknowledged ? "Preview acknowledged. No receiving or inventory records were written." : "Preview is read-only. Receiving and inventory records are created only after a later confirmation step."}</span>
+                        <span>{previewAcknowledged ? "Receiving was posted." : "Review the movement preview, then use Confirm & Post Receiving to create the records."}</span>
                     </div>
                 )}
                 <div className="flex justify-end gap-3">
