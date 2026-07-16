@@ -17,12 +17,15 @@ interface ShipmentInspectionFormProps {
     qaSpecificationStates: Record<number, QaSpecificationLoadState>;
     qaReadings: QaSpecificationReadings;
     qaEvaluationResults: Record<number, ReceivingQaEvaluation>;
+    hasPreview: boolean;
+    previewAcknowledged: boolean;
     validatingInspection: boolean;
     qaSubmissionBlockReason: string | null;
     loadingLines: boolean;
     handleUpdateRow: (lineId: number, field: string, value: string | number | boolean) => void;
     handleUpdateQaReading: (lineId: number, specId: number, value: string) => void;
     handleSubmitInspection: (e: React.FormEvent) => void;
+    onReviewPreview: () => void;
     onCancel: () => void;
 }
 
@@ -39,12 +42,15 @@ export default function ShipmentInspectionForm({
     qaSpecificationStates,
     qaReadings,
     qaEvaluationResults,
+    hasPreview,
+    previewAcknowledged,
     validatingInspection,
     qaSubmissionBlockReason,
     loadingLines,
     handleUpdateRow,
     handleUpdateQaReading,
     handleSubmitInspection,
+    onReviewPreview,
     onCancel
 }: ShipmentInspectionFormProps) {
     const totalOrderedQty = React.useMemo(() => {
@@ -620,7 +626,7 @@ export default function ShipmentInspectionForm({
                 ) : (
                     <div className="flex items-start gap-2 text-[10px] text-muted-foreground max-w-xl">
                         <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" />
-                        <span>Preview is read-only. Receiving and inventory records are created only after a later confirmation step.</span>
+                        <span>{previewAcknowledged ? "Preview acknowledged. No receiving or inventory records were written." : "Preview is read-only. Receiving and inventory records are created only after a later confirmation step."}</span>
                     </div>
                 )}
                 <div className="flex justify-end gap-3">
@@ -632,11 +638,12 @@ export default function ShipmentInspectionForm({
                     Cancel Inspection
                 </button>
                 <button
-                    type="submit"
+                    type={hasPreview ? "button" : "submit"}
+                    onClick={hasPreview ? onReviewPreview : undefined}
                     disabled={loadingLines || validatingInspection || Boolean(qaSubmissionBlockReason)}
                     className="px-5 py-2.5 bg-primary text-primary-foreground rounded-xl text-xs font-bold flex items-center gap-1.5 shadow h-11 justify-center cursor-pointer disabled:opacity-60 disabled:cursor-wait"
                 >
-                    {validatingInspection ? <><Loader2 className="h-4 w-4 animate-spin" /> Generating...</> : qaSubmissionBlockReason ? <><AlertTriangle className="h-4 w-4" /> QA Configuration Required</> : <><CheckCircle2 className="h-4 w-4" /> Preview QA & Routes</>}
+                    {validatingInspection ? <><Loader2 className="h-4 w-4 animate-spin" /> Generating...</> : qaSubmissionBlockReason ? <><AlertTriangle className="h-4 w-4" /> QA Configuration Required</> : hasPreview ? <><ReceiptText className="h-4 w-4" /> Review Movement Preview</> : <><CheckCircle2 className="h-4 w-4" /> Preview QA & Routes</>}
                 </button>
                 </div>
             </div>

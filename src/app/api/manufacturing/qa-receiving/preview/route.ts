@@ -11,7 +11,9 @@ import { fetchProductQaSpecifications, PurchaseQaConfigurationError } from "../.
 import { evaluateQaChecklist } from "../../qa/_purchase-specification-domain";
 import { applyQaDecision, deriveReceivingDisposition, ReceivingQuantityError } from "../../qa/_receiving-evaluation";
 import {
+    buildMrpAllocationDrafts,
     buildReceivingRoutes,
+    type ReceivingMrpAllocationDraft,
     type ReceivingPreviewLineResult,
     type ReceivingRouteBranch,
     type ReceivingRouteTransactionType
@@ -68,6 +70,19 @@ interface DirectusMovementType {
     origin_table?: unknown;
 }
 
+interface DirectusJobOrder {
+    job_order_id?: unknown;
+    job_order_no?: unknown;
+}
+
+interface DirectusJobOrderMaterial {
+    jo_material_id?: unknown;
+    job_order_id?: unknown;
+    product_id?: unknown;
+    allocated_quantity?: unknown;
+    reserved_quantity?: unknown;
+}
+
 function rows(body: unknown): Record<string, unknown>[] {
     return body && typeof body === "object" && "data" in body && Array.isArray(body.data)
         ? body.data as Record<string, unknown>[]
@@ -84,6 +99,19 @@ function positiveInteger(value: unknown, relationKey?: string): number | null {
 
 function enabled(value: unknown): boolean {
     return value === true || Number(value) === 1;
+}
+
+function materialRequirement(material: DirectusJobOrderMaterial) {
+    const jobOrderMaterialId = positiveInteger(material.jo_material_id);
+    const allocatedQuantity = Number(material.allocated_quantity || 0);
+    const reservedQuantity = Number(material.reserved_quantity || 0);
+    if (!jobOrderMaterialId || !Number.isFinite(allocatedQuantity) || allocatedQuantity < 0 || !Number.isFinite(reservedQuantity) || reservedQuantity < 0) {
+        throw new ReceivingPreviewError("A linked job-order material has invalid allocation quantities.", 503);
+    }
+    return {
+        jobOrderMaterialId,
+        remainingQuantity: Math.max(0, allocatedQuantity - reservedQuantity)
+    };
 }
 
 function mapBranch(branch: DirectusBranch): ReceivingRouteBranch {
@@ -169,8 +197,8 @@ export async function POST(request: Request) {
             .map(line => line.storageLotId as number))];
         const [headerResponse, lineResponse, lotResponse, destinationBranch, movementTypeResponse] = await Promise.all([
             procurementDirectusFetch(`/items/purchase_order/${shipmentId}?fields=purchase_order_id,inventory_status`),
-            procurementDirectusFetch(`/items/purchase_order_products?filter[purchase_order_product_id][_in]=${lineIds.join(",")}&fields=purchase_order_product_id,purchase_order_id,product_id&limit=${lineIds.length}`),
-            procurementDirectusFetch(`/items/lots?filter[lot_id][_in]=${requestedLotIds.join(",")}&fields=lot_id&limit=${requestedLotIds.length}`),
+            procurementDirectusFetch(`/items/purchase_order_products?filter[purchase_order_product_id][_in]=${lineIds.join(",")}&fields=purchase_order_product_id,purchase_order_id,product_id,purchase_intent,job_order_id&limit=${lineIds.length}`),
+            procurementDirectusFetch(`/items/lots?filter[lot_id][_in]=${requestedLotIds.join(",")}&fields=lot_id,lot_name&limit=${requestedLotIds.length}`),
             loadBranch(destinationBranchId),
             procurementDirectusFetch("/items/inventory_transaction_types?fields=transaction_type_id,type_name,direction,origin_table&limit=-1")
         ]);
@@ -201,9 +229,19 @@ export async function POST(request: Request) {
             if (positiveInteger(stored.product_id, "product_id") !== line.productId) {
                 throw new ReceivingPreviewError(`Product mismatch for line ${line.lineId}.`);
             }
+            const intent = String(stored.purchase_intent || "Buffer_Stock");
+            const jobOrderId = positiveInteger(stored.job_order_id, "job_order_id");
+            if (intent === "MRP_Demand" && !jobOrderId) {
+                throw new ReceivingPreviewError(`MRP-demand line ${line.lineId} has no valid job order.`);
+            }
+            if (intent !== "MRP_Demand" && intent !== "Buffer_Stock") {
+                throw new ReceivingPreviewError(`Line ${line.lineId} has an invalid purchase intent.`);
+            }
         }
 
-        const validLotIds = new Set(rows(await lotResponse.json()).map(lot => positiveInteger(lot.lot_id)));
+        const storageLots = rows(await lotResponse.json());
+        const storageLotById = new Map(storageLots.map(lot => [positiveInteger(lot.lot_id), lot]));
+        const validLotIds = new Set(storageLotById.keys());
         if (requestedLotIds.some(id => !validLotIds.has(id))) {
             throw new ReceivingPreviewError("One or more storage lots do not exist.");
         }
@@ -272,6 +310,45 @@ export async function POST(request: Request) {
             };
         });
 
+        const receivedMrpEntries = evaluated.filter(({ line, result }) => {
+            const stored = poLineById.get(line.lineId)!;
+            return result.receivedQuantity > 0 && stored.purchase_intent === "MRP_Demand";
+        });
+        const acceptedMrpEntries = receivedMrpEntries.filter(entry => entry.result.acceptedQuantity > 0);
+        const mrpJobOrderIds = [...new Set(receivedMrpEntries.map(({ line }) =>
+            positiveInteger(poLineById.get(line.lineId)!.job_order_id, "job_order_id") as number
+        ))];
+        const mrpProductIds = [...new Set(acceptedMrpEntries.map(({ line }) => line.productId))];
+        const [jobOrderResponse, materialResponse] = await Promise.all([
+            mrpJobOrderIds.length > 0
+                ? procurementDirectusFetch(`/items/manufacturing_job_orders?filter[job_order_id][_in]=${mrpJobOrderIds.join(",")}&fields=job_order_id,job_order_no&limit=${mrpJobOrderIds.length}`)
+                : null,
+            mrpJobOrderIds.length > 0 && mrpProductIds.length > 0
+                ? procurementDirectusFetch(`/items/manufacturing_job_order_materials?filter[job_order_id][_in]=${mrpJobOrderIds.join(",")}&filter[product_id][_in]=${mrpProductIds.join(",")}&fields=jo_material_id,job_order_id,product_id,allocated_quantity,reserved_quantity&limit=-1`)
+                : null
+        ]);
+        if ((jobOrderResponse && !jobOrderResponse.ok) || (materialResponse && !materialResponse.ok)) {
+            throw new ReceivingPreviewError("Unable to validate MRP allocation targets.", 503);
+        }
+        const jobOrders = jobOrderResponse ? rows(await jobOrderResponse.json()) as DirectusJobOrder[] : [];
+        const jobOrderById = new Map(jobOrders.map(jobOrder => [positiveInteger(jobOrder.job_order_id), jobOrder]));
+        if (mrpJobOrderIds.some(id => !jobOrderById.has(id))) {
+            throw new ReceivingPreviewError("One or more MRP-demand job orders no longer exist.");
+        }
+        const jobOrderMaterials = materialResponse
+            ? rows(await materialResponse.json()) as DirectusJobOrderMaterial[]
+            : [];
+        for (const { line } of acceptedMrpEntries) {
+            const jobOrderId = positiveInteger(poLineById.get(line.lineId)!.job_order_id, "job_order_id") as number;
+            const matchingMaterials = jobOrderMaterials.filter(material =>
+                positiveInteger(material.job_order_id, "job_order_id") === jobOrderId
+                && positiveInteger(material.product_id, "product_id") === line.productId
+            );
+            if (matchingMaterials.length === 0) {
+                throw new ReceivingPreviewError(`MRP-demand line ${line.lineId} is not a material requirement of its linked job order.`);
+            }
+        }
+
         const needsRejectedRoute = needsRejectedRouteBeforeQa || evaluated.some(entry => entry.result.rejectedQuantity > 0);
         const badStockBranch = needsRejectedRoute ? await loadConfiguredBadStockBranch(destinationBranch) : null;
         if (needsRejectedRoute && (!badStockBranch || !enabled(badStockBranch.isActive) || !enabled(badStockBranch.isBadStock))) {
@@ -283,25 +360,58 @@ export async function POST(request: Request) {
         const passedBranch = mapBranch(destinationBranch);
         const rejectedBranch = badStockBranch ? mapBranch(badStockBranch) : null;
 
-        const data: ReceivingPreviewLineResult[] = evaluated.map(({ line, result }) => ({
-            ...result,
-            routes: result.receivedQuantity === 0
-                ? []
-                : buildReceivingRoutes({
+        const data: ReceivingPreviewLineResult[] = evaluated.map(({ line, result }) => {
+            const stored = poLineById.get(line.lineId)!;
+            const storageLot = storageLotById.get(line.storageLotId);
+            let allocationDrafts: ReceivingMrpAllocationDraft[] = [];
+            let unallocatedQuantity = 0;
+            if (result.acceptedQuantity > 0 && stored.purchase_intent === "MRP_Demand") {
+                const jobOrderId = positiveInteger(stored.job_order_id, "job_order_id") as number;
+                const jobOrder = jobOrderById.get(jobOrderId)!;
+                const requirements = jobOrderMaterials
+                    .filter(material =>
+                        positiveInteger(material.job_order_id, "job_order_id") === jobOrderId
+                        && positiveInteger(material.product_id, "product_id") === line.productId
+                    )
+                    .map(materialRequirement);
+                const allocation = buildMrpAllocationDrafts(result.acceptedQuantity, {
+                    id: jobOrderId,
+                    number: String(jobOrder.job_order_no || `JO-${jobOrderId}`)
+                }, requirements);
+                allocationDrafts = allocation.allocationDrafts;
+                unallocatedQuantity = allocation.unallocatedQuantity;
+            }
+            return {
+                ...result,
+                routes: result.receivedQuantity === 0
+                    ? []
+                    : buildReceivingRoutes({
                     acceptedQuantity: result.acceptedQuantity,
                     rejectedQuantity: result.rejectedQuantity,
                     createdBy: actor.userId,
                     sourceDocumentNo: receiptNumber,
                     storageLotId: line.storageLotId as number,
+                    storageLotName: String(storageLot?.lot_name || `Lot ${line.storageLotId}`),
                     supplierBatchNumber: line.supplierBatchNumber.trim(),
                     manufacturingDate: line.manufacturingDate,
                     expiryDate: line.expiryDate,
                     remarks: line.remarks?.trim() || null,
-                    rejectionReason: result.rejectionReason
+                    rejectionReason: result.rejectionReason,
+                    allocationDrafts,
+                    unallocatedQuantity
                 }, passedBranch, rejectedBranch, passedType, rejectedType)
-        }));
+            };
+        });
 
-        return NextResponse.json({ data });
+        return NextResponse.json({
+            data: {
+                shipmentId,
+                receiptNumber,
+                destinationBranch: passedBranch,
+                generatedBy: actor.userId,
+                lines: data
+            }
+        });
     } catch (error) {
         const status = error instanceof PurchaseOrderAuthorizationError || error instanceof PurchaseQaConfigurationError
             ? error.status

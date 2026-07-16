@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { toast } from "sonner";
-import { Shipment, Branch, ShipmentLineItem, Product, InspectionRow, StorageLot, QaSpecificationLoadState, QaSpecificationReadings, ReceivingQaEvaluation } from "../types";
+import { Shipment, Branch, ShipmentLineItem, Product, InspectionRow, StorageLot, QaSpecificationLoadState, QaSpecificationReadings, ReceivingQaEvaluation, ReceivingPreview } from "../types";
 import {
     fetchActiveShipments, 
     fetchBranches, 
@@ -40,12 +40,18 @@ export function useQAReceiving() {
     const [qaSpecificationStates, setQaSpecificationStates] = useState<Record<number, QaSpecificationLoadState>>({});
     const [qaReadings, setQaReadings] = useState<QaSpecificationReadings>({});
     const [qaEvaluationResults, setQaEvaluationResults] = useState<Record<number, ReceivingQaEvaluation>>({});
+    const [receivingPreview, setReceivingPreview] = useState<ReceivingPreview | null>(null);
+    const [previewOpen, setPreviewOpen] = useState(false);
+    const [previewAcknowledged, setPreviewAcknowledged] = useState(false);
     const [validatingInspection, setValidatingInspection] = useState(false);
 
     const handleReceiptNumberChange = useCallback((value: string) => {
         previewController.current?.abort();
         setReceiptNumber(value);
         setQaEvaluationResults({});
+        setReceivingPreview(null);
+        setPreviewOpen(false);
+        setPreviewAcknowledged(false);
         setValidatingInspection(false);
     }, []);
 
@@ -53,6 +59,9 @@ export function useQAReceiving() {
         previewController.current?.abort();
         setSelectedBranchId(value);
         setQaEvaluationResults({});
+        setReceivingPreview(null);
+        setPreviewOpen(false);
+        setPreviewAcknowledged(false);
         setValidatingInspection(false);
     }, []);
 
@@ -77,6 +86,9 @@ export function useQAReceiving() {
         setQaSpecificationStates({});
         setQaReadings({});
         setQaEvaluationResults({});
+        setReceivingPreview(null);
+        setPreviewOpen(false);
+        setPreviewAcknowledged(false);
         setValidatingInspection(false);
     }, []);
 
@@ -202,6 +214,9 @@ export function useQAReceiving() {
         setQaSpecificationStates({});
         setQaReadings({});
         setQaEvaluationResults({});
+        setReceivingPreview(null);
+        setPreviewOpen(false);
+        setPreviewAcknowledged(false);
         setLoadingLines(true);
         try {
             const lines = await fetchShipmentDetails(shipment.shipment_id, controller.signal);
@@ -280,6 +295,9 @@ export function useQAReceiving() {
     const handleUpdateRow = (lineId: number, field: string, value: any) => {
         previewController.current?.abort();
         setValidatingInspection(false);
+        setReceivingPreview(null);
+        setPreviewOpen(false);
+        setPreviewAcknowledged(false);
         setQaEvaluationResults(previous => {
             if (!previous[lineId]) return previous;
             const next = { ...previous };
@@ -301,6 +319,9 @@ export function useQAReceiving() {
     const handleUpdateQaReading = (lineId: number, specId: number, value: string) => {
         previewController.current?.abort();
         setValidatingInspection(false);
+        setReceivingPreview(null);
+        setPreviewOpen(false);
+        setPreviewAcknowledged(false);
         setQaEvaluationResults(previous => {
             if (!previous[lineId]) return previous;
             const next = { ...previous };
@@ -438,17 +459,20 @@ export function useQAReceiving() {
                 };
             });
 
-            const results = await previewReceivingQa({
+            const preview = await previewReceivingQa({
                 shipmentId: selectedShipment.shipment_id,
                 receiptNumber: receiptNumber.trim(),
                 destinationBranchId: Number(selectedBranchId),
                 lines: evaluationLines
             }, controller.signal);
             if (controller.signal.aborted) return;
-            setQaEvaluationResults(Object.fromEntries(results.map(result => [result.lineId, result])));
+            setReceivingPreview(preview);
+            setQaEvaluationResults(Object.fromEntries(preview.lines.map(result => [result.lineId, result])));
+            setPreviewAcknowledged(false);
+            setPreviewOpen(true);
             setInspectionRows(previous => {
                 const next = { ...previous };
-                for (const result of results) {
+                for (const result of preview.lines) {
                     if (!result.forceRejected || !next[result.lineId]) continue;
                     next[result.lineId] = {
                         ...next[result.lineId],
@@ -464,12 +488,18 @@ export function useQAReceiving() {
         } catch (e: any) {
             if (e.name === "AbortError") return;
             console.error(e);
-            setQaEvaluationResults({});
             toast.error(e.message || "Failed to generate receiving preview.");
         } finally {
             if (!controller.signal.aborted) setValidatingInspection(false);
         }
     };
+
+    const acknowledgePreview = useCallback(() => {
+        if (!receivingPreview) return;
+        setPreviewAcknowledged(true);
+        setPreviewOpen(false);
+        toast.success("Movement preview acknowledged. No inventory records were written.");
+    }, [receivingPreview]);
 
     // Load FIFO inventory breakdown
     const handleLoadFifoInventory = async (branchId: string) => {
@@ -591,6 +621,11 @@ export function useQAReceiving() {
         qaSpecificationStates,
         qaReadings,
         qaEvaluationResults,
+        receivingPreview,
+        previewOpen,
+        setPreviewOpen,
+        previewAcknowledged,
+        acknowledgePreview,
         validatingInspection,
         qaSubmissionBlockReason,
         handleSelectShipment,

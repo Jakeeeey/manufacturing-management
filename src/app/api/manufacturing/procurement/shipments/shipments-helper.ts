@@ -92,6 +92,8 @@ export interface ExtendedShipmentLineItem {
     expiration_date?: string;
     discount_type?: number | null;
     discount_percent?: number;
+    purchase_intent?: "MRP_Demand" | "Buffer_Stock";
+    job_order_id?: number | null;
 }
 
 function resolveInventoryLotId(value: DirectusInventoryLot["lot_id"]): number | null {

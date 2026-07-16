@@ -1,4 +1,4 @@
-import { Shipment, ShipmentLineItem, Branch, StorageLot, QaSpecification, ReceivingQaEvaluation } from "../types";
+import { Shipment, ShipmentLineItem, Branch, StorageLot, QaSpecification, ReceivingPreview } from "../types";
 
 export async function fetchActiveShipments(filters: {
     search?: string;
@@ -69,7 +69,7 @@ export async function previewReceivingQa(payload: {
         isPackaging: boolean;
         readings: Array<{ specId: number; actualReading: string }>;
     }>;
-}, signal?: AbortSignal): Promise<ReceivingQaEvaluation[]> {
+}, signal?: AbortSignal): Promise<ReceivingPreview> {
     const res = await fetch("/api/manufacturing/qa-receiving/preview", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -80,7 +80,10 @@ export async function previewReceivingQa(payload: {
     if (!res.ok) {
         throw new Error(body.error || "Failed to generate receiving preview.");
     }
-    return Array.isArray(body.data) ? body.data : [];
+    if (!body.data || !Array.isArray(body.data.lines)) {
+        throw new Error("Receiving preview returned an invalid response.");
+    }
+    return body.data as ReceivingPreview;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -53,6 +53,8 @@ export interface ShipmentLineItem {
     branch_id?: number;
     rejection_reason?: string;
     qa_status?: string;
+    purchase_intent?: "MRP_Demand" | "Buffer_Stock";
+    job_order_id?: number | null;
 }
 
 export interface InspectionRow {
@@ -93,7 +95,25 @@ export interface ReceivingQaEvaluation {
     routes: ReceivingMovementRoute[];
 }
 
+export interface ReceivingPreview {
+    shipmentId: number;
+    receiptNumber: string;
+    destinationBranch: { id: number; name: string; code: string };
+    generatedBy: number;
+    lines: ReceivingQaEvaluation[];
+}
+
+export interface ReceivingMrpAllocationDraft {
+    allocationId: null;
+    receivingLineId: null;
+    inventoryLotId: null;
+    jobOrder: { id: number; number: string };
+    jobOrderMaterialId: number;
+    quantity: number;
+}
+
 export interface ReceivingMovementRoute {
+    movementId: null;
     kind: "Passed" | "Rejected";
     qaStatus: "Passed" | "Rejected";
     quantity: number;
@@ -104,10 +124,13 @@ export interface ReceivingMovementRoute {
     createdBy: number;
     sourceDocumentNo: string;
     storageLotId: number;
+    storageLotName: string;
     supplierBatchNumber: string;
     manufacturingDate: string | null;
     expiryDate: string | null;
     remarks: string | null;
+    allocationDrafts: ReceivingMrpAllocationDraft[];
+    unallocatedQuantity: number;
 }
 
 export interface FIFOBatch {

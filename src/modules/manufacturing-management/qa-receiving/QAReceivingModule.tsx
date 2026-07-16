@@ -7,6 +7,7 @@ import { useQAReceiving } from "./hooks/useQAReceiving";
 import InboundShipmentsList from "./components/InboundShipmentsList";
 import ShipmentInspectionForm from "./components/ShipmentInspectionForm";
 import FIFOInventoryList from "./components/FIFOInventoryList";
+import MovementPayloadModal from "./components/MovementPayloadModal";
 
 export default function QAReceivingModule() {
     const {
@@ -26,6 +27,11 @@ export default function QAReceivingModule() {
         qaSpecificationStates,
         qaReadings,
         qaEvaluationResults,
+        receivingPreview,
+        previewOpen,
+        setPreviewOpen,
+        previewAcknowledged,
+        acknowledgePreview,
         validatingInspection,
         qaSubmissionBlockReason,
         handleSelectShipment,
@@ -145,12 +151,15 @@ export default function QAReceivingModule() {
                                 qaSpecificationStates={qaSpecificationStates}
                                 qaReadings={qaReadings}
                                 qaEvaluationResults={qaEvaluationResults}
+                                hasPreview={Boolean(receivingPreview)}
+                                previewAcknowledged={previewAcknowledged}
                                 validatingInspection={validatingInspection}
                                 qaSubmissionBlockReason={qaSubmissionBlockReason}
                                 loadingLines={loadingLines}
                                 handleUpdateRow={handleUpdateRow}
                                 handleUpdateQaReading={handleUpdateQaReading}
                                 handleSubmitInspection={handleSubmitInspection}
+                                onReviewPreview={() => setPreviewOpen(true)}
                                 onCancel={clearInspection}
                             />
                         ) : (
@@ -180,6 +189,15 @@ export default function QAReceivingModule() {
                     handleLoadFifoInventory={handleLoadFifoInventory}
                 />
             )}
+
+            <MovementPayloadModal
+                open={previewOpen}
+                onOpenChange={setPreviewOpen}
+                preview={receivingPreview}
+                lineItems={lineItems}
+                acknowledged={previewAcknowledged}
+                onAcknowledge={acknowledgePreview}
+            />
         </div>
     );
 }

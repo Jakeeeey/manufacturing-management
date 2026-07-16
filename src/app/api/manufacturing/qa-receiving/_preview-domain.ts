@@ -14,7 +14,22 @@ export interface ReceivingRouteTransactionType {
     name: string;
 }
 
+export interface ReceivingMrpAllocationDraft {
+    allocationId: null;
+    receivingLineId: null;
+    inventoryLotId: null;
+    jobOrder: { id: number; number: string };
+    jobOrderMaterialId: number;
+    quantity: number;
+}
+
+export interface ReceivingMrpMaterialRequirement {
+    jobOrderMaterialId: number;
+    remainingQuantity: number;
+}
+
 export interface ReceivingMovementRoute {
+    movementId: null;
     kind: ReceivingRouteKind;
     qaStatus: ReceivingRouteKind;
     quantity: number;
@@ -25,10 +40,13 @@ export interface ReceivingMovementRoute {
     createdBy: number;
     sourceDocumentNo: string;
     storageLotId: number;
+    storageLotName: string;
     supplierBatchNumber: string;
     manufacturingDate: string | null;
     expiryDate: string | null;
     remarks: string | null;
+    allocationDrafts: ReceivingMrpAllocationDraft[];
+    unallocatedQuantity: number;
 }
 
 export interface ReceivingPreviewLineResult {
@@ -43,17 +61,55 @@ export interface ReceivingPreviewLineResult {
     routes: ReceivingMovementRoute[];
 }
 
+export interface ReceivingPreviewResult {
+    shipmentId: number;
+    receiptNumber: string;
+    destinationBranch: ReceivingRouteBranch;
+    generatedBy: number;
+    lines: ReceivingPreviewLineResult[];
+}
+
 interface RouteInput {
     acceptedQuantity: number;
     rejectedQuantity: number;
     createdBy: number;
     sourceDocumentNo: string;
     storageLotId: number;
+    storageLotName: string;
     supplierBatchNumber: string;
     manufacturingDate: string | null;
     expiryDate: string | null;
     remarks: string | null;
     rejectionReason: string | null;
+    allocationDrafts: ReceivingMrpAllocationDraft[];
+    unallocatedQuantity: number;
+}
+
+export function buildMrpAllocationDrafts(
+    acceptedQuantity: number,
+    jobOrder: { id: number; number: string },
+    requirements: ReceivingMrpMaterialRequirement[]
+): { allocationDrafts: ReceivingMrpAllocationDraft[]; unallocatedQuantity: number } {
+    let remainingAccepted = acceptedQuantity;
+    const allocationDrafts: ReceivingMrpAllocationDraft[] = [];
+
+    for (const requirement of [...requirements].sort((a, b) => a.jobOrderMaterialId - b.jobOrderMaterialId)) {
+        const allocatable = Math.max(0, Number(requirement.remainingQuantity));
+        const quantity = Math.min(remainingAccepted, allocatable);
+        if (quantity <= 0) continue;
+        allocationDrafts.push({
+            allocationId: null,
+            receivingLineId: null,
+            inventoryLotId: null,
+            jobOrder,
+            jobOrderMaterialId: requirement.jobOrderMaterialId,
+            quantity
+        });
+        remainingAccepted -= quantity;
+        if (remainingAccepted <= 0) break;
+    }
+
+    return { allocationDrafts, unallocatedQuantity: remainingAccepted };
 }
 
 export function buildReceivingRoutes(
@@ -64,11 +120,13 @@ export function buildReceivingRoutes(
     rejectedTransactionType: ReceivingRouteTransactionType | null
 ): ReceivingMovementRoute[] {
     const shared = {
+        movementId: null,
         receivingLineId: null,
         inventoryLotId: null,
         createdBy: input.createdBy,
         sourceDocumentNo: input.sourceDocumentNo,
         storageLotId: input.storageLotId,
+        storageLotName: input.storageLotName,
         supplierBatchNumber: input.supplierBatchNumber,
         manufacturingDate: input.manufacturingDate,
         expiryDate: input.expiryDate
@@ -84,7 +142,9 @@ export function buildReceivingRoutes(
             quantity: input.acceptedQuantity,
             branch: passedBranch,
             transactionType: passedTransactionType,
-            remarks: input.remarks
+            remarks: input.remarks,
+            allocationDrafts: input.allocationDrafts,
+            unallocatedQuantity: input.unallocatedQuantity
         });
     }
     if (input.rejectedQuantity > 0) {
@@ -98,7 +158,9 @@ export function buildReceivingRoutes(
             quantity: input.rejectedQuantity,
             branch: rejectedBranch,
             transactionType: rejectedTransactionType,
-            remarks: input.rejectionReason || input.remarks
+            remarks: input.rejectionReason || input.remarks,
+            allocationDrafts: [],
+            unallocatedQuantity: 0
         });
     }
     return routes;
