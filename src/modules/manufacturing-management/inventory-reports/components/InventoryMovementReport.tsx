@@ -13,8 +13,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableHeader, TableBody, TableRow, TableCell, TableHead } from "@/components/ui/table";
 import { jsPDF } from "jspdf";
-import { PdfEngine } from "@/components/pdf-layout-design/PdfEngine";
-import { pdfTemplateService } from "@/components/pdf-layout-design/services/pdf-template";
 import autoTable from "jspdf-autotable";
 import { toast } from "sonner";
 import { 
@@ -302,108 +300,119 @@ export default function InventoryMovementReport({
         toast.info("Generating report PDF...");
 
         try {
-            // Dynamically search for a template with portrait orientation to get paper configurations, fallback to "Letter - Portrait"
-            const templates = await pdfTemplateService.fetchTemplates();
-            const leftAlignedTemplateName = templates.find(t => t.config?.orientation === 'portrait')?.name || "Letter - Portrait";
+            // Instantiate Landscape Letter jsPDF directly to avoid modifying any files outside of this module
+            const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "letter" });
+            const pageW = doc.internal.pageSize.getWidth();
+            const pageH = doc.internal.pageSize.getHeight();
+            let currentY = 15;
 
-            const doc = await PdfEngine.generateWithFrame(leftAlignedTemplateName, null, (doc, startY) => {
-                let currentY = startY;
-                const pageW = doc.internal.pageSize.getWidth();
-                const pageH = doc.internal.pageSize.getHeight();
+            // Document Title
+            doc.setFontSize(11);
+            doc.setFont("helvetica", "bold");
+            doc.text("PRODUCT INVENTORY MOVEMENT BREAKDOWN REPORT", 10, currentY, { baseline: "top" });
+            currentY += 6;
 
-                // Document Title
-                doc.setFontSize(11);
+            // Meta Information Block
+            doc.setFontSize(7.5);
+            doc.setFont("helvetica", "normal");
+            doc.setTextColor(100, 116, 139);
+
+            let selectedProductTypeName = "Finished Goods";
+            if (pdfProductType === 389) selectedProductTypeName = "Raw Materials";
+            else if (pdfProductType === 390) selectedProductTypeName = "Packaging Items";
+
+            doc.text(`Branch: ${activeBranch} | Product Type: ${selectedProductTypeName}`, 10, currentY);
+            doc.text(`Date Generated: ${new Date().toLocaleString("en-PH", { timeZone: "Asia/Manila" })} (PST)`, pageW - 10, currentY, { align: "right" });
+            currentY += 5;
+
+            const mfgFilterText = pdfMfgDate ? `Mfg Date = ${pdfMfgDate}` : "Mfg Date: Any";
+            const expFilterText = pdfExpiryDate ? `Expiry Date = ${pdfExpiryDate}` : "Expiry Date: Any";
+            doc.text(`${mfgFilterText} | ${expFilterText}`, 10, currentY);
+            currentY += 8;
+
+            // Render tables sequentially for each Product
+            pdfGroupedData.forEach((prod) => {
+                // Check page overflow before drawing product title (each product table header + title takes roughly 20mm)
+                if (currentY > pageH - 30) {
+                    doc.addPage();
+                    currentY = 15; // Reset to page top margin
+                }
+
+                doc.setFontSize(8.5);
                 doc.setFont("helvetica", "bold");
-                doc.text("PRODUCT INVENTORY MOVEMENT BREAKDOWN REPORT", 10, currentY, { baseline: "top" });
-                currentY += 6;
+                doc.setTextColor(15, 23, 42);
+                doc.text(`Product: ${prod.productCode} - ${prod.productName} | Total Stock: ${prod.totalAvailable.toLocaleString("en-PH", { minimumFractionDigits: 2 })} ${prod.uomShortcut}`, 10, currentY, { baseline: "top" });
+                currentY += 5;
 
-                // Meta Information Block
+                const tableRows: string[][] = [];
+                prod.lots.forEach((lot) => {
+                    const spaceUtil = lot.maxBatchCapacity > 0 ? `${((lot.quantity / lot.maxBatchCapacity) * 100).toFixed(1)}%` : "0.0%";
+                    const cost = `PHP ${lot.unitCost.toFixed(2)}`;
+                    const qty = lot.quantity.toLocaleString("en-PH", { minimumFractionDigits: 2 });
+                    const mfgDate = lot.createdOn ? lot.createdOn.split("T")[0] : "—";
+                    const expDate = lot.expiryDate || "—";
+                    
+                    tableRows.push([
+                      lot.branchName,
+                      lot.lotName,
+                      spaceUtil,
+                      lot.sourceDocumentNo,
+                      lot.transactionType,
+                      lot.batchNo,
+                      qty,
+                      cost,
+                      lot.qaStatus,
+                      mfgDate,
+                      expDate
+                    ]);
+                });
+
+                const printableW = pageW - 20; // 10mm margin on left and right
+                // Total parts width = 238mm (excluding column 1 auto)
+                // We allocate columns proportionally to fit landscape page widths perfectly
+                const colWidth = (parts: number) => (parts / 268) * printableW;
+
+                autoTable(doc, {
+                    startY: currentY,
+                    margin: { left: 10, right: 10 },
+                    head: [["Branch", "Lot Location", "Space Util", "Source Doc", "Txn Type", "Batch No", "Qty", "Unit Cost", "QA Status", "Mfg Date", "Expiry Date"]],
+                    body: tableRows,
+                    theme: "grid",
+                    headStyles: { fillColor: [255, 255, 255], textColor: [15, 23, 42], fontSize: 5, lineColor: [226, 232, 240], lineWidth: 0.1 },
+                    bodyStyles: { fontSize: 4.5 },
+                    columnStyles: {
+                        0: { cellWidth: colWidth(28) },
+                        1: { cellWidth: "auto" },
+                        2: { cellWidth: colWidth(18), halign: "right" },
+                        3: { cellWidth: colWidth(28) },
+                        4: { cellWidth: colWidth(32) },
+                        5: { cellWidth: colWidth(28) },
+                        6: { cellWidth: colWidth(18), halign: "right" },
+                        7: { cellWidth: colWidth(24), halign: "right" },
+                        8: { cellWidth: colWidth(20), halign: "center" },
+                        9: { cellWidth: colWidth(22), halign: "center" },
+                        10: { cellWidth: colWidth(22), halign: "center" }
+                    }
+                });
+
+                const lastAutoTable = (doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable;
+                currentY = (lastAutoTable?.finalY ?? currentY) + 12;
+            });
+
+            // Draw page numbers over all pages
+            const pageCount = doc.getNumberOfPages();
+            for (let i = 1; i <= pageCount; i++) {
+                doc.setPage(i);
                 doc.setFontSize(7.5);
                 doc.setFont("helvetica", "normal");
                 doc.setTextColor(100, 116, 139);
-
-                let selectedProductTypeName = "Finished Goods";
-                if (pdfProductType === 389) selectedProductTypeName = "Raw Materials";
-                else if (pdfProductType === 390) selectedProductTypeName = "Packaging Items";
-
-                doc.text(`Branch: ${activeBranch} | Product Type: ${selectedProductTypeName}`, 10, currentY);
-                doc.text(`Date Generated: ${new Date().toLocaleString("en-PH", { timeZone: "Asia/Manila" })} (PST)`, pageW - 10, currentY, { align: "right" });
-                currentY += 5;
-
-                const mfgFilterText = pdfMfgDate ? `Mfg Date = ${pdfMfgDate}` : "Mfg Date: Any";
-                const expFilterText = pdfExpiryDate ? `Expiry Date = ${pdfExpiryDate}` : "Expiry Date: Any";
-                doc.text(`${mfgFilterText} | ${expFilterText}`, 10, currentY);
-                currentY += 8;
-
-                // Render tables sequentially for each Product
-                pdfGroupedData.forEach((prod) => {
-                    // Check page overflow before drawing product title (each product table header + title takes roughly 20mm)
-                    if (currentY > pageH - 30) {
-                        doc.addPage();
-                        currentY = 15; // Reset to page top margin
-                    }
-
-                    doc.setFontSize(8.5);
-                    doc.setFont("helvetica", "bold");
-                    doc.setTextColor(15, 23, 42);
-                    doc.text(`Product: ${prod.productCode} - ${prod.productName} | Total Stock: ${prod.totalAvailable.toLocaleString("en-PH", { minimumFractionDigits: 2 })} ${prod.uomShortcut}`, 10, currentY, { baseline: "top" });
-                    currentY += 5;
-
-                    const tableRows: string[][] = [];
-                    prod.lots.forEach((lot) => {
-                        const spaceUtil = lot.maxBatchCapacity > 0 ? `${((lot.quantity / lot.maxBatchCapacity) * 100).toFixed(1)}%` : "0.0%";
-                        const cost = `PHP ${lot.unitCost.toFixed(2)}`;
-                        const qty = lot.quantity.toLocaleString("en-PH", { minimumFractionDigits: 2 });
-                        const mfgDate = lot.createdOn ? lot.createdOn.split("T")[0] : "—";
-                        const expDate = lot.expiryDate || "—";
-                        
-                        tableRows.push([
-                          lot.branchName,
-                          lot.lotName,
-                          spaceUtil,
-                          lot.sourceDocumentNo,
-                          lot.transactionType,
-                          lot.batchNo,
-                          qty,
-                          cost,
-                          lot.qaStatus,
-                          mfgDate,
-                          expDate
-                        ]);
-                    });
-
-                    const printableW = pageW - 20; // 10mm margin on left and right
-                    // Total parts width = 238mm (excluding column 1 auto)
-                    // We allocate columns proportionally to fit landscape page widths perfectly
-                    const colWidth = (parts: number) => (parts / 268) * printableW;
-
-                    autoTable(doc, {
-                        startY: currentY,
-                        margin: { left: 10, right: 10 },
-                        head: [["Branch", "Lot Location", "Space Util", "Source Doc", "Txn Type", "Batch No", "Qty", "Unit Cost", "QA Status", "Mfg Date", "Expiry Date"]],
-                        body: tableRows,
-                        theme: "grid",
-                        headStyles: { fillColor: [255, 255, 255], textColor: [15, 23, 42], fontSize: 5, lineColor: [226, 232, 240], lineWidth: 0.1 },
-                        bodyStyles: { fontSize: 4.5 },
-                        columnStyles: {
-                            0: { cellWidth: colWidth(28) },
-                            1: { cellWidth: "auto" },
-                            2: { cellWidth: colWidth(18), halign: "right" },
-                            3: { cellWidth: colWidth(28) },
-                            4: { cellWidth: colWidth(32) },
-                            5: { cellWidth: colWidth(28) },
-                            6: { cellWidth: colWidth(18), halign: "right" },
-                            7: { cellWidth: colWidth(24), halign: "right" },
-                            8: { cellWidth: colWidth(20), halign: "center" },
-                            9: { cellWidth: colWidth(22), halign: "center" },
-                            10: { cellWidth: colWidth(22), halign: "center" }
-                        }
-                    });
-
-                    const lastAutoTable = (doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable;
-                    currentY = (lastAutoTable?.finalY ?? currentY) + 12;
-                });
-            }, { orientation: "landscape", skipHeader: true });
+                doc.text(
+                    `Page ${i} of ${pageCount}`,
+                    pageW - 10,
+                    pageH - 10,
+                    { align: "right" }
+                );
+            }
 
             doc.save(`Product_Inventory_Movement_Breakdown_Report_${activeBranch.replace(/\s+/g, "_")}.pdf`);
             toast.success("PDF generated and downloaded successfully!");
