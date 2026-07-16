@@ -541,9 +541,9 @@ export default function IncomingShipments({
             uom_options: []
             ,purchase_intent: (l as ShipmentLineItem & { purchase_intent?: "MRP_Demand" | "Buffer_Stock" }).purchase_intent || "Buffer_Stock"
             ,job_order_id: String((l as ShipmentLineItem & { job_order_id?: number }).job_order_id || "")
-            ,discount_percent: String((l as ShipmentLineItem & { discount_percent?: number }).discount_percent || 0)
-            ,vat_percent: String((l as ShipmentLineItem & { vat_percent?: number }).vat_percent || 0)
-            ,withholding_percent: String((l as ShipmentLineItem & { withholding_percent?: number }).withholding_percent || 0)
+            ,discount_percent: String((l as ShipmentLineItem & { discount_percent?: number }).discount_percent ?? "")
+            ,vat_percent: String((l as ShipmentLineItem & { vat_percent?: number }).vat_percent ?? "")
+            ,withholding_percent: String((l as ShipmentLineItem & { withholding_percent?: number }).withholding_percent ?? "")
         })));
 
         setEditingShipmentId(activeShipment.shipment_id);
@@ -790,7 +790,7 @@ export default function IncomingShipments({
     const handleAddLineForm = () => {
         setLinesForm([...linesForm, {
             parent_product_id: "", product_id: "", quantity_ordered: "", base_unit_cost_php: "",
-            purchase_intent: "Buffer_Stock", job_order_id: "", discount_percent: "0", vat_percent: "0", withholding_percent: "0"
+            purchase_intent: "Buffer_Stock", job_order_id: "", discount_percent: "", vat_percent: "", withholding_percent: ""
         }]);
     };
 
@@ -1538,8 +1538,8 @@ export default function IncomingShipments({
                                                 </div>
 
                                                 {line.uom_options && line.uom_options.length > 0 && (
-                                                    <div className="w-28 space-y-1.5 shrink-0">
-                                                        <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Packaging / UOM</label>
+                                                    <div className="w-40 min-w-[10rem] space-y-1.5 shrink-0">
+                                                        <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block whitespace-nowrap">Packaging / UOM</label>
                                                         <select
                                                             value={line.product_id}
                                                             onChange={(e) => {
@@ -1566,7 +1566,7 @@ export default function IncomingShipments({
                                                                     });
                                                                 }
                                                             }}
-                                                            className="w-full rounded-lg border bg-background px-2.5 py-1.5 text-xs outline-none h-9 text-foreground font-semibold"
+                                                            className="w-full whitespace-nowrap rounded-lg border bg-background px-2.5 py-1.5 text-xs outline-none h-9 text-foreground font-semibold"
                                                         >
                                                             {line.uom_options.map((o: UOMOption) => (
                                                                 <option key={o.product_id} value={o.product_id}>
@@ -1674,23 +1674,24 @@ export default function IncomingShipments({
                                                                 <option value="MRP_Demand">MRP Demand</option>
                                                             </select>
                                                         </div>
-                                                        <div className="w-44 space-y-1.5 shrink-0">
-                                                            <label className="text-[10px] text-muted-foreground font-bold uppercase">Job Order</label>
-                                                            <select
-                                                                value={line.job_order_id || ""}
-                                                                disabled={(line.purchase_intent || "Buffer_Stock") !== "MRP_Demand"}
-                                                                required={line.purchase_intent === "MRP_Demand"}
-                                                                onChange={event => handleLineFormChange(idx, "job_order_id", event.target.value)}
-                                                                className="w-full rounded-lg border bg-background px-2 py-1.5 text-xs h-9 disabled:bg-muted"
-                                                            >
-                                                                <option value="">Select job order</option>
-                                                                {jobOrders.map(jobOrder => (
-                                                                    <option key={jobOrder.job_order_id} value={jobOrder.job_order_id}>
-                                                                        {jobOrder.job_order_no || `JO-${jobOrder.job_order_id}`}
-                                                                    </option>
-                                                                ))}
-                                                            </select>
-                                                        </div>
+                                                        {line.purchase_intent === "MRP_Demand" && (
+                                                            <div className="w-44 space-y-1.5 shrink-0">
+                                                                <label className="text-[10px] text-muted-foreground font-bold uppercase">Job Order</label>
+                                                                <select
+                                                                    value={line.job_order_id || ""}
+                                                                    required
+                                                                    onChange={event => handleLineFormChange(idx, "job_order_id", event.target.value)}
+                                                                    className="w-full rounded-lg border bg-background px-2 py-1.5 text-xs h-9"
+                                                                >
+                                                                    <option value="">Select job order</option>
+                                                                    {jobOrders.map(jobOrder => (
+                                                                        <option key={jobOrder.job_order_id} value={jobOrder.job_order_id}>
+                                                                            {jobOrder.job_order_no || `JO-${jobOrder.job_order_id}`}
+                                                                        </option>
+                                                                    ))}
+                                                                </select>
+                                                            </div>
+                                                        )}
                                                         {(["discount_percent", "vat_percent", "withholding_percent"] as const).map(field => (
                                                             <div key={field} className="w-24 space-y-1.5 shrink-0">
                                                                 <label className="text-[10px] text-muted-foreground font-bold uppercase">
@@ -1701,7 +1702,7 @@ export default function IncomingShipments({
                                                                     min="0"
                                                                     max="100"
                                                                     step="0.01"
-                                                                    value={line[field] || "0"}
+                                                                    value={line[field] ?? ""}
                                                                     onChange={event => handleLineFormChange(idx, field, event.target.value)}
                                                                     className="w-full rounded-lg border bg-background px-2 py-1.5 text-xs h-9 font-mono"
                                                                 />
@@ -1721,6 +1722,15 @@ export default function IncomingShipments({
                                                 )}
                                             </div>
                                         ))}
+                                        <div className="flex justify-end pt-1">
+                                            <button
+                                                type="button"
+                                                onClick={handleAddLineForm}
+                                                className="inline-flex items-center gap-1 text-primary hover:text-primary/80 text-xs font-semibold"
+                                            >
+                                                <Plus className="h-3.5 w-3.5" /> Add Row
+                                            </button>
+                                        </div>
                                     </div>
                                 )}
                             </div>

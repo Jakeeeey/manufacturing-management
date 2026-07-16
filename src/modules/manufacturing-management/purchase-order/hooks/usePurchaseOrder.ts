@@ -18,7 +18,7 @@ import {
 
 const blankLine = (): ManifestLineFormItem => ({
     parent_product_id: "", product_id: "", quantity_ordered: "", base_unit_cost_php: "",
-    purchase_intent: "Buffer_Stock", job_order_id: "", discount_percent: "0", vat_percent: "0", withholding_percent: "0"
+    purchase_intent: "Buffer_Stock", job_order_id: "", discount_percent: "", vat_percent: "", withholding_percent: ""
 });
 const blankForm = (): ShipmentFormState => ({
     reference_number: "", supplier_id: "", exchange_rate: "", total_foreign_currency: "0", total_php_value: "0",
