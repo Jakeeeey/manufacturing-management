@@ -15,7 +15,14 @@ export async function PATCH(
         const body = await request.json();
         const { work_center_name, asset_id, department_id, overhead_cost_per_hour, capacity_per_hour, is_active } = body;
 
-        const payload: Record<string, unknown> = {};
+        // Generate current Manila time (UTC+8) to save in Directus
+        const now = new Date();
+        const manilaTime = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+        const manilaIsoString = manilaTime.toISOString();
+
+        const payload: Record<string, unknown> = {
+            updated_at: manilaIsoString
+        };
         if (work_center_name !== undefined) payload.work_center_name = work_center_name;
         if (asset_id !== undefined) payload.asset_id = asset_id;
         if (department_id !== undefined) payload.department_id = department_id;

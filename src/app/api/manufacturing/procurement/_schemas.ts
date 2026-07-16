@@ -11,6 +11,7 @@ export const receivingLineSchema = z.object({
     quantity_rejected: nonNegativeNumber,
     batch_no: z.string().trim().min(1),
     lot_id: positiveId,
+    manufacturing_date: z.string().date().nullable().optional(),
     expiration_date: z.string().date().nullable(),
     rejection_reason: z.string().trim().nullable(),
     qa_status: z.enum(["Passed", "Partially Accepted", "Rejected"])

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { DIRECTUS_URL, headers } from "@/app/api/manufacturing/directus-api";
 
 export async function GET() {
@@ -38,13 +39,41 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Missing required field: work_center_name" }, { status: 400 });
         }
 
+        // Get logged in user ID from secure access token cookie
+        let userId: number | null = null;
+        try {
+            const cookieStore = await cookies();
+            const token = cookieStore.get("vos_access_token")?.value;
+            if (token) {
+                const parts = token.split(".");
+                if (parts.length >= 2) {
+                    const base64Url = parts[1];
+                    let base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+                    while (base64.length % 4) base64 += "=";
+                    const jsonPayload = Buffer.from(base64, "base64").toString("utf8");
+                    const payload = JSON.parse(jsonPayload);
+                    userId = payload?.id || payload?.user_id || payload?.sub || null;
+                }
+            }
+        } catch (err) {
+            console.error("Error parsing user token in POST work center route:", err);
+        }
+
+        // Generate current Manila time (UTC+8) to save in Directus
+        const now = new Date();
+        const manilaTime = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+        const manilaIsoString = manilaTime.toISOString();
+
         const payload = {
             work_center_name,
             asset_id: asset_id || null,
             department_id: department_id || null,
             overhead_cost_per_hour: overhead_cost_per_hour !== undefined ? Number(overhead_cost_per_hour) : 0,
             capacity_per_hour: capacity_per_hour !== undefined ? Number(capacity_per_hour) : 0,
-            is_active: is_active !== undefined ? !!is_active : true
+            is_active: is_active !== undefined ? !!is_active : true,
+            created_by: userId ? Number(userId) : 24, // Fallback to seed user ID 24 if no active token
+            created_at: manilaIsoString,
+            updated_at: manilaIsoString
         };
 
         const res = await fetch(`${DIRECTUS_URL}/items/manufacturing_work_centers`, {
