@@ -22,7 +22,7 @@ export const purchaseOrderListStatusSchema = z.enum([
 ]);
 
 const receivingQueueStatusSchema = z.enum([
-    "En Route", "Receiving (QA)", "Partially Received", "Received"
+    "Approved", "En Route", "Receiving (QA)", "Partially Received", "Received"
 ]);
 
 export const purchaseOrderLineSchema = z.object({
@@ -139,7 +139,7 @@ export const purchaseOrderListQuerySchema = z.object({
         context.addIssue({
             code: "custom",
             path: ["status"],
-            message: "Receiving queue status must be En Route, Receiving (QA), Partially Received, or Received."
+            message: "Receiving queue status must be Approved, En Route, Receiving (QA), Partially Received, or Received."
         });
     }
 });
