@@ -1,4 +1,4 @@
-import { Shipment, ShipmentLineItem, Branch, StorageLot, QaSpecification } from "../types";
+import { Shipment, ShipmentLineItem, Branch, StorageLot, QaSpecification, ReceivingPreview } from "../types";
 
 export async function fetchActiveShipments(filters: {
     search?: string;
@@ -51,33 +51,39 @@ export async function fetchProductQaSpecifications(productId: number, signal?: A
     return Array.isArray(body.data) ? body.data : [];
 }
 
-export async function submitInspection(payload: {
+export async function previewReceivingQa(payload: {
     shipmentId: number;
-    referenceNumber: string;
-    branchId: number;
-    branchName: string;
-    lineItemUpdates: Array<{
-        line_id: number;
-        product_id: number;
-        quantity_received: number;
-        quantity_accepted: number;
-        quantity_rejected: number;
-        batch_no: string;
-        lot_id: number;
-        expiration_date: string | null;
-        rejection_reason: string | null;
-        qa_status: string;
+    receiptNumber: string;
+    destinationBranchId: number;
+    lines: Array<{
+        lineId: number;
+        productId: number;
+        receivedQuantity: number;
+        acceptedQuantity: number;
+        rejectedQuantity: number;
+        storageLotId: number | null;
+        supplierBatchNumber: string;
+        manufacturingDate: string | null;
+        expiryDate: string | null;
+        remarks: string | null;
+        isPackaging: boolean;
+        readings: Array<{ specId: number; actualReading: string }>;
     }>;
-}): Promise<void> {
-    const res = await fetch("/api/manufacturing/qa-receiving", {
+}, signal?: AbortSignal): Promise<ReceivingPreview> {
+    const res = await fetch("/api/manufacturing/qa-receiving/preview", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        signal
     });
+    const body = await res.json().catch(() => ({}));
     if (!res.ok) {
-        const errJson = await res.json();
-        throw new Error(errJson.error || "Failed to submit inspection details.");
+        throw new Error(body.error || "Failed to generate receiving preview.");
     }
+    if (!body.data || !Array.isArray(body.data.lines)) {
+        throw new Error("Receiving preview returned an invalid response.");
+    }
+    return body.data as ReceivingPreview;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

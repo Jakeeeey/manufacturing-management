@@ -1,7 +1,7 @@
 import React from "react";
 import Image from "next/image";
-import { ArrowLeft, MapPin, AlertTriangle, CheckCircle2, Search, ChevronDown, Image as ImageIcon, Plus, Minus, Loader2 } from "lucide-react";
-import { Shipment, ShipmentLineItem, Branch, InspectionRow, StorageLot, QaSpecificationLoadState, QaSpecificationReadings } from "../types";
+import { ArrowLeft, MapPin, AlertTriangle, CheckCircle2, Search, ChevronDown, Image as ImageIcon, Plus, Minus, Loader2, ReceiptText } from "lucide-react";
+import { Shipment, ShipmentLineItem, Branch, InspectionRow, StorageLot, QaSpecificationLoadState, QaSpecificationReadings, ReceivingQaEvaluation } from "../types";
 import ProductQaChecklist from "./ProductQaChecklist";
 
 interface ShipmentInspectionFormProps {
@@ -9,16 +9,23 @@ interface ShipmentInspectionFormProps {
     lineItems: ShipmentLineItem[];
     branches: Branch[];
     storageLots: StorageLot[];
+    receiptNumber: string;
+    setReceiptNumber: (val: string) => void;
     selectedBranchId: string;
     setSelectedBranchId: (val: string) => void;
     inspectionRows: Record<number, InspectionRow>;
     qaSpecificationStates: Record<number, QaSpecificationLoadState>;
     qaReadings: QaSpecificationReadings;
+    qaEvaluationResults: Record<number, ReceivingQaEvaluation>;
+    hasPreview: boolean;
+    previewAcknowledged: boolean;
+    validatingInspection: boolean;
     qaSubmissionBlockReason: string | null;
     loadingLines: boolean;
     handleUpdateRow: (lineId: number, field: string, value: string | number | boolean) => void;
     handleUpdateQaReading: (lineId: number, specId: number, value: string) => void;
     handleSubmitInspection: (e: React.FormEvent) => void;
+    onReviewPreview: () => void;
     onCancel: () => void;
 }
 
@@ -27,16 +34,23 @@ export default function ShipmentInspectionForm({
     lineItems,
     branches,
     storageLots,
+    receiptNumber,
+    setReceiptNumber,
     selectedBranchId,
     setSelectedBranchId,
     inspectionRows,
     qaSpecificationStates,
     qaReadings,
+    qaEvaluationResults,
+    hasPreview,
+    previewAcknowledged,
+    validatingInspection,
     qaSubmissionBlockReason,
     loadingLines,
     handleUpdateRow,
     handleUpdateQaReading,
     handleSubmitInspection,
+    onReviewPreview,
     onCancel
 }: ShipmentInspectionFormProps) {
     const totalOrderedQty = React.useMemo(() => {
@@ -87,6 +101,7 @@ export default function ShipmentInspectionForm({
     // Filter out Bihon Bad Branch and quarantine branches from main selector
     const filteredBranches = React.useMemo(() => {
         return branches.filter(b => {
+            if (b.isBadStock === true || Number(b.isBadStock) === 1) return false;
             const name = (b.branch_name || "").toLowerCase();
             return !name.includes("bad branch") &&
                 !name.includes("quarantine") &&
@@ -184,16 +199,45 @@ export default function ShipmentInspectionForm({
                         )}
                     </div>
 
-                    <div className="flex items-center gap-1.5 w-full sm:w-auto">
-                        <MapPin className="h-4 w-4 text-primary shrink-0" />
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 border-b bg-background shrink-0">
+                <div className="space-y-1">
+                    <label htmlFor="receiving-receipt-number" className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">
+                        Receiving Ticket / DR Number <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                        <ReceiptText className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-primary pointer-events-none" />
+                        <input
+                            id="receiving-receipt-number"
+                            type="text"
+                            required
+                            maxLength={50}
+                            placeholder="Enter supplier receipt or DR number"
+                            value={receiptNumber}
+                            onChange={(event) => setReceiptNumber(event.target.value)}
+                            className="w-full h-10 rounded-xl border bg-background text-foreground text-xs font-semibold pl-9 pr-3 py-2 outline-none focus:ring-1 focus:ring-primary"
+                        />
+                    </div>
+                </div>
+
+                <div className="space-y-1">
+                    <label htmlFor="receiving-branch" className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">
+                        Receiving Branch <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                        <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-primary pointer-events-none" />
                         <select
+                            id="receiving-branch"
+                            required
                             value={selectedBranchId}
-                            onChange={(e) => setSelectedBranchId(e.target.value)}
-                            className="w-full sm:w-[200px] h-11 sm:h-10 rounded-xl border bg-background text-foreground text-xs font-semibold px-3.5 py-2 outline-none focus:ring-1 focus:ring-primary cursor-pointer transition-all"
+                            onChange={(event) => setSelectedBranchId(event.target.value)}
+                            className="w-full h-10 rounded-xl border bg-background text-foreground text-xs font-semibold pl-9 pr-3 py-2 outline-none focus:ring-1 focus:ring-primary cursor-pointer"
                         >
-                            <option value="">Receive Branch...</option>
-                            {filteredBranches.map(b => (
-                                <option key={b.id} value={b.id.toString()}>{b.branch_name}</option>
+                            <option value="">Select receiving branch...</option>
+                            {filteredBranches.map(branch => (
+                                <option key={branch.id} value={branch.id.toString()}>{branch.branch_name}</option>
                             ))}
                         </select>
                     </div>
@@ -209,12 +253,12 @@ export default function ShipmentInspectionForm({
                         const row = inspectionRows[line.line_id] || {
                             receivedQty: "",
                             acceptedQty: "",
-                            boQty: "",
+                            rejectedQty: "",
                             batchNumber: "",
                             lotId: "",
+                            manufacturingDate: "",
                             expirationDate: "",
                             rejectionReason: "",
-                            qaStatus: "",
                             isPackaging: false
                         };
 
@@ -224,12 +268,10 @@ export default function ShipmentInspectionForm({
                         const receivedVal = row.receivedQty !== "" ? Number(row.receivedQty) : 0;
                         const orderedVal = Number(line.quantity_ordered || 0);
                         const acceptedVal = row.acceptedQty !== "" ? Number(row.acceptedQty) : 0;
-                        // BO is the shortfall only (non-negative). Over-accepted units are all accepted stock.
-                        const boVal = row.receivedQty !== "" && row.acceptedQty !== "" ? Math.max(0, receivedVal - acceptedVal) : (row.boQty !== "" ? Number(row.boQty) : 0);
-                        const isOverAcceptance = row.acceptedQty !== "" && row.receivedQty !== "" && acceptedVal > receivedVal;
-
-                        // Remarks mandatory rule: BO Qty > 0, received quantity differs from ordered, or over-acceptance.
-                        const isRemarksMandatory = boVal > 0 || (row.receivedQty !== "" && receivedVal !== orderedVal) || isOverAcceptance;
+                        const rejectedVal = row.rejectedQty !== "" ? Number(row.rejectedQty) : 0;
+                        const quantitiesReconcile = Math.abs(receivedVal - acceptedVal - rejectedVal) <= 1e-9;
+                        const isRemarksMandatory = rejectedVal > 0 || (receivedVal > 0 && receivedVal !== orderedVal);
+                        const evaluation = qaEvaluationResults[line.line_id];
 
                         return (
                             <div
@@ -295,7 +337,7 @@ export default function ShipmentInspectionForm({
 
                                     const receivedEquiv = receivedVal * convFactor;
                                     const acceptedEquiv = acceptedVal * convFactor;
-                                    const boEquiv = Number(row.boQty || 0) * convFactor;
+                                    const rejectedEquiv = rejectedVal * convFactor;
 
                                      return (
                                          <div className="grid gap-4 grid-cols-1 sm:grid-cols-3">
@@ -314,8 +356,8 @@ export default function ShipmentInspectionForm({
                                                      </button>
                                                      <input
                                                          type="number"
-                                                         required
                                                          min="0"
+                                                         step="any"
                                                          placeholder="Manually count"
                                                          value={row.receivedQty}
                                                          onChange={e => handleUpdateRow(line.line_id, "receivedQty", e.target.value === "" ? "" : Number(e.target.value))}
@@ -348,8 +390,7 @@ export default function ShipmentInspectionForm({
                                             {/* Accepted Quantity Stepper */}
                                             <div className="space-y-1">
                                                 <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">
-                                                    Accepted Quantity <span className="text-red-500">*</span>
-                                                    <span className="ml-1 text-[8px] text-primary/70 normal-case font-semibold">(can exceed received)</span>
+                                                    Accepted Quantity
                                                 </label>
                                                 <div className="flex items-center">
                                                     <button
@@ -361,8 +402,9 @@ export default function ShipmentInspectionForm({
                                                     </button>
                                                     <input
                                                         type="number"
-                                                        required
                                                         min="0"
+                                                        max={receivedVal || undefined}
+                                                        step="any"
                                                         placeholder="Accepted qty"
                                                         value={row.acceptedQty}
                                                         onChange={e => handleUpdateRow(line.line_id, "acceptedQty", e.target.value === "" ? "" : Number(e.target.value))}
@@ -370,7 +412,7 @@ export default function ShipmentInspectionForm({
                                                     />
                                                     <button
                                                         type="button"
-                                                        onClick={() => handleUpdateRow(line.line_id, "acceptedQty", acceptedVal + 1)}
+                                                        onClick={() => handleUpdateRow(line.line_id, "acceptedQty", Math.min(receivedVal, acceptedVal + 1))}
                                                         className="w-10 h-10 border border-l-0 bg-background text-foreground rounded-r-lg hover:bg-muted font-extrabold flex items-center justify-center transition-colors text-base select-none shrink-0"
                                                     >
                                                         <Plus className="h-3.5 w-3.5" />
@@ -383,22 +425,40 @@ export default function ShipmentInspectionForm({
                                                 )}
                                             </div>
 
-                                            {/* BO Qty (Calculated, Read Only) */}
+                                            {/* Rejected Quantity */}
                                             <div className="space-y-1">
                                                 <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">
-                                                    BO Qty (Calculated)
+                                                    Rejected Quantity
                                                 </label>
-                                                <input
-                                                    type="number"
-                                                    readOnly
-                                                    disabled
-                                                    placeholder="0"
-                                                    value={row.boQty}
-                                                    className="w-full h-10 bg-muted/40 border border-border text-muted-foreground rounded-lg px-2.5 py-1.5 text-xs font-semibold cursor-not-allowed select-none"
-                                                />
-                                                {boEquiv > 0 && convFactor !== 1 && (
+                                                <div className="flex items-center">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleUpdateRow(line.line_id, "rejectedQty", Math.max(0, rejectedVal - 1))}
+                                                        className="w-10 h-10 border border-r-0 bg-background text-foreground rounded-l-lg hover:bg-muted font-extrabold flex items-center justify-center transition-colors shrink-0"
+                                                    >
+                                                        <Minus className="h-3.5 w-3.5" />
+                                                    </button>
+                                                    <input
+                                                        type="number"
+                                                        min="0"
+                                                        max={receivedVal || undefined}
+                                                        step="any"
+                                                        placeholder="Rejected qty"
+                                                        value={row.rejectedQty}
+                                                        onChange={event => handleUpdateRow(line.line_id, "rejectedQty", event.target.value === "" ? "" : Number(event.target.value))}
+                                                        className="w-full h-10 border bg-background text-center text-xs font-semibold text-foreground outline-none focus:ring-0"
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleUpdateRow(line.line_id, "rejectedQty", Math.min(receivedVal, rejectedVal + 1))}
+                                                        className="w-10 h-10 border border-l-0 bg-background text-foreground rounded-r-lg hover:bg-muted font-extrabold flex items-center justify-center transition-colors shrink-0"
+                                                    >
+                                                        <Plus className="h-3.5 w-3.5" />
+                                                    </button>
+                                                </div>
+                                                {rejectedEquiv > 0 && convFactor !== 1 && (
                                                     <span className="text-[9px] text-red-600 font-bold block mt-1 bg-red-500/5 px-2 py-0.5 rounded border border-red-500/10 w-fit select-none">
-                                                        = {boEquiv.toLocaleString()} {baseUom}
+                                                        = {rejectedEquiv.toLocaleString()} {baseUom}
                                                     </span>
                                                 )}
                                             </div>
@@ -406,14 +466,15 @@ export default function ShipmentInspectionForm({
                                     );
                                 })()}
 
-                                <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 pt-1">
+                                <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 pt-1">
                                     <div className="space-y-1">
                                         <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">
-                                            Supplier Batch Number <span className="text-red-500">*</span>
+                                            Supplier Batch Number {receivedVal > 0 && <span className="text-red-500">*</span>}
                                         </label>
                                         <input
                                             type="text"
-                                            required
+                                            required={receivedVal > 0}
+                                            maxLength={50}
                                             placeholder="Supplier batch number"
                                             value={row.batchNumber}
                                             onChange={e => handleUpdateRow(line.line_id, "batchNumber", e.target.value)}
@@ -423,10 +484,10 @@ export default function ShipmentInspectionForm({
 
                                     <div className="space-y-1">
                                         <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">
-                                            Storage Lot <span className="text-red-500">*</span>
+                                            Storage Lot {receivedVal > 0 && <span className="text-red-500">*</span>}
                                         </label>
                                         <select
-                                            required
+                                            required={receivedVal > 0}
                                             value={row.lotId}
                                             onChange={e => handleUpdateRow(line.line_id, "lotId", e.target.value)}
                                             className="w-full h-10 bg-background border text-foreground rounded-lg px-3 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-primary"
@@ -442,56 +503,73 @@ export default function ShipmentInspectionForm({
 
                                     <div className="space-y-1">
                                         <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">
-                                            Expiry Date {!row.isPackaging && <span className="text-red-500">*</span>}
+                                            Manufacturing Date {receivedVal > 0 && !row.isPackaging && <span className="text-red-500">*</span>}
                                         </label>
                                         <input
                                             type="date"
-                                            required={!row.isPackaging}
+                                            required={receivedVal > 0 && !row.isPackaging}
+                                            max={row.expirationDate || undefined}
+                                            value={row.manufacturingDate}
+                                            onChange={event => handleUpdateRow(line.line_id, "manufacturingDate", event.target.value)}
+                                            className="w-full h-10 bg-background border text-foreground rounded-lg px-3 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-primary"
+                                        />
+                                    </div>
+
+                                    <div className="space-y-1">
+                                        <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">
+                                            Expiry Date {receivedVal > 0 && !row.isPackaging && <span className="text-red-500">*</span>}
+                                        </label>
+                                        <input
+                                            type="date"
+                                            required={receivedVal > 0 && !row.isPackaging}
+                                            min={row.manufacturingDate || undefined}
                                             value={row.expirationDate}
                                             onChange={e => handleUpdateRow(line.line_id, "expirationDate", e.target.value)}
                                             className="w-full h-10 bg-background border text-foreground rounded-lg px-3 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-primary"
                                         />
                                     </div>
 
-                                    {/* Segmented Button Selection for QA Status Decision */}
                                     <div className="space-y-1">
                                         <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">
-                                            QA Status Decision <span className="text-red-500">*</span>
+                                            Server Disposition
                                         </label>
-                                        <div className="grid grid-cols-3 gap-1 p-1 bg-muted/40 rounded-xl border h-10">
-                                            <button
-                                                type="button"
-                                                onClick={() => handleUpdateRow(line.line_id, "qaStatus", "Passed")}
-                                                className={`text-[10px] font-bold rounded-lg flex items-center justify-center transition-all cursor-pointer ${row.qaStatus === "Passed"
-                                                        ? "bg-green-500 text-white shadow-sm"
-                                                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                                                    }`}
-                                            >
-                                                Passed
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => handleUpdateRow(line.line_id, "qaStatus", "Partially Accepted")}
-                                                className={`text-[10px] font-bold rounded-lg flex items-center justify-center transition-all text-center leading-tight cursor-pointer ${row.qaStatus === "Partially Accepted"
-                                                        ? "bg-amber-500 text-white shadow-sm"
-                                                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                                                    }`}
-                                            >
-                                                Partial
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => handleUpdateRow(line.line_id, "qaStatus", "Rejected")}
-                                                className={`text-[10px] font-bold rounded-lg flex items-center justify-center transition-all cursor-pointer ${row.qaStatus === "Rejected"
-                                                        ? "bg-red-500 text-white shadow-sm"
-                                                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                                                    }`}
-                                            >
-                                                Rejected
-                                            </button>
+                                        <div className={`h-10 rounded-xl border px-3 flex items-center text-[10px] font-extrabold ${
+                                            evaluation?.disposition === "Passed"
+                                                ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-700"
+                                                : evaluation?.disposition === "Partially Accepted"
+                                                    ? "bg-amber-500/10 border-amber-500/20 text-amber-700"
+                                                    : evaluation?.disposition === "Rejected"
+                                                        ? "bg-red-500/10 border-red-500/20 text-red-700"
+                                                        : evaluation?.disposition === "Not Received"
+                                                            ? "bg-muted text-muted-foreground"
+                                                            : "bg-muted/40 text-muted-foreground"
+                                        }`}>
+                                            {evaluation ? `${evaluation.disposition} - Server verified` : "Pending server validation"}
                                         </div>
                                     </div>
                                 </div>
+
+                                {evaluation && evaluation.routes.length > 0 && (
+                                    <div className="border-y py-2.5 flex flex-wrap gap-x-5 gap-y-2" aria-label="Server inventory routes">
+                                        {evaluation.routes.map(route => (
+                                            <div key={route.kind} className="flex items-start gap-2 min-w-[220px]">
+                                                {route.kind === "Passed" ? (
+                                                    <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0 text-emerald-600" />
+                                                ) : (
+                                                    <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-red-600" />
+                                                )}
+                                                <div className="min-w-0">
+                                                    <p className={`text-[10px] font-extrabold ${route.kind === "Passed" ? "text-emerald-700" : "text-red-700"}`}>
+                                                        {route.kind} {route.quantity.toLocaleString()} -&gt; {route.branch.name}
+                                                    </p>
+                                                    <p className="text-[9px] text-muted-foreground truncate">
+                                                        {route.transactionType.name} | {route.branch.code}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
 
                                 {/* Remarks field */}
                                 <div className="space-y-1 pt-1">
@@ -509,24 +587,28 @@ export default function ShipmentInspectionForm({
                                 </div>
 
                                 {/* Discrepancy warnings */}
-                                {row.receivedQty !== "" && receivedVal !== orderedVal && !isOverAcceptance && (
+                                {receivedVal > 0 && receivedVal !== orderedVal && (
                                     <div className="bg-amber-500/5 border border-amber-500/10 rounded-lg p-2.5 flex items-center gap-2 text-[10px] text-amber-600 animate-in fade-in duration-200">
                                         <AlertTriangle className="h-4 w-4 shrink-0" />
                                         <span>Logistics discrepancy detected (Counted quantity differs from original purchase order).</span>
                                     </div>
                                 )}
-                                {isOverAcceptance && (
-                                    <div className="bg-blue-500/5 border border-blue-500/20 rounded-lg p-2.5 flex items-center gap-2 text-[10px] text-blue-600 animate-in fade-in duration-200">
+                                {!quantitiesReconcile && (receivedVal > 0 || acceptedVal > 0 || rejectedVal > 0) && (
+                                    <div className="bg-red-500/5 border border-red-500/10 rounded-lg p-2.5 flex items-center gap-2 text-[10px] text-red-600 animate-in fade-in duration-200">
                                         <AlertTriangle className="h-4 w-4 shrink-0" />
-                                        <span>
-                                            Over-acceptance: Accepted ({acceptedVal}) exceeds Received ({receivedVal}). Extra units will be logged as additional accepted stock. Remarks documenting the source of extra units are mandatory.
-                                        </span>
+                                        <span>Accepted quantity plus rejected quantity must equal received quantity.</span>
                                     </div>
                                 )}
-                                {boVal > 0 && (
+                                {rejectedVal > 0 && (
                                     <div className="bg-red-500/5 border border-red-500/10 rounded-lg p-2.5 flex items-center gap-2 text-[10px] text-red-500 animate-in fade-in duration-200">
                                         <AlertTriangle className="h-4 w-4 shrink-0" />
-                                        <span>Warning: {boVal} units flagged as Bad Order (Routed to quarantine holding location). Remarks are mandatory.</span>
+                                        <span>Warning: {rejectedVal} units are marked rejected. Remarks are mandatory.</span>
+                                    </div>
+                                )}
+                                {evaluation?.forceRejected && (
+                                    <div className="bg-red-500/5 border border-red-500/20 rounded-lg p-2.5 flex items-center gap-2 text-[10px] text-red-700">
+                                        <AlertTriangle className="h-4 w-4 shrink-0" />
+                                        <span>{evaluation.rejectionReason || "A critical QA failure forced the entire received quantity to Rejected."}</span>
                                     </div>
                                 )}
                             </div>
@@ -541,7 +623,12 @@ export default function ShipmentInspectionForm({
                         <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
                         <span>{qaSubmissionBlockReason}</span>
                     </div>
-                ) : <span />}
+                ) : (
+                    <div className="flex items-start gap-2 text-[10px] text-muted-foreground max-w-xl">
+                        <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" />
+                        <span>{previewAcknowledged ? "Preview acknowledged. No receiving or inventory records were written." : "Preview is read-only. Receiving and inventory records are created only after a later confirmation step."}</span>
+                    </div>
+                )}
                 <div className="flex justify-end gap-3">
                 <button
                     type="button"
@@ -551,11 +638,12 @@ export default function ShipmentInspectionForm({
                     Cancel Inspection
                 </button>
                 <button
-                    type="submit"
-                    disabled={loadingLines || Boolean(qaSubmissionBlockReason)}
+                    type={hasPreview ? "button" : "submit"}
+                    onClick={hasPreview ? onReviewPreview : undefined}
+                    disabled={loadingLines || validatingInspection || Boolean(qaSubmissionBlockReason)}
                     className="px-5 py-2.5 bg-primary text-primary-foreground rounded-xl text-xs font-bold flex items-center gap-1.5 shadow h-11 justify-center cursor-pointer disabled:opacity-60 disabled:cursor-wait"
                 >
-                    {loadingLines ? <><Loader2 className="h-4 w-4 animate-spin" /> Processing...</> : qaSubmissionBlockReason ? <><AlertTriangle className="h-4 w-4" /> Movement Preview Required</> : <><CheckCircle2 className="h-4 w-4" /> Complete QA Receiving & Write Ledger</>}
+                    {validatingInspection ? <><Loader2 className="h-4 w-4 animate-spin" /> Generating...</> : qaSubmissionBlockReason ? <><AlertTriangle className="h-4 w-4" /> QA Configuration Required</> : hasPreview ? <><ReceiptText className="h-4 w-4" /> Review Movement Preview</> : <><CheckCircle2 className="h-4 w-4" /> Preview QA & Routes</>}
                 </button>
                 </div>
             </div>
