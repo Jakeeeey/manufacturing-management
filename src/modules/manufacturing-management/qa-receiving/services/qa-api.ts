@@ -1,4 +1,4 @@
-import { Shipment, ShipmentLineItem, Branch, StorageLot, QaSpecification, ReceivingPreview } from "../types";
+import { Shipment, ShipmentLineItem, Branch, StorageLot, QaSpecification, ReceivingCommitPayload, ReceivingCommitResult, ReceivingPreview } from "../types";
 
 export async function fetchActiveShipments(filters: {
     search?: string;
@@ -84,6 +84,23 @@ export async function previewReceivingQa(payload: {
         throw new Error("Receiving preview returned an invalid response.");
     }
     return body.data as ReceivingPreview;
+}
+
+export async function commitReceivingQa(payload: ReceivingCommitPayload, idempotencyKey: string): Promise<ReceivingCommitResult> {
+    const res = await fetch("/api/manufacturing/qa-receiving/commit", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "Idempotency-Key": idempotencyKey
+        },
+        body: JSON.stringify(payload)
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error || "Failed to post receiving.");
+    if (body.data?.mode !== "compatibility" || !body.data?.commitReference) {
+        throw new Error("Receiving commit returned an invalid response.");
+    }
+    return body.data as ReceivingCommitResult;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

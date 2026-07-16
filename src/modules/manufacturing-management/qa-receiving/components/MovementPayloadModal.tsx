@@ -11,8 +11,8 @@ interface MovementPayloadModalProps {
     onOpenChange: (open: boolean) => void;
     preview: ReceivingPreview | null;
     lineItems: ShipmentLineItem[];
-    acknowledged: boolean;
-    onAcknowledge: () => void;
+    posting: boolean;
+    onCommit: () => void;
 }
 
 interface RouteRow {
@@ -29,8 +29,8 @@ export default function MovementPayloadModal({
     onOpenChange,
     preview,
     lineItems,
-    acknowledged,
-    onAcknowledge
+    posting,
+    onCommit
 }: MovementPayloadModalProps) {
     const [verified, setVerified] = React.useState(false);
 
@@ -109,7 +109,7 @@ export default function MovementPayloadModal({
                         <ClipboardCheck className="h-5 w-5 text-primary" /> Ledger Movement Verification
                     </DialogTitle>
                     <DialogDescription className="text-xs">
-                        Receipt {preview.receiptNumber} for PO {preview.shipmentId}. Review the read-only movement and allocation drafts before acknowledgment.
+                        Receipt {preview.receiptNumber} for PO {preview.shipmentId}. Review the movement and allocation records before posting.
                     </DialogDescription>
                 </DialogHeader>
 
@@ -117,7 +117,7 @@ export default function MovementPayloadModal({
                     <div className="flex flex-wrap gap-x-6 gap-y-1 text-[11px] border-y py-2">
                         <span><strong>Destination:</strong> {preview.destinationBranch.name} ({preview.destinationBranch.code})</span>
                         <span><strong>Inspector:</strong> User {preview.generatedBy}</span>
-                        <span><strong>Status:</strong> Read-only preview</span>
+                        <span><strong>Status:</strong> Ready to post</span>
                     </div>
 
                     {movementTable(passedRows, "Passed")}
@@ -174,12 +174,12 @@ export default function MovementPayloadModal({
                             onChange={event => setVerified(event.target.checked)}
                             className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-primary"
                         />
-                        I verified these read-only movement and allocation drafts.
+                        I verified these movement and allocation records.
                     </label>
                     <div className="flex justify-end gap-2">
                         <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Close Preview</Button>
-                        <Button type="button" disabled={!verified || acknowledged} onClick={onAcknowledge}>
-                            {acknowledged ? "Preview Acknowledged" : "Acknowledge Preview"}
+                        <Button type="button" disabled={!verified || posting || !preview.postingEnabled} onClick={onCommit}>
+                            {posting ? "Posting..." : "Confirm & Post Receiving"}
                         </Button>
                     </div>
                 </DialogFooter>
