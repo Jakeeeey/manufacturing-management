@@ -13,10 +13,25 @@ interface InventoryLot {
     quantity?: string | number;
     unit_cost?: string | number;
     qa_status?: string;
+    rejection_reason?: string | null;
+    created_on?: string | null;
+    source_reference?: string | null;
+    source_type?: string | null;
+    remarks?: string | null;
 }
 
 interface LedgerEntry {
     quantity?: string | number;
+}
+
+interface DirectusMovementRaw {
+    movement_id: number;
+    lot_id: number;
+    quantity: number | string;
+    remarks?: string | null;
+    transaction_type_id?: number | {
+        type_name?: string | null;
+    } | null;
 }
 
 export async function GET() {
@@ -47,17 +62,66 @@ export async function GET() {
         const productsData = (await productsRes.json()).data || [];
         const branches = (await branchesRes.json()).data || [];
 
+        // Fetch corresponding movements to resolve transaction types and remarks
+        let rawMovements: DirectusMovementRaw[] = [];
+        if (porData.length > 0) {
+            const lotIds = porData
+                .map((l: InventoryLot) => typeof l.lot_id === "object" ? l.lot_id?.lot_id : l.lot_id)
+                .filter((id: number | null | undefined): id is number => id !== null && id !== undefined);
+            try {
+                const movementsRes = await fetch(
+                    `${DIRECTUS_URL}/items/inventory_movements?filter[lot_id][_in]=${lotIds.join(",")}&limit=-1&fields=*,transaction_type_id.type_name`,
+                    { headers, cache: "no-store" }
+                );
+                if (movementsRes.ok) {
+                    const movementsJson = await movementsRes.json();
+                    rawMovements = movementsJson.data || [];
+                }
+            } catch (err) {
+                console.error("[Inventory BFF] Error fetching lot movements:", err);
+            }
+        }
+
+        // Group movements by lot_id
+        const movementsByLot = new Map<number, DirectusMovementRaw[]>();
+        rawMovements.forEach((m: DirectusMovementRaw) => {
+            if (m.lot_id) {
+                const list = movementsByLot.get(m.lot_id) || [];
+                list.push(m);
+                movementsByLot.set(m.lot_id, list);
+            }
+        });
+
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const products = productsData.map((p: any) => ({
-            ...p,
-            is_finished_good: Number(p.product_type) === 388
-        }));
+        const products = productsData.map((p: any) => {
+            const productTypeId = p.product_type && typeof p.product_type === "object"
+                ? Number(p.product_type.id)
+                : Number(p.product_type);
+            return {
+                ...p,
+                product_type: isNaN(productTypeId) ? null : productTypeId,
+                is_finished_good: productTypeId === 388
+            };
+        });
 
         // Map inventory lots to the Batch format expected by the frontend
         const batches = porData.map((b: InventoryLot) => {
             const batchNo = canonicalBatchNumber(b.batch_no, b.lot_number);
             const lotId = typeof b.lot_id === "object" ? b.lot_id?.lot_id || null : b.lot_id || null;
             const lotName = typeof b.lot_id === "object" ? b.lot_id?.lot_name || null : null;
+
+            // Find matching movements
+            const lotMvts = lotId ? (movementsByLot.get(lotId) || []) : [];
+            // Creation movement is the inbound addition (quantity > 0) or fallback to first movement
+            const creationMvt = lotMvts.find((m: DirectusMovementRaw) => Number(m.quantity) > 0) || lotMvts[0];
+
+            const txnTypeName = typeof creationMvt?.transaction_type_id === "object"
+                ? creationMvt.transaction_type_id?.type_name
+                : null;
+
+            const resolvedTxnType = txnTypeName || (b.source_type ? String(b.source_type).replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()) : "Legacy Stock");
+            const resolvedRemarks = b.remarks || b.rejection_reason || creationMvt?.remarks || null;
+
             return {
                 line_id: b.id,
                 product_id: b.product_id,
@@ -72,7 +136,13 @@ export async function GET() {
                 base_unit_cost_php: Number(b.unit_cost || 0),
                 allocated_expense_php: 0,
                 final_landed_unit_cost: Number(b.unit_cost || 0),
-                qa_status: b.qa_status || "Passed"
+                qa_status: b.qa_status || "Passed",
+                rejection_reason: b.rejection_reason || null,
+                created_on: b.created_on || null,
+                source_reference: b.source_reference || null,
+                source_type: b.source_type || null,
+                remarks: resolvedRemarks,
+                transaction_type: resolvedTxnType
             };
         });
 
