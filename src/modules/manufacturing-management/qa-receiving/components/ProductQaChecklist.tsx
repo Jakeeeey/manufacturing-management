@@ -51,7 +51,7 @@ export default function ProductQaChecklist({
     if (loadState.specifications.length === 0) {
         return (
             <div className="border-t pt-3 text-[10px] text-muted-foreground">
-                No dynamic QA specifications are configured for this product. Use the manual QA decision below.
+                No dynamic QA specifications are configured for this product. Disposition will be derived from the accepted and rejected quantities.
             </div>
         );
     }
