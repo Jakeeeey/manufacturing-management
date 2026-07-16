@@ -1,0 +1,243 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - generic [ref=e5]:
+      - list [ref=e7]:
+        - listitem [ref=e8]:
+          - link "VOS Logo VOS Web Manufacturing Management" [ref=e9] [cursor=pointer]:
+            - /url: /main-dashboard
+            - img "VOS Logo" [ref=e11]
+            - generic [ref=e12]:
+              - generic [ref=e13]: VOS Web
+              - generic [ref=e14]: Manufacturing Management
+      - generic [ref=e15]:
+        - generic [ref=e17]:
+          - textbox "Quick search modules..." [ref=e21]
+          - generic [ref=e22]: /
+        - list [ref=e30]:
+          - listitem [ref=e31]:
+            - button "Recipe R&D & Costing" [ref=e32] [cursor=pointer]
+            - generic:
+              - generic:
+                - generic:
+                  - list:
+                    - listitem:
+                      - link "Finished Goods (FG)":
+                        - /url: /mm/finished-goods
+                    - listitem:
+                      - link "Raw Materials (RM)":
+                        - /url: /mm/raw-materials
+                    - listitem:
+                      - link "Recipe Margin Simulator":
+                        - /url: /mm/margin-simulator
+                    - listitem:
+                      - link "UOM & Conversions":
+                        - /url: /mm/uom-conversions
+          - listitem [ref=e42]:
+            - button "Revenue & Commerce" [expanded] [ref=e43] [cursor=pointer]
+            - list [ref=e258]:
+              - listitem [ref=e259]:
+                - link "Quotations" [ref=e260] [cursor=pointer]:
+                  - /url: /mm/quotations
+              - listitem [ref=e269]:
+                - link "Sales Orders" [ref=e270] [cursor=pointer]:
+                  - /url: /mm/sales-order
+              - listitem [ref=e277]:
+                - link "Forex Manager" [ref=e278] [cursor=pointer]:
+                  - /url: /mm/forex-manager
+              - listitem [ref=e284]:
+                - link "Client Directory" [ref=e285] [cursor=pointer]:
+                  - /url: /mm/clients
+              - listitem [ref=e294]:
+                - link "Cost Snapshots" [ref=e295] [cursor=pointer]:
+                  - /url: /mm/cost-snapshots
+              - listitem [ref=e303]:
+                - link "Sales Order Approval" [ref=e304] [cursor=pointer]:
+                  - /url: /mm/sales-order-approval
+              - listitem [ref=e311]:
+                - link "BI & Financials" [ref=e312] [cursor=pointer]:
+                  - /url: /mm/bi-and-financials
+          - listitem [ref=e51]:
+            - button "Operations & Execution" [ref=e52] [cursor=pointer]
+            - generic:
+              - generic:
+                - generic:
+                  - list:
+                    - listitem:
+                      - link "Executive Summary":
+                        - /url: /mm
+                    - listitem:
+                      - link "Operations Planning & BOM Engine":
+                        - /url: /mm/planning-engineering
+                    - listitem:
+                      - link "Production execution & Shop Floor":
+                        - /url: /mm/production-workflow
+                    - listitem:
+                      - link "Calendar of Schedule":
+                        - /url: /mm/calendar-of-schedule
+                    - listitem:
+                      - link "Cost Variance & Shopfloor":
+                        - /url: /mm/cost-variance
+                    - listitem:
+                      - link "Manufacturing Quality Assurance":
+                        - /url: /mm/manufacturing-qa
+          - listitem [ref=e60]:
+            - button "Sourcing & Supply Chain" [ref=e61] [cursor=pointer]
+            - generic:
+              - generic:
+                - generic:
+                  - list:
+                    - listitem:
+                      - link "Suppliers List":
+                        - /url: /mm/suppliers
+                    - listitem:
+                      - link "Procurement":
+                        - /url: /mm/incoming-shipments
+                    - listitem:
+                      - link "Approval":
+                        - /url: /mm/approval
+                    - listitem:
+                      - link "Quality Assurance":
+                        - /url: /mm/qa-receiving
+                    - listitem:
+                      - link "Shipment Landed Cost":
+                        - /url: /mm/shipment-expenses
+                    - listitem:
+                      - link "Logistics Profiles":
+                        - /url: /mm/logistics-profiles
+          - listitem [ref=e70]:
+            - link "Work Station Management" [ref=e71] [cursor=pointer]:
+              - /url: /mm/work-stations
+          - listitem [ref=e77]:
+            - button "Inventory & Fulfillment" [ref=e78] [cursor=pointer]
+            - generic:
+              - generic:
+                - generic:
+                  - list:
+                    - listitem:
+                      - link "Inventory Control & FIFO":
+                        - /url: /mm/inventory
+          - listitem [ref=e88]:
+            - link "Asset & Equipment Management" [ref=e89] [cursor=pointer]:
+              - /url: /mm/assets
+          - listitem [ref=e94]:
+            - link "Lot Management" [ref=e95] [cursor=pointer]:
+              - /url: /mm/lot-management
+          - listitem [ref=e101]:
+            - link "Inventory Reports" [ref=e102] [cursor=pointer]:
+              - /url: /mm/inventory-reports
+          - listitem [ref=e107]:
+            - link "Sales Invoices" [ref=e108] [cursor=pointer]:
+              - /url: /mm/invoices
+          - listitem [ref=e114]:
+            - link "Logistics & Deliveries" [ref=e115] [cursor=pointer]:
+              - /url: /mm/deliveries
+          - listitem [ref=e123]:
+            - link "Sales Returns" [ref=e124] [cursor=pointer]:
+              - /url: /mm/sales-return
+      - generic [ref=e130]: VOS WEB V2.0
+    - main [ref=e132]:
+      - generic [ref=e133]:
+        - generic [ref=e134]:
+          - generic [ref=e135]:
+            - button "Toggle Sidebar" [ref=e136]
+            - navigation "breadcrumb" [ref=e139]:
+              - list [ref=e140]:
+                - listitem [ref=e141]:
+                  - link "Manufacturing" [ref=e142] [cursor=pointer]:
+                    - /url: "#"
+                - listitem [ref=e143]
+                - listitem [ref=e146]:
+                  - link "Forex Manager" [disabled] [ref=e147]
+          - list [ref=e149]:
+            - listitem [ref=e150]:
+              - button "AS Andrei Siapno ajsiapno60@men2corp.com" [ref=e151] [cursor=pointer]:
+                - generic [ref=e152]: AS
+                - generic [ref=e154]:
+                  - generic [ref=e155]: Andrei Siapno
+                  - generic [ref=e156]: ajsiapno60@men2corp.com
+        - main [ref=e160]:
+          - generic [ref=e161]:
+            - generic [ref=e163]:
+              - heading "Treasury Forex Exchange Manager" [level=2] [ref=e164]
+              - paragraph [ref=e167]: Configure baseline USD to PHP conversion multipliers to feed Cost Rollup engines and Cargo Procurement.
+            - generic [ref=e168]:
+              - generic [ref=e169]:
+                - generic [ref=e170]:
+                  - generic [ref=e171]:
+                    - generic [ref=e172]:
+                      - generic [ref=e173]: Effective Standard Rate
+                      - generic "Locked Rate" [ref=e174]
+                    - generic [ref=e175]:
+                      - generic [ref=e176]: ₱58.0000 per 1 USD
+                      - paragraph [ref=e177]: Used across all raw ingredient landed cost profiles and cost estimates.
+                  - generic [ref=e178]:
+                    - generic [ref=e179]:
+                      - generic [ref=e180]: Live Feed Rate
+                      - text: ₱61.6959
+                    - generic [ref=e181]:
+                      - generic [ref=e182]: Locked Custom Rate
+                      - generic [ref=e183]: ₱58.0000
+                - generic [ref=e184]:
+                  - heading "Multipliers Configuration" [level=3] [ref=e185]
+                  - generic [ref=e190]:
+                    - generic [ref=e191]:
+                      - generic [ref=e192]:
+                        - generic [ref=e193]: Use Live API Feed
+                        - generic [ref=e194]: Dynamically sync cost rolls with real-time international exchange rates (updates hourly).
+                      - checkbox [ref=e195] [cursor=pointer]
+                    - generic [ref=e196]:
+                      - generic [ref=e197]: Manual Fixed Rate / Override Lock (₱)
+                      - generic [ref=e198]:
+                        - generic [ref=e199]:
+                          - generic [ref=e200]: ₱
+                          - spinbutton [ref=e201]: "58.00"
+                        - button "Refresh Feed" [ref=e202]
+                    - button "Apply & Save FX Settings" [disabled] [ref=e208]
+              - generic [ref=e213]:
+                - generic [ref=e214]:
+                  - heading "Lock / Update Log" [level=3] [ref=e215]
+                  - generic [ref=e218]:
+                    - generic [ref=e219]:
+                      - generic [ref=e220]:
+                        - generic [ref=e221]: 2026-07-15 17:27:01
+                        - text: Manual Lock
+                      - generic [ref=e222]: ₱58.0000
+                    - generic [ref=e223]:
+                      - generic [ref=e224]:
+                        - generic [ref=e225]: 2026-07-15 17:21:27
+                        - text: Manual Lock
+                      - generic [ref=e226]: ₱58.0100
+                    - generic [ref=e227]:
+                      - generic [ref=e228]:
+                        - generic [ref=e229]: 2026-06-13 10:15:30
+                        - text: Live Feed
+                      - generic [ref=e230]: ₱58.1200
+                    - generic [ref=e231]:
+                      - generic [ref=e232]:
+                        - generic [ref=e233]: 2026-06-12 14:22:15
+                        - text: Live Feed
+                      - generic [ref=e234]: ₱58.0500
+                    - generic [ref=e235]:
+                      - generic [ref=e236]:
+                        - generic [ref=e237]: 2026-06-11 09:05:45
+                        - text: Live Feed
+                      - generic [ref=e238]: ₱57.9800
+                    - generic [ref=e320]:
+                      - generic [ref=e321]:
+                        - generic [ref=e322]: 2026-06-10 16:30:00
+                        - text: Manual Lock
+                      - generic [ref=e323]: ₱58.0000
+                    - generic [ref=e331]:
+                      - generic [ref=e332]:
+                        - generic [ref=e333]: 2026-06-09 11:12:00
+                        - text: Manual Lock
+                      - generic [ref=e334]: ₱58.0000
+                - generic [ref=e239]:
+                  - heading "Operational Lock Warning" [level=4] [ref=e240]
+                  - paragraph [ref=e243]: Enabling live feeds will cause BOM standard costing margins to shift automatically. Operationally, it is highly recommended to **Lock manual rates** (e.g. 58.00) during a quarterly cycle, only updating live feeds for incoming freight invoicing.
+  - region "Notifications alt+T":
+    - list:
+      - listitem [ref=e335]:
+        - generic [ref=e340]: Foreign Exchange settings applied successfully
+  - button "Open Next.js Dev Tools" [ref=e249] [cursor=pointer]
+  - alert [ref=e319]

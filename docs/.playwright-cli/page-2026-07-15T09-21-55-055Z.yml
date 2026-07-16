@@ -1,0 +1,351 @@
+- generic [ref=e1]:
+  - generic [ref=e2]:
+    - generic [ref=e5]:
+      - list [ref=e7]:
+        - listitem [ref=e8]:
+          - link "VOS Logo VOS Web Manufacturing Management" [ref=e9] [cursor=pointer]:
+            - /url: /main-dashboard
+            - img "VOS Logo" [ref=e11]
+            - generic [ref=e12]:
+              - generic [ref=e13]: VOS Web
+              - generic [ref=e14]: Manufacturing Management
+      - generic [ref=e15]:
+        - generic [ref=e17]:
+          - textbox "Quick search modules..." [ref=e21]
+          - generic [ref=e22]: /
+        - list [ref=e30]:
+          - listitem [ref=e31]:
+            - button "Recipe R&D & Costing" [ref=e32] [cursor=pointer]
+            - generic:
+              - generic:
+                - generic:
+                  - list:
+                    - listitem:
+                      - link "Finished Goods (FG)":
+                        - /url: /mm/finished-goods
+                    - listitem:
+                      - link "Raw Materials (RM)":
+                        - /url: /mm/raw-materials
+                    - listitem:
+                      - link "Recipe Margin Simulator":
+                        - /url: /mm/margin-simulator
+                    - listitem:
+                      - link "UOM & Conversions":
+                        - /url: /mm/uom-conversions
+          - listitem [ref=e42]:
+            - button "Revenue & Commerce" [ref=e43] [cursor=pointer]
+            - generic:
+              - generic:
+                - generic:
+                  - list:
+                    - listitem:
+                      - link "Quotations":
+                        - /url: /mm/quotations
+                    - listitem:
+                      - link "Sales Orders":
+                        - /url: /mm/sales-order
+                    - listitem:
+                      - link "Forex Manager":
+                        - /url: /mm/forex-manager
+                    - listitem:
+                      - link "Client Directory":
+                        - /url: /mm/clients
+                    - listitem:
+                      - link "Cost Snapshots":
+                        - /url: /mm/cost-snapshots
+                    - listitem:
+                      - link "Sales Order Approval":
+                        - /url: /mm/sales-order-approval
+                    - listitem:
+                      - link "BI & Financials":
+                        - /url: /mm/bi-and-financials
+          - listitem [ref=e51]:
+            - button "Operations & Execution" [ref=e52] [cursor=pointer]
+            - generic:
+              - generic:
+                - generic:
+                  - list:
+                    - listitem:
+                      - link "Executive Summary":
+                        - /url: /mm
+                    - listitem:
+                      - link "Operations Planning & BOM Engine":
+                        - /url: /mm/planning-engineering
+                    - listitem:
+                      - link "Production execution & Shop Floor":
+                        - /url: /mm/production-workflow
+                    - listitem:
+                      - link "Calendar of Schedule":
+                        - /url: /mm/calendar-of-schedule
+                    - listitem:
+                      - link "Cost Variance & Shopfloor":
+                        - /url: /mm/cost-variance
+                    - listitem:
+                      - link "Manufacturing Quality Assurance":
+                        - /url: /mm/manufacturing-qa
+          - listitem [ref=e60]:
+            - button "Sourcing & Supply Chain" [expanded] [ref=e61] [cursor=pointer]
+            - list [ref=e215]:
+              - listitem [ref=e216]:
+                - link "Suppliers List" [ref=e217] [cursor=pointer]:
+                  - /url: /mm/suppliers
+              - listitem [ref=e226]:
+                - link "Procurement" [ref=e227] [cursor=pointer]:
+                  - /url: /mm/incoming-shipments
+              - listitem [ref=e233]:
+                - link "Approval" [ref=e234] [cursor=pointer]:
+                  - /url: /mm/approval
+              - listitem [ref=e241]:
+                - link "Quality Assurance" [ref=e242] [cursor=pointer]:
+                  - /url: /mm/qa-receiving
+              - listitem [ref=e249]:
+                - link "Shipment Landed Cost" [ref=e250] [cursor=pointer]:
+                  - /url: /mm/shipment-expenses
+              - listitem [ref=e259]:
+                - link "Logistics Profiles" [ref=e260] [cursor=pointer]:
+                  - /url: /mm/logistics-profiles
+          - listitem [ref=e70]:
+            - link "Work Station Management" [ref=e71] [cursor=pointer]:
+              - /url: /mm/work-stations
+          - listitem [ref=e77]:
+            - button "Inventory & Fulfillment" [ref=e78] [cursor=pointer]
+            - generic:
+              - generic:
+                - generic:
+                  - list:
+                    - listitem:
+                      - link "Inventory Control & FIFO":
+                        - /url: /mm/inventory
+          - listitem [ref=e88]:
+            - link "Asset & Equipment Management" [ref=e89] [cursor=pointer]:
+              - /url: /mm/assets
+          - listitem [ref=e94]:
+            - link "Lot Management" [ref=e95] [cursor=pointer]:
+              - /url: /mm/lot-management
+          - listitem [ref=e101]:
+            - link "Inventory Reports" [ref=e102] [cursor=pointer]:
+              - /url: /mm/inventory-reports
+          - listitem [ref=e107]:
+            - link "Sales Invoices" [ref=e108] [cursor=pointer]:
+              - /url: /mm/invoices
+          - listitem [ref=e114]:
+            - link "Logistics & Deliveries" [ref=e115] [cursor=pointer]:
+              - /url: /mm/deliveries
+          - listitem [ref=e123]:
+            - link "Sales Returns" [ref=e124] [cursor=pointer]:
+              - /url: /mm/sales-return
+      - generic [ref=e130]: VOS WEB V2.0
+    - main [ref=e132]:
+      - generic [ref=e468]:
+        - generic [ref=e469]:
+          - generic [ref=e470]:
+            - button "Toggle Sidebar" [ref=e471]
+            - navigation "breadcrumb" [ref=e474]:
+              - list [ref=e475]:
+                - listitem [ref=e476]:
+                  - link "Manufacturing" [ref=e477] [cursor=pointer]:
+                    - /url: "#"
+                - listitem [ref=e478]
+                - listitem [ref=e481]:
+                  - link "Sourcing & Supply Chain" [ref=e482] [cursor=pointer]:
+                    - /url: "#"
+                - listitem [ref=e483]
+                - listitem [ref=e486]:
+                  - link "Incoming Shipments & PO Logs" [disabled] [ref=e487]
+          - list [ref=e489]:
+            - listitem [ref=e490]:
+              - button "AS Andrei Siapno ajsiapno60@men2corp.com" [ref=e491] [cursor=pointer]:
+                - generic [ref=e492]: AS
+                - generic [ref=e494]:
+                  - generic [ref=e495]: Andrei Siapno
+                  - generic [ref=e496]: ajsiapno60@men2corp.com
+        - main [ref=e500]:
+          - generic [ref=e502]:
+            - generic [ref=e503]:
+              - generic [ref=e504]:
+                - generic [ref=e505]:
+                  - heading "Procurement Registry (17)" [level=3] [ref=e528]:
+                    - generic [ref=e510]: Procurement Registry
+                    - generic [ref=e511]: (17)
+                  - button "Create PO" [ref=e512] [cursor=pointer]
+                - generic [ref=e514]:
+                  - textbox "Search BL/Reference, Supplier..." [ref=e519]
+                  - combobox [ref=e520]:
+                    - option "All Statuses" [selected]
+                    - option "Requested"
+                    - option "Approved"
+                    - option "Cancelled"
+                    - option "For Pickup"
+                    - option "En Route"
+                    - option "Receiving (QA)"
+                    - option "Partially Received"
+                    - option "Received"
+                    - option "Rejected"
+              - generic [ref=e521]:
+                - 'button "PO: PO-2026-000008 Approved REGINE 01 ₱100.00 Status: Approved ETA: 7/16/2026" [ref=e529]':
+                  - generic [ref=e530]:
+                    - generic [ref=e531]: "PO: PO-2026-000008"
+                    - generic [ref=e532]: Approved
+                  - generic [ref=e533]:
+                    - generic [ref=e534]: REGINE 01
+                    - generic [ref=e535]: ₱100.00
+                  - generic [ref=e536]:
+                    - generic [ref=e537]: "Status: Approved"
+                    - generic [ref=e538]: "ETA: 7/16/2026"
+                - 'button "PO: PO-2026-000007 Rejected REGINE 01 ₱1,500.00 Status: Rejected ETA: 7/16/2026" [ref=e539]':
+                  - generic [ref=e540]:
+                    - generic [ref=e541]: "PO: PO-2026-000007"
+                    - generic [ref=e542]: Rejected
+                  - generic [ref=e543]:
+                    - generic [ref=e544]: REGINE 01
+                    - generic [ref=e545]: ₱1,500.00
+                  - generic [ref=e546]:
+                    - generic [ref=e547]: "Status: Rejected"
+                    - generic [ref=e548]: "ETA: 7/16/2026"
+                - 'button "PO: PO-2026-000005 Cancelled REGINE 01 ₱100.00 Status: Cancelled ETA: Pending" [ref=e549]':
+                  - generic [ref=e550]:
+                    - generic [ref=e551]: "PO: PO-2026-000005"
+                    - generic [ref=e552]: Cancelled
+                  - generic [ref=e553]:
+                    - generic [ref=e554]: REGINE 01
+                    - generic [ref=e555]: ₱100.00
+                  - generic [ref=e556]:
+                    - generic [ref=e557]: "Status: Cancelled"
+                    - generic [ref=e558]: "ETA: Pending"
+                - 'button "PO: PO-2026-000006 Cancelled REGINE 01 ₱100.00 Status: Cancelled ETA: Pending" [ref=e559]':
+                  - generic [ref=e560]:
+                    - generic [ref=e561]: "PO: PO-2026-000006"
+                    - generic [ref=e562]: Cancelled
+                  - generic [ref=e563]:
+                    - generic [ref=e564]: REGINE 01
+                    - generic [ref=e565]: ₱100.00
+                  - generic [ref=e566]:
+                    - generic [ref=e567]: "Status: Cancelled"
+                    - generic [ref=e568]: "ETA: Pending"
+                - 'button "PO: PO-2026-000004 Cancelled REGINE 01 ₱2,424.40 Status: Cancelled ETA: Pending" [ref=e569]':
+                  - generic [ref=e570]:
+                    - generic [ref=e571]: "PO: PO-2026-000004"
+                    - generic [ref=e572]: Cancelled
+                  - generic [ref=e573]:
+                    - generic [ref=e574]: REGINE 01
+                    - generic [ref=e575]: ₱2,424.40
+                  - generic [ref=e576]:
+                    - generic [ref=e577]: "Status: Cancelled"
+                    - generic [ref=e578]: "ETA: Pending"
+              - generic [ref=e579]:
+                - generic [ref=e580]:
+                  - generic [ref=e581]: Show
+                  - combobox [ref=e582]:
+                    - option "5" [selected]
+                    - option "10"
+                    - option "20"
+                    - option "50"
+                - generic [ref=e583]:
+                  - button "Prev" [disabled] [ref=e584]
+                  - generic [ref=e585]: Page 1 / 4
+                  - button "Next" [ref=e586]
+            - generic [ref=e523]: Select a shipment from the list to view details.
+            - generic [ref=e588]:
+              - generic [ref=e589]:
+                - heading "Create Purchase Order" [level=3] [ref=e590]
+                - button "Close" [ref=e594]
+              - generic [ref=e595]:
+                - generic [ref=e596]:
+                  - generic [ref=e597]:
+                    - generic [ref=e598]:
+                      - text: PO Number
+                      - textbox "Assigned on submission" [ref=e599]
+                    - generic [ref=e600]:
+                      - text: External Reference (optional)
+                      - textbox "Supplier quote, request, or logistics reference" [ref=e601]: QA-PO-P3-20260715-IMPORT
+                    - generic [ref=e602]:
+                      - generic [ref=e603]: Supplier *
+                      - combobox [ref=e604]:
+                        - generic [ref=e605]: REGINE 01
+                    - generic [ref=e606]:
+                      - generic [ref=e607]:
+                        - generic [ref=e608]: Exchange Rate to PHP
+                        - generic [ref=e609]: Locks on submission
+                      - spinbutton [ref=e610]: "1"
+                    - generic [ref=e611]:
+                      - generic [ref=e612]: Currency *
+                      - combobox [ref=e613]:
+                        - option "PHP - Philippine Peso" [selected]
+                        - option "USD - US Dollar"
+                    - generic [ref=e614]:
+                      - generic [ref=e615]: Destination Branch *
+                      - combobox [ref=e616]:
+                        - option "Main Branch" [selected]
+                        - option "Urdaneta Branch"
+                        - option "Bihon Branch"
+                        - option "Bihon Bad Branch"
+                    - generic [ref=e617]:
+                      - generic [ref=e618]: Payment Type *
+                      - combobox [ref=e619]:
+                        - option "Full Payment" [selected]
+                        - option "Advance Payment"
+                        - option "Partial Payment"
+                        - option "Refund"
+                        - option "Installment"
+                    - generic [ref=e620]:
+                      - generic [ref=e621]: Price Type *
+                      - combobox [ref=e622]:
+                        - option "Internal" [selected]
+                        - option "SRP"
+                        - option "Government"
+                        - option "Dealer"
+                        - option "Sub-Dealer"
+                        - option "Project"
+                  - generic [ref=e623]:
+                    - generic [ref=e624]:
+                      - heading "Purchase Order Lines" [level=4] [ref=e625]
+                      - button "Add Row" [ref=e647]
+                    - generic [ref=e649]:
+                      - generic [ref=e650]:
+                        - generic [ref=e651]: Raw Product Name *
+                        - textbox "Type to search product..." [ref=e654]: Canton 300g Master Shipping Box
+                      - generic [ref=e698]:
+                        - generic [ref=e699]: Packaging / UOM
+                        - combobox [ref=e700]:
+                          - option "PCS (PHP 15.00)" [selected]
+                      - generic [ref=e655]:
+                        - generic [ref=e656]: Qty Ordered (PCS) *
+                        - spinbutton "1000" [active] [ref=e657]
+                      - generic [ref=e658]:
+                        - generic [ref=e659]: Unit Price (PHP) *
+                        - spinbutton "19.00" [ref=e660]: "15"
+                      - generic [ref=e661]:
+                        - text: Purchase Intent
+                        - combobox [ref=e662]:
+                          - option "Buffer Stock" [selected]
+                          - option "MRP Demand"
+                      - generic [ref=e663]:
+                        - text: Job Order
+                        - combobox [disabled] [ref=e664]:
+                          - option "Select job order" [selected]
+                          - option "JO-760917-SUB25532"
+                          - option "JO-760917"
+                          - option "JO-BUF-866009"
+                          - option "JO-760640"
+                          - option "JO-BUF-693593-SUB25563"
+                          - option "JO-BUF-693593"
+                          - option "JO-BUF-724153-SUB25563"
+                          - option "JO-BUF-724153"
+                          - option "JO-PALMOIL-500-BOX-SUB25563"
+                          - option "JO-620182-SUB25542"
+                          - option "JO-620182"
+                      - generic [ref=e665]:
+                        - text: Discount %
+                        - spinbutton [ref=e666]: "0"
+                      - generic [ref=e667]:
+                        - text: VAT %
+                        - spinbutton [ref=e668]: "0"
+                      - generic [ref=e669]:
+                        - text: Withhold %
+                        - spinbutton [ref=e670]: "0"
+                - generic [ref=e631]:
+                  - button "Cancel" [ref=e632]
+                  - button "Create Purchase Order" [ref=e633]
+  - region "Notifications alt+T"
+  - button "Open Next.js Dev Tools" [ref=e206] [cursor=pointer]
+  - alert [ref=e278]

@@ -1,0 +1,419 @@
+- generic [ref=f3e1]:
+  - generic [ref=f3e2]:
+    - generic [ref=f3e5]:
+      - list [ref=f3e7]:
+        - listitem [ref=f3e8]:
+          - link "VOS Logo VOS Web Manufacturing Management" [ref=f3e9] [cursor=pointer]:
+            - /url: /main-dashboard
+            - img "VOS Logo" [ref=f3e11]
+            - generic [ref=f3e12]:
+              - generic [ref=f3e13]: VOS Web
+              - generic [ref=f3e14]: Manufacturing Management
+      - generic [ref=f3e15]:
+        - generic [ref=f3e17]:
+          - textbox "Quick search modules..." [ref=f3e21]
+          - generic [ref=f3e22]: /
+        - list [ref=f3e30]:
+          - listitem [ref=f3e31]:
+            - button "Recipe R&D & Costing" [ref=f3e32] [cursor=pointer]
+            - generic:
+              - generic:
+                - generic:
+                  - list:
+                    - listitem:
+                      - link "Finished Goods (FG)":
+                        - /url: /mm/finished-goods
+                    - listitem:
+                      - link "Raw Materials (RM)":
+                        - /url: /mm/raw-materials
+                    - listitem:
+                      - link "Recipe Margin Simulator":
+                        - /url: /mm/margin-simulator
+                    - listitem:
+                      - link "UOM & Conversions":
+                        - /url: /mm/uom-conversions
+          - listitem [ref=f3e42]:
+            - button "Revenue & Commerce" [ref=f3e43] [cursor=pointer]
+            - generic:
+              - generic:
+                - generic:
+                  - list:
+                    - listitem:
+                      - link "Quotations":
+                        - /url: /mm/quotations
+                    - listitem:
+                      - link "Sales Orders":
+                        - /url: /mm/sales-order
+                    - listitem:
+                      - link "Forex Manager":
+                        - /url: /mm/forex-manager
+                    - listitem:
+                      - link "Client Directory":
+                        - /url: /mm/clients
+                    - listitem:
+                      - link "Cost Snapshots":
+                        - /url: /mm/cost-snapshots
+                    - listitem:
+                      - link "Sales Order Approval":
+                        - /url: /mm/sales-order-approval
+                    - listitem:
+                      - link "BI & Financials":
+                        - /url: /mm/bi-and-financials
+          - listitem [ref=f3e51]:
+            - button "Operations & Execution" [ref=f3e52] [cursor=pointer]
+            - generic:
+              - generic:
+                - generic:
+                  - list:
+                    - listitem:
+                      - link "Executive Summary":
+                        - /url: /mm
+                    - listitem:
+                      - link "Operations Planning & BOM Engine":
+                        - /url: /mm/planning-engineering
+                    - listitem:
+                      - link "Production execution & Shop Floor":
+                        - /url: /mm/production-workflow
+                    - listitem:
+                      - link "Calendar of Schedule":
+                        - /url: /mm/calendar-of-schedule
+                    - listitem:
+                      - link "Cost Variance & Shopfloor":
+                        - /url: /mm/cost-variance
+                    - listitem:
+                      - link "Manufacturing Quality Assurance":
+                        - /url: /mm/manufacturing-qa
+          - listitem [ref=f3e60]:
+            - button "Sourcing & Supply Chain" [expanded] [ref=f3e61] [cursor=pointer]
+            - list [ref=f3e237]:
+              - listitem [ref=f3e238]:
+                - link "Suppliers List" [ref=f3e239] [cursor=pointer]:
+                  - /url: /mm/suppliers
+              - listitem [ref=f3e248]:
+                - link "Procurement" [ref=f3e249] [cursor=pointer]:
+                  - /url: /mm/incoming-shipments
+              - listitem [ref=f3e255]:
+                - link "Approval" [ref=f3e256] [cursor=pointer]:
+                  - /url: /mm/approval
+              - listitem [ref=f3e263]:
+                - link "Quality Assurance" [ref=f3e264] [cursor=pointer]:
+                  - /url: /mm/qa-receiving
+              - listitem [ref=f3e271]:
+                - link "Shipment Landed Cost" [ref=f3e272] [cursor=pointer]:
+                  - /url: /mm/shipment-expenses
+              - listitem [ref=f3e281]:
+                - link "Logistics Profiles" [ref=f3e282] [cursor=pointer]:
+                  - /url: /mm/logistics-profiles
+          - listitem [ref=f3e70]:
+            - link "Work Station Management" [ref=f3e71] [cursor=pointer]:
+              - /url: /mm/work-stations
+          - listitem [ref=f3e77]:
+            - button "Inventory & Fulfillment" [ref=f3e78] [cursor=pointer]
+            - generic:
+              - generic:
+                - generic:
+                  - list:
+                    - listitem:
+                      - link "Inventory Control & FIFO":
+                        - /url: /mm/inventory
+          - listitem [ref=f3e88]:
+            - link "Asset & Equipment Management" [ref=f3e89] [cursor=pointer]:
+              - /url: /mm/assets
+          - listitem [ref=f3e94]:
+            - link "Lot Management" [ref=f3e95] [cursor=pointer]:
+              - /url: /mm/lot-management
+          - listitem [ref=f3e101]:
+            - link "Inventory Reports" [ref=f3e102] [cursor=pointer]:
+              - /url: /mm/inventory-reports
+          - listitem [ref=f3e107]:
+            - link "Sales Invoices" [ref=f3e108] [cursor=pointer]:
+              - /url: /mm/invoices
+          - listitem [ref=f3e114]:
+            - link "Logistics & Deliveries" [ref=f3e115] [cursor=pointer]:
+              - /url: /mm/deliveries
+          - listitem [ref=f3e123]:
+            - link "Sales Returns" [ref=f3e124] [cursor=pointer]:
+              - /url: /mm/sales-return
+      - generic [ref=f3e130]: VOS WEB V2.0
+    - main [ref=f3e132]:
+      - generic [ref=f3e133]:
+        - generic [ref=f3e134]:
+          - generic [ref=f3e135]:
+            - button "Toggle Sidebar" [ref=f3e136]
+            - navigation "breadcrumb" [ref=f3e139]:
+              - list [ref=f3e140]:
+                - listitem [ref=f3e141]:
+                  - link "Manufacturing" [ref=f3e142] [cursor=pointer]:
+                    - /url: "#"
+                - listitem [ref=f3e143]
+                - listitem [ref=f3e146]:
+                  - link "Quality Assurance (QA) Receiving" [disabled] [ref=f3e147]
+          - list [ref=f3e149]:
+            - listitem [ref=f3e150]:
+              - button "AS Andrei Siapno ajsiapno60@men2corp.com" [ref=f3e151] [cursor=pointer]:
+                - generic [ref=f3e152]: AS
+                - generic [ref=f3e154]:
+                  - generic [ref=f3e155]: Andrei Siapno
+                  - generic [ref=f3e156]: ajsiapno60@men2corp.com
+        - main [ref=f3e160]:
+          - generic [ref=f3e161]:
+            - generic [ref=f3e162]:
+              - generic [ref=f3e163]:
+                - heading "Quality Assurance & Receiving Command Center" [level=2] [ref=f3e164]
+                - paragraph [ref=f3e167]: Inspect incoming cargo, record batches, verify raw material expiration lists, and enforce FIFO tracking per branch.
+              - generic [ref=f3e168]:
+                - button "Inbound QA Queue 3" [ref=f3e291]:
+                  - text: Inbound QA Queue
+                  - generic [ref=f3e180]: "3"
+                - button "FIFO Inventory Reading" [ref=f3e181]
+            - generic [ref=f3e186]:
+              - generic [ref=f3e188]:
+                - generic [ref=f3e189]:
+                  - heading "Pending Inspection Logs" [level=3] [ref=f3e190]
+                  - generic [ref=f3e191] [cursor=pointer]:
+                    - checkbox "Show Received" [ref=f3e192]
+                    - text: Show Received
+                - generic [ref=f3e193]:
+                  - generic [ref=f3e194]:
+                    - generic [ref=f3e195]:
+                      - generic [ref=f3e196]: PO# / Ref
+                      - textbox "Search PO..." [ref=f3e197]
+                    - generic [ref=f3e198]:
+                      - generic [ref=f3e199]: Status
+                      - combobox [ref=f3e200] [cursor=pointer]:
+                        - option "All Statuses" [selected]
+                        - option "En Route"
+                        - option "Receiving (QA)"
+                        - option "Received"
+                  - generic [ref=f3e201]:
+                    - generic [ref=f3e202]: Date Range
+                    - generic [ref=f3e203]:
+                      - textbox [ref=f3e204]
+                      - textbox [ref=f3e205]
+                - generic [ref=f3e206]:
+                  - 'button "PO-2026-BFH8EN Receiving (QA) Value: ₱0 Date: 2026-07-11T00:00:00" [ref=f3e292] [cursor=pointer]':
+                    - generic [ref=f3e293]:
+                      - generic [ref=f3e294]: PO-2026-BFH8EN
+                      - generic [ref=f3e295]: Receiving (QA)
+                    - generic [ref=f3e296]:
+                      - generic [ref=f3e297]: "Value: ₱0"
+                      - generic [ref=f3e298]: "Date: 2026-07-11T00:00:00"
+                  - 'button "PO-2026-ETFS37 Receiving (QA) Value: ₱0 Date: 2026-07-11T00:00:00" [active] [ref=f3e299] [cursor=pointer]':
+                    - generic [ref=f3e300]:
+                      - generic [ref=f3e301]: PO-2026-ETFS37
+                      - generic [ref=f3e302]: Receiving (QA)
+                    - generic [ref=f3e303]:
+                      - generic [ref=f3e304]: "Value: ₱0"
+                      - generic [ref=f3e305]: "Date: 2026-07-11T00:00:00"
+                  - 'button "PO-2026-292N7P Receiving (QA) Value: ₱61,000 Date: 2026-07-10T00:00:00" [ref=f3e306] [cursor=pointer]':
+                    - generic [ref=f3e307]:
+                      - generic [ref=f3e308]: PO-2026-292N7P
+                      - generic [ref=f3e309]: Receiving (QA)
+                    - generic [ref=f3e310]:
+                      - generic [ref=f3e311]: "Value: ₱61,000"
+                      - generic [ref=f3e312]: "Date: 2026-07-10T00:00:00"
+              - generic [ref=f3e680]:
+                - generic [ref=f3e681]:
+                  - generic [ref=f3e683]:
+                    - 'heading "Cargo Manifest Inspection: PO-2026-ETFS37" [level=3] [ref=f3e684]'
+                    - generic [ref=f3e685]:
+                      - paragraph [ref=f3e686]: Verify physical quantities, tag batch IDs, and set Expiration limits.
+                      - generic [ref=f3e687]: "Original PO Branch: Main Branch"
+                      - generic [ref=f3e688]: "PO Qty: 2 units"
+                  - generic [ref=f3e689]:
+                    - button "Jump to Product..." [ref=f3e691] [cursor=pointer]
+                    - combobox [ref=f3e703] [cursor=pointer]:
+                      - option "Receive Branch..."
+                      - option "Bihon Branch"
+                      - option "Canton Branch"
+                      - option "Main Branch" [selected]
+                      - option "Urdaneta Branch"
+                - generic [ref=f3e704]:
+                  - generic [ref=f3e705]:
+                    - generic [ref=f3e706]:
+                      - generic [ref=f3e712]:
+                        - generic [ref=f3e713]: Canton 300g Master Shipping Box
+                        - generic [ref=f3e714]: "SKU: PKG-BOX-300G"
+                      - button "Packaging (Lot Req)" [ref=f3e716]
+                    - generic [ref=f3e717]: No dynamic QA specifications are configured for this product. Use the manual QA decision below.
+                    - generic [ref=f3e718]:
+                      - generic [ref=f3e719]:
+                        - generic [ref=f3e720]: Received Quantity
+                        - generic [ref=f3e721]:
+                          - button [ref=f3e722]
+                          - spinbutton "Manually count" [ref=f3e724]
+                          - button [ref=f3e725]
+                      - generic [ref=f3e727]:
+                        - generic [ref=f3e728]: Accepted Quantity *(can exceed received)
+                        - generic [ref=f3e729]:
+                          - button [ref=f3e730]
+                          - spinbutton "Accepted qty" [ref=f3e732]
+                          - button [ref=f3e733]
+                      - generic [ref=f3e735]:
+                        - generic [ref=f3e736]: BO Qty (Calculated)
+                        - spinbutton "0" [disabled] [ref=f3e737]
+                    - generic [ref=f3e738]:
+                      - generic [ref=f3e739]:
+                        - generic [ref=f3e740]: Supplier Batch Number *
+                        - textbox "Supplier batch number" [ref=f3e741]
+                      - generic [ref=f3e742]:
+                        - generic [ref=f3e743]: Storage Lot *
+                        - combobox [ref=f3e744]:
+                          - option "Select storage lot..." [selected]
+                          - option "B-SEED-BAG300G (capacity 1000000)"
+                          - option "B-SEED-BAG300G-M (capacity 1000000)"
+                          - option "B-SEED-EGGYELLOW (capacity 1000000)"
+                          - option "B-SEED-EGGYELLOW-M (capacity 1000000)"
+                          - option "B-SEED-FLOUR (capacity 1000000)"
+                          - option "B-SEED-FLOUR-M (capacity 1000000)"
+                          - option "B-SEED-LYEWATER (capacity 1000000)"
+                          - option "B-SEED-LYEWATER-M (capacity 1000000)"
+                          - option "B-SEED-MAMANEN (capacity 1000000)"
+                          - option "B-SEED-MAMANEN-M (capacity 1000000)"
+                          - option "B-SEED-PAPAPORON (capacity 1000000)"
+                          - option "B-SEED-PAPAPORON-M (capacity 1000000)"
+                          - option "B-SEED-PKG300G (capacity 1000000)"
+                          - option "B-SEED-PKG300G-M (capacity 1000000)"
+                          - option "B-SEED-PROD001 (capacity 1000000)"
+                          - option "B-SEED-PROD001-M (capacity 1000000)"
+                          - option "B-SEED-RAW-SUB (capacity 100000)"
+                          - option "B-SEED-SALT (capacity 1000000)"
+                          - option "B-SEED-SALT-M (capacity 1000000)"
+                          - option "B-SEED-WATER (capacity 1000000)"
+                          - option "B-SEED-WATER-M (capacity 1000000)"
+                          - option "Box-1 (capacity 10000)"
+                          - option "Box-2 (capacity 100000)"
+                          - option "Box-3 (capacity 100000)"
+                          - option "JO-YLD-20260714 (capacity 100000)"
+                          - option "LOT-FG-SO8-001 (capacity 100000)"
+                          - option "LOT-SEED-BIN (capacity 100000)"
+                          - option "LOT-SEED-BOX (capacity 100000)"
+                          - option "LOT-SEED-BOX-9941 (capacity 100000)"
+                          - option "LOT-SEED-BTL (capacity 100000)"
+                          - option "LOT-SEED-BTL-9941 (capacity 100000)"
+                          - option "LOT-SEED-CAP (capacity 100000)"
+                          - option "LOT-SEED-CAP-9941 (capacity 100000)"
+                          - option "LOT-SEED-LBL (capacity 100000)"
+                          - option "LOT-SEED-LBL-9941 (capacity 100000)"
+                          - option "LOT-SEED-OIL (capacity 100000)"
+                          - option "LOT-SEED-OIL-9941 (capacity 100000)"
+                          - option "MFG-JO-228205-SUB25563 (capacity 100000)"
+                          - option "MFG-JO-760917-SUB25532 (capacity 100000)"
+                          - option "MFG-JO-BUF-693593 (capacity 100000)"
+                          - option "MFG-JO-BUF-693593-SUB25563 (capacity 100000)"
+                          - option "MFG-JO-BUF-724153-SUB25563 (capacity 100000)"
+                          - option "MFG-JO-BUF-866009 (capacity 100000)"
+                          - option "QA-PL-20260715-093403-LOT (capacity 1)"
+                          - option "QA-PL-20260715-095707-LOT (capacity 1)"
+                          - option "SEED-RAW-265779 (capacity 100000)"
+                          - option "SEED-RAW-824231 (capacity 100000)"
+                          - option "SEED-RAW-BIN (capacity 100000)"
+                      - generic [ref=f3e745]:
+                        - generic [ref=f3e746]: Expiry Date
+                        - textbox [ref=f3e747]
+                      - generic [ref=f3e748]:
+                        - generic [ref=f3e749]: QA Status Decision *
+                        - generic [ref=f3e750]:
+                          - button "Passed" [ref=f3e751] [cursor=pointer]
+                          - button "Partial" [ref=f3e752] [cursor=pointer]
+                          - button "Rejected" [ref=f3e753] [cursor=pointer]
+                    - generic [ref=f3e754]:
+                      - generic [ref=f3e755]: Remarks / Rejection Notes
+                      - textbox "Reason for discrepancy or failure" [ref=f3e756]
+                  - generic [ref=f3e757]:
+                    - generic [ref=f3e758]:
+                      - generic [ref=f3e764]:
+                        - generic [ref=f3e765]: Refined Frying Palm Oil
+                        - generic [ref=f3e766]: "SKU: RM-OIL-01"
+                      - button "Raw Material (Expiry Req)" [ref=f3e768]
+                    - generic [ref=f3e769]: No dynamic QA specifications are configured for this product. Use the manual QA decision below.
+                    - generic [ref=f3e770]:
+                      - generic [ref=f3e771]:
+                        - generic [ref=f3e772]: Received Quantity
+                        - generic [ref=f3e773]:
+                          - button [ref=f3e774]
+                          - spinbutton "Manually count" [ref=f3e776]
+                          - button [ref=f3e777]
+                      - generic [ref=f3e779]:
+                        - generic [ref=f3e780]: Accepted Quantity *(can exceed received)
+                        - generic [ref=f3e781]:
+                          - button [ref=f3e782]
+                          - spinbutton "Accepted qty" [ref=f3e784]
+                          - button [ref=f3e785]
+                      - generic [ref=f3e787]:
+                        - generic [ref=f3e788]: BO Qty (Calculated)
+                        - spinbutton "0" [disabled] [ref=f3e789]
+                    - generic [ref=f3e790]:
+                      - generic [ref=f3e791]:
+                        - generic [ref=f3e792]: Supplier Batch Number *
+                        - textbox "Supplier batch number" [ref=f3e793]
+                      - generic [ref=f3e794]:
+                        - generic [ref=f3e795]: Storage Lot *
+                        - combobox [ref=f3e796]:
+                          - option "Select storage lot..." [selected]
+                          - option "B-SEED-BAG300G (capacity 1000000)"
+                          - option "B-SEED-BAG300G-M (capacity 1000000)"
+                          - option "B-SEED-EGGYELLOW (capacity 1000000)"
+                          - option "B-SEED-EGGYELLOW-M (capacity 1000000)"
+                          - option "B-SEED-FLOUR (capacity 1000000)"
+                          - option "B-SEED-FLOUR-M (capacity 1000000)"
+                          - option "B-SEED-LYEWATER (capacity 1000000)"
+                          - option "B-SEED-LYEWATER-M (capacity 1000000)"
+                          - option "B-SEED-MAMANEN (capacity 1000000)"
+                          - option "B-SEED-MAMANEN-M (capacity 1000000)"
+                          - option "B-SEED-PAPAPORON (capacity 1000000)"
+                          - option "B-SEED-PAPAPORON-M (capacity 1000000)"
+                          - option "B-SEED-PKG300G (capacity 1000000)"
+                          - option "B-SEED-PKG300G-M (capacity 1000000)"
+                          - option "B-SEED-PROD001 (capacity 1000000)"
+                          - option "B-SEED-PROD001-M (capacity 1000000)"
+                          - option "B-SEED-RAW-SUB (capacity 100000)"
+                          - option "B-SEED-SALT (capacity 1000000)"
+                          - option "B-SEED-SALT-M (capacity 1000000)"
+                          - option "B-SEED-WATER (capacity 1000000)"
+                          - option "B-SEED-WATER-M (capacity 1000000)"
+                          - option "Box-1 (capacity 10000)"
+                          - option "Box-2 (capacity 100000)"
+                          - option "Box-3 (capacity 100000)"
+                          - option "JO-YLD-20260714 (capacity 100000)"
+                          - option "LOT-FG-SO8-001 (capacity 100000)"
+                          - option "LOT-SEED-BIN (capacity 100000)"
+                          - option "LOT-SEED-BOX (capacity 100000)"
+                          - option "LOT-SEED-BOX-9941 (capacity 100000)"
+                          - option "LOT-SEED-BTL (capacity 100000)"
+                          - option "LOT-SEED-BTL-9941 (capacity 100000)"
+                          - option "LOT-SEED-CAP (capacity 100000)"
+                          - option "LOT-SEED-CAP-9941 (capacity 100000)"
+                          - option "LOT-SEED-LBL (capacity 100000)"
+                          - option "LOT-SEED-LBL-9941 (capacity 100000)"
+                          - option "LOT-SEED-OIL (capacity 100000)"
+                          - option "LOT-SEED-OIL-9941 (capacity 100000)"
+                          - option "MFG-JO-228205-SUB25563 (capacity 100000)"
+                          - option "MFG-JO-760917-SUB25532 (capacity 100000)"
+                          - option "MFG-JO-BUF-693593 (capacity 100000)"
+                          - option "MFG-JO-BUF-693593-SUB25563 (capacity 100000)"
+                          - option "MFG-JO-BUF-724153-SUB25563 (capacity 100000)"
+                          - option "MFG-JO-BUF-866009 (capacity 100000)"
+                          - option "QA-PL-20260715-093403-LOT (capacity 1)"
+                          - option "QA-PL-20260715-095707-LOT (capacity 1)"
+                          - option "SEED-RAW-265779 (capacity 100000)"
+                          - option "SEED-RAW-824231 (capacity 100000)"
+                          - option "SEED-RAW-BIN (capacity 100000)"
+                      - generic [ref=f3e797]:
+                        - generic [ref=f3e798]: Expiry Date *
+                        - textbox [ref=f3e799]
+                      - generic [ref=f3e800]:
+                        - generic [ref=f3e801]: QA Status Decision *
+                        - generic [ref=f3e802]:
+                          - button "Passed" [ref=f3e803] [cursor=pointer]
+                          - button "Partial" [ref=f3e804] [cursor=pointer]
+                          - button "Rejected" [ref=f3e805] [cursor=pointer]
+                    - generic [ref=f3e806]:
+                      - generic [ref=f3e807]: Remarks / Rejection Notes
+                      - textbox "Reason for discrepancy or failure" [ref=f3e808]
+                - generic [ref=f3e810]:
+                  - button "Cancel Inspection" [ref=f3e811] [cursor=pointer]
+                  - button "Complete QA Receiving & Write Ledger" [ref=f3e812] [cursor=pointer]
+  - region "Notifications alt+T"
+  - button "Open Next.js Dev Tools" [ref=f3e228] [cursor=pointer]
+  - alert [ref=f3e313]

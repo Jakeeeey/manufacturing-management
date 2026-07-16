@@ -1,0 +1,57 @@
+- generic [active] [ref=f3e1]:
+  - generic [ref=f3e2]:
+    - banner [ref=f3e13]:
+      - generic [ref=f3e14]:
+        - link "VOS VOS-WEB" [ref=f3e15] [cursor=pointer]:
+          - /url: /
+          - img "VOS" [ref=f3e17]
+          - generic [ref=f3e18]: VOS-WEB
+        - generic [ref=f3e20]:
+          - navigation "Main" [ref=f3e21]:
+            - list [ref=f3e23]:
+              - listitem [ref=f3e24]:
+                - link "Home" [ref=f3e25] [cursor=pointer]:
+                  - /url: /
+              - listitem [ref=f3e26]:
+                - link "About Us" [ref=f3e27] [cursor=pointer]:
+                  - /url: /about
+              - listitem [ref=f3e28]:
+                - link "Services" [ref=f3e29] [cursor=pointer]:
+                  - /url: /services
+              - listitem [ref=f3e30]:
+                - link "Contact" [ref=f3e31] [cursor=pointer]:
+                  - /url: /contact
+          - generic [ref=f3e32]:
+            - link "Login" [ref=f3e33] [cursor=pointer]:
+              - /url: /login
+            - button "Toggle theme" [ref=f3e100] [cursor=pointer]
+    - main [ref=f3e35]:
+      - main [ref=f3e38]:
+        - generic [ref=f3e39]:
+          - generic [ref=f3e47]:
+            - heading "VOS ERP" [level=1] [ref=f3e48]
+            - paragraph [ref=f3e49]: Management System
+          - generic [ref=f3e53]:
+            - generic [ref=f3e54]:
+              - heading "Account Login" [level=2] [ref=f3e55]
+              - paragraph [ref=f3e56]: Secure Authentication Portal
+            - generic [ref=f3e58]:
+              - generic [ref=f3e59]:
+                - generic [ref=f3e60]: Email Address
+                - textbox "your@email.com" [ref=f3e65]: ajsiapno60@men2corp.com
+              - generic [ref=f3e66]:
+                - generic [ref=f3e67]: Password
+                - generic [ref=f3e69]:
+                  - textbox "••••••••" [ref=f3e73]: Andrei_123456789
+                  - button [ref=f3e74]
+              - generic [ref=f3e78]:
+                - generic [ref=f3e79]:
+                  - checkbox "Stay signed in on this device" [ref=f3e80]
+                  - checkbox
+                  - generic [ref=f3e81] [cursor=pointer]: Stay signed in on this device
+                - button "Forgot Password?" [ref=f3e82]
+              - button "Signing In..." [disabled]
+            - generic [ref=f3e86]: Secure Encryption Active
+  - region "Notifications alt+T"
+  - button "Open Next.js Dev Tools" [ref=f3e96] [cursor=pointer]
+  - alert [ref=f3e102]

@@ -1,0 +1,549 @@
+- generic:
+  - generic:
+    - generic:
+      - generic:
+        - generic:
+          - generic:
+            - list:
+              - listitem:
+                - link:
+                  - /url: /main-dashboard
+                  - generic:
+                    - generic: VOS Web
+                    - generic: Manufacturing Management
+          - generic:
+            - generic:
+              - generic:
+                - textbox:
+                  - /placeholder: Quick search modules...
+                - generic: /
+            - generic:
+              - generic:
+                - generic:
+                  - generic:
+                    - generic:
+                      - list:
+                        - listitem:
+                          - button:
+                            - generic: Recipe R&D & Costing
+                          - generic:
+                            - list:
+                              - listitem:
+                                - link:
+                                  - /url: /mm/finished-goods
+                                  - generic: Finished Goods (FG)
+                              - listitem:
+                                - link:
+                                  - /url: /mm/raw-materials
+                                  - generic: Raw Materials (RM)
+                              - listitem:
+                                - link:
+                                  - /url: /mm/margin-simulator
+                                  - generic: Recipe Margin Simulator
+                              - listitem:
+                                - link:
+                                  - /url: /mm/uom-conversions
+                                  - generic: UOM & Conversions
+                        - listitem:
+                          - button:
+                            - generic: Revenue & Commerce
+                          - generic:
+                            - list:
+                              - listitem:
+                                - link:
+                                  - /url: /mm/quotations
+                                  - generic: Quotations
+                              - listitem:
+                                - link:
+                                  - /url: /mm/sales-order
+                                  - generic: Sales Orders
+                              - listitem:
+                                - link:
+                                  - /url: /mm/forex-manager
+                                  - generic: Forex Manager
+                              - listitem:
+                                - link:
+                                  - /url: /mm/clients
+                                  - generic: Client Directory
+                              - listitem:
+                                - link:
+                                  - /url: /mm/cost-snapshots
+                                  - generic: Cost Snapshots
+                              - listitem:
+                                - link:
+                                  - /url: /mm/sales-order-approval
+                                  - generic: Sales Order Approval
+                              - listitem:
+                                - link:
+                                  - /url: /mm/bi-and-financials
+                                  - generic: BI & Financials
+                        - listitem:
+                          - button:
+                            - generic: Operations & Execution
+                          - generic:
+                            - list:
+                              - listitem:
+                                - link:
+                                  - /url: /mm
+                                  - generic: Executive Summary
+                              - listitem:
+                                - link:
+                                  - /url: /mm/planning-engineering
+                                  - generic: Operations Planning & BOM Engine
+                              - listitem:
+                                - link:
+                                  - /url: /mm/production-workflow
+                                  - generic: Production execution & Shop Floor
+                              - listitem:
+                                - link:
+                                  - /url: /mm/calendar-of-schedule
+                                  - generic: Calendar of Schedule
+                              - listitem:
+                                - link:
+                                  - /url: /mm/cost-variance
+                                  - generic: Cost Variance & Shopfloor
+                              - listitem:
+                                - link:
+                                  - /url: /mm/manufacturing-qa
+                                  - generic: Manufacturing Quality Assurance
+                        - listitem:
+                          - button [expanded]:
+                            - generic: Sourcing & Supply Chain
+                          - list [ref=f6e248]:
+                            - listitem [ref=f6e249]:
+                              - link [ref=f6e568] [cursor=pointer]:
+                                - /url: /mm/suppliers
+                                - generic [ref=f6e251]: Suppliers List
+                            - listitem [ref=f6e259]:
+                              - link [ref=f6e569] [cursor=pointer]:
+                                - /url: /mm/incoming-shipments
+                                - generic [ref=f6e261]: Procurement
+                            - listitem [ref=f6e266]:
+                              - link [ref=f6e570] [cursor=pointer]:
+                                - /url: /mm/approval
+                                - generic [ref=f6e268]: Approval
+                            - listitem [ref=f6e274]:
+                              - link [ref=f6e571] [cursor=pointer]:
+                                - /url: /mm/qa-receiving
+                                - generic [ref=f6e276]: Quality Assurance
+                            - listitem [ref=f6e282]:
+                              - link [ref=f6e572] [cursor=pointer]:
+                                - /url: /mm/shipment-expenses
+                                - generic [ref=f6e284]: Shipment Landed Cost
+                            - listitem [ref=f6e292]:
+                              - link [ref=f6e573] [cursor=pointer]:
+                                - /url: /mm/logistics-profiles
+                                - generic [ref=f6e294]: Logistics Profiles
+                        - listitem:
+                          - button:
+                            - generic: Inventory & Fulfillment
+                          - generic:
+                            - list:
+                              - listitem:
+                                - link:
+                                  - /url: /mm/inventory
+                                  - generic: Inventory Control & FIFO
+                        - listitem:
+                          - link:
+                            - /url: /mm/work-stations
+                            - generic: Work Station Management
+                        - listitem:
+                          - link:
+                            - /url: /mm/assets
+                            - generic: Asset & Equipment Management
+                        - listitem:
+                          - link:
+                            - /url: /mm/lot-management
+                            - generic: Lot Management
+                        - listitem:
+                          - link:
+                            - /url: /mm/inventory-reports
+                            - generic: Inventory Reports
+                        - listitem:
+                          - link:
+                            - /url: /mm/invoices
+                            - generic: Sales Invoices
+                        - listitem:
+                          - link:
+                            - /url: /mm/deliveries
+                            - generic: Logistics & Deliveries
+                        - listitem:
+                          - link:
+                            - /url: /mm/sales-return
+                            - generic: Sales Returns
+                        - listitem:
+                          - button:
+                            - generic: Consolidation
+                          - generic:
+                            - list:
+                              - listitem:
+                                - link:
+                                  - /url: /mm/consolidation/summary
+                                  - generic: Summary
+                              - listitem:
+                                - link:
+                                  - /url: /mm/consolidation/creation
+                                  - generic: Creation
+                              - listitem:
+                                - link:
+                                  - /url: /mm/consolidation/picking
+                                  - generic: Picking
+                              - listitem:
+                                - link:
+                                  - /url: /mm/consolidation/auditing
+                                  - generic: Auditing
+          - generic: VOS WEB V2.0
+    - main:
+      - generic:
+        - generic:
+          - generic:
+            - button:
+              - generic: Toggle Sidebar
+            - generic:
+              - navigation:
+                - list:
+                  - listitem:
+                    - link:
+                      - /url: "#"
+                      - text: Manufacturing
+                  - listitem
+                  - listitem:
+                    - link [disabled]: Quality Assurance (QA) Receiving
+          - generic:
+            - list:
+              - listitem:
+                - button:
+                  - generic: AS
+                  - generic:
+                    - generic: Andrei Siapno
+                    - generic: ajsiapno60@men2corp.com
+        - main:
+          - generic:
+            - generic:
+              - generic:
+                - heading [level=2]: Quality Assurance & Receiving Command Center
+                - paragraph: Inspect incoming cargo, record batches, verify raw material expiration lists, and enforce FIFO tracking per branch.
+              - generic:
+                - button:
+                  - text: Inbound QA Queue
+                  - generic: "6"
+                - button: FIFO Inventory Reading
+            - generic:
+              - generic:
+                - generic:
+                  - generic:
+                    - heading [level=3]: Pending Inspection Logs
+                    - generic:
+                      - checkbox
+                      - text: Show Received
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic: PO# / Ref
+                        - textbox:
+                          - /placeholder: Search PO...
+                      - generic:
+                        - generic: Status
+                        - combobox
+                    - generic:
+                      - generic: Date Range
+                      - generic:
+                        - textbox
+                        - textbox
+                  - generic:
+                    - button:
+                      - generic:
+                        - generic: QA-APP-20260715083310-STANDARD
+                        - generic: Approved
+                      - generic:
+                        - generic: "Value: ₱100"
+                        - generic: "Date: 2026-07-15"
+                    - button:
+                      - generic:
+                        - generic: PO-2026-000002
+                        - generic: Approved
+                      - generic:
+                        - generic: "Value: ₱15,000"
+                        - generic: "Date: 2026-07-15T00:00:00"
+                    - button:
+                      - generic:
+                        - generic: QA-PL-20260715-095707-PO-A
+                        - generic: Approved
+                      - generic:
+                        - generic: "Value: ₱0"
+                        - generic: "Date: 2026-07-15"
+                    - button:
+                      - generic:
+                        - generic: PO-2026-BFH8EN
+                        - generic: Receiving (QA)
+                      - generic:
+                        - generic: "Value: ₱0"
+                        - generic: "Date: 2026-07-11T00:00:00"
+                    - button:
+                      - generic:
+                        - generic: PO-2026-ETFS37
+                        - generic: Receiving (QA)
+                      - generic:
+                        - generic: "Value: ₱0"
+                        - generic: "Date: 2026-07-11T00:00:00"
+                    - button:
+                      - generic:
+                        - generic: PO-2026-292N7P
+                        - generic: Receiving (QA)
+                      - generic:
+                        - generic: "Value: ₱61,000"
+                        - generic: "Date: 2026-07-10T00:00:00"
+              - generic:
+                - generic:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - heading [level=3]: "Cargo Manifest Inspection: PO-2026-292N7P"
+                        - generic:
+                          - paragraph: Verify physical quantities, tag batch IDs, and set Expiration limits.
+                          - generic: "Original PO Branch: Main Branch"
+                          - generic: "PO Qty: 700 units"
+                    - generic:
+                      - generic:
+                        - button:
+                          - generic: Jump to Product...
+                  - generic:
+                    - generic:
+                      - generic: Receiving Ticket / DR Number *
+                      - generic:
+                        - textbox:
+                          - /placeholder: Enter supplier receipt or DR number
+                          - text: QA-P5-REMAINING-001
+                    - generic:
+                      - generic: Receiving Branch *
+                      - generic:
+                        - combobox
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic:
+                          - generic: Wheat Flour (Canton Grade)
+                          - generic: "SKU: RM-FLOUR-01"
+                        - generic:
+                          - button: Raw Material (Expiry Req)
+                      - region "Product QA specifications":
+                        - generic:
+                          - generic:
+                            - generic:
+                              - heading [level=4]: Dynamic QA Checklist
+                              - paragraph: Record the actual reading for every applicable specification.
+                          - generic: 3 checks
+                        - generic:
+                          - generic:
+                            - generic:
+                              - generic: Certificate of Analysis Present
+                              - generic: Critical
+                            - paragraph: "Expected: Yes"
+                            - group:
+                              - button [pressed]: "Yes"
+                              - button: "No"
+                            - generic: Within specification
+                          - generic:
+                            - generic:
+                              - generic: Flour Appearance
+                              - generic: Standard
+                            - paragraph: "Expected: Acceptable"
+                            - textbox:
+                              - /placeholder: Enter observed value
+                              - text: Acceptable
+                            - generic: Within specification
+                          - generic:
+                            - generic:
+                              - generic: Moisture Content
+                              - generic: Critical
+                            - paragraph: 10 to 14 %
+                            - generic:
+                              - spinbutton: "12"
+                              - generic: "%"
+                            - generic: Within specification
+                      - generic:
+                        - generic:
+                          - generic: Received Quantity
+                          - generic:
+                            - button
+                            - spinbutton: "10"
+                            - button
+                        - generic:
+                          - generic: Accepted Quantity
+                          - generic:
+                            - button
+                            - spinbutton: "10"
+                            - button
+                        - generic:
+                          - generic: Rejected Quantity
+                          - generic:
+                            - button
+                            - spinbutton: "0"
+                            - button
+                      - generic:
+                        - generic:
+                          - generic: Supplier Batch Number *
+                          - textbox:
+                            - /placeholder: Supplier batch number
+                            - text: QA-BATCH-P5-001
+                        - generic:
+                          - generic: Storage Lot *
+                          - combobox
+                        - generic:
+                          - generic: Manufacturing Date *
+                          - textbox: 2026-07-01
+                        - generic:
+                          - generic: Expiry Date *
+                          - textbox: 2027-07-01
+                        - generic:
+                          - generic: Server Disposition
+                          - generic: Passed - Server verified
+                      - generic:
+                        - generic:
+                          - generic:
+                            - paragraph: Passed 10 -> Main Branch
+                            - paragraph: Purchase Receiving QA | MAIN
+                      - generic:
+                        - generic: Remarks / Rejection Notes *
+                        - textbox:
+                          - /placeholder: Logistics discrepancy or bad order explanation is mandatory
+                          - text: Phase 5 partial delivery QA
+                      - generic: Logistics discrepancy detected (Counted quantity differs from original purchase order).
+                    - generic:
+                      - generic:
+                        - generic:
+                          - generic: Refined Frying Palm Oil
+                          - generic: "SKU: RM-OIL-01"
+                        - generic:
+                          - button: Raw Material (Expiry Req)
+                      - generic: No dynamic QA specifications are configured for this product. Disposition will be derived from the accepted and rejected quantities.
+                      - generic:
+                        - generic:
+                          - generic: Received Quantity
+                          - generic:
+                            - button
+                            - spinbutton
+                            - button
+                        - generic:
+                          - generic: Accepted Quantity
+                          - generic:
+                            - button
+                            - spinbutton
+                            - button
+                        - generic:
+                          - generic: Rejected Quantity
+                          - generic:
+                            - button
+                            - spinbutton
+                            - button
+                      - generic:
+                        - generic:
+                          - generic: Supplier Batch Number
+                          - textbox:
+                            - /placeholder: Supplier batch number
+                        - generic:
+                          - generic: Storage Lot
+                          - combobox
+                        - generic:
+                          - generic: Manufacturing Date
+                          - textbox
+                        - generic:
+                          - generic: Expiry Date
+                          - textbox
+                        - generic:
+                          - generic: Server Disposition
+                          - generic: Not Received - Server verified
+                      - generic:
+                        - generic: Remarks / Rejection Notes
+                        - textbox:
+                          - /placeholder: Reason for discrepancy or failure
+                  - generic:
+                    - generic: Preview is read-only. Receiving and inventory records are created only after a later confirmation step.
+                    - generic:
+                      - button: Cancel Inspection
+                      - button: Review Movement Preview
+  - region "Notifications alt+T":
+    - list:
+      - listitem:
+        - generic: QA quantities and inventory routes were previewed. No inventory records were written.
+  - button "Open Next.js Dev Tools" [ref=f6e239] [cursor=pointer]
+  - alert
+  - dialog [ref=f6e575]:
+    - generic [ref=f6e576]:
+      - heading "Ledger Movement Verification" [level=2] [ref=f6e577]
+      - paragraph [ref=f6e582]: Receipt QA-P5-REMAINING-001 for PO 2576. Review the read-only movement and allocation drafts before acknowledgment.
+    - generic [ref=f6e583]:
+      - generic [ref=f6e584]:
+        - generic [ref=f6e585]:
+          - strong [ref=f6e586]: "Destination:"
+          - text: Main Branch (MAIN)
+        - generic [ref=f6e587]:
+          - strong [ref=f6e588]: "Inspector:"
+          - text: User 24
+        - generic [ref=f6e589]:
+          - strong [ref=f6e590]: "Status:"
+          - text: Read-only preview
+      - region "Passed inventory movement drafts" [ref=f6e591]:
+        - generic [ref=f6e592]:
+          - heading "Good-stock movements" [level=3] [ref=f6e596]
+          - generic [ref=f6e597]: 1 draft
+        - table [ref=f6e599]:
+          - rowgroup [ref=f6e600]:
+            - row [ref=f6e601]:
+              - columnheader "Product" [ref=f6e602]
+              - columnheader "Branch" [ref=f6e603]
+              - columnheader "Storage lot / batch" [ref=f6e604]
+              - columnheader "Quantity" [ref=f6e605]
+              - columnheader "Dates" [ref=f6e606]
+              - columnheader "Transaction / user" [ref=f6e607]
+              - columnheader "Commit IDs" [ref=f6e608]
+              - columnheader "Remarks" [ref=f6e609]
+          - rowgroup [ref=f6e610]:
+            - row [ref=f6e611]:
+              - cell [ref=f6e612]:
+                - strong [ref=f6e613]: Wheat Flour (Canton Grade)
+                - text: RM-FLOUR-01
+              - cell "Main Branch MAIN / ID 183" [ref=f6e614]:
+                - strong [ref=f6e615]: Main Branch
+                - generic [ref=f6e616]: MAIN / ID 183
+              - cell "B-SEED-FLOUR Location ID 103 / QA-BATCH-P5-001" [ref=f6e617]:
+                - strong [ref=f6e618]: B-SEED-FLOUR
+                - generic [ref=f6e619]: Location ID 103 / QA-BATCH-P5-001
+              - cell "10" [ref=f6e620]
+              - 'cell "MFG: 2026-07-01 EXP: 2027-07-01" [ref=f6e621]': "MFG: 2026-07-01EXP: 2027-07-01"
+              - cell "Purchase Receiving QA Type ID 3 / User 24" [ref=f6e622]:
+                - strong [ref=f6e623]: Purchase Receiving QA
+                - generic [ref=f6e624]: Type ID 3 / User 24
+              - 'cell "Movement: Assigned on confirmation Receiving: Assigned on confirmation Inventory lot: Assigned on confirmation" [ref=f6e625]': "Movement: Assigned on confirmationReceiving: Assigned on confirmationInventory lot: Assigned on confirmation"
+              - cell "Phase 5 partial delivery QA" [ref=f6e626]
+      - region "Rejected inventory movement drafts" [ref=f6e627]:
+        - generic [ref=f6e628]:
+          - heading "Bad-order movements" [level=3] [ref=f6e631]
+          - generic [ref=f6e632]: 0 drafts
+        - paragraph [ref=f6e633]: No rejected movement is required.
+      - region "MRP allocation drafts" [ref=f6e634]:
+        - generic [ref=f6e635]:
+          - heading "MRP pre-allocation" [level=3] [ref=f6e641]
+          - generic [ref=f6e642]: 0 drafts
+        - table [ref=f6e644]:
+          - rowgroup [ref=f6e645]:
+            - row [ref=f6e646]:
+              - columnheader "Product" [ref=f6e647]
+              - columnheader "Job order" [ref=f6e648]
+              - columnheader "Material requirement" [ref=f6e649]
+              - columnheader "Allocated" [ref=f6e650]
+              - columnheader "Commit IDs" [ref=f6e651]
+          - rowgroup [ref=f6e652]:
+            - row [ref=f6e653]:
+              - cell "No MRP allocation is required for this receipt." [ref=f6e654]
+        - paragraph [ref=f6e656]:
+          - strong [ref=f6e657]: "Wheat Flour (Canton Grade):"
+          - text: 10 Passed unit(s) remain unallocated.
+    - generic [ref=f6e658]:
+      - generic [ref=f6e659] [cursor=pointer]:
+        - checkbox "I verified these read-only movement and allocation drafts." [active] [ref=f6e660]
+        - text: I verified these read-only movement and allocation drafts.
+      - generic [ref=f6e661]:
+        - button "Close Preview" [ref=f6e662]
+        - button "Acknowledge Preview" [disabled]
+    - button "Close" [ref=f6e663]

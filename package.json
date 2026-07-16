@@ -7,7 +7,22 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "audit:purchase-order-phase0": "node scripts/purchase-order-phase0-audit.mjs",
+    "audit:purchase-order-phase4-uniqueness": "node scripts/purchase-order-phase4-uniqueness-audit.mjs",
+    "audit:purchase-order-phase4-admin-boundary": "node scripts/purchase-order-phase4-admin-boundary-audit.mjs",
+    "audit:purchase-order-phase4-seeds": "node scripts/seed-purchase-order-phase4-qa.mjs --audit-only",
+    "setup:purchase-order-phase0": "node scripts/apply-purchase-order-phase0-directus.mjs",
+    "setup:purchase-order-phase2": "node scripts/apply-purchase-order-phase2-directus.mjs",
+    "setup:purchase-order-phase3": "node scripts/apply-purchase-order-phase3-directus.mjs",
+    "setup:purchase-order-phase4": "node scripts/apply-purchase-order-phase4-directus.mjs",
+    "seed:purchase-order-phase4": "node scripts/seed-purchase-order-phase4-qa.mjs",
+    "test:purchase-order-phase0": "node --no-warnings --experimental-strip-types scripts/purchase-order-phase0-domain-smoke.mjs",
+    "test:purchase-order-phase1": "node --no-warnings --experimental-strip-types scripts/purchase-order-phase1-contract-smoke.mjs",
+    "test:purchase-order-phase2": "node --no-warnings --experimental-strip-types scripts/purchase-order-phase2-contract-smoke.mjs",
+    "test:purchase-order-phase3": "node --no-warnings --experimental-strip-types scripts/purchase-order-phase3-contract-smoke.mjs",
+    "test:purchase-order-phase4": "node --no-warnings --experimental-strip-types scripts/purchase-order-phase4-contract-smoke.mjs",
+    "test:purchase-order-phase5": "node --no-warnings --experimental-strip-types scripts/purchase-order-phase5-contract-smoke.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.2.0",

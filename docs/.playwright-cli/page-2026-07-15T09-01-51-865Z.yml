@@ -1,0 +1,250 @@
+- generic [ref=f1e1]:
+  - generic [ref=f1e2]:
+    - generic [ref=f1e5]:
+      - list [ref=f1e7]:
+        - listitem [ref=f1e8]:
+          - link "VOS Logo VOS Web Manufacturing Management" [ref=f1e9] [cursor=pointer]:
+            - /url: /main-dashboard
+            - img "VOS Logo" [ref=f1e11]
+            - generic [ref=f1e12]:
+              - generic [ref=f1e13]: VOS Web
+              - generic [ref=f1e14]: Manufacturing Management
+      - generic [ref=f1e15]:
+        - generic [ref=f1e17]:
+          - textbox "Quick search modules..." [ref=f1e21]
+          - generic [ref=f1e22]: /
+        - list [ref=f1e30]:
+          - listitem [ref=f1e31]:
+            - button "Recipe R&D & Costing" [ref=f1e32] [cursor=pointer]
+            - generic:
+              - generic:
+                - generic:
+                  - list:
+                    - listitem:
+                      - link "Finished Goods (FG)":
+                        - /url: /mm/finished-goods
+                    - listitem:
+                      - link "Raw Materials (RM)":
+                        - /url: /mm/raw-materials
+                    - listitem:
+                      - link "Recipe Margin Simulator":
+                        - /url: /mm/margin-simulator
+                    - listitem:
+                      - link "UOM & Conversions":
+                        - /url: /mm/uom-conversions
+          - listitem [ref=f1e42]:
+            - button "Revenue & Commerce" [ref=f1e43] [cursor=pointer]
+            - generic:
+              - generic:
+                - generic:
+                  - list:
+                    - listitem:
+                      - link "Quotations":
+                        - /url: /mm/quotations
+                    - listitem:
+                      - link "Sales Orders":
+                        - /url: /mm/sales-order
+                    - listitem:
+                      - link "Forex Manager":
+                        - /url: /mm/forex-manager
+                    - listitem:
+                      - link "Client Directory":
+                        - /url: /mm/clients
+                    - listitem:
+                      - link "Cost Snapshots":
+                        - /url: /mm/cost-snapshots
+                    - listitem:
+                      - link "Sales Order Approval":
+                        - /url: /mm/sales-order-approval
+                    - listitem:
+                      - link "BI & Financials":
+                        - /url: /mm/bi-and-financials
+          - listitem [ref=f1e51]:
+            - button "Operations & Execution" [ref=f1e52] [cursor=pointer]
+            - generic:
+              - generic:
+                - generic:
+                  - list:
+                    - listitem:
+                      - link "Executive Summary":
+                        - /url: /mm
+                    - listitem:
+                      - link "Operations Planning & BOM Engine":
+                        - /url: /mm/planning-engineering
+                    - listitem:
+                      - link "Production execution & Shop Floor":
+                        - /url: /mm/production-workflow
+                    - listitem:
+                      - link "Calendar of Schedule":
+                        - /url: /mm/calendar-of-schedule
+                    - listitem:
+                      - link "Cost Variance & Shopfloor":
+                        - /url: /mm/cost-variance
+                    - listitem:
+                      - link "Manufacturing Quality Assurance":
+                        - /url: /mm/manufacturing-qa
+          - listitem [ref=f1e60]:
+            - button "Sourcing & Supply Chain" [expanded] [ref=f1e61] [cursor=pointer]
+            - list [ref=f1e73]:
+              - listitem [ref=f1e74]:
+                - link "Suppliers List" [ref=f1e75] [cursor=pointer]:
+                  - /url: /mm/suppliers
+              - listitem [ref=f1e84]:
+                - link "Procurement" [active] [ref=f1e85] [cursor=pointer]:
+                  - /url: /mm/incoming-shipments
+              - listitem [ref=f1e91]:
+                - link "Approval" [ref=f1e92] [cursor=pointer]:
+                  - /url: /mm/approval
+              - listitem [ref=f1e99]:
+                - link "Quality Assurance" [ref=f1e100] [cursor=pointer]:
+                  - /url: /mm/qa-receiving
+              - listitem [ref=f1e107]:
+                - link "Shipment Landed Cost" [ref=f1e108] [cursor=pointer]:
+                  - /url: /mm/shipment-expenses
+              - listitem [ref=f1e117]:
+                - link "Logistics Profiles" [ref=f1e118] [cursor=pointer]:
+                  - /url: /mm/logistics-profiles
+          - listitem [ref=f1e127]:
+            - link "Work Station Management" [ref=f1e128] [cursor=pointer]:
+              - /url: /mm/work-stations
+          - listitem [ref=f1e134]:
+            - button "Inventory & Fulfillment" [ref=f1e135] [cursor=pointer]
+            - generic:
+              - generic:
+                - generic:
+                  - list:
+                    - listitem:
+                      - link "Inventory Control & FIFO":
+                        - /url: /mm/inventory
+          - listitem [ref=f1e145]:
+            - link "Asset & Equipment Management" [ref=f1e146] [cursor=pointer]:
+              - /url: /mm/assets
+          - listitem [ref=f1e151]:
+            - link "Lot Management" [ref=f1e152] [cursor=pointer]:
+              - /url: /mm/lot-management
+          - listitem [ref=f1e158]:
+            - link "Inventory Reports" [ref=f1e159] [cursor=pointer]:
+              - /url: /mm/inventory-reports
+          - listitem [ref=f1e164]:
+            - link "Sales Invoices" [ref=f1e165] [cursor=pointer]:
+              - /url: /mm/invoices
+          - listitem [ref=f1e171]:
+            - link "Logistics & Deliveries" [ref=f1e172] [cursor=pointer]:
+              - /url: /mm/deliveries
+          - listitem [ref=f1e180]:
+            - link "Sales Returns" [ref=f1e181] [cursor=pointer]:
+              - /url: /mm/sales-return
+      - generic [ref=f1e187]: VOS WEB V2.0
+    - main [ref=f1e189]:
+      - generic [ref=f1e921]:
+        - generic [ref=f1e922]:
+          - generic [ref=f1e923]:
+            - button "Toggle Sidebar" [ref=f1e924]
+            - navigation "breadcrumb" [ref=f1e927]:
+              - list [ref=f1e928]:
+                - listitem [ref=f1e929]:
+                  - link "Manufacturing" [ref=f1e930] [cursor=pointer]:
+                    - /url: "#"
+                - listitem [ref=f1e931]
+                - listitem [ref=f1e934]:
+                  - link "Sourcing & Supply Chain" [ref=f1e935] [cursor=pointer]:
+                    - /url: "#"
+                - listitem [ref=f1e936]
+                - listitem [ref=f1e939]:
+                  - link "Incoming Shipments & PO Logs" [disabled] [ref=f1e940]
+          - list [ref=f1e942]:
+            - listitem [ref=f1e943]:
+              - button "AS Andrei Siapno ajsiapno60@men2corp.com" [ref=f1e944] [cursor=pointer]:
+                - generic [ref=f1e945]: AS
+                - generic [ref=f1e947]:
+                  - generic [ref=f1e948]: Andrei Siapno
+                  - generic [ref=f1e949]: ajsiapno60@men2corp.com
+        - main [ref=f1e953]:
+          - generic [ref=f1e955]:
+            - generic [ref=f1e956]:
+              - generic [ref=f1e957]:
+                - generic [ref=f1e958]:
+                  - heading "Procurement Registry (17)" [level=3] [ref=f1e959]:
+                    - generic [ref=f1e963]: Procurement Registry
+                    - generic [ref=f1e964]: (17)
+                  - button "Create PO" [ref=f1e965] [cursor=pointer]
+                - generic [ref=f1e967]:
+                  - textbox "Search BL/Reference, Supplier..." [ref=f1e972]
+                  - combobox [ref=f1e973]:
+                    - option "All Statuses" [selected]
+                    - option "Requested"
+                    - option "Approved"
+                    - option "Cancelled"
+                    - option "For Pickup"
+                    - option "En Route"
+                    - option "Receiving (QA)"
+                    - option "Partially Received"
+                    - option "Received"
+                    - option "Rejected"
+              - generic [ref=f1e974]:
+                - 'button "PO: PO-2026-000008 Approved REGINE 01 ₱100.00 Status: Approved ETA: 7/16/2026" [ref=f1e975]':
+                  - generic [ref=f1e976]:
+                    - generic [ref=f1e977]: "PO: PO-2026-000008"
+                    - generic [ref=f1e978]: Approved
+                  - generic [ref=f1e979]:
+                    - generic [ref=f1e980]: REGINE 01
+                    - generic [ref=f1e981]: ₱100.00
+                  - generic [ref=f1e982]:
+                    - generic [ref=f1e983]: "Status: Approved"
+                    - generic [ref=f1e984]: "ETA: 7/16/2026"
+                - 'button "PO: PO-2026-000007 Rejected REGINE 01 ₱1,500.00 Status: Rejected ETA: 7/16/2026" [ref=f1e985]':
+                  - generic [ref=f1e986]:
+                    - generic [ref=f1e987]: "PO: PO-2026-000007"
+                    - generic [ref=f1e988]: Rejected
+                  - generic [ref=f1e989]:
+                    - generic [ref=f1e990]: REGINE 01
+                    - generic [ref=f1e991]: ₱1,500.00
+                  - generic [ref=f1e992]:
+                    - generic [ref=f1e993]: "Status: Rejected"
+                    - generic [ref=f1e994]: "ETA: 7/16/2026"
+                - 'button "PO: PO-2026-000005 Cancelled REGINE 01 ₱100.00 Status: Cancelled ETA: Pending" [ref=f1e995]':
+                  - generic [ref=f1e996]:
+                    - generic [ref=f1e997]: "PO: PO-2026-000005"
+                    - generic [ref=f1e998]: Cancelled
+                  - generic [ref=f1e999]:
+                    - generic [ref=f1e1000]: REGINE 01
+                    - generic [ref=f1e1001]: ₱100.00
+                  - generic [ref=f1e1002]:
+                    - generic [ref=f1e1003]: "Status: Cancelled"
+                    - generic [ref=f1e1004]: "ETA: Pending"
+                - 'button "PO: PO-2026-000006 Cancelled REGINE 01 ₱100.00 Status: Cancelled ETA: Pending" [ref=f1e1005]':
+                  - generic [ref=f1e1006]:
+                    - generic [ref=f1e1007]: "PO: PO-2026-000006"
+                    - generic [ref=f1e1008]: Cancelled
+                  - generic [ref=f1e1009]:
+                    - generic [ref=f1e1010]: REGINE 01
+                    - generic [ref=f1e1011]: ₱100.00
+                  - generic [ref=f1e1012]:
+                    - generic [ref=f1e1013]: "Status: Cancelled"
+                    - generic [ref=f1e1014]: "ETA: Pending"
+                - 'button "PO: PO-2026-000004 Cancelled REGINE 01 ₱2,424.40 Status: Cancelled ETA: Pending" [ref=f1e1015]':
+                  - generic [ref=f1e1016]:
+                    - generic [ref=f1e1017]: "PO: PO-2026-000004"
+                    - generic [ref=f1e1018]: Cancelled
+                  - generic [ref=f1e1019]:
+                    - generic [ref=f1e1020]: REGINE 01
+                    - generic [ref=f1e1021]: ₱2,424.40
+                  - generic [ref=f1e1022]:
+                    - generic [ref=f1e1023]: "Status: Cancelled"
+                    - generic [ref=f1e1024]: "ETA: Pending"
+              - generic [ref=f1e1025]:
+                - generic [ref=f1e1026]:
+                  - generic [ref=f1e1027]: Show
+                  - combobox [ref=f1e1028]:
+                    - option "5" [selected]
+                    - option "10"
+                    - option "20"
+                    - option "50"
+                - generic [ref=f1e1029]:
+                  - button "Prev" [disabled] [ref=f1e1030]
+                  - generic [ref=f1e1031]: Page 1 / 4
+                  - button "Next" [ref=f1e1032]
+            - generic [ref=f1e1033]: Select a shipment from the list to view details.
+  - region "Notifications alt+T"
+  - button "Open Next.js Dev Tools" [ref=f1e312] [cursor=pointer]
+  - alert [ref=f1e316]

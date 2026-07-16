@@ -1,0 +1,222 @@
+- generic [active] [ref=f2e1]:
+  - generic [ref=f2e2]:
+    - generic [ref=f2e5]:
+      - list [ref=f2e7]:
+        - listitem [ref=f2e8]:
+          - link "VOS Logo VOS Web Manufacturing Management" [ref=f2e9] [cursor=pointer]:
+            - /url: /main-dashboard
+            - img "VOS Logo" [ref=f2e11]
+            - generic [ref=f2e12]:
+              - generic [ref=f2e13]: VOS Web
+              - generic [ref=f2e14]: Manufacturing Management
+      - generic [ref=f2e15]:
+        - generic [ref=f2e17]:
+          - textbox "Quick search modules..." [ref=f2e21]
+          - generic [ref=f2e22]: /
+        - list [ref=f2e30]:
+          - listitem [ref=f2e31]:
+            - button "Recipe R&D & Costing" [ref=f2e32] [cursor=pointer]
+            - generic:
+              - generic:
+                - generic:
+                  - list:
+                    - listitem:
+                      - link "Finished Goods (FG)":
+                        - /url: /mm/finished-goods
+                    - listitem:
+                      - link "Raw Materials (RM)":
+                        - /url: /mm/raw-materials
+                    - listitem:
+                      - link "Recipe Margin Simulator":
+                        - /url: /mm/margin-simulator
+                    - listitem:
+                      - link "UOM & Conversions":
+                        - /url: /mm/uom-conversions
+          - listitem [ref=f2e42]:
+            - button "Revenue & Commerce" [ref=f2e43] [cursor=pointer]
+            - generic:
+              - generic:
+                - generic:
+                  - list:
+                    - listitem:
+                      - link "Quotations":
+                        - /url: /mm/quotations
+                    - listitem:
+                      - link "Sales Orders":
+                        - /url: /mm/sales-order
+                    - listitem:
+                      - link "Forex Manager":
+                        - /url: /mm/forex-manager
+                    - listitem:
+                      - link "Client Directory":
+                        - /url: /mm/clients
+                    - listitem:
+                      - link "Cost Snapshots":
+                        - /url: /mm/cost-snapshots
+                    - listitem:
+                      - link "Sales Order Approval":
+                        - /url: /mm/sales-order-approval
+                    - listitem:
+                      - link "BI & Financials":
+                        - /url: /mm/bi-and-financials
+          - listitem [ref=f2e51]:
+            - button "Operations & Execution" [ref=f2e52] [cursor=pointer]
+            - generic:
+              - generic:
+                - generic:
+                  - list:
+                    - listitem:
+                      - link "Executive Summary":
+                        - /url: /mm
+                    - listitem:
+                      - link "Operations Planning & BOM Engine":
+                        - /url: /mm/planning-engineering
+                    - listitem:
+                      - link "Production execution & Shop Floor":
+                        - /url: /mm/production-workflow
+                    - listitem:
+                      - link "Calendar of Schedule":
+                        - /url: /mm/calendar-of-schedule
+                    - listitem:
+                      - link "Cost Variance & Shopfloor":
+                        - /url: /mm/cost-variance
+                    - listitem:
+                      - link "Manufacturing Quality Assurance":
+                        - /url: /mm/manufacturing-qa
+          - listitem [ref=f2e60]:
+            - button "Sourcing & Supply Chain" [ref=f2e61] [cursor=pointer]
+            - generic:
+              - generic:
+                - generic:
+                  - list:
+                    - listitem:
+                      - link "Suppliers List":
+                        - /url: /mm/suppliers
+                    - listitem:
+                      - link "Procurement":
+                        - /url: /mm/incoming-shipments
+                    - listitem:
+                      - link "Approval":
+                        - /url: /mm/approval
+                    - listitem:
+                      - link "Quality Assurance":
+                        - /url: /mm/qa-receiving
+                    - listitem:
+                      - link "Shipment Landed Cost":
+                        - /url: /mm/shipment-expenses
+                    - listitem:
+                      - link "Logistics Profiles":
+                        - /url: /mm/logistics-profiles
+          - listitem [ref=f2e70]:
+            - button "Inventory & Fulfillment" [ref=f2e71] [cursor=pointer]
+            - generic:
+              - generic:
+                - generic:
+                  - list:
+                    - listitem:
+                      - link "Inventory Control & FIFO":
+                        - /url: /mm/inventory
+          - listitem [ref=f2e81]:
+            - link "Work Station Management" [ref=f2e82] [cursor=pointer]:
+              - /url: /mm/work-stations
+          - listitem [ref=f2e88]:
+            - link "Asset & Equipment Management" [ref=f2e89] [cursor=pointer]:
+              - /url: /mm/assets
+          - listitem [ref=f2e94]:
+            - link "Lot Management" [ref=f2e95] [cursor=pointer]:
+              - /url: /mm/lot-management
+          - listitem [ref=f2e101]:
+            - link "Inventory Reports" [ref=f2e102] [cursor=pointer]:
+              - /url: /mm/inventory-reports
+          - listitem [ref=f2e107]:
+            - link "Sales Invoices" [ref=f2e108] [cursor=pointer]:
+              - /url: /mm/invoices
+          - listitem [ref=f2e114]:
+            - link "Logistics & Deliveries" [ref=f2e115] [cursor=pointer]:
+              - /url: /mm/deliveries
+          - listitem [ref=f2e123]:
+            - link "Sales Returns" [ref=f2e124] [cursor=pointer]:
+              - /url: /mm/sales-return
+          - listitem [ref=f2e130]:
+            - link "Invoicing" [ref=f2e131] [cursor=pointer]:
+              - /url: /mm/invoicing
+          - listitem [ref=f2e137]:
+            - button "Consolidation" [ref=f2e138] [cursor=pointer]
+            - generic:
+              - generic:
+                - generic:
+                  - list:
+                    - listitem:
+                      - link "Summary":
+                        - /url: /mm/consolidation/summary
+                    - listitem:
+                      - link "Creation":
+                        - /url: /mm/consolidation/creation
+                    - listitem:
+                      - link "Picking":
+                        - /url: /mm/consolidation/picking
+                    - listitem:
+                      - link "Auditing":
+                        - /url: /mm/consolidation/auditing
+      - generic [ref=f2e148]: VOS WEB V2.0
+    - main [ref=f2e150]:
+      - generic [ref=f2e151]:
+        - generic [ref=f2e152]:
+          - generic [ref=f2e153]:
+            - button "Toggle Sidebar" [ref=f2e154]
+            - navigation "breadcrumb" [ref=f2e157]:
+              - list [ref=f2e158]:
+                - listitem [ref=f2e159]:
+                  - link "Manufacturing" [ref=f2e160] [cursor=pointer]:
+                    - /url: "#"
+                - listitem [ref=f2e161]
+                - listitem [ref=f2e164]:
+                  - link "Quality Assurance (QA) Receiving" [disabled] [ref=f2e165]
+          - list [ref=f2e167]:
+            - listitem [ref=f2e168]:
+              - button "AS Andrei Siapno ajsiapno60@men2corp.com" [ref=f2e169] [cursor=pointer]:
+                - generic [ref=f2e170]: AS
+                - generic [ref=f2e172]:
+                  - generic [ref=f2e173]: Andrei Siapno
+                  - generic [ref=f2e174]: ajsiapno60@men2corp.com
+        - main [ref=f2e178]:
+          - generic [ref=f2e179]:
+            - generic [ref=f2e180]:
+              - generic [ref=f2e181]:
+                - heading "Quality Assurance & Receiving Command Center" [level=2] [ref=f2e182]
+                - paragraph [ref=f2e185]: Inspect incoming cargo, record batches, verify raw material expiration lists, and enforce FIFO tracking per branch.
+              - generic [ref=f2e186]:
+                - button "Inbound QA Queue 0" [ref=f2e187]:
+                  - text: Inbound QA Queue
+                  - generic [ref=f2e198]: "0"
+                - button "FIFO Inventory Reading" [ref=f2e199]
+            - generic [ref=f2e204]:
+              - generic [ref=f2e206]:
+                - generic [ref=f2e207]:
+                  - heading "Pending Inspection Logs" [level=3] [ref=f2e208]
+                  - generic [ref=f2e209] [cursor=pointer]:
+                    - checkbox "Show Received" [ref=f2e210]
+                    - text: Show Received
+                - generic [ref=f2e211]:
+                  - generic [ref=f2e212]:
+                    - generic [ref=f2e213]:
+                      - generic [ref=f2e214]: PO# / Ref
+                      - textbox "Search PO..." [ref=f2e215]
+                    - generic [ref=f2e216]:
+                      - generic [ref=f2e217]: Status
+                      - combobox [ref=f2e218] [cursor=pointer]:
+                        - option "All Statuses" [selected]
+                        - option "En Route"
+                        - option "Receiving (QA)"
+                        - option "Received"
+                  - generic [ref=f2e219]:
+                    - generic [ref=f2e220]: Date Range
+                    - generic [ref=f2e221]:
+                      - textbox [ref=f2e222]
+                      - textbox [ref=f2e223]
+                - generic [ref=f2e224]: No matching shipments found
+              - generic [ref=f2e238]:
+                - heading "No Shipment Cargo Selected" [level=4] [ref=f2e239]
+                - paragraph [ref=f2e240]: Select an active inbound shipment from the queue to run inspection workflows.
+  - region "Notifications alt+T"
+  - button "Open Next.js Dev Tools" [ref=f2e246] [cursor=pointer]
