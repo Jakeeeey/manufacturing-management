@@ -19,6 +19,7 @@ export default function QAReceivingModule() {
         selectedShipment,
         lineItems,
         loadingLines,
+        readOnly,
         receiptNumber,
         setReceiptNumber,
         selectedBranchId,
@@ -28,11 +29,13 @@ export default function QAReceivingModule() {
         qaReadings,
         qaEvaluationResults,
         receivingPreview,
+        committedResult,
         previewOpen,
         setPreviewOpen,
         previewAcknowledged,
         postingInspection,
         handleCommitReceiving,
+        handleFinishCommitted,
         validatingInspection,
         qaSubmissionBlockReason,
         handleSelectShipment,
@@ -141,6 +144,7 @@ export default function QAReceivingModule() {
                         {selectedShipment ? (
                             <ShipmentInspectionForm
                                 selectedShipment={selectedShipment}
+                                readOnly={readOnly}
                                 lineItems={lineItems}
                                 branches={branches}
                                 storageLots={storageLots}
@@ -198,6 +202,8 @@ export default function QAReceivingModule() {
                 lineItems={lineItems}
                 posting={postingInspection}
                 onCommit={handleCommitReceiving}
+                committedResult={committedResult}
+                onFinish={handleFinishCommitted}
             />
         </div>
     );

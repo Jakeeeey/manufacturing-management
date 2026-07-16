@@ -97,7 +97,23 @@ export async function commitReceivingQa(payload: ReceivingCommitPayload, idempot
     });
     const body = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(body.error || "Failed to post receiving.");
-    if (body.data?.mode !== "compatibility" || !body.data?.commitReference) {
+    if (
+        body.data?.mode !== "compatibility"
+        || !body.data?.commitReference
+        || !Array.isArray(body.data?.receivingRecords)
+        || body.data.receivingRecords.some((record: Record<string, unknown>) =>
+            !Number.isSafeInteger(Number(record.receivingRecordId))
+            || !Number.isSafeInteger(Number(record.lineId))
+            || !Array.isArray(record.inventoryLotIds)
+            || record.inventoryLotIds.some((id: unknown) => !Number.isSafeInteger(Number(id)))
+        )
+        || !Array.isArray(body.data?.movements)
+        || body.data.movements.some((movement: Record<string, unknown>) =>
+            !Number.isSafeInteger(Number(movement.movementId))
+            || !Number.isSafeInteger(Number(movement.receivingLineId))
+            || !Number.isSafeInteger(Number(movement.inventoryLotId))
+        )
+    ) {
         throw new Error("Receiving commit returned an invalid response.");
     }
     return body.data as ReceivingCommitResult;

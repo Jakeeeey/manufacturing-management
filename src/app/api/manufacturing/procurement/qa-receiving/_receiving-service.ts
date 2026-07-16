@@ -10,10 +10,100 @@ class ReceivingError extends Error {
     }
 }
 
+interface ReceivingPostOptions {
+    actorUserId: number;
+}
+
+interface DirectusMovementType {
+    transaction_type_id?: unknown;
+    type_name?: unknown;
+    direction?: unknown;
+    origin_table?: unknown;
+}
+
+interface FinalReceivingMovement {
+    movementId: number;
+    lineId: number;
+    kind: "Passed" | "Rejected";
+    receivingLineId: number;
+    inventoryLotId: number;
+    productId: number;
+    storageLotId: number;
+    branchId: number;
+    transactionTypeId: number;
+    sourceDocumentNo: string;
+    quantity: number;
+}
+
+interface PendingMovement extends Omit<FinalReceivingMovement, "movementId"> {
+    payload: Record<string, unknown>;
+}
+
 const activeShipments = new Set<number>();
 
 function relationId(value: unknown, key: string): number {
     return Number(value && typeof value === "object" ? (value as Record<string, unknown>)[key] : value);
+}
+
+function movementTypeId(movementTypes: DirectusMovementType[], typeName: string): number {
+    const matches = movementTypes.filter(type =>
+        type.type_name === typeName
+        && type.direction === "IN"
+        && type.origin_table === "purchase_order_receiving"
+    );
+    const id = matches.length === 1 ? Number(matches[0].transaction_type_id) : 0;
+    if (!Number.isSafeInteger(id) || id <= 0) {
+        throw new ReceivingError(`Inventory movement type "${typeName}" is not configured uniquely.`, 503);
+    }
+    return id;
+}
+
+function movementKey(row: {
+    receivingLineId: number;
+    branchId: number;
+    transactionTypeId: number;
+}): string {
+    return `${row.receivingLineId}:${row.branchId}:${row.transactionTypeId}`;
+}
+
+async function loadMovementRows(receivingLineIds: number[]) {
+    if (receivingLineIds.length === 0) return [];
+    const params = new URLSearchParams({
+        "filter[source_document_id][_in]": receivingLineIds.join(","),
+        fields: "movement_id,source_document_id,branch_id,transaction_type_id",
+        limit: "-1"
+    });
+    const response = await fetch(`${DIRECTUS_URL}/items/inventory_movements?${params.toString()}`, {
+        headers,
+        cache: "no-store"
+    });
+    if (!response.ok) throw new Error("Failed to reconcile inventory movements.");
+    return ((await response.json()).data || []) as Record<string, unknown>[];
+}
+
+function finalizeMovements(pending: PendingMovement[], rows: Record<string, unknown>[]): FinalReceivingMovement[] | null {
+    if (rows.length !== pending.length) return null;
+    const movementByKey = new Map<string, number>();
+    for (const row of rows) {
+        const movementId = Number(row.movement_id);
+        const key = movementKey({
+            receivingLineId: relationId(row.source_document_id, "purchase_order_product_id"),
+            branchId: relationId(row.branch_id, "id"),
+            transactionTypeId: relationId(row.transaction_type_id, "transaction_type_id")
+        });
+        if (!Number.isSafeInteger(movementId) || movementId <= 0 || movementByKey.has(key)) return null;
+        movementByKey.set(key, movementId);
+    }
+    const finalized = pending.map(draft => {
+        const movementId = movementByKey.get(movementKey(draft));
+        return movementId ? { ...draft, movementId } : null;
+    });
+    return finalized.every((movement): movement is PendingMovement & { movementId: number } => Boolean(movement))
+        ? finalized.map(({ payload, ...movement }) => {
+            void payload;
+            return movement;
+        })
+        : null;
 }
 
 async function mutate(collection: string, id: number, method: "PATCH" | "DELETE", body?: Record<string, unknown>) {
@@ -24,12 +114,15 @@ async function mutate(collection: string, id: number, method: "PATCH" | "DELETE"
     });
 }
 
-export async function handleQaReceivingPost(request: Request) {
+export async function handleQaReceivingPost(request: Request, options: ReceivingPostOptions) {
     let lockedShipmentId: number | null = null;
     try {
         const parsed = receivingSubmissionSchema.safeParse(await request.json());
         if (!parsed.success) {
             return NextResponse.json({ error: "Invalid receiving submission.", details: parsed.error.flatten() }, { status: 400 });
+        }
+        if (!Number.isSafeInteger(options.actorUserId) || options.actorUserId <= 0) {
+            throw new ReceivingError("The receiving user could not be verified.", 401);
         }
 
         const { shipmentId, referenceNumber, branchId, lineItemUpdates } = parsed.data;
@@ -41,19 +134,25 @@ export async function handleQaReceivingPost(request: Request) {
         if (new Set(lineIds).size !== lineIds.length) throw new ReceivingError("Duplicate purchase-order lines are not allowed.", 400);
         const requestedLotIds = [...new Set(lineItemUpdates.map(item => item.lot_id))];
 
-        const [headerRes, linesRes, lotsRes, branchesRes] = await Promise.all([
+        const [headerRes, linesRes, lotsRes, branchesRes, movementTypesRes] = await Promise.all([
             fetch(`${DIRECTUS_URL}/items/purchase_order/${shipmentId}?fields=purchase_order_id,inventory_status,date_received`, { headers, cache: "no-store" }),
             fetch(`${DIRECTUS_URL}/items/purchase_order_products?filter[purchase_order_product_id][_in]=${lineIds.join(",")}&fields=*&limit=-1`, { headers, cache: "no-store" }),
             fetch(`${DIRECTUS_URL}/items/lots?filter[lot_id][_in]=${requestedLotIds.join(",")}&fields=lot_id&limit=-1`, { headers, cache: "no-store" }),
-            fetch(`${DIRECTUS_URL}/items/branches?limit=200&fields=id,branch_name,branch_code`, { headers, cache: "no-store" })
+            fetch(`${DIRECTUS_URL}/items/branches?limit=200&fields=id,branch_name,branch_code`, { headers, cache: "no-store" }),
+            fetch(`${DIRECTUS_URL}/items/inventory_transaction_types?fields=transaction_type_id,type_name,direction,origin_table&limit=-1`, { headers, cache: "no-store" })
         ]);
         if (!headerRes.ok) throw new ReceivingError("Purchase order not found.", 404);
-        if (!linesRes.ok || !lotsRes.ok || !branchesRes.ok) throw new Error("Failed to validate receiving reference data.");
+        if (!linesRes.ok || !lotsRes.ok || !branchesRes.ok || !movementTypesRes.ok) throw new Error("Failed to validate receiving reference data.");
 
         const shipment = (await headerRes.json()).data as Record<string, unknown>;
         const poLines = ((await linesRes.json()).data || []) as Record<string, unknown>[];
         const validLotIds = new Set(((await lotsRes.json()).data || []).map((lot: { lot_id: number }) => Number(lot.lot_id)));
         const branches = ((await branchesRes.json()).data || []) as Array<{ id: number; branch_name: string; branch_code: string }>;
+        const movementTypes = ((await movementTypesRes.json()).data || []) as DirectusMovementType[];
+        const passedMovementTypeId = movementTypeId(movementTypes, "Purchase Receiving QA");
+        const rejectedMovementTypeId = lineItemUpdates.some(item => Number(item.quantity_rejected) > 0)
+            ? movementTypeId(movementTypes, "QA Reject / Bad Order Receipt")
+            : null;
         if (poLines.length !== lineIds.length) throw new ReceivingError("One or more purchase-order lines do not exist.", 400);
         if (lineItemUpdates.some(item => !validLotIds.has(item.lot_id))) throw new ReceivingError("One or more storage lots do not exist.", 400);
         if (!branches.some(branch => Number(branch.id) === branchId)) throw new ReceivingError("The selected receiving branch does not exist.", 400);
@@ -133,6 +232,9 @@ export async function handleQaReceivingPost(request: Request) {
 
         const receiptIds: number[] = [];
         const ledgerIds: number[] = [];
+        const pendingMovements: PendingMovement[] = [];
+        let finalMovements: FinalReceivingMovement[] = [];
+        let movementWriteAttempted = false;
         const inventoryChanges: Array<{ id: number; created: boolean; previous?: Record<string, unknown> }> = [];
         const lineChanges: Array<{ id: number; received: unknown }> = [];
         const productChanges = new Map<number, { cost_per_unit: unknown; estimated_unit_cost: unknown }>();
@@ -176,8 +278,8 @@ export async function handleQaReceivingPost(request: Request) {
                 if (!receiptId) throw new Error("Directus did not return the created receiving-record ID.");
                 receiptIds.push(receiptId);
 
-                const saveInventory = async (targetBranchId: number, quantity: number, qaStatus: string, reason: string | null) => {
-                    if (quantity <= 0) return;
+                const saveInventory = async (targetBranchId: number, quantity: number, qaStatus: string, reason: string | null): Promise<number | null> => {
+                    if (quantity <= 0) return null;
                     const filter = encodeURIComponent(JSON.stringify({ _and: [
                         { source_type: { _eq: "procurement" } }, { source_reference: { _eq: String(shipmentId) } },
                         { product_id: { _eq: line.productId } }, { branch_id: { _eq: targetBranchId } },
@@ -202,17 +304,60 @@ export async function handleQaReceivingPost(request: Request) {
                         } });
                         const updateRes = await mutate("inventory_lots", Number(existing.id), "PATCH", payload);
                         if (!updateRes.ok) throw new Error(`Failed to update inventory lot ${existing.id}.`);
+                        return Number(existing.id);
                     } else {
                         const createRes = await fetch(`${DIRECTUS_URL}/items/inventory_lots`, { method: "POST", headers, body: JSON.stringify({ ...payload, created_on: new Date().toISOString() }) });
                         if (!createRes.ok) throw new Error(`Failed to create inventory lot for product ${line.productId}.`);
                         const inventoryId = Number((await createRes.json()).data.id);
                         if (!inventoryId) throw new Error("Directus did not return the created inventory-lot ID.");
                         inventoryChanges.push({ id: inventoryId, created: true });
+                        return inventoryId;
                     }
                 };
 
-                await saveInventory(branchId, line.accepted, line.item.qa_status, null);
-                await saveInventory(Number(badBranch?.id), line.rejected, "Rejected", line.item.rejection_reason);
+                const receiptNo = `REC-${shipmentId}-${line.item.line_id}-${line.item.lot_id}`;
+                const passedInventoryLotId = await saveInventory(branchId, line.accepted, line.item.qa_status, null);
+                const rejectedInventoryLotId = await saveInventory(Number(badBranch?.id), line.rejected, "Rejected", line.item.rejection_reason);
+                const addPendingMovement = (
+                    kind: "Passed" | "Rejected",
+                    inventoryLotId: number | null,
+                    targetBranchId: number,
+                    transactionTypeId: number,
+                    quantity: number,
+                    remarks: string | null
+                ) => {
+                    if (!inventoryLotId || quantity <= 0) return;
+                    pendingMovements.push({
+                        lineId: line.item.line_id,
+                        kind,
+                        receivingLineId: receiptId,
+                        inventoryLotId,
+                        productId: line.productId,
+                        storageLotId: line.item.lot_id,
+                        branchId: targetBranchId,
+                        transactionTypeId,
+                        sourceDocumentNo: receiptNo,
+                        quantity,
+                        payload: {
+                            product_id: line.productId,
+                            lot_id: line.item.lot_id,
+                            branch_id: targetBranchId,
+                            transaction_type_id: transactionTypeId,
+                            source_document_id: receiptId,
+                            source_document_no: receiptNo,
+                            batch_no: line.item.batch_no,
+                            expiry_date: line.item.expiration_date,
+                            manufacturing_date: line.item.manufacturing_date || null,
+                            quantity,
+                            created_by: options.actorUserId,
+                            remarks
+                        }
+                    });
+                };
+                addPendingMovement("Passed", passedInventoryLotId, branchId, passedMovementTypeId, line.accepted, line.item.rejection_reason);
+                if (rejectedMovementTypeId) {
+                    addPendingMovement("Rejected", rejectedInventoryLotId, Number(badBranch?.id), rejectedMovementTypeId, line.rejected, line.item.rejection_reason);
+                }
                 const ledgerEntries = [
                     line.accepted > 0 ? { branchId, quantity: line.accepted, type: "QA Receive", description: `QA Inspection Batch: ${line.item.batch_no} (${line.item.qa_status})` } : null,
                     line.rejected > 0 ? { branchId: Number(badBranch!.id), quantity: line.rejected, type: "QA Reject (BO)", description: `QA Bad Order Batch: ${line.item.batch_no} (Remarks: ${line.item.rejection_reason})` } : null
@@ -256,14 +401,41 @@ export async function handleQaReceivingPost(request: Request) {
                 date_received: todayInManila()
             });
             if (!statusRes.ok) throw new Error(`Failed to update purchase-order status (${statusRes.status}).`);
+
+            movementWriteAttempted = true;
+            const movementRes = await fetch(`${DIRECTUS_URL}/items/inventory_movements?fields=movement_id,source_document_id,branch_id,transaction_type_id`, {
+                method: "POST",
+                headers,
+                body: JSON.stringify(pendingMovements.map(movement => movement.payload))
+            });
+            if (!movementRes.ok) throw new Error(`Failed to create inventory movements: ${await movementRes.text()}`);
+            const movementRows = ((await movementRes.json()).data || []) as Record<string, unknown>[];
+            const createdMovements = finalizeMovements(pendingMovements, movementRows);
+            if (!createdMovements) throw new Error("Directus did not return the complete created movement IDs.");
+            finalMovements = createdMovements;
         } catch (error) {
+            if (movementWriteAttempted && pendingMovements.length > 0) {
+                let persistedRows: Record<string, unknown>[];
+                try {
+                    persistedRows = await loadMovementRows(receiptIds);
+                } catch {
+                    throw new Error(`Receiving movement persistence could not be reconciled, so receiving and inventory records were retained. Original error: ${(error as Error).message}`);
+                }
+                const recoveredMovements = finalizeMovements(pendingMovements, persistedRows);
+                if (recoveredMovements) {
+                    return NextResponse.json({ success: true, idempotent: false, movements: recoveredMovements });
+                }
+                if (persistedRows.length > 0) {
+                    throw new Error(`Receiving movements were only partially reconciled, so receiving and inventory records were retained. Original error: ${(error as Error).message}`);
+                }
+            }
             if (!await rollback()) {
                 throw new Error(`Receiving failed and stock could not be restored. Audit records were retained for reconciliation. Original error: ${(error as Error).message}`);
             }
             throw error;
         }
 
-        return NextResponse.json({ success: true, idempotent: false });
+        return NextResponse.json({ success: true, idempotent: false, movements: finalMovements });
     } catch (error) {
         console.error("API Error submitting QA Receiving:", error);
         return NextResponse.json({ error: (error as Error).message || "Failed to process QA receiving" }, {
