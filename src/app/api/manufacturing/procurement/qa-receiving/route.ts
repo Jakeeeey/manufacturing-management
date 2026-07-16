@@ -240,8 +240,8 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
     try {
-        await requirePurchaseOrderModuleAccess({ modulePath: PURCHASE_ORDER_MODULE_PATHS.receiving });
-        return handleQaReceivingPost(request);
+        const actor = await requirePurchaseOrderModuleAccess({ modulePath: PURCHASE_ORDER_MODULE_PATHS.receiving });
+        return handleQaReceivingPost(request, { actorUserId: actor.userId });
     } catch (error) {
         return NextResponse.json({ error: (error as Error).message || "Failed to process QA receiving." }, {
             status: error instanceof PurchaseOrderAuthorizationError ? error.status : 500

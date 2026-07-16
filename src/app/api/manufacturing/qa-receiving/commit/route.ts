@@ -10,6 +10,8 @@ import { handleQaReceivingPost } from "../../procurement/qa-receiving/_receiving
 import {
     RECEIVING_POSTING_ENABLED,
     receivingCommitRequestSchema,
+    type FinalReceivingMovement,
+    type FinalReceivingRecord,
     type ReceivingCommitRequest,
     type ReceivingCommitResult
 } from "../_commit-contract";
@@ -29,6 +31,10 @@ function rows(body: unknown): Record<string, unknown>[] {
         : [];
 }
 
+function relationId(value: unknown, key: string): number {
+    return Number(value && typeof value === "object" ? (value as Record<string, unknown>)[key] : value);
+}
+
 async function directusRows(path: string, message: string) {
     const response = await procurementDirectusFetch(path);
     if (!response.ok) throw new CommitError(503, message);
@@ -45,13 +51,13 @@ async function persistedResult(input: ReceivingCommitRequest, idempotentReplay: 
     const receiptNumbers = input.lines.map(line => `REC-${input.shipmentId}-${line.lineId}-${line.storageLotId}`);
     const receiptParams = new URLSearchParams({
         "filter[receipt_no][_in]": receiptNumbers.join(","),
-        fields: "purchase_order_product_id,receipt_no",
+        fields: "purchase_order_product_id,purchase_order_id,receipt_no,product_id,branch_id,lot_id,batch_no,received_quantity,quantity_rejected,unit_price,final_landed_unit_cost,qa_status,expiry_date,received_date",
         limit: "-1"
     });
     const inventoryParams = new URLSearchParams({
         "filter[source_type][_eq]": "procurement",
         "filter[source_reference][_eq]": String(input.shipmentId),
-        fields: "id",
+        fields: "id,product_id,branch_id,lot_id,batch_no",
         limit: "-1"
     });
     const [headerRows, receivingRows, inventoryRows] = await Promise.all([
@@ -67,8 +73,102 @@ async function persistedResult(input: ReceivingCommitRequest, idempotentReplay: 
     const status = Number(header.inventory_status);
     const terminal = status === INVENTORY_STATUS.RECEIVED || status === INVENTORY_STATUS.REJECTED;
     if (!terminal) return null;
-    if (receivingRows.length !== receiptNumbers.length || inventoryRows.length === 0) {
+    if (
+        receivingRows.length !== receiptNumbers.length
+        || new Set(receivingRows.map(row => String(row.receipt_no))).size !== receiptNumbers.length
+        || inventoryRows.length === 0
+    ) {
         throw new CommitError(409, "The purchase order is terminal but its receiving or inventory records are incomplete. Reconciliation is required.");
+    }
+    const receivingIds = receivingRows.map(row => Number(row.purchase_order_product_id));
+    const movementParams = new URLSearchParams({
+        "filter[source_document_id][_in]": receivingIds.join(","),
+        fields: "movement_id,product_id,lot_id,branch_id,transaction_type_id,source_document_id,source_document_no,batch_no,quantity",
+        limit: "-1"
+    });
+    const movementRows = await directusRows(
+        `/items/inventory_movements?${movementParams.toString()}`,
+        "Unable to verify the created inventory movements."
+    );
+    const expectedMovementCount = input.lines.reduce((count, line) =>
+        count + (line.acceptedQuantity > 0 ? 1 : 0) + (line.rejectedQuantity > 0 ? 1 : 0), 0);
+    if (movementRows.length !== expectedMovementCount) {
+        throw new CommitError(409, "The purchase order is terminal but its inventory movements are incomplete. Reconciliation is required.");
+    }
+
+    const finalMovements: FinalReceivingMovement[] = [];
+    const receivingRecords: FinalReceivingRecord[] = [];
+    for (const line of input.lines) {
+        const receiptNo = `REC-${input.shipmentId}-${line.lineId}-${line.storageLotId}`;
+        const receiving = receivingRows.find(row => row.receipt_no === receiptNo);
+        const receivingLineId = Number(receiving?.purchase_order_product_id);
+        if (!receiving || !receivingLineId) {
+            throw new CommitError(409, `Receiving record for line ${line.lineId} could not be correlated.`);
+        }
+        const candidates = movementRows.filter(row => relationId(row.source_document_id, "purchase_order_product_id") === receivingLineId);
+        const routeInputs = [
+            line.acceptedQuantity > 0 ? { kind: "Passed" as const, quantity: line.acceptedQuantity, passed: true } : null,
+            line.rejectedQuantity > 0 ? { kind: "Rejected" as const, quantity: line.rejectedQuantity, passed: false } : null
+        ].filter((route): route is { kind: "Passed" | "Rejected"; quantity: number; passed: boolean } => Boolean(route));
+
+        for (const route of routeInputs) {
+            const matches = candidates.filter(row => {
+                const branchId = relationId(row.branch_id, "id");
+                return (route.passed ? branchId === input.destinationBranchId : branchId !== input.destinationBranchId)
+                    && Number(row.quantity) === route.quantity
+                    && String(row.source_document_no || "") === receiptNo;
+            });
+            if (matches.length !== 1) {
+                throw new CommitError(409, `${route.kind} movement for line ${line.lineId} could not be correlated uniquely.`);
+            }
+            const movement = matches[0];
+            const branchId = relationId(movement.branch_id, "id");
+            const productId = relationId(movement.product_id, "product_id");
+            const storageLotId = relationId(movement.lot_id, "lot_id");
+            const inventoryMatches = inventoryRows.filter(row =>
+                relationId(row.product_id, "product_id") === productId
+                && relationId(row.branch_id, "id") === branchId
+                && relationId(row.lot_id, "lot_id") === storageLotId
+                && String(row.batch_no || "") === String(movement.batch_no || "")
+            );
+            if (inventoryMatches.length !== 1) {
+                throw new CommitError(409, `${route.kind} inventory lot for line ${line.lineId} could not be correlated uniquely.`);
+            }
+            finalMovements.push({
+                movementId: Number(movement.movement_id),
+                lineId: line.lineId,
+                kind: route.kind,
+                receivingLineId,
+                inventoryLotId: Number(inventoryMatches[0].id),
+                productId,
+                storageLotId,
+                branchId,
+                transactionTypeId: relationId(movement.transaction_type_id, "transaction_type_id"),
+                sourceDocumentNo: receiptNo,
+                quantity: route.quantity
+            });
+        }
+
+        receivingRecords.push({
+            receivingRecordId: receivingLineId,
+            lineId: line.lineId,
+            shipmentId: relationId(receiving.purchase_order_id, "purchase_order_id") || input.shipmentId,
+            productId: relationId(receiving.product_id, "product_id"),
+            receiptNumber: String(receiving.receipt_no),
+            branchId: relationId(receiving.branch_id, "id"),
+            storageLotId: relationId(receiving.lot_id, "lot_id"),
+            batchNumber: String(receiving.batch_no || line.supplierBatchNumber),
+            receivedQuantity: Number(receiving.received_quantity || 0),
+            rejectedQuantity: Number(receiving.quantity_rejected || 0),
+            unitPrice: Number(receiving.unit_price || 0),
+            finalLandedUnitCost: Number(receiving.final_landed_unit_cost || 0),
+            qaStatus: String(receiving.qa_status || ""),
+            expirationDate: receiving.expiry_date ? String(receiving.expiry_date) : null,
+            receivedDate: receiving.received_date ? String(receiving.received_date) : null,
+            inventoryLotIds: [...new Set(finalMovements
+                .filter(movement => movement.receivingLineId === receivingLineId)
+                .map(movement => movement.inventoryLotId))]
+        });
     }
     return {
         contractVersion: "v1",
@@ -78,16 +178,18 @@ async function persistedResult(input: ReceivingCommitRequest, idempotentReplay: 
         shipmentId: input.shipmentId,
         status: statusLabel(status),
         workflowRevision: Number(header.workflow_revision || input.workflowRevision),
-        receivingRecordIds: receivingRows.map(row => Number(row.purchase_order_product_id)),
-        inventoryLotIds: inventoryRows.map(row => Number(row.id)),
-        receiptNumbers
+        receivingRecordIds: receivingIds,
+        inventoryLotIds: [...new Set(finalMovements.map(movement => movement.inventoryLotId))],
+        receiptNumbers,
+        receivingRecords,
+        movements: finalMovements
     };
 }
 
 export async function POST(request: Request) {
     try {
         if (!RECEIVING_POSTING_ENABLED) throw new CommitError(503, "Receiving posting is not enabled.");
-        await requirePurchaseOrderModuleAccess({ modulePath: PURCHASE_ORDER_MODULE_PATHS.receiving });
+        const actor = await requirePurchaseOrderModuleAccess({ modulePath: PURCHASE_ORDER_MODULE_PATHS.receiving });
         const idempotencyKey = request.headers.get("Idempotency-Key")?.trim() || "";
         if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(idempotencyKey)) {
             throw new CommitError(400, "A valid UUID Idempotency-Key header is required.");
@@ -157,6 +259,7 @@ export async function POST(request: Request) {
                         quantity_rejected: result.rejectedQuantity,
                         batch_no: line.supplierBatchNumber,
                         lot_id: line.storageLotId,
+                        manufacturing_date: line.manufacturingDate,
                         expiration_date: line.expiryDate,
                         rejection_reason: result.rejectionReason || line.remarks,
                         qa_status: result.acceptedQuantity === 0
@@ -167,7 +270,7 @@ export async function POST(request: Request) {
                     };
                 })
             })
-        }));
+        }), { actorUserId: actor.userId });
         const legacyBody = await legacyResponse.json();
         if (!legacyResponse.ok) {
             throw new CommitError(legacyResponse.status, legacyBody.error || "Failed to post receiving records.");

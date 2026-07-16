@@ -4,7 +4,7 @@ import React from "react";
 import { AlertTriangle, CheckCircle2, ClipboardCheck, PackageCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import type { ReceivingMovementRoute, ReceivingPreview, ShipmentLineItem } from "../types";
+import type { ReceivingCommitResult, ReceivingMovementRoute, ReceivingPreview, ShipmentLineItem } from "../types";
 
 interface MovementPayloadModalProps {
     open: boolean;
@@ -13,6 +13,8 @@ interface MovementPayloadModalProps {
     lineItems: ShipmentLineItem[];
     posting: boolean;
     onCommit: () => void;
+    committedResult: ReceivingCommitResult | null;
+    onFinish: () => void;
 }
 
 interface RouteRow {
@@ -30,7 +32,9 @@ export default function MovementPayloadModal({
     preview,
     lineItems,
     posting,
-    onCommit
+    onCommit,
+    committedResult,
+    onFinish
 }: MovementPayloadModalProps) {
     const [verified, setVerified] = React.useState(false);
 
@@ -55,7 +59,7 @@ export default function MovementPayloadModal({
     const rejectedRows = routeRows.filter(row => row.route.kind === "Rejected");
     const allocations = passedRows.flatMap(row => row.route.allocationDrafts.map(allocation => ({ ...row, allocation })));
 
-    if (!preview) return null;
+    if (!preview && !committedResult) return null;
 
     const movementTable = (rows: RouteRow[], kind: "Passed" | "Rejected") => (
         <section className="space-y-2" aria-label={`${kind} inventory movement drafts`}>
@@ -106,17 +110,100 @@ export default function MovementPayloadModal({
             <DialogContent className="w-[94vw] max-w-[1200px] max-h-[90vh] p-0 overflow-hidden flex flex-col">
                 <DialogHeader className="px-5 pt-5 pb-3 border-b">
                     <DialogTitle className="flex items-center gap-2 text-base">
-                        <ClipboardCheck className="h-5 w-5 text-primary" /> Ledger Movement Verification
+                        <ClipboardCheck className="h-5 w-5 text-primary" />
+                        {committedResult ? "Receiving Posted" : "Ledger Movement Verification"}
                     </DialogTitle>
                     <DialogDescription className="text-xs">
-                        Receipt {preview.receiptNumber} for PO {preview.shipmentId}. Review the movement and allocation records before posting.
+                        {committedResult
+                            ? `Receipt ${committedResult.commitReference} was posted successfully. Confirm the persisted records below.`
+                            : `Receipt ${preview?.receiptNumber} for PO ${preview?.shipmentId}. Review the movement and allocation records before posting.`}
                     </DialogDescription>
                 </DialogHeader>
 
                 <div className="overflow-y-auto px-5 py-4 space-y-6">
+                    {committedResult ? (
+                        <>
+                            <div className="flex flex-wrap gap-x-6 gap-y-1 text-[11px] border-y py-2">
+                                <span><strong>PO:</strong> {committedResult.shipmentId}</span>
+                                <span><strong>Status:</strong> {committedResult.status}</span>
+                                <span><strong>Replay:</strong> {committedResult.idempotentReplay ? "Yes" : "No"}</span>
+                            </div>
+
+                            <section className="space-y-2" aria-label="Committed receiving records">
+                                <div className="flex items-center gap-2">
+                                    <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                                    <h3 className="text-xs font-bold">Committed receiving records</h3>
+                                    <span className="text-[10px] text-muted-foreground">{committedResult.receivingRecords.length}</span>
+                                </div>
+                                <div className="overflow-x-auto border-y">
+                                    <table className="w-full min-w-[1000px] text-[10px]">
+                                        <thead className="bg-muted/40 text-muted-foreground uppercase">
+                                            <tr>
+                                                <th className="px-2 py-2 text-left">Receiving ID</th>
+                                                <th className="px-2 py-2 text-left">PO line / product</th>
+                                                <th className="px-2 py-2 text-left">Receipt / batch</th>
+                                                <th className="px-2 py-2 text-left">Storage lot</th>
+                                                <th className="px-2 py-2 text-right">Received</th>
+                                                <th className="px-2 py-2 text-right">Rejected</th>
+                                                <th className="px-2 py-2 text-left">QA / inventory IDs</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y">
+                                            {committedResult.receivingRecords.map(record => (
+                                                <tr key={record.receivingRecordId}>
+                                                    <td className="px-2 py-2 align-top font-bold">{record.receivingRecordId}</td>
+                                                    <td className="px-2 py-2 align-top">Line {record.lineId}<br /><span className="text-muted-foreground">Product ID {record.productId}</span></td>
+                                                    <td className="px-2 py-2 align-top">{record.receiptNumber}<br /><span className="text-muted-foreground">{record.batchNumber}</span></td>
+                                                    <td className="px-2 py-2 align-top">{record.storageLotId}</td>
+                                                    <td className="px-2 py-2 align-top text-right font-bold tabular-nums">{record.receivedQuantity.toLocaleString()}</td>
+                                                    <td className="px-2 py-2 align-top text-right font-bold tabular-nums">{record.rejectedQuantity.toLocaleString()}</td>
+                                                    <td className="px-2 py-2 align-top">{record.qaStatus || "N/A"}<br /><span className="text-muted-foreground">Inventory: {record.inventoryLotIds.join(", ") || "None"}</span></td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </section>
+
+                            <section className="space-y-2" aria-label="Committed inventory movements">
+                                <div className="flex items-center gap-2">
+                                    <PackageCheck className="h-4 w-4 text-blue-600" />
+                                    <h3 className="text-xs font-bold">Committed inventory movements</h3>
+                                    <span className="text-[10px] text-muted-foreground">{committedResult.movements.length}</span>
+                                </div>
+                                <div className="overflow-x-auto border-y">
+                                    <table className="w-full min-w-[850px] text-[10px]">
+                                        <thead className="bg-muted/40 text-muted-foreground uppercase">
+                                            <tr>
+                                                <th className="px-2 py-2 text-left">Movement ID</th>
+                                                <th className="px-2 py-2 text-left">Kind / receiving ID</th>
+                                                <th className="px-2 py-2 text-left">Inventory lot</th>
+                                                <th className="px-2 py-2 text-left">Branch / storage lot</th>
+                                                <th className="px-2 py-2 text-right">Quantity</th>
+                                                <th className="px-2 py-2 text-left">Source</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y">
+                                            {committedResult.movements.map(movement => (
+                                                <tr key={movement.movementId}>
+                                                    <td className="px-2 py-2 font-bold">{movement.movementId}</td>
+                                                    <td className="px-2 py-2">{movement.kind}<br /><span className="text-muted-foreground">Receiving {movement.receivingLineId}</span></td>
+                                                    <td className="px-2 py-2">{movement.inventoryLotId}</td>
+                                                    <td className="px-2 py-2">Branch {movement.branchId}<br /><span className="text-muted-foreground">Lot {movement.storageLotId}</span></td>
+                                                    <td className="px-2 py-2 text-right font-bold tabular-nums">{movement.quantity.toLocaleString()}</td>
+                                                    <td className="px-2 py-2">{movement.sourceDocumentNo}<br /><span className="text-muted-foreground">Type {movement.transactionTypeId}</span></td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </section>
+                        </>
+                    ) : (
+                    <>
                     <div className="flex flex-wrap gap-x-6 gap-y-1 text-[11px] border-y py-2">
-                        <span><strong>Destination:</strong> {preview.destinationBranch.name} ({preview.destinationBranch.code})</span>
-                        <span><strong>Inspector:</strong> User {preview.generatedBy}</span>
+                        <span><strong>Destination:</strong> {preview!.destinationBranch.name} ({preview!.destinationBranch.code})</span>
+                        <span><strong>Inspector:</strong> User {preview!.generatedBy}</span>
                         <span><strong>Status:</strong> Ready to post</span>
                     </div>
 
@@ -164,24 +251,34 @@ export default function MovementPayloadModal({
                             </div>
                         )}
                     </section>
+                    </>
+                    )}
                 </div>
 
                 <DialogFooter className="px-5 py-4 border-t gap-3 sm:items-center sm:justify-between">
-                    <label className="flex items-start gap-2 text-[11px] font-semibold cursor-pointer select-none">
-                        <input
-                            type="checkbox"
-                            checked={verified}
-                            onChange={event => setVerified(event.target.checked)}
-                            className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-primary"
-                        />
-                        I verified these movement and allocation records.
-                    </label>
-                    <div className="flex justify-end gap-2">
-                        <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Close Preview</Button>
-                        <Button type="button" disabled={!verified || posting || !preview.postingEnabled} onClick={onCommit}>
-                            {posting ? "Posting..." : "Confirm & Post Receiving"}
-                        </Button>
-                    </div>
+                    {committedResult ? (
+                        <div className="flex w-full justify-end">
+                            <Button type="button" onClick={onFinish}>Finish</Button>
+                        </div>
+                    ) : (
+                        <>
+                            <label className="flex items-start gap-2 text-[11px] font-semibold cursor-pointer select-none">
+                                <input
+                                    type="checkbox"
+                                    checked={verified}
+                                    onChange={event => setVerified(event.target.checked)}
+                                    className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-primary"
+                                />
+                                I verified these movement and allocation records.
+                            </label>
+                            <div className="flex justify-end gap-2">
+                                <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Close Preview</Button>
+                                <Button type="button" disabled={!verified || posting || !preview?.postingEnabled} onClick={onCommit}>
+                                    {posting ? "Posting..." : "Confirm & Post Receiving"}
+                                </Button>
+                            </div>
+                        </>
+                    )}
                 </DialogFooter>
             </DialogContent>
         </Dialog>
