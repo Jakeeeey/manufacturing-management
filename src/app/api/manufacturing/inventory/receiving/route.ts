@@ -484,6 +484,25 @@ export async function POST(request: Request) {
             console.error("[Receiving API] Failed to log yield receipt in product ledger:", await ledgerPosRes.text());
         }
 
+        // 6b. Write a positive entry to inventory_movements (Yield Receive)
+        const movRes = await fetch(`${DIRECTUS_URL}/items/inventory_movements`, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+                product_id: pId,
+                branch_id: bId,
+                transaction_type_id: 2, // Job Order Finished Goods / Yield Receive
+                source_document_no: joId,
+                batch_no: finalLotNo,
+                quantity: qty,
+                created_by: 24,
+                remarks: `MFG Run: ${finalLotNo}`
+            })
+        });
+        if (!movRes.ok) {
+            console.error("[Receiving API] Failed to log yield receipt in inventory_movements:", await movRes.text());
+        }
+
         // 7. Update Job Order: status = "Completed", save actual_quantity_produced & variances
         const patchPayload = {
             status: "Completed",
