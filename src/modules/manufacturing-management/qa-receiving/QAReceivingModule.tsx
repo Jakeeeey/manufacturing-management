@@ -31,7 +31,8 @@ export default function QAReceivingModule() {
         previewOpen,
         setPreviewOpen,
         previewAcknowledged,
-        acknowledgePreview,
+        postingInspection,
+        handleCommitReceiving,
         validatingInspection,
         qaSubmissionBlockReason,
         handleSelectShipment,
@@ -195,8 +196,8 @@ export default function QAReceivingModule() {
                 onOpenChange={setPreviewOpen}
                 preview={receivingPreview}
                 lineItems={lineItems}
-                acknowledged={previewAcknowledged}
-                onAcknowledge={acknowledgePreview}
+                posting={postingInspection}
+                onCommit={handleCommitReceiving}
             />
         </div>
     );
