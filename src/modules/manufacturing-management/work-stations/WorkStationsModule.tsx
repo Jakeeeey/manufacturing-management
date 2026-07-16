@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
-import { Plus, Search, Edit, DollarSign, Activity, Settings, Check, LayoutGrid, Image as ImageIcon } from "lucide-react";
+import { Plus, Search, Edit, DollarSign, Activity, Settings, Check, LayoutGrid, Image as ImageIcon, ChevronsLeft, ChevronsRight, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { WorkCenter, AssetRecord, DepartmentRecord } from "@/modules/manufacturing-management/finished-goods/types";
 import { 
@@ -12,7 +12,14 @@ import {
     fetchDepartments 
 } from "@/modules/manufacturing-management/finished-goods/services/finished-goods-api";
 import { Button } from "@/components/ui/button";
-import { formatCurrency, formatNumber } from "@/lib/utils";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue
+} from "@/components/ui/select";
+import { formatNumber } from "@/lib/utils";
 
 export default function WorkStationsModule() {
     const [workCenters, setWorkCenters] = useState<WorkCenter[]>([]);
@@ -22,6 +29,8 @@ export default function WorkStationsModule() {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
+    const [currentPage, setCurrentPage] = useState(1);
+    const [pageSize, setPageSize] = useState(10);
 
     // Modal state
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -96,6 +105,17 @@ export default function WorkStationsModule() {
         });
     }, [workCenters, searchQuery]);
 
+    // Reset page to 1 when search query, filter result length, or page size changes
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [filteredWorkCenters.length, pageSize]);
+
+    const totalPages = Math.ceil(filteredWorkCenters.length / pageSize);
+    const startIndex = (currentPage - 1) * pageSize;
+    const paginatedWorkCenters = useMemo(() => {
+        return filteredWorkCenters.slice(startIndex, startIndex + pageSize);
+    }, [filteredWorkCenters, startIndex, pageSize]);
+
     const handleOpenCreateModal = () => {
         setEditingWorkCenter(null);
         setWcName("");
@@ -135,6 +155,25 @@ export default function WorkStationsModule() {
             return;
         }
 
+        const capacityNum = Number(capacity);
+        if (isNaN(capacityNum) || !Number.isInteger(capacityNum) || capacityNum < 0) {
+            toast.error("Capacity per hour must be a whole number greater than or equal to zero.");
+            return;
+        }
+
+        const costNum = Number(overheadCost);
+        if (isNaN(costNum) || costNum < 0) {
+            toast.error("Overhead cost per hour must be a number greater than or equal to zero.");
+            return;
+        }
+
+        const costStr = String(overheadCost);
+        const decimalPart = costStr.split(".")[1];
+        if (decimalPart && decimalPart.length > 3) {
+            toast.error("Overhead cost per hour cannot have more than 3 decimal places.");
+            return;
+        }
+
         const isDuplicate = workCenters.some(wc => 
             wc.work_center_name?.trim().toLowerCase() === trimmedName.toLowerCase() &&
             wc.work_center_id !== editingWorkCenter?.work_center_id
@@ -152,7 +191,7 @@ export default function WorkStationsModule() {
                 asset_id: selectedAssetId,
                 department_id: selectedDeptId,
                 overhead_cost_per_hour: parseFloat(overheadCost) || 0,
-                capacity_per_hour: parseFloat(capacity) || 0,
+                capacity_per_hour: parseInt(capacity, 10) || 0,
                 is_active: isActive
             };
 
@@ -210,12 +249,24 @@ export default function WorkStationsModule() {
                     </h2>
                     <p className="text-xs text-muted-foreground mt-1 font-medium">Configure manufacturing lines, machinery associations, and standard capacity per hour.</p>
                 </div>
-                <Button 
-                    onClick={handleOpenCreateModal}
-                    className="inline-flex items-center gap-1.5 text-xs font-semibold px-4 py-2.5 rounded-lg shadow-md shadow-primary/20"
-                >
-                    <Plus className="h-4 w-4" /> Add Work Station
-                </Button>
+                <div className="flex items-center gap-2">
+                    <Button 
+                        variant="outline"
+                        size="icon"
+                        onClick={loadData}
+                        disabled={loading}
+                        className="h-9 w-9 border border-border bg-background hover:bg-muted text-muted-foreground hover:text-foreground shrink-0"
+                        title="Refresh Work Stations"
+                    >
+                        <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+                    </Button>
+                    <Button 
+                        onClick={handleOpenCreateModal}
+                        className="inline-flex items-center gap-1.5 text-xs font-semibold px-4 py-2.5 rounded-lg shadow-md shadow-primary/20"
+                    >
+                        <Plus className="h-4 w-4" /> Add Work Station
+                    </Button>
+                </div>
             </div>
 
             {/* Filter and search block */}
@@ -263,13 +314,18 @@ export default function WorkStationsModule() {
                             </tr>
                         </thead>
                         <tbody>
-                            {filteredWorkCenters.map(wc => (
+                            {paginatedWorkCenters.map(wc => (
                                 <tr key={wc.work_center_id} className="border-b border-muted/40 hover:bg-muted/5 transition-colors">
                                     <td className="p-4 pl-6 align-middle font-semibold text-foreground text-sm">
                                         {wc.work_center_name}
                                     </td>
                                     <td className="p-4 align-middle text-muted-foreground font-medium">
-                                        {formatCurrency(wc.overhead_cost_per_hour)}
+                                        {new Intl.NumberFormat("en-PH", {
+                                            style: "currency",
+                                            currency: "PHP",
+                                            minimumFractionDigits: 3,
+                                            maximumFractionDigits: 3
+                                        }).format(Number(wc.overhead_cost_per_hour) || 0)}
                                     </td>
                                     <td className="p-4 align-middle text-muted-foreground font-medium">
                                         {formatNumber(Number(wc.capacity_per_hour) || 0, "en-PH", 0)} units
@@ -344,6 +400,84 @@ export default function WorkStationsModule() {
                 )}
             </div>
 
+            {/* Pagination Controls */}
+            {!loading && filteredWorkCenters.length > 0 && (
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 py-2 text-sm text-muted-foreground px-1">
+                    <div className="flex items-center gap-2">
+                        <span>Rows per page</span>
+                        <Select
+                            value={String(pageSize)}
+                            onValueChange={(val) => {
+                                setPageSize(Number(val));
+                            }}
+                        >
+                            <SelectTrigger className="w-[70px] h-8 bg-background border border-border text-foreground">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent position="popper" sideOffset={4} className="bg-popover border border-border text-foreground">
+                                {[10, 20, 30, 40, 50].map((size) => (
+                                    <SelectItem key={size} value={String(size)}>
+                                        {size}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                        <span className="ml-2 font-medium">
+                            Showing {filteredWorkCenters.length > 0 ? startIndex + 1 : 0}-
+                            {Math.min(startIndex + pageSize, filteredWorkCenters.length)} of{" "}
+                            {filteredWorkCenters.length} items
+                        </span>
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setCurrentPage(1)}
+                            disabled={currentPage === 1}
+                            className="h-8 w-8 p-0"
+                        >
+                            <ChevronsLeft className="h-4 w-4" />
+                        </Button>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                            disabled={currentPage === 1}
+                            className="h-8 px-3 text-foreground"
+                        >
+                            Previous
+                        </Button>
+                        
+                        <div className="flex items-center gap-1 px-2 font-semibold text-xs">
+                            <span>Page</span>
+                            <span className="text-foreground">{currentPage}</span>
+                            <span>of</span>
+                            <span>{totalPages || 1}</span>
+                        </div>
+
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+                            disabled={currentPage === totalPages || totalPages === 0}
+                            className="h-8 px-3 text-foreground"
+                        >
+                            Next
+                        </Button>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setCurrentPage(totalPages)}
+                            disabled={currentPage === totalPages || totalPages === 0}
+                            className="h-8 w-8 p-0"
+                        >
+                            <ChevronsRight className="h-4 w-4" />
+                        </Button>
+                    </div>
+                </div>
+            )}
+
             {/* Custom Create / Edit Modal popup */}
             {isModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md animate-in fade-in duration-200">
@@ -389,10 +523,32 @@ export default function WorkStationsModule() {
                                     <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Overhead Cost / Hour (₱)</label>
                                     <input
                                         type="number"
-                                        step="0.01"
+                                        step="0.001"
+                                        min="0"
                                         required
                                         value={overheadCost}
-                                        onChange={e => setOverheadCost(e.target.value)}
+                                        onChange={e => {
+                                            const val = e.target.value;
+                                            if (val === "" || /^\d*(\.\d{0,3})?$/.test(val)) {
+                                                setOverheadCost(val);
+                                            }
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (["-", "e", "E", "+"].includes(e.key)) {
+                                                e.preventDefault();
+                                            }
+                                        }}
+                                        onPaste={(e) => {
+                                            const pasted = e.clipboardData.getData("text");
+                                            if (/[^0-9.]/.test(pasted)) {
+                                                e.preventDefault();
+                                                return;
+                                            }
+                                            const parts = pasted.split(".");
+                                            if (parts.length > 1 && parts[1].length > 3) {
+                                                e.preventDefault();
+                                            }
+                                        }}
                                         className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
                                     />
                                 </div>
@@ -400,9 +556,22 @@ export default function WorkStationsModule() {
                                     <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Capacity / Hour (Units)</label>
                                     <input
                                         type="number"
+                                        min="0"
+                                        step="1"
                                         required
                                         value={capacity}
                                         onChange={e => setCapacity(e.target.value)}
+                                        onKeyDown={(e) => {
+                                            if (["-", "e", "E", "+", "."].includes(e.key)) {
+                                                e.preventDefault();
+                                            }
+                                        }}
+                                        onPaste={(e) => {
+                                            const pasted = e.clipboardData.getData("text");
+                                            if (/[^0-9]/.test(pasted)) {
+                                                e.preventDefault();
+                                            }
+                                        }}
                                         className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
                                     />
                                 </div>

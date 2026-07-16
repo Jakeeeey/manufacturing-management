@@ -137,6 +137,7 @@ export interface WorkCenter {
     is_active?: boolean;
     asset?: AssetRecord | null;
     department?: DepartmentRecord | null;
+    created_by?: number | null;
 }
 
 export interface QATemplate {
