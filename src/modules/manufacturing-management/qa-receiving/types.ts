@@ -23,6 +23,7 @@ export interface Shipment {
     supplier_id: unknown;
     date_received: string;
     branch_id?: number | null;
+    workflow_revision?: number;
 }
 
 export interface Product {
@@ -98,9 +99,45 @@ export interface ReceivingQaEvaluation {
 export interface ReceivingPreview {
     shipmentId: number;
     receiptNumber: string;
+    workflowRevision: number;
+    postingEnabled: boolean;
     destinationBranch: { id: number; name: string; code: string };
     generatedBy: number;
     lines: ReceivingQaEvaluation[];
+}
+
+export interface ReceivingCommitPayload {
+    contractVersion: "v1";
+    workflowRevision: number;
+    shipmentId: number;
+    receiptNumber: string;
+    destinationBranchId: number;
+    lines: Array<{
+        lineId: number;
+        productId: number;
+        receivedQuantity: number;
+        acceptedQuantity: number;
+        rejectedQuantity: number;
+        storageLotId: number | null;
+        supplierBatchNumber: string;
+        manufacturingDate: string | null;
+        expiryDate: string | null;
+        remarks: string | null;
+        isPackaging: boolean;
+        readings: Array<{ specId: number; actualReading: string }>;
+    }>;
+}
+
+export interface ReceivingCommitResult {
+    mode: "compatibility";
+    commitReference: string;
+    shipmentId: number;
+    status: "Received" | "Rejected";
+    workflowRevision: number;
+    idempotentReplay: boolean;
+    receivingRecordIds: number[];
+    inventoryLotIds: number[];
+    receiptNumbers: string[];
 }
 
 export interface ReceivingMrpAllocationDraft {

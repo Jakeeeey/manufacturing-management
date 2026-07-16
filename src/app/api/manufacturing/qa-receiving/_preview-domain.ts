@@ -64,6 +64,8 @@ export interface ReceivingPreviewLineResult {
 export interface ReceivingPreviewResult {
     shipmentId: number;
     receiptNumber: string;
+    workflowRevision: number;
+    postingEnabled: boolean;
     destinationBranch: ReceivingRouteBranch;
     generatedBy: number;
     lines: ReceivingPreviewLineResult[];
