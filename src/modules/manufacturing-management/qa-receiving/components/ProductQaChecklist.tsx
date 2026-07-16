@@ -7,6 +7,7 @@ interface ProductQaChecklistProps {
     loadState: QaSpecificationLoadState | undefined;
     readings: Record<number, string>;
     onReadingChange: (lineId: number, specId: number, value: string) => void;
+    readOnly: boolean;
 }
 
 function targetLabel(specification: QaSpecificationLoadState["specifications"][number]): string {
@@ -28,7 +29,8 @@ export default function ProductQaChecklist({
     lineId,
     loadState,
     readings,
-    onReadingChange
+    onReadingChange,
+    readOnly
 }: ProductQaChecklistProps) {
     if (!loadState || loadState.status === "loading") {
         return (
@@ -105,6 +107,7 @@ export default function ProductQaChecklist({
                                         step="any"
                                         value={reading}
                                         onChange={event => onReadingChange(lineId, specification.specId, event.target.value)}
+                                        disabled={readOnly}
                                         placeholder="Enter reading"
                                         className="min-w-0 flex-1 h-10 bg-background border text-foreground rounded-l-lg px-3 text-xs font-semibold focus:ring-1 focus:ring-primary outline-none"
                                     />
@@ -124,6 +127,7 @@ export default function ProductQaChecklist({
                                             type="button"
                                             aria-pressed={reading === value}
                                             onClick={() => onReadingChange(lineId, specification.specId, value)}
+                                            disabled={readOnly}
                                             className={`text-xs font-bold transition-colors ${reading === value ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
                                         >
                                             {label}
@@ -138,6 +142,7 @@ export default function ProductQaChecklist({
                                     type="text"
                                     value={reading}
                                     onChange={event => onReadingChange(lineId, specification.specId, event.target.value)}
+                                    disabled={readOnly}
                                     placeholder="Enter observed value"
                                     className="w-full h-10 bg-background border text-foreground rounded-lg px-3 text-xs font-semibold focus:ring-1 focus:ring-primary outline-none"
                                 />

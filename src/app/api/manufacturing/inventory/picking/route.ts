@@ -158,6 +158,26 @@ export async function POST(request: Request) {
                 const errTxt = await ledgerRes.text();
                 throw new Error(`Failed to post WIP issue ledger record: ${ledgerRes.status} - ${errTxt}`);
             }
+
+            // C. Create negative inventory_movements entry (WIP Issue)
+            const movRes = await fetch(`${DIRECTUS_URL}/items/inventory_movements`, {
+                method: "POST",
+                headers,
+                body: JSON.stringify({
+                    branch_id: bId,
+                    product_id: pId,
+                    transaction_type_id: 1, // Job Order Consumage / WIP Issue
+                    source_document_no: joId,
+                    batch_no: lotNo,
+                    quantity: -qty,
+                    created_by: 24,
+                    remarks: `Picked Lot: ${lotNo} for Job Order ${joId}`
+                })
+            });
+
+            if (!movRes.ok) {
+                console.error(`[Picking API] Failed to post inventory_movements record:`, await movRes.text());
+            }
         }
 
         // 2. Transition Job Order status to "In Progress" if it is "Released" or "Proceed"

@@ -50,6 +50,9 @@ export interface ShipmentLineItem {
     quantity_rejected: number;
     base_unit_cost_php: number;
     lot_number?: string;
+    batch_no?: string;
+    lot_id?: number | null;
+    manufacturing_date?: string | null;
     expiration_date?: string;
     branch_id?: number;
     rejection_reason?: string;
@@ -138,6 +141,41 @@ export interface ReceivingCommitResult {
     receivingRecordIds: number[];
     inventoryLotIds: number[];
     receiptNumbers: string[];
+    receivingRecords: FinalReceivingRecord[];
+    movements: FinalReceivingMovement[];
+}
+
+export interface FinalReceivingRecord {
+    receivingRecordId: number;
+    lineId: number;
+    shipmentId: number;
+    productId: number;
+    receiptNumber: string;
+    branchId: number;
+    storageLotId: number;
+    batchNumber: string;
+    receivedQuantity: number;
+    rejectedQuantity: number;
+    unitPrice: number;
+    finalLandedUnitCost: number;
+    qaStatus: string;
+    expirationDate: string | null;
+    receivedDate: string | null;
+    inventoryLotIds: number[];
+}
+
+export interface FinalReceivingMovement {
+    movementId: number;
+    lineId: number;
+    kind: "Passed" | "Rejected";
+    receivingLineId: number;
+    inventoryLotId: number;
+    productId: number;
+    storageLotId: number;
+    branchId: number;
+    transactionTypeId: number;
+    sourceDocumentNo: string;
+    quantity: number;
 }
 
 export interface ReceivingMrpAllocationDraft {
