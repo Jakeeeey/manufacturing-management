@@ -1,11 +1,12 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { toast } from "sonner";
-import { Shipment, Branch, ShipmentLineItem, Product, InspectionRow, StorageLot, QaSpecificationLoadState, QaSpecificationReadings, ReceivingQaEvaluation, ReceivingPreview } from "../types";
+import { Shipment, Branch, ShipmentLineItem, Product, InspectionRow, StorageLot, QaSpecificationLoadState, QaSpecificationReadings, ReceivingCommitPayload, ReceivingQaEvaluation, ReceivingPreview } from "../types";
 import {
     fetchActiveShipments, 
     fetchBranches, 
     fetchShipmentDetails, 
     previewReceivingQa,
+    commitReceivingQa,
     fetchFifoInventory,
     fetchStorageLots,
     fetchProductQaSpecifications
@@ -44,6 +45,9 @@ export function useQAReceiving() {
     const [previewOpen, setPreviewOpen] = useState(false);
     const [previewAcknowledged, setPreviewAcknowledged] = useState(false);
     const [validatingInspection, setValidatingInspection] = useState(false);
+    const [postingInspection, setPostingInspection] = useState(false);
+    const [receivingCommitPayload, setReceivingCommitPayload] = useState<ReceivingCommitPayload | null>(null);
+    const [receivingIdempotencyKey, setReceivingIdempotencyKey] = useState<string | null>(null);
 
     const handleReceiptNumberChange = useCallback((value: string) => {
         previewController.current?.abort();
@@ -53,6 +57,8 @@ export function useQAReceiving() {
         setPreviewOpen(false);
         setPreviewAcknowledged(false);
         setValidatingInspection(false);
+        setReceivingCommitPayload(null);
+        setReceivingIdempotencyKey(null);
     }, []);
 
     const handleDestinationBranchChange = useCallback((value: string) => {
@@ -63,6 +69,8 @@ export function useQAReceiving() {
         setPreviewOpen(false);
         setPreviewAcknowledged(false);
         setValidatingInspection(false);
+        setReceivingCommitPayload(null);
+        setReceivingIdempotencyKey(null);
     }, []);
 
     // FIFO inventory screen states
@@ -90,6 +98,9 @@ export function useQAReceiving() {
         setPreviewOpen(false);
         setPreviewAcknowledged(false);
         setValidatingInspection(false);
+        setPostingInspection(false);
+        setReceivingCommitPayload(null);
+        setReceivingIdempotencyKey(null);
     }, []);
 
     // Filter states for shipments queue
@@ -467,6 +478,15 @@ export function useQAReceiving() {
             }, controller.signal);
             if (controller.signal.aborted) return;
             setReceivingPreview(preview);
+            setReceivingCommitPayload({
+                contractVersion: "v1",
+                workflowRevision: preview.workflowRevision,
+                shipmentId: selectedShipment.shipment_id,
+                receiptNumber: receiptNumber.trim(),
+                destinationBranchId: Number(selectedBranchId),
+                lines: evaluationLines
+            });
+            setReceivingIdempotencyKey(crypto.randomUUID());
             setQaEvaluationResults(Object.fromEntries(preview.lines.map(result => [result.lineId, result])));
             setPreviewAcknowledged(false);
             setPreviewOpen(true);
@@ -494,12 +514,26 @@ export function useQAReceiving() {
         }
     };
 
-    const acknowledgePreview = useCallback(() => {
-        if (!receivingPreview) return;
-        setPreviewAcknowledged(true);
-        setPreviewOpen(false);
-        toast.success("Movement preview acknowledged. No inventory records were written.");
-    }, [receivingPreview]);
+    const handleCommitReceiving = useCallback(async () => {
+        if (!receivingPreview?.postingEnabled || !receivingCommitPayload || !receivingIdempotencyKey) return;
+        setPostingInspection(true);
+        try {
+            const result = await commitReceivingQa(receivingCommitPayload, receivingIdempotencyKey);
+            toast.success(`Receiving ${result.commitReference} posted as ${result.status}.`);
+            clearInspection();
+            await loadShipments({
+                search: searchPO.trim() || undefined,
+                status: searchStatus || undefined,
+                startDate: startDate || undefined,
+                endDate: endDate || undefined,
+                includeReceived: showReceived
+            });
+        } catch (error) {
+            toast.error((error as Error).message || "Failed to post receiving.");
+        } finally {
+            setPostingInspection(false);
+        }
+    }, [receivingPreview, receivingCommitPayload, receivingIdempotencyKey, clearInspection, loadShipments, searchPO, searchStatus, startDate, endDate, showReceived]);
 
     // Load FIFO inventory breakdown
     const handleLoadFifoInventory = async (branchId: string) => {
@@ -625,7 +659,8 @@ export function useQAReceiving() {
         previewOpen,
         setPreviewOpen,
         previewAcknowledged,
-        acknowledgePreview,
+        postingInspection,
+        handleCommitReceiving,
         validatingInspection,
         qaSubmissionBlockReason,
         handleSelectShipment,

@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { z } from "zod";
 import { RECEIVING_QUEUE_INVENTORY_STATUS_IDS } from "../../procurement/_domain";
 import { procurementDirectusFetch } from "../../procurement/_directus";
 import {
@@ -18,35 +17,10 @@ import {
     type ReceivingRouteBranch,
     type ReceivingRouteTransactionType
 } from "../_preview-domain";
+import { RECEIVING_POSTING_ENABLED, receivingPreviewRequestSchema } from "../_commit-contract";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const quantity = z.number().finite().nonnegative();
-const optionalDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable();
-const lineSchema = z.object({
-    lineId: z.number().int().positive(),
-    productId: z.number().int().positive(),
-    receivedQuantity: quantity,
-    acceptedQuantity: quantity,
-    rejectedQuantity: quantity,
-    storageLotId: z.number().int().positive().nullable(),
-    supplierBatchNumber: z.string().max(50),
-    manufacturingDate: optionalDate,
-    expiryDate: optionalDate,
-    remarks: z.string().max(255).nullable(),
-    isPackaging: z.boolean(),
-    readings: z.array(z.object({
-        specId: z.number().int().positive(),
-        actualReading: z.string()
-    }))
-});
-const requestSchema = z.object({
-    shipmentId: z.number().int().positive(),
-    receiptNumber: z.string().trim().min(1).max(50),
-    destinationBranchId: z.number().int().positive(),
-    lines: z.array(lineSchema).min(1)
-});
 
 class ReceivingPreviewError extends Error {
     constructor(message: string, readonly status = 422) {
@@ -165,7 +139,7 @@ async function loadConfiguredBadStockBranch(source: DirectusBranch): Promise<Dir
 export async function POST(request: Request) {
     try {
         const actor = await requirePurchaseOrderModuleAccess({ modulePath: PURCHASE_ORDER_MODULE_PATHS.receiving });
-        const parsed = requestSchema.safeParse(await request.json());
+        const parsed = receivingPreviewRequestSchema.safeParse(await request.json());
         if (!parsed.success) {
             return NextResponse.json({ error: "Invalid receiving preview request.", details: parsed.error.flatten() }, { status: 400 });
         }
@@ -196,7 +170,7 @@ export async function POST(request: Request) {
             .filter(line => line.receivedQuantity > 0)
             .map(line => line.storageLotId as number))];
         const [headerResponse, lineResponse, lotResponse, destinationBranch, movementTypeResponse] = await Promise.all([
-            procurementDirectusFetch(`/items/purchase_order/${shipmentId}?fields=purchase_order_id,inventory_status`),
+            procurementDirectusFetch(`/items/purchase_order/${shipmentId}?fields=purchase_order_id,inventory_status,workflow_revision`),
             procurementDirectusFetch(`/items/purchase_order_products?filter[purchase_order_product_id][_in]=${lineIds.join(",")}&fields=purchase_order_product_id,purchase_order_id,product_id,purchase_intent,job_order_id&limit=${lineIds.length}`),
             procurementDirectusFetch(`/items/lots?filter[lot_id][_in]=${requestedLotIds.join(",")}&fields=lot_id,lot_name&limit=${requestedLotIds.length}`),
             loadBranch(destinationBranchId),
@@ -407,6 +381,8 @@ export async function POST(request: Request) {
             data: {
                 shipmentId,
                 receiptNumber,
+                workflowRevision: Number(header.workflow_revision || 0),
+                postingEnabled: RECEIVING_POSTING_ENABLED,
                 destinationBranch: passedBranch,
                 generatedBy: actor.userId,
                 lines: data
