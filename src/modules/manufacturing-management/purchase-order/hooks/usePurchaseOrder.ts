@@ -171,8 +171,24 @@ export function usePurchaseOrder() {
         }
 
         const lines = shipmentLinesForm;
-        if (!shipmentForm.supplier_id || !shipmentForm.branch_id || !shipmentForm.payment_type || !shipmentForm.price_type || lines.length === 0) {
-            toast.error("Complete the purchase-order header and all required line fields.");
+        if (!shipmentForm.supplier_id) {
+            toast.error("Supplier is required.");
+            return;
+        }
+        if (!shipmentForm.branch_id) {
+            toast.error("Destination Branch is required.");
+            return;
+        }
+        if (!shipmentForm.payment_type) {
+            toast.error("Payment Type is required.");
+            return;
+        }
+        if (!shipmentForm.price_type) {
+            toast.error("Price Type is required.");
+            return;
+        }
+        if (lines.length === 0) {
+            toast.error("Add at least one Purchase Order Line.");
             return;
         }
         const exchangeRate = Number(shipmentForm.exchange_rate);

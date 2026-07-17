@@ -114,6 +114,7 @@ export interface ReceivingPreview {
     postingEnabled: boolean;
     destinationBranch: { id: number; name: string; code: string };
     inspectorName: string;
+    receiptMode: "full" | "partial";
     lines: ReceivingQaEvaluation[];
 }
 
@@ -122,6 +123,7 @@ export interface ReceivingCommitPayload {
     workflowRevision: number;
     shipmentId: number;
     receiptNumber: string;
+    receiptMode: "full" | "partial";
     destinationBranchId: number;
     lines: Array<{
         lineId: number;
@@ -144,7 +146,7 @@ export interface ReceivingCommitResult {
     mode: "compatibility";
     commitReference: string;
     shipmentId: number;
-    status: "Received" | "Rejected";
+    status: "Partially Received" | "Received" | "Rejected";
     workflowRevision: number;
     idempotentReplay: boolean;
     receivingRecordIds: number[];

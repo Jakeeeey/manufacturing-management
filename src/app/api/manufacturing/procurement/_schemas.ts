@@ -43,6 +43,7 @@ export const receivingLineSchema = z.object({
 export const receivingSubmissionSchema = z.object({
     shipmentId: positiveId,
     referenceNumber: z.string().trim().min(1),
+    receiptMode: z.enum(["full", "partial"]).default("full"),
     branchId: positiveId,
     branchName: z.string().trim().min(1),
     lineItemUpdates: z.array(receivingLineSchema).min(1)

@@ -145,7 +145,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Invalid receiving preview request.", details: parsed.error.flatten() }, { status: 400 });
         }
 
-        const { shipmentId, receiptNumber, destinationBranchId, lines } = parsed.data;
+        const { shipmentId, receiptNumber, receiptMode, destinationBranchId, lines } = parsed.data;
         const lineIds = lines.map(line => line.lineId);
         if (new Set(lineIds).size !== lineIds.length) {
             throw new ReceivingPreviewError("Duplicate purchase-order lines are not allowed.");
@@ -190,16 +190,17 @@ export async function POST(request: Request) {
                 ...normalizeReceivingLotAllocations(line.acceptedQuantity, line.acceptedLotAllocations, line.storageLotId)
                     .map(allocation => allocation.storageLotId)
             ]))];
-        const [headerResponse, lineResponse, lotResponse, lotInventoryResponse, destinationBranch, movementTypeResponse] = await Promise.all([
+        const [headerResponse, lineResponse, lotResponse, lotInventoryResponse, receivingResponse, destinationBranch, movementTypeResponse] = await Promise.all([
             procurementDirectusFetch(`/items/purchase_order/${shipmentId}?fields=purchase_order_id,inventory_status,workflow_revision`),
-            procurementDirectusFetch(`/items/purchase_order_products?filter[purchase_order_product_id][_in]=${lineIds.join(",")}&fields=purchase_order_product_id,purchase_order_id,product_id,purchase_intent,job_order_id&limit=${lineIds.length}`),
+            procurementDirectusFetch(`/items/purchase_order_products?filter[purchase_order_product_id][_in]=${lineIds.join(",")}&fields=purchase_order_product_id,purchase_order_id,product_id,purchase_intent,job_order_id,ordered_quantity&limit=${lineIds.length}`),
             procurementDirectusFetch(`/items/lots?filter[lot_id][_in]=${requestedLotIds.join(",")}&fields=lot_id,lot_name,max_batch_capacity&limit=${requestedLotIds.length}`),
             procurementDirectusFetch(`/items/inventory_lots?filter[lot_id][_in]=${requestedLotIds.join(",")}&fields=lot_id,quantity&limit=-1`),
+            procurementDirectusFetch(`/items/purchase_order_receiving?filter[purchase_order_id][_eq]=${shipmentId}&filter[is_reverted][_eq]=0&fields=purchase_order_product_id,received_quantity,quantity_rejected&limit=-1`),
             loadBranch(destinationBranchId),
             procurementDirectusFetch("/items/inventory_transaction_types?fields=transaction_type_id,type_name,direction,origin_table&limit=-1")
         ]);
         if (headerResponse.status === 404) throw new ReceivingPreviewError("Purchase order not found.", 404);
-        if (!headerResponse.ok || !lineResponse.ok || !lotResponse.ok || !lotInventoryResponse.ok || !movementTypeResponse.ok) {
+        if (!headerResponse.ok || !lineResponse.ok || !lotResponse.ok || !lotInventoryResponse.ok || !receivingResponse.ok || !movementTypeResponse.ok) {
             throw new ReceivingPreviewError("Unable to validate receiving preview reference data.", 503);
         }
 
@@ -216,7 +217,17 @@ export async function POST(request: Request) {
         if (poLines.length !== lineIds.length) {
             throw new ReceivingPreviewError("One or more purchase-order lines do not exist.");
         }
+        const previouslyReceivedByLine = new Map<number, { received: number; rejected: number }>();
+        for (const row of rows(await receivingResponse.json())) {
+            const lineId = positiveInteger(row.purchase_order_product_id, "purchase_order_product_id") || positiveInteger(row.purchase_order_product_id);
+            if (!lineId) continue;
+            const current = previouslyReceivedByLine.get(lineId) || { received: 0, rejected: 0 };
+            current.received += Math.max(0, Number(row.received_quantity || 0));
+            current.rejected += Math.max(0, Number(row.quantity_rejected || 0));
+            previouslyReceivedByLine.set(lineId, current);
+        }
         const poLineById = new Map(poLines.map(line => [positiveInteger(line.purchase_order_product_id), line]));
+        const remainingByLine = new Map<number, number>();
         for (const line of lines) {
             const stored = poLineById.get(line.lineId);
             if (!stored || positiveInteger(stored.purchase_order_id, "purchase_order_id") !== shipmentId) {
@@ -233,6 +244,23 @@ export async function POST(request: Request) {
             if (intent !== "MRP_Demand" && intent !== "Buffer_Stock") {
                 throw new ReceivingPreviewError(`Line ${line.lineId} has an invalid purchase intent.`);
             }
+            const orderedQuantity = Number(stored.ordered_quantity || 0);
+            const previous = previouslyReceivedByLine.get(line.lineId) || { received: 0, rejected: 0 };
+            const remainingQuantity = Math.max(0, orderedQuantity - previous.received);
+            if (!Number.isFinite(orderedQuantity) || orderedQuantity <= 0) {
+                throw new ReceivingPreviewError(`Line ${line.lineId} has an invalid ordered quantity.`);
+            }
+            if (line.receivedQuantity > remainingQuantity + 1e-9) {
+                throw new ReceivingPreviewError(`Line ${line.lineId} exceeds its remaining quantity of ${remainingQuantity}.`);
+            }
+            remainingByLine.set(line.lineId, remainingQuantity);
+        }
+        const completesPurchaseOrder = lines.every(line => Math.abs(line.receivedQuantity - (remainingByLine.get(line.lineId) || 0)) <= 1e-9);
+        if (receiptMode === "full" && !completesPurchaseOrder) {
+            throw new ReceivingPreviewError("Full receipt requires every purchase-order line to account for its remaining quantity.");
+        }
+        if (receiptMode === "partial" && completesPurchaseOrder) {
+            throw new ReceivingPreviewError("This receipt completes the purchase order. Select Full Receipt instead.");
         }
 
         const storageLots = rows(await lotResponse.json());
@@ -409,6 +437,8 @@ export async function POST(request: Request) {
             }
             return {
                 ...result,
+                previouslyReceivedQuantity: previouslyReceivedByLine.get(line.lineId)?.received || 0,
+                remainingQuantity: remainingByLine.get(line.lineId) || 0,
                 routes: result.receivedQuantity === 0
                     ? []
                     : buildReceivingRoutes({
@@ -435,6 +465,7 @@ export async function POST(request: Request) {
             data: {
                 shipmentId,
                 receiptNumber,
+                receiptMode,
                 workflowRevision: Number(header.workflow_revision || 0),
                 postingEnabled: RECEIVING_POSTING_ENABLED,
                 destinationBranch: passedBranch,

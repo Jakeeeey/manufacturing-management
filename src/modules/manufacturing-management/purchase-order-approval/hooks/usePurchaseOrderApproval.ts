@@ -87,6 +87,17 @@ export function usePurchaseOrderApproval(stage: PurchaseOrderDecisionStage) {
         await load();
     };
 
+    const awaitingPayment = async (id: number) => {
+        if (!approvalDetail) throw new Error("Approval details are not loaded.");
+        await submitPurchaseOrderWorkflowAction(id, {
+            action: "awaiting_payment",
+            workflowRevision: Number(approvalDetail.order.workflow_revision || 0),
+            expectedRuleId: approvalDetail.matchedRule.ruleId
+        }, stage);
+        setSelectedShipment(null);
+        await load();
+    };
+
     const reject = async (id: number, remarks: string) => {
         if (!approvalDetail) throw new Error("Approval details are not loaded.");
         await submitPurchaseOrderWorkflowAction(id, {
@@ -99,7 +110,19 @@ export function usePurchaseOrderApproval(stage: PurchaseOrderDecisionStage) {
         await load();
     };
 
+    const cancelFinance = async (id: number, remarks: string) => {
+        if (!approvalDetail) throw new Error("Approval details are not loaded.");
+        await submitPurchaseOrderWorkflowAction(id, {
+            action: "cancel",
+            workflowRevision: Number(approvalDetail.order.workflow_revision || 0),
+            expectedRuleId: approvalDetail.matchedRule.ruleId,
+            remarks
+        }, stage);
+        setSelectedShipment(null);
+        await load();
+    };
+
     return {
-        loading, shipments, suppliers, selectedShipment, setSelectedShipment, selectedShipmentLines, approvalDetail, approve, reject, load
+        loading, shipments, suppliers, selectedShipment, setSelectedShipment, selectedShipmentLines, approvalDetail, approve, awaitingPayment, reject, cancelFinance, load
     };
 }

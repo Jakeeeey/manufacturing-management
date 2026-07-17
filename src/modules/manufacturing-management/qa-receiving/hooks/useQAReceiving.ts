@@ -43,6 +43,7 @@ export function useQAReceiving() {
 
     // Inspection form state
     const [receiptNumber, setReceiptNumber] = useState<string>("");
+    const [receiptMode, setReceiptMode] = useState<"full" | "partial">("full");
     const [selectedBranchId, setSelectedBranchId] = useState<string>("");
     const [inspectionRows, setInspectionRows] = useState<Record<number, InspectionRow>>({});
     const [qaSpecificationStates, setQaSpecificationStates] = useState<Record<number, QaSpecificationLoadState>>({});
@@ -96,6 +97,7 @@ export function useQAReceiving() {
         setLoadingLines(false);
         setInspectionRows({});
         setReceiptNumber("");
+        setReceiptMode("full");
         setSelectedBranchId("");
         setQaSpecificationStates({});
         setQaReadings({});
@@ -228,6 +230,7 @@ export function useQAReceiving() {
         detailController.current = controller;
         setSelectedShipment(shipment);
         setReceiptNumber("");
+        setReceiptMode("full");
         setQaSpecificationStates({});
         setQaReadings({});
         setQaEvaluationResults({});
@@ -522,6 +525,7 @@ export function useQAReceiving() {
             const preview = await previewReceivingQa({
                 shipmentId: selectedShipment.shipment_id,
                 receiptNumber: receiptNumber.trim(),
+                receiptMode,
                 destinationBranchId: Number(selectedBranchId),
                 lines: evaluationLines
             }, controller.signal);
@@ -532,6 +536,7 @@ export function useQAReceiving() {
                 workflowRevision: preview.workflowRevision,
                 shipmentId: selectedShipment.shipment_id,
                 receiptNumber: receiptNumber.trim(),
+                receiptMode,
                 destinationBranchId: Number(selectedBranchId),
                 lines: evaluationLines
             };
@@ -717,6 +722,8 @@ export function useQAReceiving() {
         setSelectedBranchId: handleDestinationBranchChange,
         receiptNumber,
         setReceiptNumber: handleReceiptNumberChange,
+        receiptMode,
+        setReceiptMode,
         inspectionRows,
         qaSpecificationStates,
         qaReadings,

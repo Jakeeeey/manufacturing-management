@@ -1,6 +1,6 @@
 /* eslint-disable */
 import { DIRECTUS_URL, headers } from "../_directus";
-import { canonicalBatchNumber, calculatePurchaseLineAmounts, INVENTORY_STATUS, inventoryStatusToPurchaseOrderStatus, inventoryStatusToShipmentStatus, RECEIVING_QUEUE_INVENTORY_STATUS_IDS, shipmentStatusToInventoryStatus, type ShipmentStatusLabel } from "../_domain";
+import { canonicalBatchNumber, calculatePurchaseLineAmounts, INVENTORY_STATUS, inventoryStatusToPurchaseOrderStatus, inventoryStatusToShipmentStatus, PAYMENT_STATUS, RECEIVING_QUEUE_INVENTORY_STATUS_IDS, shipmentStatusToInventoryStatus, type ShipmentStatusLabel } from "../_domain";
 import { DirectusShipment } from "@/modules/manufacturing-management/procurement/types";
 import type { PurchaseOrderListQuery } from "../../purchase-orders/_schemas";
 
@@ -14,6 +14,7 @@ interface DirectusPO {
     total_amount?: number | string | null;
     gross_amount?: number | string | null;
     inventory_status?: number | null;
+    payment_status?: number | null;
     date_encoded?: string | null;
     branch_id?: number | null;
     payment_type?: number | null;
@@ -144,8 +145,8 @@ function mapPurchaseOrder(po: DirectusPO, suppliers: ReadonlyMap<number, Directu
     const storedSupplierId = supplierId(po.supplier_name);
     const supplier = storedSupplierId ? suppliers.get(storedSupplierId) || storedSupplierId : null;
     const status = canonicalStatus
-        ? inventoryStatusToPurchaseOrderStatus(po.inventory_status)
-        : inventoryStatusToShipmentStatus(po.inventory_status);
+        ? inventoryStatusToPurchaseOrderStatus(po.inventory_status, po.payment_status)
+        : inventoryStatusToShipmentStatus(po.inventory_status, po.payment_status);
 
     return {
         shipment_id: po.purchase_order_id,
@@ -157,6 +158,8 @@ function mapPurchaseOrder(po: DirectusPO, suppliers: ReadonlyMap<number, Directu
         total_foreign_currency: foreignCurrency,
         exchange_rate: rate,
         total_php_value: totalPhp,
+        inventory_status: po.inventory_status || null,
+        payment_status: po.payment_status || null,
         status,
         remark: po.remark || "",
         created_at: po.date_encoded || "",
@@ -222,13 +225,17 @@ async function addApprovalStageFilter(clauses: Record<string, unknown>[], query:
     if (!query.approvalStage) return;
 
     if (!query.status || query.status === "Requested") {
-        clauses.push({ inventory_status: { _eq: INVENTORY_STATUS.REQUESTED } });
         if (query.approvalStage === "Plant") {
-            clauses.push({ approver_id: { _null: true } });
+            clauses.push({
+                _and: [
+                    { inventory_status: { _eq: INVENTORY_STATUS.REQUESTED } },
+                    { approver_id: { _null: true } }
+                ]
+            });
         } else {
             clauses.push({
                 _and: [
-                    { approver_id: { _nnull: true } },
+                    { inventory_status: { _in: [INVENTORY_STATUS.REQUESTED, INVENTORY_STATUS.APPROVED] } },
                     { finance_id: { _null: true } },
                     { approval_requires_finance: { _eq: 1 } }
                 ]
@@ -241,6 +248,17 @@ async function addApprovalStageFilter(clauses: Record<string, unknown>[], query:
         clauses.push({ inventory_status: { _eq: INVENTORY_STATUS.APPROVED } });
         clauses.push({
             [query.approvalStage === "Plant" ? "approver_id" : "finance_id"]: { _nnull: true }
+        });
+        return;
+    }
+
+    if (query.status === "Awaiting Payment") {
+        clauses.push({
+            _and: [
+                { inventory_status: { _in: [INVENTORY_STATUS.REQUESTED, INVENTORY_STATUS.APPROVED] } },
+                { payment_status: { _eq: PAYMENT_STATUS.AWAITING_PAYMENT } },
+                { [query.approvalStage === "Plant" ? "approver_id" : "finance_id"]: { _nnull: true } }
+            ]
         });
         return;
     }
@@ -277,7 +295,14 @@ export async function fetchIncomingShipmentsPage(query: PurchaseOrderListQuery) 
                 ]
             }
         });
-    } else if (query.status) {
+    } else if (query.status === "Awaiting Payment") {
+        clauses.push({
+            _and: [
+                { inventory_status: { _in: [INVENTORY_STATUS.REQUESTED, INVENTORY_STATUS.APPROVED] } },
+                { payment_status: { _eq: PAYMENT_STATUS.AWAITING_PAYMENT } }
+            ]
+        });
+    } else if (query.status && !(query.approvalStage && query.status === "Requested")) {
         clauses.push({ inventory_status: { _eq: shipmentStatusToInventoryStatus(query.status) } });
     }
     await addApprovalStageFilter(clauses, query);
@@ -287,7 +312,7 @@ export async function fetchIncomingShipmentsPage(query: PurchaseOrderListQuery) 
     if (clauses.length > 1) filter._and = clauses;
 
     const params = new URLSearchParams({
-        fields: "purchase_order_id,purchase_order_no,reference,supplier_name,date_received,lead_time_receiving,total_amount,gross_amount,inventory_status,date_encoded,branch_id,payment_type,price_type,exchange_rate,total_foreign_currency,currency_code,workflow_revision,remark,approver_id,finance_id,date_approved,date_financed,approval_rule_id,approval_requires_finance,approval_allow_self_approval",
+        fields: "purchase_order_id,purchase_order_no,reference,supplier_name,date_received,lead_time_receiving,total_amount,gross_amount,inventory_status,payment_status,date_encoded,branch_id,payment_type,price_type,exchange_rate,total_foreign_currency,currency_code,workflow_revision,remark,approver_id,finance_id,date_approved,date_financed,approval_rule_id,approval_requires_finance,approval_allow_self_approval",
         limit: String(query.limit),
         offset: String((query.page - 1) * query.limit),
         sort: `${query.direction === "desc" ? "-" : ""}${query.sort}`,

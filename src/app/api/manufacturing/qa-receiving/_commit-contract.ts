@@ -5,6 +5,11 @@ import { receivingLotAllocationError } from "./_lot-allocation";
 export const RECEIVING_COMMIT_CONTRACT_VERSION = "v1" as const;
 export const RECEIVING_POSTING_ENABLED = true;
 
+export function receiptNumberForLine(receiptNumber: string, lineId: number): string {
+    const suffix = `-${lineId}`;
+    return `${receiptNumber.slice(0, Math.max(1, 50 - suffix.length))}${suffix}`;
+}
+
 const quantity = z.number().finite().nonnegative();
 const optionalDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable();
 const acceptedLotAllocation = z.object({
@@ -43,6 +48,7 @@ export const receivingCommitLineSchema = z.object({
 export const receivingPreviewRequestSchema = z.object({
     shipmentId: z.number().int().positive(),
     receiptNumber: z.string().trim().min(1).max(50),
+    receiptMode: z.enum(["full", "partial"]).default("full"),
     destinationBranchId: z.number().int().positive(),
     lines: z.array(receivingCommitLineSchema).min(1)
 });
@@ -91,7 +97,7 @@ export interface ReceivingCommitResult {
     commitReference: string;
     idempotentReplay: boolean;
     shipmentId: number;
-    status: "Received" | "Rejected";
+    status: "Partially Received" | "Received" | "Rejected";
     workflowRevision: number;
     receivingRecordIds: number[];
     inventoryLotIds: number[];

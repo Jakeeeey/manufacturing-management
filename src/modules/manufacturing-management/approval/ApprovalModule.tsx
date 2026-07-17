@@ -5,6 +5,7 @@ import {
     CalendarDays,
     Check,
     CheckCircle2,
+    CircleDollarSign,
     Clock3,
     FileCheck2,
     History,
@@ -16,11 +17,13 @@ import {
 import { toast } from "sonner";
 import { usePurchaseOrderApproval } from "../purchase-order-approval/hooks/usePurchaseOrderApproval";
 import type { PurchaseOrderDecisionStage } from "../purchase-order/types";
+import { INVENTORY_STATUS } from "@/app/api/manufacturing/procurement/_domain";
 
-type QueueTab = "Requested" | "Approved" | "Rejected";
+type QueueTab = "Requested" | "Awaiting Payment" | "Approved" | "Rejected";
 
 const queueTabs: Array<{ value: QueueTab; label: string; icon: typeof Clock3 }> = [
     { value: "Requested", label: "Pending", icon: Clock3 },
+    { value: "Awaiting Payment", label: "Awaiting Payment", icon: CircleDollarSign },
     { value: "Approved", label: "Approved", icon: CheckCircle2 },
     { value: "Rejected", label: "Rejected", icon: X }
 ];
@@ -37,9 +40,17 @@ function statusBadge(status: string) {
     const styles: Record<string, string> = {
         Requested: "border-amber-300 bg-amber-50 text-amber-700",
         Approved: "border-emerald-300 bg-emerald-50 text-emerald-700",
+        "Awaiting Payment": "border-orange-300 bg-orange-50 text-orange-700",
+        Cancelled: "border-zinc-300 bg-zinc-50 text-zinc-700",
         Rejected: "border-red-300 bg-red-50 text-red-700"
     };
     return <span className={`rounded border px-2 py-1 text-[10px] font-bold uppercase ${styles[status] || "border-border bg-muted text-muted-foreground"}`}>{status}</span>;
+}
+
+function statusForApprovalStage(status: string, inventoryStatus: number | null | undefined, stage: PurchaseOrderDecisionStage) {
+    if (stage !== "Plant") return status;
+    if (Number(inventoryStatus) === INVENTORY_STATUS.APPROVED) return "Approved";
+    return status === "Awaiting Payment" ? "Requested" : status;
 }
 
 export default function ApprovalModule({ stage }: { stage: PurchaseOrderDecisionStage }) {
@@ -52,7 +63,9 @@ export default function ApprovalModule({ stage }: { stage: PurchaseOrderDecision
         selectedShipmentLines,
         approvalDetail,
         approve,
+        awaitingPayment,
         reject,
+        cancelFinance,
         load
     } = usePurchaseOrderApproval(stage);
     const [tab, setTab] = useState<QueueTab>("Requested");
@@ -60,6 +73,12 @@ export default function ApprovalModule({ stage }: { stage: PurchaseOrderDecision
     const [eta, setEta] = useState("");
     const [remarks, setRemarks] = useState("");
     const [submitting, setSubmitting] = useState<"approve" | "reject" | null>(null);
+    const visibleQueueTabs = useMemo(
+        () => stage === "Finance"
+            ? queueTabs.filter(item => item.value !== "Approved")
+            : queueTabs.filter(item => item.value !== "Awaiting Payment"),
+        [stage]
+    );
 
     useEffect(() => {
         const timeout = window.setTimeout(() => {
@@ -92,8 +111,13 @@ export default function ApprovalModule({ stage }: { stage: PurchaseOrderDecision
         }
         try {
             setSubmitting("approve");
-            await approve(selectedShipment.shipment_id, approvalDetail.stage === "Plant" ? eta : undefined);
-            toast.success(approvalDetail.stage === "Finance" ? "Finance approval completed." : "Plant approval completed.");
+            if (approvalDetail.stage === "Finance") {
+                await awaitingPayment(selectedShipment.shipment_id);
+                toast.success("Finance approval completed. The purchase order is awaiting payment.");
+            } else {
+                await approve(selectedShipment.shipment_id, eta);
+                toast.success("Plant approval completed.");
+            }
         } catch (error) {
             const message = (error as Error).message || "Approval failed.";
             toast.error(message);
@@ -118,8 +142,13 @@ export default function ApprovalModule({ stage }: { stage: PurchaseOrderDecision
         }
         try {
             setSubmitting("reject");
-            await reject(selectedShipment.shipment_id, remarks.trim());
-            toast.success("Purchase order rejected.");
+            if (approvalDetail.stage === "Finance") {
+                await cancelFinance(selectedShipment.shipment_id, remarks.trim());
+                toast.success("Purchase order cancelled by Finance.");
+            } else {
+                await reject(selectedShipment.shipment_id, remarks.trim());
+                toast.success("Purchase order rejected.");
+            }
         } catch (error) {
             const message = (error as Error).message || "Rejection failed.";
             toast.error(message);
@@ -147,7 +176,7 @@ export default function ApprovalModule({ stage }: { stage: PurchaseOrderDecision
                 <section className="flex min-h-[420px] flex-col overflow-hidden rounded-md border bg-card">
                     <div className="border-b p-3">
                         <div className="mb-3 flex flex-wrap gap-1 rounded-md border bg-muted/30 p-1" aria-label="Filter purchase orders by status">
-                            {queueTabs.map(item => {
+                            {visibleQueueTabs.map(item => {
                                 const Icon = item.icon;
                                 return (
                                     <button
@@ -183,9 +212,11 @@ export default function ApprovalModule({ stage }: { stage: PurchaseOrderDecision
                                 ? order.supplier_id?.supplier_name
                                 : suppliers.find(item => item.id === Number(order.supplier_id))?.supplier_name;
                             const selected = selectedShipment?.shipment_id === order.shipment_id;
-                            const stage = order.status === "Requested"
-                                ? order.approver_id && order.approval_requires_finance ? "Finance" : "Plant"
-                                : order.status;
+                            const displayedStatus = statusForApprovalStage(order.status, order.inventory_status, stage);
+                            const pendingStageLabel = stage === "Plant"
+                                ? (!order.approver_id && Number(order.inventory_status) === INVENTORY_STATUS.REQUESTED ? "Plant" : "")
+                                : (order.approval_requires_finance && !order.finance_id ? "Finance" : "");
+                            const workflowStage = pendingStageLabel || displayedStatus;
                             return (
                                 <button
                                     key={order.shipment_id}
@@ -198,10 +229,10 @@ export default function ApprovalModule({ stage }: { stage: PurchaseOrderDecision
                                             <div className="truncate text-xs font-bold">{order.purchase_order_no || order.reference_number}</div>
                                             <div className="mt-1 truncate text-[11px] text-muted-foreground">{supplier || "Unknown supplier"}</div>
                                         </div>
-                                        {statusBadge(order.status)}
+                                        {statusBadge(displayedStatus)}
                                     </div>
                                     <div className="mt-2 flex items-center justify-between text-[10px] text-muted-foreground">
-                                        <span>{stage}</span>
+                                        <span>{workflowStage}</span>
                                         <span className="font-mono font-semibold text-foreground">{money(order.total_php_value)}</span>
                                     </div>
                                 </button>
@@ -224,7 +255,7 @@ export default function ApprovalModule({ stage }: { stage: PurchaseOrderDecision
                                 <div>
                                     <div className="flex items-center gap-2">
                                         <h2 className="text-sm font-bold">{approvalDetail.order.purchase_order_no || selectedShipment.reference_number}</h2>
-                                        {statusBadge(selectedShipment.status)}
+                                        {statusBadge(statusForApprovalStage(selectedShipment.status, selectedShipment.inventory_status, stage))}
                                     </div>
                                     <p className="mt-1 text-xs text-muted-foreground">{supplierName}</p>
                                 </div>
@@ -272,10 +303,10 @@ export default function ApprovalModule({ stage }: { stage: PurchaseOrderDecision
                                     </label>
                                     <div className="flex flex-wrap justify-end gap-2">
                                         <button type="button" onClick={handleReject} disabled={submitting !== null} className="inline-flex h-9 items-center gap-1.5 rounded-md bg-red-600 px-3 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50">
-                                            {submitting === "reject" ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />} Reject
+                                            {submitting === "reject" ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />} {approvalDetail.stage === "Finance" ? "Cancel PO" : "Reject"}
                                         </button>
                                         <button type="button" onClick={handleApprove} disabled={submitting !== null} className="inline-flex h-9 items-center gap-1.5 rounded-md bg-emerald-600 px-3 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">
-                                            {submitting === "approve" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Approve {approvalDetail.stage}
+                                            {submitting === "approve" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} {approvalDetail.stage === "Finance" ? "Move to Awaiting Payment" : "Approve Plant"}
                                         </button>
                                     </div>
                                 </div>

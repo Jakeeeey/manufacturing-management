@@ -12,6 +12,8 @@ interface ShipmentInspectionFormProps {
     storageLots: StorageLot[];
     receiptNumber: string;
     setReceiptNumber: (val: string) => void;
+    receiptMode: "full" | "partial";
+    setReceiptMode: (val: "full" | "partial") => void;
     selectedBranchId: string;
     setSelectedBranchId: (val: string) => void;
     inspectionRows: Record<number, InspectionRow>;
@@ -39,6 +41,8 @@ export default function ShipmentInspectionForm({
     storageLots,
     receiptNumber,
     setReceiptNumber,
+    receiptMode,
+    setReceiptMode,
     selectedBranchId,
     setSelectedBranchId,
     inspectionRows,
@@ -262,7 +266,7 @@ export default function ShipmentInspectionForm({
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 border-b bg-background shrink-0">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 border-b bg-background shrink-0">
                 <div className="space-y-1">
                     <label htmlFor="receiving-receipt-number" className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">
                         Receiving Ticket / DR Number <span className="text-red-500">*</span>
@@ -282,6 +286,30 @@ export default function ShipmentInspectionForm({
                         />
                     </div>
                 </div>
+
+                <fieldset className="space-y-1">
+                    <legend className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">Receiving Mode</legend>
+                    <div className="grid grid-cols-2 gap-1 rounded-xl border p-1 h-10">
+                        <button
+                            type="button"
+                            disabled={readOnly}
+                            onClick={() => setReceiptMode("full")}
+                            aria-pressed={receiptMode === "full"}
+                            className={`rounded-lg text-[10px] font-bold transition-colors ${receiptMode === "full" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}
+                        >
+                            Full Receipt
+                        </button>
+                        <button
+                            type="button"
+                            disabled={readOnly}
+                            onClick={() => setReceiptMode("partial")}
+                            aria-pressed={receiptMode === "partial"}
+                            className={`rounded-lg text-[10px] font-bold transition-colors ${receiptMode === "partial" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}
+                        >
+                            Partial Receipt
+                        </button>
+                    </div>
+                </fieldset>
 
                 <div className="space-y-1">
                     <label htmlFor="receiving-branch" className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">

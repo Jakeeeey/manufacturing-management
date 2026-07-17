@@ -13,7 +13,8 @@ import {
     type FinalReceivingMovement,
     type FinalReceivingRecord,
     type ReceivingCommitRequest,
-    type ReceivingCommitResult
+    type ReceivingCommitResult,
+    receiptNumberForLine
 } from "../_commit-contract";
 import type { ReceivingPreviewResult } from "../_preview-domain";
 import { POST as previewReceiving } from "../preview/route";
@@ -42,17 +43,15 @@ async function directusRows(path: string, message: string) {
     return rows(await response.json());
 }
 
-function statusLabel(status: number): "Received" | "Rejected" {
+function statusLabel(status: number): "Partially Received" | "Received" | "Rejected" {
+    if (status === INVENTORY_STATUS.PARTIALLY_RECEIVED) return "Partially Received";
     if (status === INVENTORY_STATUS.REJECTED) return "Rejected";
     if (status === INVENTORY_STATUS.RECEIVED) return "Received";
     throw new CommitError(500, "Receiving records were posted but the purchase order did not reach a terminal receiving status.");
 }
 
 async function persistedResult(input: ReceivingCommitRequest, idempotentReplay: boolean): Promise<ReceivingCommitResult | null> {
-    const receiptNumbers = input.lines.map(line => {
-        const primaryLotId = line.storageLotId || normalizeReceivingLotAllocations(line.acceptedQuantity, line.acceptedLotAllocations, line.storageLotId)[0]?.storageLotId;
-        return `REC-${input.shipmentId}-${line.lineId}-${primaryLotId}`;
-    });
+    const receiptNumbers = input.lines.map(line => receiptNumberForLine(input.receiptNumber, line.lineId));
     const receiptParams = new URLSearchParams({
         "filter[receipt_no][_in]": receiptNumbers.join(","),
         fields: "purchase_order_product_id,purchase_order_id,receipt_no,product_id,branch_id,lot_id,batch_no,received_quantity,quantity_rejected,unit_price,final_landed_unit_cost,qa_status,expiry_date,received_date",
@@ -75,14 +74,16 @@ async function persistedResult(input: ReceivingCommitRequest, idempotentReplay: 
     const header = headerRows[0];
     if (!header) throw new CommitError(404, "Purchase order not found.");
     const status = Number(header.inventory_status);
-    const terminal = status === INVENTORY_STATUS.RECEIVED || status === INVENTORY_STATUS.REJECTED;
-    if (!terminal) return null;
+    const receivingPosted = status === INVENTORY_STATUS.PARTIALLY_RECEIVED
+        || status === INVENTORY_STATUS.RECEIVED
+        || status === INVENTORY_STATUS.REJECTED;
+    if (!receivingPosted) return null;
     if (
         receivingRows.length !== receiptNumbers.length
         || new Set(receivingRows.map(row => String(row.receipt_no))).size !== receiptNumbers.length
         || inventoryRows.length === 0
     ) {
-        throw new CommitError(409, "The purchase order is terminal but its receiving or inventory records are incomplete. Reconciliation is required.");
+        throw new CommitError(409, "The purchase order status changed but its receiving or inventory records are incomplete. Reconciliation is required.");
     }
     const receivingIds = receivingRows.map(row => Number(row.purchase_order_product_id));
     const movementParams = new URLSearchParams({
@@ -98,7 +99,7 @@ async function persistedResult(input: ReceivingCommitRequest, idempotentReplay: 
         count + normalizeReceivingLotAllocations(line.acceptedQuantity, line.acceptedLotAllocations, line.storageLotId).length
         + (line.rejectedQuantity > 0 ? 1 : 0), 0);
     if (movementRows.length !== expectedMovementCount) {
-        throw new CommitError(409, "The purchase order is terminal but its inventory movements are incomplete. Reconciliation is required.");
+        throw new CommitError(409, "The purchase order status changed but its inventory movements are incomplete. Reconciliation is required.");
     }
 
     const finalMovements: FinalReceivingMovement[] = [];
@@ -106,7 +107,7 @@ async function persistedResult(input: ReceivingCommitRequest, idempotentReplay: 
     for (const line of input.lines) {
         const acceptedLotAllocations = normalizeReceivingLotAllocations(line.acceptedQuantity, line.acceptedLotAllocations, line.storageLotId);
         const primaryLotId = line.storageLotId || acceptedLotAllocations[0]?.storageLotId;
-        const receiptNo = `REC-${input.shipmentId}-${line.lineId}-${primaryLotId}`;
+        const receiptNo = receiptNumberForLine(input.receiptNumber, line.lineId);
         const receiving = receivingRows.find(row => row.receipt_no === receiptNo);
         const receivingLineId = Number(receiving?.purchase_order_product_id);
         if (!receiving || !receivingLineId) {
@@ -222,6 +223,7 @@ export async function POST(request: Request) {
             body: JSON.stringify({
                 shipmentId: parsed.data.shipmentId,
                 receiptNumber: parsed.data.receiptNumber,
+                receiptMode: parsed.data.receiptMode,
                 destinationBranchId: parsed.data.destinationBranchId,
                 lines: parsed.data.lines
             })
@@ -249,9 +251,10 @@ export async function POST(request: Request) {
         for (const poLine of poLines) {
             const lineId = Number(poLine.purchase_order_product_id);
             const ordered = Number(poLine.ordered_quantity || 0);
-            const inspected = previewByLine.get(lineId)?.receivedQuantity;
-            if (!Number.isFinite(ordered) || ordered <= 0 || inspected !== ordered) {
-                throw new CommitError(422, `Line ${lineId} must account for all ${ordered} ordered unit(s) before final receiving can be posted.`);
+            const previewLine = previewByLine.get(lineId);
+            const remaining = Number(previewLine?.remainingQuantity);
+            if (!Number.isFinite(ordered) || ordered <= 0 || !previewLine || previewLine.receivedQuantity > remaining + 1e-9) {
+                throw new CommitError(422, `Line ${lineId} exceeds its remaining receivable quantity.`);
             }
         }
 
@@ -262,6 +265,7 @@ export async function POST(request: Request) {
             body: JSON.stringify({
                 shipmentId: parsed.data.shipmentId,
                 referenceNumber: parsed.data.receiptNumber,
+                receiptMode: parsed.data.receiptMode,
                 branchId: parsed.data.destinationBranchId,
                 branchName: preview.destinationBranch.name,
                 lineItemUpdates: preview.lines.map(result => {

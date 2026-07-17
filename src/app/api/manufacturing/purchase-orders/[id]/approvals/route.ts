@@ -39,7 +39,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     try {
         const stage = requestedStage(request);
         await requirePurchaseOrderModuleAccess({ modulePath: purchaseOrderApprovalModulePath(stage) });
-        return NextResponse.json({ data: await getPurchaseOrderApprovalDetail(id) });
+        return NextResponse.json({ data: await getPurchaseOrderApprovalDetail(id, stage) });
     } catch (error) {
         return routeError(error);
     }

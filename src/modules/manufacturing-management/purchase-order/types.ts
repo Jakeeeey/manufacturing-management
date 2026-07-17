@@ -89,6 +89,7 @@ export interface PurchaseOrderApprovalDetail {
         purchase_order_no?: string | null;
         reference?: string | null;
         inventory_status: number;
+        payment_status?: number | null;
         total_amount?: number | string | null;
         gross_amount?: number | string | null;
         currency_code?: string | null;
@@ -102,6 +103,7 @@ export interface PurchaseOrderApprovalDetail {
         date_financed?: string | null;
     };
     stage: PurchaseOrderApprovalStage;
+    pendingStages?: PurchaseOrderDecisionStage[];
     matchedRule: {
         ruleId: number;
         ruleName: string;
@@ -114,7 +116,7 @@ export interface PurchaseOrderApprovalDetail {
 }
 
 export interface PurchaseOrderApprovalCommand {
-    action: "approve" | "reject";
+    action: "approve" | "reject" | "awaiting_payment" | "cancel";
     workflowRevision: number;
     expectedRuleId?: number;
     lead_time_receiving?: string;

@@ -23,11 +23,17 @@ import { calculatePurchaseOrderTotals } from "../../purchase-orders/_domain";
 class InvalidTransitionError extends Error {}
 
 async function requireAllowedTransition(shipmentId: number, targetStatus: number): Promise<void> {
-    const response = await fetch(`${DIRECTUS_URL}/items/purchase_order/${shipmentId}?fields=inventory_status`, { headers, cache: "no-store" });
+    const response = await fetch(`${DIRECTUS_URL}/items/purchase_order/${shipmentId}?fields=inventory_status,payment_status,approver_id,approval_requires_finance`, { headers, cache: "no-store" });
     if (!response.ok) throw new Error("Failed to load the current purchase order status.");
-    const currentStatus = Number((await response.json()).data?.inventory_status || 0);
+    const order = (await response.json()).data || {};
+    const currentStatus = Number(order.inventory_status || 0);
     if (!canTransitionInventoryStatus(currentStatus, targetStatus)) {
         throw new InvalidTransitionError(`Invalid purchase order status transition from ${currentStatus} to ${targetStatus}.`);
+    }
+    if (targetStatus === INVENTORY_STATUS.EN_ROUTE) {
+        if (currentStatus !== INVENTORY_STATUS.APPROVED) {
+            throw new InvalidTransitionError("Plant approval is required before dispatch.");
+        }
     }
 }
 
@@ -98,8 +104,8 @@ export async function PATCH(request: Request) {
 
         const parsed = purchaseOrderStatusUpdateSchema.safeParse(body);
         if (!parsed.success) return NextResponse.json({ error: "Invalid status update.", details: parsed.error.flatten() }, { status: 400 });
-        if (parsed.data.status === "Approved" || parsed.data.status === "Rejected") {
-            return NextResponse.json({ error: "Approved and Rejected transitions must use their dedicated workflow endpoints." }, { status: 409 });
+        if (parsed.data.status === "Approved" || parsed.data.status === "Awaiting Payment" || parsed.data.status === "Rejected") {
+            return NextResponse.json({ error: "Approved, Awaiting Payment, and Rejected transitions must use their dedicated workflow endpoints." }, { status: 409 });
         }
         const actor = await requirePurchaseOrderModuleAccess({ modulePaths: modulesForStatus(parsed.data.status) });
         await requireAllowedTransition(parsed.data.shipmentId, shipmentStatusToInventoryStatus(parsed.data.status));

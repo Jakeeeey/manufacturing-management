@@ -13,12 +13,14 @@ const percentage = z.coerce.number().finite().min(0).max(100);
 const dateOnly = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
 export const purchaseOrderStatusSchema = z.enum([
-    "Ordered", "Approved", "Cancelled", "For Pickup", "En Route",
+    "Ordered", "Approved", "Awaiting Payment", "Cancelled", "For Pickup", "En Route",
     "Receiving (QA)", "Partially Received", "Received", "Rejected"
 ]);
 
+const initialPurchaseOrderStatusSchema = z.enum(["Ordered"]);
+
 export const purchaseOrderListStatusSchema = z.enum([
-    "Requested", "Ordered", "Approved", "Cancelled", "For Pickup", "En Route",
+    "Requested", "Ordered", "Approved", "Awaiting Payment", "Cancelled", "For Pickup", "En Route",
     "Receiving (QA)", "Partially Received", "Received", "Rejected"
 ]);
 
@@ -43,7 +45,7 @@ export const legacyPurchaseOrderCreateSchema = z.object({
         exchange_rate: z.coerce.number().finite().positive(),
         total_foreign_currency: nonNegativeMoney,
         total_php_value: nonNegativeMoney,
-        status: purchaseOrderStatusSchema.default("Ordered"),
+        status: initialPurchaseOrderStatusSchema.default("Ordered"),
         date_received: dateOnly.nullable().optional(),
         branch_id: positiveId,
         payment_type: positiveId.nullable().optional(),
@@ -125,13 +127,13 @@ export const purchaseOrderStatusUpdateSchema = z.object({
 });
 
 export const purchaseOrderApprovalSchema = z.object({
-    action: z.enum(["approve", "reject"]),
+    action: z.enum(["approve", "reject", "awaiting_payment", "cancel"]),
     workflowRevision: z.coerce.number().int().nonnegative(),
     expectedRuleId: positiveId.optional(),
     lead_time_receiving: dateOnly.nullable().optional(),
     remarks: z.string().trim().min(1).max(1000).optional()
 }).superRefine((value, context) => {
-    if (value.action === "reject" && !value.remarks) {
+    if ((value.action === "reject" || value.action === "cancel") && !value.remarks) {
         context.addIssue({ code: "custom", path: ["remarks"], message: "Remarks are required for rejection." });
     }
 });

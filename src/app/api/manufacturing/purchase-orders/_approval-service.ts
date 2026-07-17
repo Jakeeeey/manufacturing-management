@@ -1,11 +1,11 @@
-import { INVENTORY_STATUS } from "../procurement/_domain";
 import { procurementDirectusFetch } from "../procurement/_directus";
 import {
     derivePurchaseOrderWorkflowStage,
+    pendingPurchaseOrderApprovalStages,
     selectPurchaseOrderApprovalRule,
-    type PurchaseOrderApprovalRule,
-    type PurchaseOrderWorkflowStage
+    type PurchaseOrderApprovalRule
 } from "./_domain";
+import { INVENTORY_STATUS, PAYMENT_STATUS } from "../procurement/_domain";
 import type { ApprovalStage } from "./_domain";
 import type { AuthorizedPurchaseOrderUser } from "./_auth";
 import type { z } from "zod";
@@ -30,6 +30,7 @@ interface ApprovalOrder {
     date_financed?: string | null;
     lead_time_receiving?: string | null;
     inventory_status: number;
+    payment_status?: number | null;
     total_amount?: number | string | null;
     gross_amount?: number | string | null;
     currency_code?: string | null;
@@ -59,7 +60,7 @@ interface ApprovalHistoryRow {
 
 const ORDER_FIELDS = [
     "purchase_order_id", "purchase_order_no", "reference", "encoder_id", "approver_id", "finance_id",
-    "date_approved", "date_financed", "lead_time_receiving", "inventory_status", "total_amount", "gross_amount",
+    "date_approved", "date_financed", "lead_time_receiving", "inventory_status", "payment_status", "total_amount", "gross_amount",
     "currency_code", "exchange_rate", "total_foreign_currency", "is_import",
     "workflow_revision", "approval_rule_id", "approval_requires_finance", "approval_allow_self_approval", "remark"
 ].join(",");
@@ -150,13 +151,13 @@ async function resolveRule(order: ApprovalOrder, categoryIds: number[]) {
     return { ...rules.find(rule => rule.ruleId === selected.ruleId)!, snapshot: false };
 }
 
-function stageFor(order: ApprovalOrder, requiresFinance: boolean): PurchaseOrderWorkflowStage {
-    return derivePurchaseOrderWorkflowStage({
+function approvalState(order: ApprovalOrder, requiresFinance: boolean) {
+    return {
         inventoryStatus: Number(order.inventory_status),
         approverId: Number(order.approver_id) || null,
         financeId: Number(order.finance_id) || null,
         requiresFinance
-    });
+    };
 }
 
 async function loadHistory(id: number): Promise<ApprovalHistoryRow[]> {
@@ -166,12 +167,17 @@ async function loadHistory(id: number): Promise<ApprovalHistoryRow[]> {
     );
 }
 
-export async function getPurchaseOrderApprovalDetail(id: number) {
+export async function getPurchaseOrderApprovalDetail(id: number, requestedStage?: ApprovalStage) {
     const [order, categoryIds, history] = await Promise.all([loadOrder(id), loadCategoryIds(id), loadHistory(id)]);
     const rule = await resolveRule(order, categoryIds);
+    const state = approvalState(order, rule.requiresFinance);
+    const pendingStages = pendingPurchaseOrderApprovalStages(state);
     return {
         order,
-        stage: stageFor(order, rule.requiresFinance),
+        stage: requestedStage && pendingStages.includes(requestedStage)
+            ? requestedStage
+            : derivePurchaseOrderWorkflowStage(state),
+        pendingStages,
         matchedRule: {
             ruleId: rule.ruleId,
             ruleName: rule.ruleName,
@@ -201,6 +207,7 @@ async function conditionalPatch(filter: Record<string, unknown>, data: Record<st
 function rollbackPayload(order: ApprovalOrder) {
     return {
         inventory_status: order.inventory_status,
+        payment_status: order.payment_status ?? null,
         approver_id: order.approver_id || null,
         finance_id: order.finance_id || null,
         date_approved: order.date_approved || null,
@@ -230,27 +237,38 @@ export async function submitPurchaseOrderApproval(
     if (!rule.snapshot && command.expectedRuleId !== rule.ruleId) {
         throw new PurchaseOrderApprovalError("The matched approval rule changed. Reload the purchase order and review it again.", 409);
     }
-    const stage = stageFor(order, rule.requiresFinance);
-    if (stage !== requestedStage) {
+    const state = approvalState(order, rule.requiresFinance);
+    const pendingStages = pendingPurchaseOrderApprovalStages(state);
+    if (!pendingStages.includes(requestedStage)) {
         throw new PurchaseOrderApprovalError(
             `This purchase order is not awaiting ${requestedStage} approval.`,
             409
         );
     }
-    if (stage !== "Plant" && stage !== "Finance") {
-        throw new PurchaseOrderApprovalError("This purchase order has no pending approval action.", 409);
-    }
+    const stage = requestedStage;
     if (command.action === "approve" && stage === "Plant" && !command.lead_time_receiving) {
         throw new PurchaseOrderApprovalError("ETA is required for Plant approval.", 400);
+    }
+    if (stage === "Plant" && command.action !== "approve" && command.action !== "reject") {
+        throw new PurchaseOrderApprovalError("Plant approval accepts only approve or reject.", 400);
+    }
+    if (stage === "Finance" && command.action !== "awaiting_payment" && command.action !== "cancel") {
+        throw new PurchaseOrderApprovalError("Finance approval accepts only Awaiting Payment or Cancel.", 400);
     }
 
     const now = new Date().toISOString();
     const nextRevision = revision + 1;
     const targetStatus = command.action === "reject"
         ? INVENTORY_STATUS.REJECTED
-        : stage === "Plant" && rule.requiresFinance
-            ? INVENTORY_STATUS.REQUESTED
-            : INVENTORY_STATUS.APPROVED;
+        : command.action === "cancel"
+            ? INVENTORY_STATUS.REJECTED
+            : stage === "Plant"
+                ? INVENTORY_STATUS.APPROVED
+                : order.inventory_status;
+    const targetPaymentStatus = command.action === "awaiting_payment"
+        || (stage === "Plant" && !rule.requiresFinance)
+        ? PAYMENT_STATUS.AWAITING_PAYMENT
+        : order.payment_status ?? null;
     const update: Record<string, unknown> = {
         workflow_revision: nextRevision,
         inventory_status: targetStatus,
@@ -260,21 +278,29 @@ export async function submitPurchaseOrderApproval(
     };
     if (command.action === "reject") {
         update.remark = `REJECTED: ${command.remarks}`;
+    } else if (command.action === "cancel") {
+        update.remark = `CANCELLED BY FINANCE: ${command.remarks}`;
+        update.payment_status = PAYMENT_STATUS.CANCELLED;
     } else if (stage === "Plant") {
         update.approver_id = actor.userId;
         update.date_approved = now;
         update.lead_time_receiving = command.lead_time_receiving;
+        if (!rule.requiresFinance) update.payment_status = PAYMENT_STATUS.AWAITING_PAYMENT;
     } else {
         update.finance_id = actor.userId;
         update.date_financed = now;
+        update.payment_status = PAYMENT_STATUS.AWAITING_PAYMENT;
     }
 
     const stageFilter = stage === "Plant"
         ? { approver_id: { _null: true } }
-        : { approver_id: { _nnull: true }, finance_id: { _null: true } };
+        : { finance_id: { _null: true } };
+    const allowedStatuses = stage === "Plant"
+        ? [INVENTORY_STATUS.REQUESTED]
+        : [INVENTORY_STATUS.REQUESTED, INVENTORY_STATUS.APPROVED];
     const updated = await conditionalPatch({
         purchase_order_id: { _eq: id },
-        inventory_status: { _eq: INVENTORY_STATUS.REQUESTED },
+        inventory_status: { _in: allowedStatuses },
         workflow_revision: { _eq: revision },
         ...stageFilter
     }, update);
@@ -282,7 +308,15 @@ export async function submitPurchaseOrderApproval(
         throw new PurchaseOrderApprovalError("Another approval action changed this purchase order. Reload and try again.", 409);
     }
 
-    const action = command.action === "reject" ? "Rejected" : stage === "Plant" ? "PlantApproved" : "FinanceApproved";
+    const action = command.action === "reject"
+        ? "Rejected"
+        : command.action === "cancel"
+            ? "FinanceCancelled"
+            : command.action === "awaiting_payment"
+                ? "FinanceAwaitingPayment"
+                : stage === "Plant"
+                    ? "PlantApproved"
+                    : "FinanceApproved";
     const historyResponse = await procurementDirectusFetch("/items/purchase_order_approval_history", {
         method: "POST",
         body: JSON.stringify({
@@ -320,7 +354,15 @@ export async function submitPurchaseOrderApproval(
         success: true,
         action,
         stage,
-        status: targetStatus === INVENTORY_STATUS.APPROVED ? "Approved" : targetStatus === INVENTORY_STATUS.REJECTED ? "Rejected" : "Requested",
+        status: targetStatus === INVENTORY_STATUS.APPROVED && targetPaymentStatus === PAYMENT_STATUS.AWAITING_PAYMENT
+            ? "Awaiting Payment"
+            : targetStatus === INVENTORY_STATUS.APPROVED
+                ? "Approved"
+                : targetStatus === INVENTORY_STATUS.REJECTED
+                    ? "Rejected"
+                    : targetStatus === INVENTORY_STATUS.REJECTED
+                        ? "Rejected"
+                        : "Requested",
         workflowRevision: nextRevision
     };
 }
