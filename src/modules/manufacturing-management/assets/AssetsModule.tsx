@@ -1,14 +1,13 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
-import { Plus, Search, Edit, Trash2, Settings, Check, LayoutGrid, Image as ImageIcon, Upload, Loader2 } from "lucide-react";
+import { Plus, Search, Edit, Settings, Check, LayoutGrid, Image as ImageIcon, Upload, Loader2, ChevronsLeft, ChevronsRight, MoreHorizontal, Eye, Info, Calendar, User } from "lucide-react";
 import { toast } from "sonner";
 import { AssetRecord, DepartmentRecord } from "@/modules/manufacturing-management/finished-goods/types";
 import {
     fetchAssets,
     createAsset,
     saveAsset,
-    deleteAsset,
     fetchDepartments,
     fetchItems,
     createItem,
@@ -19,6 +18,20 @@ import {
 } from "@/modules/manufacturing-management/finished-goods/services/finished-goods-api";
 import { Button } from "@/components/ui/button";
 import { CreatableSelect } from "../finished-goods/components/CreatableSelect";
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue
+} from "@/components/ui/select";
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger
+} from "@/components/ui/dropdown-menu";
+import { formatCurrency, formatDateLong } from "@/lib/utils";
 
 // Added specific types to replace `any`
 export interface CatalogItem {
@@ -45,10 +58,16 @@ export default function AssetsModule() {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
+    const [currentPage, setCurrentPage] = useState(1);
+    const [pageSize, setPageSize] = useState(10);
+    const [conditionFilter, setConditionFilter] = useState("ALL");
+    const [statusFilter, setStatusFilter] = useState("ALL");
 
     // Modal state
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingAsset, setEditingAsset] = useState<AssetRecord | null>(null);
+    const [isViewModalOpen, setIsViewModalOpen] = useState(false);
+    const [viewingAsset, setViewingAsset] = useState<AssetRecord | null>(null);
 
     // Form inputs
     const [itemImage, setItemImage] = useState("");
@@ -91,7 +110,7 @@ export default function AssetsModule() {
                 fetchItemTypes().catch(() => []),
                 fetchItemClassifications().catch(() => [])
             ]);
-            setAssets(assetList);
+            setAssets(assetList.sort((a, b) => b.id - a.id));
             setItems(itemList);
             setDepartments(deptList);
             setItemTypes(typesList);
@@ -111,6 +130,18 @@ export default function AssetsModule() {
     // Filtered Assets list
     const filteredAssets = useMemo(() => {
         return assets.filter(asset => {
+            // Apply Condition Filter
+            if (conditionFilter !== "ALL") {
+                if (asset.condition !== conditionFilter) return false;
+            }
+
+            // Apply Status Filter
+            if (statusFilter !== "ALL") {
+                const isActive = Boolean(asset.is_active);
+                if (statusFilter === "ACTIVE" && !isActive) return false;
+                if (statusFilter === "INACTIVE" && isActive) return false;
+            }
+
             const query = searchQuery.toLowerCase();
 
             // Resolve item name with strict type cast
@@ -140,7 +171,18 @@ export default function AssetsModule() {
 
             return matchesName || matchesSerial || matchesBarcode || matchesRfid || matchesCond || matchesDept;
         });
-    }, [assets, searchQuery, items, departments]);
+    }, [assets, searchQuery, items, departments, conditionFilter, statusFilter]);
+
+    // Reset page to 1 when search query, filter result length, or page size changes
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [filteredAssets.length, pageSize]);
+
+    const totalPages = Math.ceil(filteredAssets.length / pageSize);
+    const startIndex = (currentPage - 1) * pageSize;
+    const paginatedAssets = useMemo(() => {
+        return filteredAssets.slice(startIndex, startIndex + pageSize);
+    }, [filteredAssets, startIndex, pageSize]);
 
     const handleOpenCreateModal = () => {
         setEditingAsset(null);
@@ -162,6 +204,11 @@ export default function AssetsModule() {
         setItemSearch("");
         setDeptSearch("");
         setIsModalOpen(true);
+    };
+
+    const handleOpenViewModal = (asset: AssetRecord) => {
+        setViewingAsset(asset);
+        setIsViewModalOpen(true);
     };
 
     const handleOpenEditModal = (asset: AssetRecord) => {
@@ -250,19 +297,6 @@ export default function AssetsModule() {
         }
     };
 
-    const handleDelete = async (id: number) => {
-        if (!confirm("Are you sure you want to delete this asset record?")) return;
-        try {
-            const res = await deleteAsset(id);
-            if (res.success) {
-                toast.success("Asset deleted successfully!");
-                await loadData();
-            }
-        } catch (e) {
-            console.error("Failed to delete asset:", e);
-            toast.error("Failed to delete asset record");
-        }
-    };
 
     const handleOpenNewItemSubModal = () => {
         setNewItemName("");
@@ -427,8 +461,8 @@ export default function AssetsModule() {
             </div>
 
             {/* Filter and search block */}
-            <div className="flex items-center gap-4 bg-muted/10 p-3 rounded-lg border border-border/50">
-                <div className="relative flex-1">
+            <div className="flex flex-col md:flex-row items-center gap-3 bg-muted/10 p-3 rounded-lg border border-border/50">
+                <div className="relative flex-1 w-full">
                     <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground opacity-70" />
                     <input
                         type="text"
@@ -437,6 +471,45 @@ export default function AssetsModule() {
                         onChange={(e) => setSearchQuery(e.target.value)}
                         className="w-full h-9 pl-10 pr-3 rounded-lg border border-muted bg-background text-foreground text-xs focus:outline-none focus:ring-1 focus:ring-primary"
                     />
+                </div>
+                <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+                    {/* Condition Filter */}
+                    <div className="flex items-center gap-1.5 min-w-[140px] flex-1 md:flex-initial">
+                        <span className="text-xs text-muted-foreground whitespace-nowrap">Condition:</span>
+                        <Select
+                            value={conditionFilter}
+                            onValueChange={(val) => setConditionFilter(val)}
+                        >
+                            <SelectTrigger className="w-full h-9 bg-background border border-border text-foreground text-xs">
+                                <SelectValue placeholder="All Conditions" />
+                            </SelectTrigger>
+                            <SelectContent position="popper" sideOffset={4} className="bg-popover border border-border text-foreground">
+                                <SelectItem value="ALL">All Conditions</SelectItem>
+                                <SelectItem value="Good">Good</SelectItem>
+                                <SelectItem value="Bad">Bad</SelectItem>
+                                <SelectItem value="Under Maintenance">Under Maintenance</SelectItem>
+                                <SelectItem value="Discontinued">Discontinued</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+
+                    {/* Status Filter */}
+                    <div className="flex items-center gap-1.5 min-w-[120px] flex-1 md:flex-initial">
+                        <span className="text-xs text-muted-foreground whitespace-nowrap">Status:</span>
+                        <Select
+                            value={statusFilter}
+                            onValueChange={(val) => setStatusFilter(val)}
+                        >
+                            <SelectTrigger className="w-full h-9 bg-background border border-border text-foreground text-xs">
+                                <SelectValue placeholder="All Statuses" />
+                            </SelectTrigger>
+                            <SelectContent position="popper" sideOffset={4} className="bg-popover border border-border text-foreground">
+                                <SelectItem value="ALL">All Statuses</SelectItem>
+                                <SelectItem value="ACTIVE">Active</SelectItem>
+                                <SelectItem value="INACTIVE">Inactive</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
                 </div>
             </div>
 
@@ -470,7 +543,7 @@ export default function AssetsModule() {
                             </tr>
                         </thead>
                         <tbody>
-                            {filteredAssets.map(asset => {
+                            {paginatedAssets.map(asset => {
                                 // Get item name
                                 let itemName = "Unknown Item";
                                 if (asset.item_id && typeof asset.item_id === "object") {
@@ -512,10 +585,10 @@ export default function AssetsModule() {
                                             {asset.quantity || 1}
                                         </td>
                                         <td className="p-4 align-middle text-muted-foreground font-medium">
-                                            ₱{(asset.cost_per_item || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                                            {formatCurrency(asset.cost_per_item || 0)}
                                         </td>
                                         <td className="p-4 align-middle text-foreground font-bold">
-                                            ₱{(asset.total || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                                            {formatCurrency(asset.total || 0)}
                                         </td>
                                         <td className="p-4 align-middle text-muted-foreground">
                                             <div className="flex flex-col gap-0.5 text-[11px]">
@@ -552,24 +625,33 @@ export default function AssetsModule() {
                                             </span>
                                         </td>
                                         <td className="p-4 align-middle text-center">
-                                            <div className="flex items-center justify-center gap-1.5">
-                                                <Button
-                                                    variant="ghost"
-                                                    size="icon"
-                                                    onClick={() => handleOpenEditModal(asset)}
-                                                    className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-md"
-                                                >
-                                                    <Edit className="h-4 w-4" />
-                                                </Button>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="icon"
-                                                    onClick={() => handleDelete(asset.id)}
-                                                    className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md"
-                                                >
-                                                    <Trash2 className="h-4 w-4" />
-                                                </Button>
-                                            </div>
+                                            <DropdownMenu>
+                                                <DropdownMenuTrigger asChild>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-md"
+                                                    >
+                                                        <MoreHorizontal className="h-4 w-4" />
+                                                    </Button>
+                                                </DropdownMenuTrigger>
+                                                <DropdownMenuContent align="end" className="w-36 bg-popover border border-border text-foreground rounded-lg p-1 shadow-md animate-in fade-in slide-in-from-top-1">
+                                                    <DropdownMenuItem
+                                                        onClick={() => handleOpenViewModal(asset)}
+                                                        className="flex items-center gap-2 px-2.5 py-2 text-xs font-semibold cursor-pointer hover:bg-muted rounded-md transition-colors text-foreground"
+                                                    >
+                                                        <Eye className="h-3.5 w-3.5 text-muted-foreground" />
+                                                        View Details
+                                                    </DropdownMenuItem>
+                                                    <DropdownMenuItem
+                                                        onClick={() => handleOpenEditModal(asset)}
+                                                        className="flex items-center gap-2 px-2.5 py-2 text-xs font-semibold cursor-pointer hover:bg-muted rounded-md transition-colors text-foreground"
+                                                    >
+                                                        <Edit className="h-3.5 w-3.5 text-muted-foreground" />
+                                                        Edit Details
+                                                    </DropdownMenuItem>
+                                                </DropdownMenuContent>
+                                            </DropdownMenu>
                                         </td>
                                     </tr>
                                 );
@@ -578,6 +660,84 @@ export default function AssetsModule() {
                     </table>
                 )}
             </div>
+
+            {/* Pagination Controls */}
+            {!loading && filteredAssets.length > 0 && (
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 py-2 text-sm text-muted-foreground px-1 mt-2">
+                    <div className="flex items-center gap-2">
+                        <span>Rows per page</span>
+                        <Select
+                            value={String(pageSize)}
+                            onValueChange={(val) => {
+                                setPageSize(Number(val));
+                            }}
+                        >
+                            <SelectTrigger className="w-[70px] h-8 bg-background border border-border text-foreground">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent position="popper" sideOffset={4} className="bg-popover border border-border text-foreground">
+                                {[10, 20, 30, 40, 50].map((size) => (
+                                    <SelectItem key={size} value={String(size)}>
+                                        {size}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                        <span className="ml-2 font-medium">
+                            Showing {filteredAssets.length > 0 ? startIndex + 1 : 0}-
+                            {Math.min(startIndex + pageSize, filteredAssets.length)} of{" "}
+                            {filteredAssets.length} items
+                        </span>
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setCurrentPage(1)}
+                            disabled={currentPage === 1}
+                            className="h-8 w-8 p-0 text-foreground"
+                        >
+                            <ChevronsLeft className="h-4 w-4" />
+                        </Button>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                            disabled={currentPage === 1}
+                            className="h-8 px-3 text-foreground"
+                        >
+                            Previous
+                        </Button>
+                        
+                        <div className="flex items-center gap-1 px-2 font-semibold text-xs">
+                            <span>Page</span>
+                            <span className="text-foreground">{currentPage}</span>
+                            <span>of</span>
+                            <span>{totalPages || 1}</span>
+                        </div>
+
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+                            disabled={currentPage === totalPages || totalPages === 0}
+                            className="h-8 px-3 text-foreground"
+                        >
+                            Next
+                        </Button>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setCurrentPage(totalPages)}
+                            disabled={currentPage === totalPages || totalPages === 0}
+                            className="h-8 w-8 p-0 text-foreground"
+                        >
+                            <ChevronsRight className="h-4 w-4" />
+                        </Button>
+                    </div>
+                </div>
+            )}
 
             {/* Custom Create / Edit Modal popup */}
             {isModalOpen && (
@@ -744,7 +904,17 @@ export default function AssetsModule() {
                                         min="1"
                                         required
                                         value={quantity}
-                                        onChange={e => setQuantity(e.target.value)}
+                                        onChange={e => {
+                                            const val = e.target.value;
+                                            if (val === "" || Number(val) >= 0) {
+                                                setQuantity(val);
+                                            }
+                                        }}
+                                        onKeyDown={e => {
+                                            if (e.key === "-" || e.key === "+") {
+                                                e.preventDefault();
+                                            }
+                                        }}
                                         className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
                                     />
                                 </div>
@@ -753,9 +923,20 @@ export default function AssetsModule() {
                                     <input
                                         type="number"
                                         step="0.01"
+                                        min="0"
                                         required
                                         value={costPerItem}
-                                        onChange={e => setCostPerItem(e.target.value)}
+                                        onChange={e => {
+                                            const val = e.target.value;
+                                            if (val === "" || Number(val) >= 0) {
+                                                setCostPerItem(val);
+                                            }
+                                        }}
+                                        onKeyDown={e => {
+                                            if (e.key === "-" || e.key === "+") {
+                                                e.preventDefault();
+                                            }
+                                        }}
                                         className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
                                     />
                                 </div>
@@ -787,8 +968,19 @@ export default function AssetsModule() {
                                     <input
                                         type="number"
                                         placeholder="e.g. 60"
+                                        min="0"
                                         value={lifeSpan}
-                                        onChange={e => setLifeSpan(e.target.value)}
+                                        onChange={e => {
+                                            const val = e.target.value;
+                                            if (val === "" || Number(val) >= 0) {
+                                                setLifeSpan(val);
+                                            }
+                                        }}
+                                        onKeyDown={e => {
+                                            if (e.key === "-" || e.key === "+") {
+                                                e.preventDefault();
+                                            }
+                                        }}
                                         className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
                                     />
                                 </div>
@@ -972,6 +1164,196 @@ export default function AssetsModule() {
                                 </button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {isViewModalOpen && viewingAsset && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md animate-in fade-in duration-200">
+                    <div className="bg-card border border-border/85 rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
+                        {/* Modal Header */}
+                        <div className="flex items-center justify-between px-6 py-4 border-b shrink-0 bg-muted/20">
+                            <div className="flex items-center gap-2">
+                                <Info className="h-5 w-5 text-primary" />
+                                <div>
+                                    <h3 className="text-base font-bold text-foreground">Asset &amp; Equipment Details</h3>
+                                    <p className="text-xs text-muted-foreground">Detailed parameters, condition, specs, and tracking data.</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Modal Body */}
+                        <div className="flex-1 overflow-y-auto p-6 space-y-6 text-xs text-foreground">
+                            {/* Asset Name & Status */}
+                            <div className="flex justify-between items-start gap-4">
+                                <div className="space-y-1">
+                                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Asset/Item Name</span>
+                                    <h4 className="text-lg font-bold text-foreground">
+                                        {(() => {
+                                            if (viewingAsset.item_id && typeof viewingAsset.item_id === "object") {
+                                                return (viewingAsset.item_id as unknown as CatalogItem).item_name || "Unknown Item";
+                                            }
+                                            const found = items.find(i => i.id === viewingAsset.item_id);
+                                            return found ? found.item_name : "Unknown Item";
+                                        })()}
+                                    </h4>
+                                </div>
+                                <div className="text-right space-y-1">
+                                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Status</span>
+                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase ${
+                                        Boolean(viewingAsset.is_active) 
+                                            ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20" 
+                                            : "bg-destructive/10 text-destructive border border-destructive/20"
+                                    }`}>
+                                        {Boolean(viewingAsset.is_active) ? "Active" : "Inactive"}
+                                    </span>
+                                </div>
+                            </div>
+
+                            {/* Details Grid */}
+                            <div className="grid grid-cols-2 gap-4 bg-muted/10 p-4 rounded-xl border border-border/50">
+                                <div className="space-y-1">
+                                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Quantity</span>
+                                    <span className="text-sm font-semibold text-foreground">
+                                        {viewingAsset.quantity || 0} units
+                                    </span>
+                                </div>
+                                <div className="space-y-1">
+                                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Cost per Item</span>
+                                    <span className="text-sm font-semibold text-foreground">
+                                        {formatCurrency(viewingAsset.cost_per_item)}
+                                    </span>
+                                </div>
+                                <div className="space-y-1 pt-2 border-t border-border/30">
+                                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Estimated Total Cost</span>
+                                    <span className="text-sm font-bold text-foreground">
+                                        {formatCurrency(viewingAsset.total)}
+                                    </span>
+                                </div>
+                                <div className="space-y-1 pt-2 border-t border-border/30">
+                                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Useful Lifespan</span>
+                                    <span className="text-sm font-semibold text-foreground">
+                                        {viewingAsset.life_span ? `${viewingAsset.life_span} Months` : "N/A"}
+                                    </span>
+                                </div>
+                                <div className="space-y-1 pt-2 border-t border-border/30">
+                                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Physical Condition</span>
+                                    <div>
+                                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                                            viewingAsset.condition === "Good" ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20" :
+                                            viewingAsset.condition === "Bad" ? "bg-destructive/10 text-destructive border border-destructive/20" :
+                                            viewingAsset.condition === "Under Maintenance" ? "bg-amber-500/10 text-amber-500 border border-amber-500/20" :
+                                            "bg-muted text-muted-foreground border"
+                                        }`}>
+                                            {viewingAsset.condition || "Good"}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div className="space-y-1 pt-2 border-t border-border/30">
+                                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Active Warning</span>
+                                    <div>
+                                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                                            viewingAsset.is_active_warning 
+                                                ? "bg-amber-500/10 text-amber-500 border border-amber-500/20" 
+                                                : "bg-muted text-muted-foreground border"
+                                        }`}>
+                                            {viewingAsset.is_active_warning ? "Warning Enabled" : "No Warning"}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div className="space-y-1 col-span-2 pt-2 border-t border-border/30">
+                                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Mapped Department</span>
+                                    <span className="text-xs font-semibold text-foreground">
+                                        {(() => {
+                                            const deptId = viewingAsset.department && typeof viewingAsset.department === "object" ? viewingAsset.department.department_id : viewingAsset.department;
+                                            const dept = departments.find(d => d.department_id === deptId) || (typeof viewingAsset.department === "object" ? viewingAsset.department : null);
+                                            return dept ? (
+                                                <span className="bg-primary/5 text-primary border border-primary/10 px-2 py-0.5 rounded font-medium inline-block mt-0.5">
+                                                    {dept.department_name}
+                                                </span>
+                                            ) : (
+                                                <span className="text-muted-foreground/50 italic">None mapped</span>
+                                            );
+                                        })()}
+                                    </span>
+                                </div>
+                            </div>
+
+                            {/* Image & Identifiers */}
+                            <div className="space-y-2">
+                                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Image &amp; Identifiers</span>
+                                <div className="border border-border/60 rounded-xl p-4 flex flex-col md:flex-row gap-4 bg-background">
+                                    {/* Left: Image Container */}
+                                    <div className="w-full md:w-1/3 shrink-0">
+                                        {viewingAsset.item_image ? (
+                                            // eslint-disable-next-line @next/next/no-img-element
+                                            <img 
+                                                src={viewingAsset.item_image} 
+                                                alt="Asset preview" 
+                                                className="w-full h-24 object-cover rounded-lg border border-border bg-muted/5 shrink-0"
+                                            />
+                                        ) : (
+                                            <div className="w-full h-24 bg-muted/20 border border-dashed rounded-lg flex flex-col items-center justify-center text-muted-foreground/30 gap-1 shrink-0">
+                                                <ImageIcon className="h-6 w-6" />
+                                                <span className="text-[9px] font-semibold uppercase tracking-wider">No Image</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                    {/* Right: Info details */}
+                                    <div className="flex-1 space-y-2 min-w-0">
+                                        <div className="grid grid-cols-1 gap-2 text-[11px]">
+                                            <div>
+                                                <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">Serial Number</span>
+                                                <span className="font-semibold text-foreground truncate block">{viewingAsset.serial || "N/A"}</span>
+                                            </div>
+                                            <div>
+                                                <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">Barcode</span>
+                                                <span className="font-semibold text-foreground truncate block">{viewingAsset.barcode || "N/A"}</span>
+                                            </div>
+                                            <div>
+                                                <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">RFID Code</span>
+                                                <span className="font-semibold text-foreground truncate block">{viewingAsset.rfid_code || "N/A"}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Metadata */}
+                            <div className="pt-4 border-t border-border/30 grid grid-cols-2 gap-4 text-muted-foreground">
+                                <div className="flex items-center gap-2">
+                                    <Calendar className="h-4 w-4 text-muted-foreground/60 shrink-0" />
+                                    <div className="min-w-0">
+                                        <span className="text-[9px] font-bold uppercase tracking-wider block text-muted-foreground/50">Date Acquired</span>
+                                        <span className="font-medium text-foreground/80 truncate block">
+                                            {(() => {
+                                                if (!viewingAsset.date_acquired) return "N/A";
+                                                const d = new Date(viewingAsset.date_acquired);
+                                                return isNaN(d.getTime()) ? viewingAsset.date_acquired : formatDateLong(d);
+                                            })()}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <User className="h-4 w-4 text-muted-foreground/60 shrink-0" />
+                                    <div className="min-w-0">
+                                        <span className="text-[9px] font-bold uppercase tracking-wider block text-muted-foreground/50">Created By</span>
+                                        <span className="font-medium text-foreground/80 truncate block">{viewingAsset.created_by_name || "System"}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Modal Footer */}
+                        <div className="flex justify-end p-4 border-t shrink-0 bg-muted/10">
+                            <button
+                                type="button"
+                                onClick={() => setIsViewModalOpen(false)}
+                                className="px-5 py-2 bg-primary hover:bg-primary/95 text-primary-foreground font-semibold rounded-lg text-xs transition-colors shadow-md shadow-primary/20"
+                            >
+                                Close
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

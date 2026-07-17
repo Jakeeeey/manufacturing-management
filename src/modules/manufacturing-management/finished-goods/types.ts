@@ -120,6 +120,8 @@ export interface AssetRecord {
     is_active_warning?: boolean;
     is_active?: boolean;
     date_acquired?: string | null;
+    created_by?: number | null;
+    created_by_name?: string | null;
 }
 
 export interface DepartmentRecord {
