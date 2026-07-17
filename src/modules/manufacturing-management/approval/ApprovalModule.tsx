@@ -132,27 +132,28 @@ export default function ApprovalModule() {
                     <h1 className="text-base font-bold">Purchase Order Approval</h1>
                     <p className="text-xs text-muted-foreground">Review Plant and Finance decisions against the matched approval rule.</p>
                 </div>
-                <div className="inline-flex rounded-md border bg-muted/30 p-1">
-                    {queueTabs.map(item => {
-                        const Icon = item.icon;
-                        return (
-                            <button
-                                key={item.value}
-                                type="button"
-                                onClick={() => setTab(item.value)}
-                                className={`inline-flex h-8 items-center gap-1.5 rounded px-3 text-xs font-semibold ${tab === item.value ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
-                            >
-                                <Icon className="h-3.5 w-3.5" />
-                                {item.label}
-                            </button>
-                        );
-                    })}
-                </div>
             </div>
 
             <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[minmax(280px,34%)_1fr]">
                 <section className="flex min-h-[420px] flex-col overflow-hidden rounded-md border bg-card">
                     <div className="border-b p-3">
+                        <div className="mb-3 flex flex-wrap gap-1 rounded-md border bg-muted/30 p-1" aria-label="Filter purchase orders by status">
+                            {queueTabs.map(item => {
+                                const Icon = item.icon;
+                                return (
+                                    <button
+                                        key={item.value}
+                                        type="button"
+                                        onClick={() => setTab(item.value)}
+                                        aria-pressed={tab === item.value}
+                                        className={`inline-flex h-8 items-center gap-1.5 rounded px-3 text-xs font-semibold ${tab === item.value ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+                                    >
+                                        <Icon className="h-3.5 w-3.5" />
+                                        {item.label}
+                                    </button>
+                                );
+                            })}
+                        </div>
                         <div className="relative">
                             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                             <input
