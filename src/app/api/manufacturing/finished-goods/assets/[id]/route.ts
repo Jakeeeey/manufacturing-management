@@ -1,6 +1,16 @@
 import { NextResponse } from "next/server";
 import { DIRECTUS_URL, headers } from "@/app/api/manufacturing/directus-api";
 
+function formatManilaTimestamp(dateString: string): string {
+    if (!dateString) return "";
+    const match = dateString.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!match) return dateString;
+    const [, year, month, day] = match;
+    const now = new Date();
+    const timePart = now.toISOString().substring(11, 19);
+    return `${year}-${month}-${day}T${timePart}.000Z`;
+}
+
 export async function PATCH(
     request: Request,
     { params }: { params: Promise<{ id: string }> }
@@ -29,7 +39,9 @@ export async function PATCH(
         if (payload.life_span !== undefined) formattedPayload.life_span = payload.life_span !== null ? Number(payload.life_span) : null;
         if (payload.is_active_warning !== undefined) formattedPayload.is_active_warning = !!payload.is_active_warning;
         if (payload.is_active !== undefined) formattedPayload.is_active = !!payload.is_active;
-        if (payload.date_acquired !== undefined) formattedPayload.date_acquired = payload.date_acquired;
+        if (payload.date_acquired !== undefined) {
+            formattedPayload.date_acquired = payload.date_acquired ? formatManilaTimestamp(payload.date_acquired) : null;
+        }
 
         // Auto recalculate total if qty or cost changes
         if (payload.quantity !== undefined || payload.cost_per_item !== undefined) {
