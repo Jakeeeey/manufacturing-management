@@ -12,6 +12,13 @@ export interface StorageLot {
     lot_name: string;
     inventory_type_id?: number | null;
     max_batch_capacity: number;
+    occupiedQuantity?: number;
+    availableQuantity?: number | null;
+}
+
+export interface ReceivingLotAllocationInput {
+    storageLotId: string;
+    quantity: number | string;
 }
 
 export interface Shipment {
@@ -71,6 +78,7 @@ export interface InspectionRow {
     expirationDate: string;
     rejectionReason: string;
     isPackaging: boolean;
+    acceptedLotAllocations: ReceivingLotAllocationInput[];
 }
 
 export type QaSpecification = import("@/app/api/manufacturing/qa/_purchase-specification-domain").ProductQaSpecification;
@@ -122,6 +130,7 @@ export interface ReceivingCommitPayload {
         acceptedQuantity: number;
         rejectedQuantity: number;
         storageLotId: number | null;
+        acceptedLotAllocations: Array<{ storageLotId: number; quantity: number }>;
         supplierBatchNumber: string;
         manufacturingDate: string | null;
         expiryDate: string | null;

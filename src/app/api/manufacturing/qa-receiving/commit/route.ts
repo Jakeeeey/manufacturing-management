@@ -17,6 +17,7 @@ import {
 } from "../_commit-contract";
 import type { ReceivingPreviewResult } from "../_preview-domain";
 import { POST as previewReceiving } from "../preview/route";
+import { normalizeReceivingLotAllocations } from "../_lot-allocation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -48,7 +49,10 @@ function statusLabel(status: number): "Received" | "Rejected" {
 }
 
 async function persistedResult(input: ReceivingCommitRequest, idempotentReplay: boolean): Promise<ReceivingCommitResult | null> {
-    const receiptNumbers = input.lines.map(line => `REC-${input.shipmentId}-${line.lineId}-${line.storageLotId}`);
+    const receiptNumbers = input.lines.map(line => {
+        const primaryLotId = line.storageLotId || normalizeReceivingLotAllocations(line.acceptedQuantity, line.acceptedLotAllocations, line.storageLotId)[0]?.storageLotId;
+        return `REC-${input.shipmentId}-${line.lineId}-${primaryLotId}`;
+    });
     const receiptParams = new URLSearchParams({
         "filter[receipt_no][_in]": receiptNumbers.join(","),
         fields: "purchase_order_product_id,purchase_order_id,receipt_no,product_id,branch_id,lot_id,batch_no,received_quantity,quantity_rejected,unit_price,final_landed_unit_cost,qa_status,expiry_date,received_date",
@@ -91,7 +95,8 @@ async function persistedResult(input: ReceivingCommitRequest, idempotentReplay: 
         "Unable to verify the created inventory movements."
     );
     const expectedMovementCount = input.lines.reduce((count, line) =>
-        count + (line.acceptedQuantity > 0 ? 1 : 0) + (line.rejectedQuantity > 0 ? 1 : 0), 0);
+        count + normalizeReceivingLotAllocations(line.acceptedQuantity, line.acceptedLotAllocations, line.storageLotId).length
+        + (line.rejectedQuantity > 0 ? 1 : 0), 0);
     if (movementRows.length !== expectedMovementCount) {
         throw new CommitError(409, "The purchase order is terminal but its inventory movements are incomplete. Reconciliation is required.");
     }
@@ -99,7 +104,9 @@ async function persistedResult(input: ReceivingCommitRequest, idempotentReplay: 
     const finalMovements: FinalReceivingMovement[] = [];
     const receivingRecords: FinalReceivingRecord[] = [];
     for (const line of input.lines) {
-        const receiptNo = `REC-${input.shipmentId}-${line.lineId}-${line.storageLotId}`;
+        const acceptedLotAllocations = normalizeReceivingLotAllocations(line.acceptedQuantity, line.acceptedLotAllocations, line.storageLotId);
+        const primaryLotId = line.storageLotId || acceptedLotAllocations[0]?.storageLotId;
+        const receiptNo = `REC-${input.shipmentId}-${line.lineId}-${primaryLotId}`;
         const receiving = receivingRows.find(row => row.receipt_no === receiptNo);
         const receivingLineId = Number(receiving?.purchase_order_product_id);
         if (!receiving || !receivingLineId) {
@@ -107,15 +114,23 @@ async function persistedResult(input: ReceivingCommitRequest, idempotentReplay: 
         }
         const candidates = movementRows.filter(row => relationId(row.source_document_id, "purchase_order_product_id") === receivingLineId);
         const routeInputs = [
-            line.acceptedQuantity > 0 ? { kind: "Passed" as const, quantity: line.acceptedQuantity, passed: true } : null,
-            line.rejectedQuantity > 0 ? { kind: "Rejected" as const, quantity: line.rejectedQuantity, passed: false } : null
-        ].filter((route): route is { kind: "Passed" | "Rejected"; quantity: number; passed: boolean } => Boolean(route));
+            ...acceptedLotAllocations.map(allocation => ({
+                kind: "Passed" as const,
+                quantity: allocation.quantity,
+                storageLotId: allocation.storageLotId,
+                passed: true
+            })),
+            ...(line.rejectedQuantity > 0 && primaryLotId
+                ? [{ kind: "Rejected" as const, quantity: line.rejectedQuantity, storageLotId: primaryLotId, passed: false }]
+                : [])
+        ];
 
         for (const route of routeInputs) {
             const matches = candidates.filter(row => {
                 const branchId = relationId(row.branch_id, "id");
                 return (route.passed ? branchId === input.destinationBranchId : branchId !== input.destinationBranchId)
                     && Number(row.quantity) === route.quantity
+                    && relationId(row.lot_id, "lot_id") === route.storageLotId
                     && String(row.source_document_no || "") === receiptNo;
             });
             if (matches.length !== 1) {
@@ -258,7 +273,11 @@ export async function POST(request: Request) {
                         quantity_accepted: result.acceptedQuantity,
                         quantity_rejected: result.rejectedQuantity,
                         batch_no: line.supplierBatchNumber,
-                        lot_id: line.storageLotId,
+                        lot_id: line.storageLotId || line.acceptedLotAllocations[0]?.storageLotId,
+                        accepted_lot_allocations: line.acceptedLotAllocations.map(allocation => ({
+                            storage_lot_id: allocation.storageLotId,
+                            quantity: allocation.quantity
+                        })),
                         manufacturing_date: line.manufacturingDate,
                         expiration_date: line.expiryDate,
                         rejection_reason: result.rejectionReason || line.remarks,

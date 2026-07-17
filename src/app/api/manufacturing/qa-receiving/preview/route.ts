@@ -18,6 +18,7 @@ import {
     type ReceivingRouteTransactionType
 } from "../_preview-domain";
 import { RECEIVING_POSTING_ENABLED, receivingPreviewRequestSchema } from "../_commit-contract";
+import { normalizeReceivingLotAllocations, receivingLotAllocationError } from "../_lot-allocation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -156,7 +157,23 @@ export async function POST(request: Request) {
         for (const line of lines) {
             const disposition = deriveReceivingDisposition(line);
             if (disposition === "Not Received") continue;
-            if (!line.storageLotId) throw new ReceivingPreviewError(`Select a storage lot for line ${line.lineId}.`);
+            const acceptedLotAllocations = normalizeReceivingLotAllocations(
+                line.acceptedQuantity,
+                line.acceptedLotAllocations,
+                line.storageLotId
+            );
+            const allocationError = receivingLotAllocationError(
+                line.acceptedQuantity,
+                line.acceptedLotAllocations,
+                line.storageLotId
+            );
+            if (allocationError) throw new ReceivingPreviewError(`Line ${line.lineId}: ${allocationError}`);
+            if (!line.storageLotId && acceptedLotAllocations.length === 0) {
+                throw new ReceivingPreviewError(`Select a storage lot for line ${line.lineId}.`);
+            }
+            if (line.rejectedQuantity > 0 && !line.storageLotId) {
+                throw new ReceivingPreviewError(`Select a primary storage lot for rejected quantity on line ${line.lineId}.`);
+            }
             if (!line.supplierBatchNumber.trim()) throw new ReceivingPreviewError(`Enter a supplier batch number for line ${line.lineId}.`);
             if (!line.isPackaging && (!line.manufacturingDate || !line.expiryDate)) {
                 throw new ReceivingPreviewError(`Manufacturing and expiry dates are required for raw-material line ${line.lineId}.`);
@@ -168,16 +185,21 @@ export async function POST(request: Request) {
 
         const requestedLotIds = [...new Set(lines
             .filter(line => line.receivedQuantity > 0)
-            .map(line => line.storageLotId as number))];
-        const [headerResponse, lineResponse, lotResponse, destinationBranch, movementTypeResponse] = await Promise.all([
+            .flatMap(line => [
+                ...(line.storageLotId ? [line.storageLotId] : []),
+                ...normalizeReceivingLotAllocations(line.acceptedQuantity, line.acceptedLotAllocations, line.storageLotId)
+                    .map(allocation => allocation.storageLotId)
+            ]))];
+        const [headerResponse, lineResponse, lotResponse, lotInventoryResponse, destinationBranch, movementTypeResponse] = await Promise.all([
             procurementDirectusFetch(`/items/purchase_order/${shipmentId}?fields=purchase_order_id,inventory_status,workflow_revision`),
             procurementDirectusFetch(`/items/purchase_order_products?filter[purchase_order_product_id][_in]=${lineIds.join(",")}&fields=purchase_order_product_id,purchase_order_id,product_id,purchase_intent,job_order_id&limit=${lineIds.length}`),
-            procurementDirectusFetch(`/items/lots?filter[lot_id][_in]=${requestedLotIds.join(",")}&fields=lot_id,lot_name&limit=${requestedLotIds.length}`),
+            procurementDirectusFetch(`/items/lots?filter[lot_id][_in]=${requestedLotIds.join(",")}&fields=lot_id,lot_name,max_batch_capacity&limit=${requestedLotIds.length}`),
+            procurementDirectusFetch(`/items/inventory_lots?filter[lot_id][_in]=${requestedLotIds.join(",")}&fields=lot_id,quantity&limit=-1`),
             loadBranch(destinationBranchId),
             procurementDirectusFetch("/items/inventory_transaction_types?fields=transaction_type_id,type_name,direction,origin_table&limit=-1")
         ]);
         if (headerResponse.status === 404) throw new ReceivingPreviewError("Purchase order not found.", 404);
-        if (!headerResponse.ok || !lineResponse.ok || !lotResponse.ok || !movementTypeResponse.ok) {
+        if (!headerResponse.ok || !lineResponse.ok || !lotResponse.ok || !lotInventoryResponse.ok || !movementTypeResponse.ok) {
             throw new ReceivingPreviewError("Unable to validate receiving preview reference data.", 503);
         }
 
@@ -218,6 +240,26 @@ export async function POST(request: Request) {
         const validLotIds = new Set(storageLotById.keys());
         if (requestedLotIds.some(id => !validLotIds.has(id))) {
             throw new ReceivingPreviewError("One or more storage lots do not exist.");
+        }
+        const occupiedByLot = new Map<number, number>();
+        for (const row of rows(await lotInventoryResponse.json())) {
+            const lotId = positiveInteger(row.lot_id, "lot_id") || positiveInteger(row.lot_id);
+            const quantity = Number(row.quantity || 0);
+            if (lotId && Number.isFinite(quantity)) occupiedByLot.set(lotId, (occupiedByLot.get(lotId) || 0) + Math.max(0, quantity));
+        }
+        const incomingByLot = new Map<number, number>();
+        for (const line of lines) {
+            for (const allocation of normalizeReceivingLotAllocations(line.acceptedQuantity, line.acceptedLotAllocations, line.storageLotId)) {
+                incomingByLot.set(allocation.storageLotId, (incomingByLot.get(allocation.storageLotId) || 0) + allocation.quantity);
+            }
+        }
+        for (const [lotId, incomingQuantity] of incomingByLot) {
+            const lot = storageLotById.get(lotId);
+            const rawCapacity = lot?.max_batch_capacity;
+            const capacity = rawCapacity === null || rawCapacity === undefined || rawCapacity === "" ? null : Number(rawCapacity);
+            if (capacity !== null && Number.isFinite(capacity) && (occupiedByLot.get(lotId) || 0) + incomingQuantity > capacity + 1e-9) {
+                throw new ReceivingPreviewError(`Storage lot ${String(lot?.lot_name || lotId)} has only ${Math.max(0, capacity - (occupiedByLot.get(lotId) || 0))} unit(s) available.`);
+            }
         }
 
         const movementTypes = rows(await movementTypeResponse.json()) as DirectusMovementType[];
@@ -336,7 +378,17 @@ export async function POST(request: Request) {
 
         const data: ReceivingPreviewLineResult[] = evaluated.map(({ line, result }) => {
             const stored = poLineById.get(line.lineId)!;
-            const storageLot = storageLotById.get(line.storageLotId);
+            const acceptedLotAllocations = normalizeReceivingLotAllocations(
+                result.acceptedQuantity,
+                line.acceptedLotAllocations,
+                line.storageLotId
+            );
+            const primaryStorageLotId = line.storageLotId || acceptedLotAllocations[0]?.storageLotId || null;
+            const storageLot = primaryStorageLotId ? storageLotById.get(primaryStorageLotId) : undefined;
+            const storageLotNames = Object.fromEntries(acceptedLotAllocations.map(allocation => [
+                allocation.storageLotId,
+                String(storageLotById.get(allocation.storageLotId)?.lot_name || `Lot ${allocation.storageLotId}`)
+            ]));
             let allocationDrafts: ReceivingMrpAllocationDraft[] = [];
             let unallocatedQuantity = 0;
             if (result.acceptedQuantity > 0 && stored.purchase_intent === "MRP_Demand") {
@@ -361,11 +413,13 @@ export async function POST(request: Request) {
                     ? []
                     : buildReceivingRoutes({
                     acceptedQuantity: result.acceptedQuantity,
+                    acceptedLotAllocations,
                     rejectedQuantity: result.rejectedQuantity,
                     createdBy: actor.userId,
                     sourceDocumentNo: receiptNumber,
-                    storageLotId: line.storageLotId as number,
+                    storageLotId: primaryStorageLotId as number,
                     storageLotName: String(storageLot?.lot_name || `Lot ${line.storageLotId}`),
+                    storageLotNames,
                     supplierBatchNumber: line.supplierBatchNumber.trim(),
                     manufacturingDate: line.manufacturingDate,
                     expiryDate: line.expiryDate,

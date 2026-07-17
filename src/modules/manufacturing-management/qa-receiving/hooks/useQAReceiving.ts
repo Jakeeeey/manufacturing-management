@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { toast } from "sonner";
-import { Shipment, Branch, ShipmentLineItem, Product, InspectionRow, StorageLot, QaSpecificationLoadState, QaSpecificationReadings, ReceivingCommitPayload, ReceivingQaEvaluation, ReceivingPreview, ReceivingCommitResult } from "../types";
+import { Shipment, Branch, ShipmentLineItem, Product, InspectionRow, StorageLot, QaSpecificationLoadState, QaSpecificationReadings, ReceivingCommitPayload, ReceivingQaEvaluation, ReceivingPreview, ReceivingCommitResult, ReceivingLotAllocationInput } from "../types";
 import {
     fetchActiveShipments, 
     fetchBranches, 
@@ -252,6 +252,9 @@ export function useQAReceiving() {
                     rejectedQty: isReceived ? Number(l.quantity_rejected || 0) : "",
                     batchNumber: isReceived ? (l.batch_no || l.lot_number || "") : "",
                     lotId: isReceived && l.lot_id ? String(l.lot_id) : "",
+                    acceptedLotAllocations: isReceived && l.lot_id && Number(l.quantity_received || 0) - Number(l.quantity_rejected || 0) > 0
+                        ? [{ storageLotId: String(l.lot_id), quantity: Math.max(0, Number(l.quantity_received || 0) - Number(l.quantity_rejected || 0)) }]
+                        : [],
                     manufacturingDate: isReceived ? (l.manufacturing_date || "") : "",
                     expirationDate: isReceived ? (l.expiration_date || "") : "",
                     rejectionReason: l.rejection_reason || "",
@@ -324,15 +327,47 @@ export function useQAReceiving() {
             return next;
         });
         setInspectionRows(prev => {
-            const updatedRow = {
+            const updatedRow: InspectionRow = {
                 ...prev[lineId],
                 [field]: value
             };
+            const accepted = Number(updatedRow.acceptedQty || 0);
+            if (field === "acceptedQty" && updatedRow.acceptedLotAllocations.length === 1) {
+                updatedRow.acceptedLotAllocations = [{
+                    ...updatedRow.acceptedLotAllocations[0],
+                    quantity: value
+                }];
+            } else if ((field === "acceptedQty" || field === "lotId") && accepted > 0 && updatedRow.acceptedLotAllocations.length === 0 && updatedRow.lotId) {
+                updatedRow.acceptedLotAllocations = [{ storageLotId: updatedRow.lotId, quantity: accepted }];
+            }
             return {
                 ...prev,
                 [lineId]: updatedRow
             };
         });
+    };
+
+    const handleUpdateAllocations = (lineId: number, allocations: ReceivingLotAllocationInput[]) => {
+        if (selectedShipment?.status === "Received") return;
+        previewController.current?.abort();
+        setValidatingInspection(false);
+        setReceivingPreview(null);
+        setCommittedResult(null);
+        setPreviewOpen(false);
+        setPreviewAcknowledged(false);
+        setQaEvaluationResults(previous => {
+            if (!previous[lineId]) return previous;
+            const next = { ...previous };
+            delete next[lineId];
+            return next;
+        });
+        setInspectionRows(previous => ({
+            ...previous,
+            [lineId]: {
+                ...previous[lineId],
+                acceptedLotAllocations: allocations
+            }
+        }));
     };
 
     const handleUpdateQaReading = (lineId: number, specId: number, value: string) => {
@@ -380,7 +415,7 @@ export function useQAReceiving() {
                 isPackaging: Boolean(row?.isPackaging),
                 receivedQuantity: Number(row?.receivedQty || 0),
                 batchNumber: row?.batchNumber || "",
-                lotId: row?.lotId || "",
+                lotId: row?.lotId || row?.acceptedLotAllocations?.[0]?.storageLotId || "",
                 manufacturingDate: row?.manufacturingDate || "",
                 expirationDate: row?.expirationDate || ""
             };
@@ -468,6 +503,9 @@ export function useQAReceiving() {
                     acceptedQuantity: Number(row.acceptedQty || 0),
                     rejectedQuantity: Number(row.rejectedQty || 0),
                     storageLotId: row.lotId ? Number(row.lotId) : null,
+                    acceptedLotAllocations: row.acceptedLotAllocations
+                        .filter(allocation => Number(allocation.storageLotId) > 0 && Number(allocation.quantity) > 0)
+                        .map(allocation => ({ storageLotId: Number(allocation.storageLotId), quantity: Number(allocation.quantity) })),
                     supplierBatchNumber: row.batchNumber.trim(),
                     manufacturingDate: row.manufacturingDate || null,
                     expiryDate: row.expirationDate || null,
@@ -508,6 +546,7 @@ export function useQAReceiving() {
                         ...next[result.lineId],
                         acceptedQty: result.acceptedQuantity,
                         rejectedQty: result.rejectedQuantity,
+                        acceptedLotAllocations: result.acceptedQuantity > 0 ? next[result.lineId].acceptedLotAllocations : [],
                         rejectionReason: result.rejectionReason || next[result.lineId].rejectionReason
                     };
                 }
@@ -685,6 +724,7 @@ export function useQAReceiving() {
         qaSubmissionBlockReason,
         handleSelectShipment,
         handleUpdateRow,
+        handleUpdateAllocations,
         handleUpdateQaReading,
         handleSubmitInspection,
         clearInspection,
