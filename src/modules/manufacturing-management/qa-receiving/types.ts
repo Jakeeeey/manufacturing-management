@@ -113,7 +113,7 @@ export interface ReceivingPreview {
     workflowRevision: number;
     postingEnabled: boolean;
     destinationBranch: { id: number; name: string; code: string };
-    generatedBy: number;
+    inspectorName: string;
     lines: ReceivingQaEvaluation[];
 }
 

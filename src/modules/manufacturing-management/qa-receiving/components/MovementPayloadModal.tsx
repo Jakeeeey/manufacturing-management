@@ -11,6 +11,7 @@ interface MovementPayloadModalProps {
     onOpenChange: (open: boolean) => void;
     preview: ReceivingPreview | null;
     lineItems: ShipmentLineItem[];
+    purchaseOrderReference?: string | null;
     posting: boolean;
     onCommit: () => void;
     committedResult: ReceivingCommitResult | null;
@@ -24,13 +25,12 @@ interface RouteRow {
     route: ReceivingMovementRoute;
 }
 
-const pendingId = "Assigned on confirmation";
-
 export default function MovementPayloadModal({
     open,
     onOpenChange,
     preview,
     lineItems,
+    purchaseOrderReference,
     posting,
     onCommit,
     committedResult,
@@ -48,8 +48,8 @@ export default function MovementPayloadModal({
             const poLine = lineItems.find(item => item.line_id === line.lineId);
             return line.routes.map(route => ({
                 lineId: line.lineId,
-                productName: poLine?.product_id?.product_name || `PO line ${line.lineId}`,
-                productCode: poLine?.product_id?.product_code || `LINE-${line.lineId}`,
+                productName: poLine?.product_id?.product_name || "Unknown product",
+                productCode: poLine?.product_id?.product_code || "N/A",
                 route
             }));
         });
@@ -58,6 +58,15 @@ export default function MovementPayloadModal({
     const passedRows = routeRows.filter(row => row.route.kind === "Passed");
     const rejectedRows = routeRows.filter(row => row.route.kind === "Rejected");
     const allocations = passedRows.flatMap(row => row.route.allocationDrafts.map(allocation => ({ ...row, allocation })));
+
+    const getProduct = (lineId: number) => lineItems.find(item => item.line_id === lineId)?.product_id;
+    const getPreviewRoute = (lineId: number, storageLotId: number, branchId?: number) => {
+        const routes = preview?.lines.find(line => line.lineId === lineId)?.routes || [];
+        return routes.find(route =>
+            route.storageLotId === storageLotId
+            && (branchId === undefined || route.branch.id === branchId)
+        ) || routes.find(route => route.storageLotId === storageLotId) || null;
+    };
 
     if (!preview && !committedResult) return null;
 
@@ -72,7 +81,7 @@ export default function MovementPayloadModal({
                 <p className="text-[11px] text-muted-foreground border-y py-3">No {kind.toLowerCase()} movement is required.</p>
             ) : (
                 <div className="overflow-x-auto border-y">
-                    <table className="w-full min-w-[1050px] text-[10px]">
+                    <table className="w-full min-w-[850px] text-[10px]">
                         <thead className="bg-muted/40 text-muted-foreground uppercase">
                             <tr>
                                 <th className="px-2 py-2 text-left">Product</th>
@@ -80,8 +89,7 @@ export default function MovementPayloadModal({
                                 <th className="px-2 py-2 text-left">Storage lot / batch</th>
                                 <th className="px-2 py-2 text-right">Quantity</th>
                                 <th className="px-2 py-2 text-left">Dates</th>
-                                <th className="px-2 py-2 text-left">Transaction / user</th>
-                                <th className="px-2 py-2 text-left">Commit IDs</th>
+                                <th className="px-2 py-2 text-left">Transaction</th>
                                 <th className="px-2 py-2 text-left">Remarks</th>
                             </tr>
                         </thead>
@@ -89,12 +97,11 @@ export default function MovementPayloadModal({
                             {rows.map(({ lineId, productName, productCode, route }) => (
                                 <tr key={`${lineId}-${route.kind}`}>
                                     <td className="px-2 py-2 align-top"><strong>{productName}</strong><br /><span className="text-muted-foreground">{productCode}</span></td>
-                                    <td className="px-2 py-2 align-top"><strong>{route.branch.name}</strong><br /><span className="text-muted-foreground">{route.branch.code} / ID {route.branch.id}</span></td>
-                                    <td className="px-2 py-2 align-top"><strong>{route.storageLotName}</strong><br /><span className="text-muted-foreground">Location ID {route.storageLotId} / {route.supplierBatchNumber}</span></td>
+                                    <td className="px-2 py-2 align-top"><strong>{route.branch.name}</strong><br /><span className="text-muted-foreground">{route.branch.code}</span></td>
+                                    <td className="px-2 py-2 align-top"><strong>{route.storageLotName}</strong><br /><span className="text-muted-foreground">Batch: {route.supplierBatchNumber}</span></td>
                                     <td className="px-2 py-2 align-top text-right font-bold tabular-nums">{route.quantity.toLocaleString()}</td>
                                     <td className="px-2 py-2 align-top">MFG: {route.manufacturingDate || "N/A"}<br />EXP: {route.expiryDate || "N/A"}</td>
-                                    <td className="px-2 py-2 align-top"><strong>{route.transactionType.name}</strong><br /><span className="text-muted-foreground">Type ID {route.transactionType.id} / User {route.createdBy}</span></td>
-                                    <td className="px-2 py-2 align-top text-muted-foreground">Movement: {pendingId}<br />Receiving: {pendingId}<br />Inventory lot: {pendingId}</td>
+                                    <td className="px-2 py-2 align-top"><strong>{route.transactionType.name}</strong></td>
                                     <td className="px-2 py-2 align-top max-w-[220px] whitespace-normal">{route.remarks || "None"}</td>
                                 </tr>
                             ))}
@@ -116,7 +123,7 @@ export default function MovementPayloadModal({
                     <DialogDescription className="text-xs">
                         {committedResult
                             ? `Receipt ${committedResult.commitReference} was posted successfully. Confirm the persisted records below.`
-                            : `Receipt ${preview?.receiptNumber} for PO ${preview?.shipmentId}. Review the movement and allocation records before posting.`}
+                            : `Receipt ${preview?.receiptNumber} for PO ${purchaseOrderReference || "the selected purchase order"}. Review the movement and allocation records before posting.`}
                     </DialogDescription>
                 </DialogHeader>
 
@@ -124,7 +131,8 @@ export default function MovementPayloadModal({
                     {committedResult ? (
                         <>
                             <div className="flex flex-wrap gap-x-6 gap-y-1 text-[11px] border-y py-2">
-                                <span><strong>PO:</strong> {committedResult.shipmentId}</span>
+                                <span><strong>PO:</strong> {purchaseOrderReference || "Current purchase order"}</span>
+                                <span><strong>Receipts:</strong> {committedResult.receiptNumbers.join(", ") || "N/A"}</span>
                                 <span><strong>Status:</strong> {committedResult.status}</span>
                                 <span><strong>Replay:</strong> {committedResult.idempotentReplay ? "Yes" : "No"}</span>
                             </div>
@@ -136,28 +144,34 @@ export default function MovementPayloadModal({
                                     <span className="text-[10px] text-muted-foreground">{committedResult.receivingRecords.length}</span>
                                 </div>
                                 <div className="overflow-x-auto border-y">
-                                    <table className="w-full min-w-[1000px] text-[10px]">
+                                    <table className="w-full min-w-[850px] text-[10px]">
                                         <thead className="bg-muted/40 text-muted-foreground uppercase">
                                             <tr>
-                                                <th className="px-2 py-2 text-left">Receiving ID</th>
-                                                <th className="px-2 py-2 text-left">PO line / product</th>
+                                                <th className="px-2 py-2 text-left">Product</th>
                                                 <th className="px-2 py-2 text-left">Receipt / batch</th>
                                                 <th className="px-2 py-2 text-left">Storage lot</th>
                                                 <th className="px-2 py-2 text-right">Received</th>
                                                 <th className="px-2 py-2 text-right">Rejected</th>
-                                                <th className="px-2 py-2 text-left">QA / inventory IDs</th>
+                                                <th className="px-2 py-2 text-left">QA status</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y">
                                             {committedResult.receivingRecords.map(record => (
                                                 <tr key={record.receivingRecordId}>
-                                                    <td className="px-2 py-2 align-top font-bold">{record.receivingRecordId}</td>
-                                                    <td className="px-2 py-2 align-top">Line {record.lineId}<br /><span className="text-muted-foreground">Product ID {record.productId}</span></td>
+                                                    {(() => {
+                                                        const product = getProduct(record.lineId);
+                                                        const route = getPreviewRoute(record.lineId, record.storageLotId);
+                                                        return (
+                                                            <>
+                                                    <td className="px-2 py-2 align-top"><strong>{product?.product_name || "Unknown product"}</strong><br /><span className="text-muted-foreground">{product?.product_code || "N/A"}</span></td>
                                                     <td className="px-2 py-2 align-top">{record.receiptNumber}<br /><span className="text-muted-foreground">{record.batchNumber}</span></td>
-                                                    <td className="px-2 py-2 align-top">{record.storageLotId}</td>
+                                                    <td className="px-2 py-2 align-top">{route?.storageLotName || "N/A"}</td>
                                                     <td className="px-2 py-2 align-top text-right font-bold tabular-nums">{record.receivedQuantity.toLocaleString()}</td>
                                                     <td className="px-2 py-2 align-top text-right font-bold tabular-nums">{record.rejectedQuantity.toLocaleString()}</td>
-                                                    <td className="px-2 py-2 align-top">{record.qaStatus || "N/A"}<br /><span className="text-muted-foreground">Inventory: {record.inventoryLotIds.join(", ") || "None"}</span></td>
+                                                    <td className="px-2 py-2 align-top">{record.qaStatus || "N/A"}</td>
+                                                            </>
+                                                        );
+                                                    })()}
                                                 </tr>
                                             ))}
                                         </tbody>
@@ -175,23 +189,31 @@ export default function MovementPayloadModal({
                                     <table className="w-full min-w-[850px] text-[10px]">
                                         <thead className="bg-muted/40 text-muted-foreground uppercase">
                                             <tr>
-                                                <th className="px-2 py-2 text-left">Movement ID</th>
-                                                <th className="px-2 py-2 text-left">Kind / receiving ID</th>
-                                                <th className="px-2 py-2 text-left">Inventory lot</th>
-                                                <th className="px-2 py-2 text-left">Branch / storage lot</th>
+                                                <th className="px-2 py-2 text-left">Kind</th>
+                                                <th className="px-2 py-2 text-left">Product</th>
+                                                <th className="px-2 py-2 text-left">Storage lot</th>
+                                                <th className="px-2 py-2 text-left">Branch</th>
                                                 <th className="px-2 py-2 text-right">Quantity</th>
-                                                <th className="px-2 py-2 text-left">Source</th>
+                                                <th className="px-2 py-2 text-left">Source / transaction</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y">
                                             {committedResult.movements.map(movement => (
                                                 <tr key={movement.movementId}>
-                                                    <td className="px-2 py-2 font-bold">{movement.movementId}</td>
-                                                    <td className="px-2 py-2">{movement.kind}<br /><span className="text-muted-foreground">Receiving {movement.receivingLineId}</span></td>
-                                                    <td className="px-2 py-2">{movement.inventoryLotId}</td>
-                                                    <td className="px-2 py-2">Branch {movement.branchId}<br /><span className="text-muted-foreground">Lot {movement.storageLotId}</span></td>
+                                                    {(() => {
+                                                        const product = getProduct(movement.lineId);
+                                                        const route = getPreviewRoute(movement.lineId, movement.storageLotId, movement.branchId);
+                                                        return (
+                                                            <>
+                                                    <td className="px-2 py-2">{movement.kind}</td>
+                                                    <td className="px-2 py-2"><strong>{product?.product_name || "Unknown product"}</strong><br /><span className="text-muted-foreground">{product?.product_code || "N/A"}</span></td>
+                                                    <td className="px-2 py-2">{route?.storageLotName || "N/A"}</td>
+                                                    <td className="px-2 py-2">{route?.branch.name || "N/A"}<br /><span className="text-muted-foreground">{route?.branch.code || ""}</span></td>
                                                     <td className="px-2 py-2 text-right font-bold tabular-nums">{movement.quantity.toLocaleString()}</td>
-                                                    <td className="px-2 py-2">{movement.sourceDocumentNo}<br /><span className="text-muted-foreground">Type {movement.transactionTypeId}</span></td>
+                                                    <td className="px-2 py-2">{movement.sourceDocumentNo}<br /><span className="text-muted-foreground">{route?.transactionType.name || "N/A"}</span></td>
+                                                            </>
+                                                        );
+                                                    })()}
                                                 </tr>
                                             ))}
                                         </tbody>
@@ -203,7 +225,7 @@ export default function MovementPayloadModal({
                     <>
                     <div className="flex flex-wrap gap-x-6 gap-y-1 text-[11px] border-y py-2">
                         <span><strong>Destination:</strong> {preview!.destinationBranch.name} ({preview!.destinationBranch.code})</span>
-                        <span><strong>Inspector:</strong> User {preview!.generatedBy}</span>
+                        <span><strong>Inspector:</strong> {preview!.inspectorName}</span>
                         <span><strong>Status:</strong> Ready to post</span>
                     </div>
 
@@ -217,28 +239,24 @@ export default function MovementPayloadModal({
                             <span className="text-[10px] text-muted-foreground">{allocations.length} draft{allocations.length === 1 ? "" : "s"}</span>
                         </div>
                         <div className="overflow-x-auto border-y">
-                            <table className="w-full min-w-[760px] text-[10px]">
+                            <table className="w-full min-w-[620px] text-[10px]">
                                 <thead className="bg-muted/40 text-muted-foreground uppercase">
                                     <tr>
                                         <th className="px-2 py-2 text-left">Product</th>
                                         <th className="px-2 py-2 text-left">Job order</th>
-                                        <th className="px-2 py-2 text-left">Material requirement</th>
                                         <th className="px-2 py-2 text-right">Allocated</th>
-                                        <th className="px-2 py-2 text-left">Commit IDs</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y">
                                     {allocations.map(({ lineId, productName, allocation }) => (
                                         <tr key={`${lineId}-${allocation.jobOrderMaterialId}`}>
                                             <td className="px-2 py-2 font-bold">{productName}</td>
-                                            <td className="px-2 py-2"><strong>{allocation.jobOrder.number}</strong><br /><span className="text-muted-foreground">ID {allocation.jobOrder.id}</span></td>
-                                            <td className="px-2 py-2">ID {allocation.jobOrderMaterialId}</td>
+                                            <td className="px-2 py-2"><strong>{allocation.jobOrder.number}</strong></td>
                                             <td className="px-2 py-2 text-right font-bold tabular-nums">{allocation.quantity.toLocaleString()}</td>
-                                            <td className="px-2 py-2 text-muted-foreground">Allocation: {pendingId}<br />Receiving: {pendingId}<br />Inventory lot: {pendingId}</td>
                                         </tr>
                                     ))}
                                     {allocations.length === 0 && (
-                                        <tr><td colSpan={5} className="px-2 py-3 text-muted-foreground">No MRP allocation is required for this receipt.</td></tr>
+                                        <tr><td colSpan={3} className="px-2 py-3 text-muted-foreground">No MRP allocation is required for this receipt.</td></tr>
                                     )}
                                 </tbody>
                             </table>

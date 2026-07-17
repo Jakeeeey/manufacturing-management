@@ -68,7 +68,7 @@ export interface ReceivingPreviewResult {
     workflowRevision: number;
     postingEnabled: boolean;
     destinationBranch: ReceivingRouteBranch;
-    generatedBy: number;
+    inspectorName: string;
     lines: ReceivingPreviewLineResult[];
 }
 
@@ -149,7 +149,7 @@ export function buildReceivingRoutes(
                 branch: passedBranch,
                 transactionType: passedTransactionType,
                 storageLotId: allocation.storageLotId,
-                storageLotName: input.storageLotNames[allocation.storageLotId] || `Lot ${allocation.storageLotId}`,
+        storageLotName: input.storageLotNames[allocation.storageLotId] || "Unknown storage lot",
                 remarks: input.remarks,
                 allocationDrafts: index === 0 ? input.allocationDrafts : [],
                 unallocatedQuantity: index === 0 ? input.unallocatedQuantity : 0

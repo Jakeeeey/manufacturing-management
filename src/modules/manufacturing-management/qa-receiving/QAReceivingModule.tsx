@@ -202,6 +202,7 @@ export default function QAReceivingModule() {
                 onOpenChange={setPreviewOpen}
                 preview={receivingPreview}
                 lineItems={lineItems}
+                purchaseOrderReference={selectedShipment?.reference_number}
                 posting={postingInspection}
                 onCommit={handleCommitReceiving}
                 committedResult={committedResult}

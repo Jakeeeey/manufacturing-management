@@ -94,8 +94,8 @@ function mapBranch(branch: DirectusBranch): ReceivingRouteBranch {
     if (!id) throw new ReceivingPreviewError("Receiving branch configuration is invalid.", 503);
     return {
         id,
-        name: String(branch.branch_name || `Branch ${id}`),
-        code: String(branch.branch_code || `BR-${id}`)
+        name: String(branch.branch_name || "Unknown branch"),
+        code: String(branch.branch_code || "N/A")
     };
 }
 
@@ -387,7 +387,7 @@ export async function POST(request: Request) {
             const storageLot = primaryStorageLotId ? storageLotById.get(primaryStorageLotId) : undefined;
             const storageLotNames = Object.fromEntries(acceptedLotAllocations.map(allocation => [
                 allocation.storageLotId,
-                String(storageLotById.get(allocation.storageLotId)?.lot_name || `Lot ${allocation.storageLotId}`)
+                String(storageLotById.get(allocation.storageLotId)?.lot_name || "Unknown storage lot")
             ]));
             let allocationDrafts: ReceivingMrpAllocationDraft[] = [];
             let unallocatedQuantity = 0;
@@ -402,7 +402,7 @@ export async function POST(request: Request) {
                     .map(materialRequirement);
                 const allocation = buildMrpAllocationDrafts(result.acceptedQuantity, {
                     id: jobOrderId,
-                    number: String(jobOrder.job_order_no || `JO-${jobOrderId}`)
+                    number: String(jobOrder.job_order_no || "Unknown job order")
                 }, requirements);
                 allocationDrafts = allocation.allocationDrafts;
                 unallocatedQuantity = allocation.unallocatedQuantity;
@@ -418,7 +418,7 @@ export async function POST(request: Request) {
                     createdBy: actor.userId,
                     sourceDocumentNo: receiptNumber,
                     storageLotId: primaryStorageLotId as number,
-                    storageLotName: String(storageLot?.lot_name || `Lot ${line.storageLotId}`),
+                    storageLotName: String(storageLot?.lot_name || "Unknown storage lot"),
                     storageLotNames,
                     supplierBatchNumber: line.supplierBatchNumber.trim(),
                     manufacturingDate: line.manufacturingDate,
@@ -438,7 +438,7 @@ export async function POST(request: Request) {
                 workflowRevision: Number(header.workflow_revision || 0),
                 postingEnabled: RECEIVING_POSTING_ENABLED,
                 destinationBranch: passedBranch,
-                generatedBy: actor.userId,
+                inspectorName: actor.displayName,
                 lines: data
             }
         });

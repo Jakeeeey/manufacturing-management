@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { toast } from "sonner";
+import { v4 as uuidv4 } from "uuid";
 import { Shipment, Branch, ShipmentLineItem, Product, InspectionRow, StorageLot, QaSpecificationLoadState, QaSpecificationReadings, ReceivingCommitPayload, ReceivingQaEvaluation, ReceivingPreview, ReceivingCommitResult, ReceivingLotAllocationInput } from "../types";
 import {
     fetchActiveShipments, 
@@ -534,7 +535,7 @@ export function useQAReceiving() {
                 destinationBranchId: Number(selectedBranchId),
                 lines: evaluationLines
             });
-            setReceivingIdempotencyKey(crypto.randomUUID());
+            setReceivingIdempotencyKey(uuidv4());
             setQaEvaluationResults(Object.fromEntries(preview.lines.map(result => [result.lineId, result])));
             setPreviewAcknowledged(false);
             setPreviewOpen(true);
