@@ -18,6 +18,14 @@ function formatMoney(value: number | string | null | undefined, currency = "PHP"
         maximumFractionDigits: 2
     }).format(Number.isFinite(amount) ? amount : 0);
 }
+
+function formatAmount(value: number | string | null | undefined) {
+    const amount = Number(value || 0);
+    return new Intl.NumberFormat("en-PH", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+    }).format(Number.isFinite(amount) ? amount : 0);
+}
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { Search, Plus, Calendar, ShieldCheck, Truck, Layers, Anchor, AlertCircle, Info, Landmark, Edit, RefreshCw, Loader2, Trash2, CheckCircle2, CheckSquare, X } from "lucide-react";
 import { toast } from "sonner";
@@ -437,7 +445,7 @@ function RawProductSelector({
                                                     <span>{opt.unit_of_measurement?.unit_shortcut || "PCS"}</span>
                                                     {getTypeBadge(opt.product_type, true)}
                                                     <span className="opacity-50">|</span>
-                                                    <span>₱{cost.toFixed(2)}</span>
+                                                    <span>{formatMoney(cost)}</span>
                                                 </button>
                                             );
                                         })}
@@ -1332,10 +1340,10 @@ export default function IncomingShipments({
                                                             </div>
                                                         </td>
                                                         <td className="p-3 text-right font-mono text-[11px]">
-                                                            ₱{Number(line.base_unit_cost_php).toFixed(2)}
+                                                            {formatMoney(line.base_unit_cost_php)}
                                                         </td>
                                                         <td className="p-3 text-right font-mono text-[11px] text-muted-foreground">
-                                                            +₱{Number(line.allocated_expense_php || 0).toFixed(2)}
+                                                            +{formatMoney(line.allocated_expense_php || 0)}
                                                         </td>
                                                     </tr>
                                                 );
@@ -1680,15 +1688,16 @@ export default function IncomingShipments({
                                                             }}
                                                             className="w-full whitespace-nowrap rounded-lg border bg-background px-2.5 py-1.5 text-xs outline-none h-9 text-foreground font-semibold"
                                                         >
-                                                            {line.uom_options.map((o: UOMOption) => (
-                                                                <option key={o.product_id} value={o.product_id}>
-                                                                    {o.unit_shortcut} ({shipmentForm.currency_code || "PHP"} {Number(
-                                                                        canonicalDrafting && shipmentForm.currency_code === "USD"
-                                                                            ? Number(o.cost_per_unit || 0) / (Number(shipmentForm.exchange_rate) || 1)
-                                                                            : o.cost_per_unit || 0
-                                                                 ).toFixed(2)})
-                                                                 </option>
-                                                             ))}
+                                                             {line.uom_options.map((o: UOMOption) => {
+                                                                 const displayCost = canonicalDrafting && shipmentForm.currency_code === "USD"
+                                                                     ? Number(o.cost_per_unit || 0) / (Number(shipmentForm.exchange_rate) || 1)
+                                                                     : o.cost_per_unit || 0;
+                                                                 return (
+                                                                     <option key={o.product_id} value={o.product_id}>
+                                                                         {o.unit_shortcut} ({shipmentForm.currency_code || "PHP"} {formatAmount(displayCost)})
+                                                                     </option>
+                                                                 );
+                                                             })}
                                                          </select>
                                                     </div>
                                                 )}
