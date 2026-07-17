@@ -910,6 +910,7 @@ export default function IncomingShipments({
     };
 
     const displayShipmentStatus = (shipment: Pick<IncomingShipment, "status" | "inventory_status" | "payment_status">) => {
+        if (Number(shipment.inventory_status) === INVENTORY_STATUS.FOR_PICKUP) return "Receiving (QA)";
         if (shipment.status !== "Awaiting Payment") return shipment.status;
         if (Number(shipment.inventory_status) !== INVENTORY_STATUS.APPROVED) return "Pending";
         return Number(shipment.payment_status) === PAYMENT_STATUS.AWAITING_PAYMENT ? "Approved" : shipment.status;
@@ -1174,15 +1175,17 @@ export default function IncomingShipments({
                                     <div className="text-[10px] font-extrabold text-muted-foreground uppercase tracking-wider block">{canonicalDrafting ? "Purchase Order Workflow Progress" : "Shipment Life Cycle Progress"}</div>
                                     <div className="flex items-center w-full relative">
                                         {(activeShipment.status === "Rejected"
-                                            ? ["Ordered", "Approved", "Rejected"]
-                                            : activeShipment.status === "Awaiting Payment"
-                                            ? ["Ordered", "Awaiting Payment", "En Route", "Receiving (QA)", "Received"]
-                                            : activeShipment.status === "For Pickup"
-                                            ? ["Ordered", "Approved", "For Pickup", "En Route", "Receiving (QA)", "Received"]
-                                            : ["Ordered", "Approved", "En Route", "Receiving (QA)", "Received"]
+                                            ? ["Requested", "Approved", "Rejected"]
+                                            : ["Requested", "Approved", "En Route", "Receiving (QA)", "Received"]
                                         ).map((st, idx, arr) => {
                                             const statuses = arr;
-                                            const currentStatus = activeShipment.status === "Requested" ? "Ordered" : activeShipment.status;
+                                            const currentStatus = activeShipment.status === "Requested" || activeShipment.status === "Ordered"
+                                                ? "Requested"
+                                                : activeShipment.status === "For Pickup" || activeShipment.status === "Partially Received"
+                                                ? "Receiving (QA)"
+                                                : activeShipment.status === "Awaiting Payment"
+                                                ? (Number(activeShipment.inventory_status) === INVENTORY_STATUS.APPROVED ? "Approved" : "Requested")
+                                                : activeShipment.status;
                                             const currentIdx = statuses.indexOf(currentStatus);
                                             const stepIdx = statuses.indexOf(st);
                                             
@@ -1203,7 +1206,7 @@ export default function IncomingShipments({
                                                         </div>
                                                         <span className={`text-[9px] font-bold mt-1.5 truncate max-w-[70px] ${
                                                             isActive ? "text-primary animate-pulse" : "text-muted-foreground"
-                                                        }`}>{canonicalDrafting && st === "Ordered" ? "Requested" : st}</span>
+                          }`}>{st}</span>
                                                     </div>
                                                     {idx < arr.length - 1 && (
                                                         <div className={`flex-1 h-[2px] -mt-4 transition-all ${

@@ -12,6 +12,7 @@ export const INVENTORY_STATUS = {
 
 export const RECEIVING_QUEUE_INVENTORY_STATUS_IDS = [
     INVENTORY_STATUS.APPROVED,
+    INVENTORY_STATUS.FOR_PICKUP,
     INVENTORY_STATUS.EN_ROUTE,
     INVENTORY_STATUS.PARTIALLY_RECEIVED
 ] as const;
@@ -45,7 +46,7 @@ const ALLOWED_TRANSITIONS: Record<InventoryStatusId, readonly InventoryStatusId[
     [INVENTORY_STATUS.APPROVED]: [INVENTORY_STATUS.FOR_PICKUP, INVENTORY_STATUS.EN_ROUTE],
     [INVENTORY_STATUS.AWAITING_PAYMENT]: [INVENTORY_STATUS.EN_ROUTE],
     [INVENTORY_STATUS.FOR_PICKUP]: [INVENTORY_STATUS.EN_ROUTE],
-    [INVENTORY_STATUS.EN_ROUTE]: [INVENTORY_STATUS.PARTIALLY_RECEIVED, INVENTORY_STATUS.RECEIVED, INVENTORY_STATUS.REJECTED],
+    [INVENTORY_STATUS.EN_ROUTE]: [INVENTORY_STATUS.FOR_PICKUP, INVENTORY_STATUS.PARTIALLY_RECEIVED, INVENTORY_STATUS.RECEIVED, INVENTORY_STATUS.REJECTED],
     [INVENTORY_STATUS.PARTIALLY_RECEIVED]: [INVENTORY_STATUS.RECEIVED],
     [INVENTORY_STATUS.RECEIVED]: [],
     [INVENTORY_STATUS.CANCELLED]: [],
@@ -66,6 +67,7 @@ export type ShipmentStatusLabel = "Ordered" | "Approved" | "Awaiting Payment" | 
 
 export function isReceivingQueueShipmentStatus(status: string): boolean {
     return status === "Approved"
+        || status === "For Pickup"
         || status === "En Route"
         || status === "Receiving (QA)"
         || status === "Partially Received";
@@ -89,8 +91,7 @@ export function inventoryStatusToShipmentStatus(statusId?: number | null, paymen
         case INVENTORY_STATUS.CANCELLED: return "Cancelled";
         case INVENTORY_STATUS.FOR_PICKUP: return "For Pickup";
         case INVENTORY_STATUS.EN_ROUTE: return "En Route";
-        // Existing screens use this label; the canonical lookup label remains Partially Received.
-        case INVENTORY_STATUS.PARTIALLY_RECEIVED: return "Receiving (QA)";
+        case INVENTORY_STATUS.PARTIALLY_RECEIVED: return "Partially Received";
         case INVENTORY_STATUS.RECEIVED: return "Received";
         case INVENTORY_STATUS.REJECTED: return "Rejected";
         default: return "Ordered";
@@ -114,6 +115,7 @@ export function shipmentStatusToInventoryStatus(status: string): InventoryStatus
         case "For Pickup": return INVENTORY_STATUS.FOR_PICKUP;
         case "En Route": return INVENTORY_STATUS.EN_ROUTE;
         case "Receiving (QA)":
+            return INVENTORY_STATUS.FOR_PICKUP;
         case "Partially Received": return INVENTORY_STATUS.PARTIALLY_RECEIVED;
         case "Received": return INVENTORY_STATUS.RECEIVED;
         case "Rejected": return INVENTORY_STATUS.REJECTED;

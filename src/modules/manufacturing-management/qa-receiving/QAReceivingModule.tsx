@@ -44,6 +44,7 @@ export default function QAReceivingModule() {
         handleSelectShipment,
         handleUpdateRow,
         handleUpdateAllocations,
+        handleUpdateRejectedAllocations,
         handleUpdateQaReading,
         handleSubmitInspection,
         clearInspection,
@@ -169,6 +170,7 @@ export default function QAReceivingModule() {
                                 loadingLines={loadingLines}
                                 handleUpdateRow={handleUpdateRow}
                                 handleUpdateAllocations={handleUpdateAllocations}
+                                handleUpdateRejectedAllocations={handleUpdateRejectedAllocations}
                                 handleUpdateQaReading={handleUpdateQaReading}
                                 handleSubmitInspection={handleSubmitInspection}
                                 onReviewPreview={() => setPreviewOpen(true)}

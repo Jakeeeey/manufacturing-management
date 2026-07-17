@@ -22,6 +22,36 @@ interface ReceivingCommitContext {
     idempotencyKey: string;
 }
 
+function resizeLotAllocations(
+    allocations: ReceivingLotAllocationInput[],
+    targetQuantity: number,
+    fallbackLotId?: string
+): ReceivingLotAllocationInput[] {
+    const target = Math.max(0, Number(targetQuantity) || 0);
+    if (target <= 0) return [];
+
+    let remaining = target;
+    const resized = allocations.reduce<ReceivingLotAllocationInput[]>((result, allocation) => {
+        if (remaining <= 0) return result;
+        const quantity = Math.min(remaining, Math.max(0, Number(allocation.quantity) || 0));
+        if (quantity > 0) {
+            result.push({ ...allocation, quantity });
+            remaining -= quantity;
+        }
+        return result;
+    }, []);
+
+    if (remaining > 0 && resized.length > 0) {
+        const last = resized[resized.length - 1];
+        last.quantity = Number(last.quantity) + remaining;
+        remaining = 0;
+    }
+    if (remaining > 0 && fallbackLotId) {
+        resized.push({ storageLotId: fallbackLotId, quantity: remaining });
+    }
+    return resized;
+}
+
 export function useQAReceiving() {
     const listController = useRef<AbortController | null>(null);
     const detailController = useRef<AbortController | null>(null);
@@ -220,6 +250,7 @@ export function useQAReceiving() {
 
     const handleSelectShipment = async (shipment: Shipment) => {
         const isReceived = shipment.status === "Received";
+        const isPartiallyReceived = shipment.status === "Partially Received";
         if (!isReceivingQueueShipmentStatus(shipment.status) && !isReceived) {
             toast.error("This purchase order is not eligible for receiving.");
             clearInspection();
@@ -230,7 +261,7 @@ export function useQAReceiving() {
         detailController.current = controller;
         setSelectedShipment(shipment);
         setReceiptNumber("");
-        setReceiptMode("full");
+        setReceiptMode(isPartiallyReceived ? "partial" : "full");
         setQaSpecificationStates({});
         setQaReadings({});
         setQaEvaluationResults({});
@@ -247,28 +278,73 @@ export function useQAReceiving() {
             const rowsInit: Record<number, InspectionRow> = {};
             lines.forEach(l => {
                 const prodName = l.product_id?.product_name?.toLowerCase() || "";
+                const latestReceipt = isPartiallyReceived ? l.latest_receipt : null;
+                const latestReceivedQuantity = Number(latestReceipt?.received_quantity ?? l.quantity_received ?? 0);
+                const latestAcceptedQuantity = Number(latestReceipt?.accepted_quantity ?? Math.max(0, latestReceivedQuantity - Number(l.quantity_rejected || 0)));
+                const latestRejectedQuantity = Number(latestReceipt?.rejected_quantity ?? l.quantity_rejected ?? 0);
+                const latestStorageLotId = latestReceipt?.storage_lot_id ?? l.lot_id ?? null;
+                const latestAcceptedAllocations = latestReceipt?.accepted_lot_allocations?.length
+                    ? latestReceipt.accepted_lot_allocations.map(allocation => ({
+                        storageLotId: String(allocation.storage_lot_id),
+                        quantity: allocation.quantity
+                    }))
+                    : latestStorageLotId && latestAcceptedQuantity > 0
+                        ? [{ storageLotId: String(latestStorageLotId), quantity: latestAcceptedQuantity }]
+                        : [];
+                const latestRejectedAllocations = latestReceipt?.rejected_lot_allocations?.length
+                    ? latestReceipt.rejected_lot_allocations.map(allocation => ({
+                        storageLotId: String(allocation.storage_lot_id),
+                        quantity: allocation.quantity
+                    }))
+                    : latestStorageLotId && latestRejectedQuantity > 0
+                        ? [{ storageLotId: String(latestStorageLotId), quantity: latestRejectedQuantity }]
+                        : [];
                 // Guess if packaging based on name context
                 const isPkg = prodName.includes("box") || prodName.includes("bottle") || prodName.includes("cap") || prodName.includes("sticker") || prodName.includes("packaging") || prodName.includes("plastic") || prodName.includes("wrapper");
                 
                 rowsInit[l.line_id] = {
-                    receivedQty: isReceived ? Number(l.quantity_received || 0) : "",
-                    acceptedQty: isReceived ? Math.max(0, Number(l.quantity_received || 0) - Number(l.quantity_rejected || 0)) : "",
-                    rejectedQty: isReceived ? Number(l.quantity_rejected || 0) : "",
-                    batchNumber: isReceived ? (l.batch_no || l.lot_number || "") : "",
-                    lotId: isReceived && l.lot_id ? String(l.lot_id) : "",
-                    acceptedLotAllocations: isReceived && l.lot_id && Number(l.quantity_received || 0) - Number(l.quantity_rejected || 0) > 0
-                        ? [{ storageLotId: String(l.lot_id), quantity: Math.max(0, Number(l.quantity_received || 0) - Number(l.quantity_rejected || 0)) }]
-                        : [],
-                    manufacturingDate: isReceived ? (l.manufacturing_date || "") : "",
-                    expirationDate: isReceived ? (l.expiration_date || "") : "",
-                    rejectionReason: l.rejection_reason || "",
+                    receivedQty: isReceived
+                        ? Number(l.quantity_received || 0)
+                        : isPartiallyReceived
+                            ? latestReceivedQuantity
+                            : "",
+                    acceptedQty: isReceived
+                        ? Math.max(0, Number(l.quantity_received || 0) - Number(l.quantity_rejected || 0))
+                        : isPartiallyReceived
+                            ? latestAcceptedQuantity
+                            : "",
+                    rejectedQty: isReceived ? Number(l.quantity_rejected || 0) : isPartiallyReceived ? latestRejectedQuantity : 0,
+                    batchNumber: isReceived || isPartiallyReceived ? (latestReceipt?.supplier_batch_number || l.batch_no || l.lot_number || "") : "",
+                    lotId: (isReceived || isPartiallyReceived) && latestStorageLotId ? String(latestStorageLotId) : "",
+                    acceptedLotAllocations: isReceived
+                        ? l.lot_id && Number(l.quantity_received || 0) - Number(l.quantity_rejected || 0) > 0
+                            ? [{ storageLotId: String(l.lot_id), quantity: Math.max(0, Number(l.quantity_received || 0) - Number(l.quantity_rejected || 0)) }]
+                            : []
+                        : isPartiallyReceived
+                            ? latestAcceptedAllocations
+                            : [],
+                    rejectedLotAllocations: isReceived
+                        ? l.lot_id && Number(l.quantity_rejected || 0) > 0
+                            ? [{ storageLotId: String(l.lot_id), quantity: Number(l.quantity_rejected || 0) }]
+                            : []
+                        : isPartiallyReceived
+                            ? latestRejectedAllocations
+                            : [],
+                    manufacturingDate: isReceived || isPartiallyReceived ? (latestReceipt?.manufacturing_date || l.manufacturing_date || "") : "",
+                    expirationDate: isReceived || isPartiallyReceived ? (latestReceipt?.expiration_date || l.expiration_date || "") : "",
+                    rejectionReason: latestReceipt?.rejection_reason || l.rejection_reason || "",
                     isPackaging: isPkg
                 };
             });
             setInspectionRows(rowsInit);
 
-            // Pre-select the receiving branch defined in the original Purchase Order / Procurement record
-            if (shipment.branch_id) {
+            // Reuse the last partial receipt branch when available; otherwise use the PO branch.
+            const latestReceiptBranchId = isPartiallyReceived
+                ? lines.find(line => line.latest_receipt?.branch_id)?.latest_receipt?.branch_id
+                : null;
+            if (latestReceiptBranchId) {
+                setSelectedBranchId(latestReceiptBranchId.toString());
+            } else if (shipment.branch_id) {
                 setSelectedBranchId(shipment.branch_id.toString());
             } else if (branches.length > 0) {
                 setSelectedBranchId(branches[0].id.toString());
@@ -331,18 +407,39 @@ export function useQAReceiving() {
             return next;
         });
         setInspectionRows(prev => {
+            const previousRow = prev[lineId];
             const updatedRow: InspectionRow = {
-                ...prev[lineId],
+                ...previousRow,
                 [field]: value
             };
+
+            if (field === "receivedQty") {
+                const previousReceived = Number(previousRow?.receivedQty || 0);
+                const previousAccepted = Number(previousRow?.acceptedQty || 0);
+                const previousRejected = Number(previousRow?.rejectedQty || 0);
+                const nextReceived = Math.max(0, Number(value) || 0);
+                if (previousReceived > 0 && Math.abs(previousReceived - previousAccepted - previousRejected) <= 1e-9) {
+                    const nextAccepted = Math.min(previousAccepted, nextReceived);
+                    updatedRow.acceptedQty = nextAccepted;
+                    updatedRow.rejectedQty = Math.max(0, nextReceived - nextAccepted);
+                }
+            }
+
             const accepted = Number(updatedRow.acceptedQty || 0);
-            if (field === "acceptedQty" && updatedRow.acceptedLotAllocations.length === 1) {
-                updatedRow.acceptedLotAllocations = [{
-                    ...updatedRow.acceptedLotAllocations[0],
-                    quantity: value
-                }];
-            } else if ((field === "acceptedQty" || field === "lotId") && accepted > 0 && updatedRow.acceptedLotAllocations.length === 0 && updatedRow.lotId) {
-                updatedRow.acceptedLotAllocations = [{ storageLotId: updatedRow.lotId, quantity: accepted }];
+            const rejected = Number(updatedRow.rejectedQty || 0);
+            if (field === "acceptedQty" || field === "receivedQty" || field === "lotId") {
+                updatedRow.acceptedLotAllocations = resizeLotAllocations(
+                    updatedRow.acceptedLotAllocations,
+                    accepted,
+                    updatedRow.lotId
+                );
+            }
+            if (field === "rejectedQty" || field === "receivedQty" || field === "lotId") {
+                updatedRow.rejectedLotAllocations = resizeLotAllocations(
+                    updatedRow.rejectedLotAllocations,
+                    rejected,
+                    updatedRow.lotId
+                );
             }
             return {
                 ...prev,
@@ -370,6 +467,29 @@ export function useQAReceiving() {
             [lineId]: {
                 ...previous[lineId],
                 acceptedLotAllocations: allocations
+            }
+        }));
+    };
+
+    const handleUpdateRejectedAllocations = (lineId: number, allocations: ReceivingLotAllocationInput[]) => {
+        if (selectedShipment?.status === "Received") return;
+        previewController.current?.abort();
+        setValidatingInspection(false);
+        setReceivingCommitContext(null);
+        setCommittedResult(null);
+        setPreviewOpen(false);
+        setPreviewAcknowledged(false);
+        setQaEvaluationResults(previous => {
+            if (!previous[lineId]) return previous;
+            const next = { ...previous };
+            delete next[lineId];
+            return next;
+        });
+        setInspectionRows(previous => ({
+            ...previous,
+            [lineId]: {
+                ...previous[lineId],
+                rejectedLotAllocations: allocations
             }
         }));
     };
@@ -419,7 +539,7 @@ export function useQAReceiving() {
                 isPackaging: Boolean(row?.isPackaging),
                 receivedQuantity: Number(row?.receivedQty || 0),
                 batchNumber: row?.batchNumber || "",
-                lotId: row?.lotId || row?.acceptedLotAllocations?.[0]?.storageLotId || "",
+                lotId: row?.lotId || row?.acceptedLotAllocations?.[0]?.storageLotId || row?.rejectedLotAllocations?.[0]?.storageLotId || "",
                 manufacturingDate: row?.manufacturingDate || "",
                 expirationDate: row?.expirationDate || ""
             };
@@ -437,6 +557,8 @@ export function useQAReceiving() {
             return;
         }
 
+        let completesPurchaseOrder = true;
+
         // Validation for new fields and QA constraints
         for (const line of lineItems) {
             const row = inspectionRows[line.line_id];
@@ -448,6 +570,7 @@ export function useQAReceiving() {
             const accepted = Number(row.acceptedQty);
             const rejected = Number(row.rejectedQty);
             const ordered = Number(line.quantity_ordered || 0);
+            const remaining = Math.max(0, Number(line.remaining_quantity ?? (ordered - Number(line.quantity_received || 0))));
 
             try {
                 deriveReceivingDisposition({
@@ -460,6 +583,12 @@ export function useQAReceiving() {
                 return;
             }
 
+            if (receiptMode === "full" && Math.abs(received - remaining) > 1e-9) {
+                toast.error(`Full Receipt: ${name} requires ${remaining.toLocaleString()} remaining unit(s); received ${received.toLocaleString()}. Select Partial Receipt to receive only part of this PO.`);
+                return;
+            }
+            if (Math.abs(received - remaining) > 1e-9) completesPurchaseOrder = false;
+
             if (received === 0) continue;
 
             // Expiration rule for raw materials
@@ -468,13 +597,10 @@ export function useQAReceiving() {
                 return;
             }
 
-            // Warning when received qty exceeds ordered qty
-            if (received > ordered) {
-                if (!row.rejectionReason || !row.rejectionReason.trim()) {
-                    toast.error(`Over-shipment detected: Received (${received}) > Ordered (${ordered}) for ${name}. Remarks are required.`);
-                    return;
-                }
-                toast.warning(`Over-shipment: ${received} units received vs ${ordered} ordered.`);
+            // Reject counts above the remaining quantity before preview.
+            if (received > remaining) {
+                toast.error(`Received quantity for ${name} (${received.toLocaleString()}) exceeds the remaining quantity (${remaining.toLocaleString()}).`);
+                return;
             }
 
             if (rejected > 0 && (!row.rejectionReason || !row.rejectionReason.trim())) {
@@ -482,10 +608,15 @@ export function useQAReceiving() {
                 return;
             }
 
-            if (received !== ordered && (!row.rejectionReason || !row.rejectionReason.trim())) {
-                toast.error(`Remarks are mandatory for ${name} due to logistics discrepancy (Received: ${received}, Ordered: ${ordered}).`);
+            if (received !== remaining && (!row.rejectionReason || !row.rejectionReason.trim())) {
+                toast.error(`Remarks are mandatory for ${name} due to logistics discrepancy (Received: ${received}, Remaining: ${remaining}).`);
                 return;
             }
+        }
+
+        if (receiptMode === "partial" && completesPurchaseOrder) {
+            toast.error("Partial Receipt requires at least one line to remain below its remaining ordered quantity. Select Full Receipt to complete the PO.");
+            return;
         }
 
         if (!lineItems.some(line => Number(inspectionRows[line.line_id]?.receivedQty || 0) > 0)) {
@@ -508,6 +639,9 @@ export function useQAReceiving() {
                     rejectedQuantity: Number(row.rejectedQty || 0),
                     storageLotId: row.lotId ? Number(row.lotId) : null,
                     acceptedLotAllocations: row.acceptedLotAllocations
+                        .filter(allocation => Number(allocation.storageLotId) > 0 && Number(allocation.quantity) > 0)
+                        .map(allocation => ({ storageLotId: Number(allocation.storageLotId), quantity: Number(allocation.quantity) })),
+                    rejectedLotAllocations: row.rejectedLotAllocations
                         .filter(allocation => Number(allocation.storageLotId) > 0 && Number(allocation.quantity) > 0)
                         .map(allocation => ({ storageLotId: Number(allocation.storageLotId), quantity: Number(allocation.quantity) })),
                     supplierBatchNumber: row.batchNumber.trim(),
@@ -743,6 +877,7 @@ export function useQAReceiving() {
         handleSelectShipment,
         handleUpdateRow,
         handleUpdateAllocations,
+        handleUpdateRejectedAllocations,
         handleUpdateQaReading,
         handleSubmitInspection,
         clearInspection,

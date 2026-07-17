@@ -64,6 +64,7 @@ export async function previewReceivingQa(payload: {
         rejectedQuantity: number;
         storageLotId: number | null;
         acceptedLotAllocations: Array<{ storageLotId: number; quantity: number }>;
+        rejectedLotAllocations: Array<{ storageLotId: number; quantity: number }>;
         supplierBatchNumber: string;
         manufacturingDate: string | null;
         expiryDate: string | null;

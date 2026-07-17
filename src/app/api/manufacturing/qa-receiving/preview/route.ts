@@ -18,7 +18,13 @@ import {
     type ReceivingRouteTransactionType
 } from "../_preview-domain";
 import { RECEIVING_POSTING_ENABLED, receivingPreviewRequestSchema } from "../_commit-contract";
-import { normalizeReceivingLotAllocations, receivingLotAllocationError } from "../_lot-allocation";
+import {
+    normalizeReceivingLotAllocations,
+    normalizeRejectedLotAllocations,
+    receivingLotAllocationError,
+    rejectedLotAllocationError
+} from "../_lot-allocation";
+import { summarizeReceivingHistory } from "../_receiving-history";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -157,23 +163,18 @@ export async function POST(request: Request) {
         for (const line of lines) {
             const disposition = deriveReceivingDisposition(line);
             if (disposition === "Not Received") continue;
-            const acceptedLotAllocations = normalizeReceivingLotAllocations(
-                line.acceptedQuantity,
-                line.acceptedLotAllocations,
-                line.storageLotId
-            );
             const allocationError = receivingLotAllocationError(
                 line.acceptedQuantity,
                 line.acceptedLotAllocations,
                 line.storageLotId
             );
             if (allocationError) throw new ReceivingPreviewError(`Line ${line.lineId}: ${allocationError}`);
-            if (!line.storageLotId && acceptedLotAllocations.length === 0) {
-                throw new ReceivingPreviewError(`Select a storage lot for line ${line.lineId}.`);
-            }
-            if (line.rejectedQuantity > 0 && !line.storageLotId) {
-                throw new ReceivingPreviewError(`Select a primary storage lot for rejected quantity on line ${line.lineId}.`);
-            }
+            const rejectedAllocationError = rejectedLotAllocationError(
+                line.rejectedQuantity,
+                line.rejectedLotAllocations,
+                line.storageLotId
+            );
+            if (rejectedAllocationError) throw new ReceivingPreviewError(`Line ${line.lineId}: ${rejectedAllocationError}`);
             if (!line.supplierBatchNumber.trim()) throw new ReceivingPreviewError(`Enter a supplier batch number for line ${line.lineId}.`);
             if (!line.isPackaging && (!line.manufacturingDate || !line.expiryDate)) {
                 throw new ReceivingPreviewError(`Manufacturing and expiry dates are required for raw-material line ${line.lineId}.`);
@@ -188,17 +189,23 @@ export async function POST(request: Request) {
             .flatMap(line => [
                 ...(line.storageLotId ? [line.storageLotId] : []),
                 ...normalizeReceivingLotAllocations(line.acceptedQuantity, line.acceptedLotAllocations, line.storageLotId)
+                    .map(allocation => allocation.storageLotId),
+                ...normalizeRejectedLotAllocations(line.rejectedQuantity, line.rejectedLotAllocations, line.storageLotId)
                     .map(allocation => allocation.storageLotId)
             ]))];
-        const [headerResponse, lineResponse, lotResponse, lotInventoryResponse, receivingResponse, destinationBranch, movementTypeResponse] = await Promise.all([
+        const [headerResponse, lineResponse, lotResponse, lotInventoryResponse, receivingResponseWithLine, destinationBranch, movementTypeResponse] = await Promise.all([
             procurementDirectusFetch(`/items/purchase_order/${shipmentId}?fields=purchase_order_id,inventory_status,workflow_revision`),
-            procurementDirectusFetch(`/items/purchase_order_products?filter[purchase_order_product_id][_in]=${lineIds.join(",")}&fields=purchase_order_product_id,purchase_order_id,product_id,purchase_intent,job_order_id,ordered_quantity&limit=${lineIds.length}`),
+            procurementDirectusFetch(`/items/purchase_order_products?filter[purchase_order_id][_eq]=${shipmentId}&fields=purchase_order_product_id,purchase_order_id,product_id,purchase_intent,job_order_id,ordered_quantity&limit=-1`),
             procurementDirectusFetch(`/items/lots?filter[lot_id][_in]=${requestedLotIds.join(",")}&fields=lot_id,lot_name,max_batch_capacity&limit=${requestedLotIds.length}`),
             procurementDirectusFetch(`/items/inventory_lots?filter[lot_id][_in]=${requestedLotIds.join(",")}&fields=lot_id,quantity&limit=-1`),
-            procurementDirectusFetch(`/items/purchase_order_receiving?filter[purchase_order_id][_eq]=${shipmentId}&filter[is_reverted][_eq]=0&fields=purchase_order_product_id,received_quantity,quantity_rejected&limit=-1`),
+            procurementDirectusFetch(`/items/purchase_order_receiving?filter[purchase_order_id][_eq]=${shipmentId}&filter[is_reverted][_eq]=0&fields=purchase_order_product_id,purchase_order_line_id,product_id,received_quantity,quantity_rejected&limit=-1`),
             loadBranch(destinationBranchId),
             procurementDirectusFetch("/items/inventory_transaction_types?fields=transaction_type_id,type_name,direction,origin_table&limit=-1")
         ]);
+        let receivingResponse = receivingResponseWithLine;
+        if (!receivingResponse.ok) {
+            receivingResponse = await procurementDirectusFetch(`/items/purchase_order_receiving?filter[purchase_order_id][_eq]=${shipmentId}&filter[is_reverted][_eq]=0&fields=purchase_order_product_id,product_id,received_quantity,quantity_rejected&limit=-1`);
+        }
         if (headerResponse.status === 404) throw new ReceivingPreviewError("Purchase order not found.", 404);
         if (!headerResponse.ok || !lineResponse.ok || !lotResponse.ok || !lotInventoryResponse.ok || !receivingResponse.ok || !movementTypeResponse.ok) {
             throw new ReceivingPreviewError("Unable to validate receiving preview reference data.", 503);
@@ -214,18 +221,24 @@ export async function POST(request: Request) {
         }
 
         const poLines = rows(await lineResponse.json());
-        if (poLines.length !== lineIds.length) {
-            throw new ReceivingPreviewError("One or more purchase-order lines do not exist.");
+        if (poLines.length === 0) throw new ReceivingPreviewError("This purchase order has no purchase-order lines.");
+        const poLineIds = poLines
+            .map(line => positiveInteger(line.purchase_order_product_id))
+            .filter((lineId): lineId is number => lineId !== null);
+        const submittedLineIds = new Set(lineIds);
+        const poLineIdSet = new Set(poLineIds);
+        const missingLineIds = poLineIds.filter(lineId => !submittedLineIds.has(lineId));
+        const unknownLineIds = lineIds.filter(lineId => !poLineIdSet.has(lineId));
+        if (poLineIds.length !== poLines.length || missingLineIds.length > 0 || unknownLineIds.length > 0) {
+            const missing = missingLineIds.length > 0 ? ` Missing line(s): ${missingLineIds.join(", ")}.` : "";
+            const unknown = unknownLineIds.length > 0 ? ` Unknown line(s): ${unknownLineIds.join(", ")}.` : "";
+            throw new ReceivingPreviewError(`Every purchase-order line must be included in the receiving submission.${missing}${unknown}`);
         }
-        const previouslyReceivedByLine = new Map<number, { received: number; rejected: number }>();
-        for (const row of rows(await receivingResponse.json())) {
-            const lineId = positiveInteger(row.purchase_order_product_id, "purchase_order_product_id") || positiveInteger(row.purchase_order_product_id);
-            if (!lineId) continue;
-            const current = previouslyReceivedByLine.get(lineId) || { received: 0, rejected: 0 };
-            current.received += Math.max(0, Number(row.received_quantity || 0));
-            current.rejected += Math.max(0, Number(row.quantity_rejected || 0));
-            previouslyReceivedByLine.set(lineId, current);
+        const receivingHistory = summarizeReceivingHistory(rows(await receivingResponse.json()), poLines);
+        if (receivingHistory.unresolvedRows.length > 0) {
+            throw new ReceivingPreviewError("Existing receiving records could not be matched to a purchase-order line. Reconciliation is required before receiving can continue.", 409);
         }
+        const previouslyReceivedByLine = receivingHistory.byLine;
         const poLineById = new Map(poLines.map(line => [positiveInteger(line.purchase_order_product_id), line]));
         const remainingByLine = new Map<number, number>();
         for (const line of lines) {
@@ -255,9 +268,18 @@ export async function POST(request: Request) {
             }
             remainingByLine.set(line.lineId, remainingQuantity);
         }
-        const completesPurchaseOrder = lines.every(line => Math.abs(line.receivedQuantity - (remainingByLine.get(line.lineId) || 0)) <= 1e-9);
+        const lineById = new Map(lines.map(line => [line.lineId, line]));
+        const incompleteLineIds = poLineIds.filter(lineId => {
+            const line = lineById.get(lineId);
+            return !line || Math.abs(line.receivedQuantity - (remainingByLine.get(lineId) || 0)) > 1e-9;
+        });
+        const completesPurchaseOrder = incompleteLineIds.length === 0;
         if (receiptMode === "full" && !completesPurchaseOrder) {
-            throw new ReceivingPreviewError("Full receipt requires every purchase-order line to account for its remaining quantity.");
+            const details = incompleteLineIds.map(lineId => {
+                const line = lineById.get(lineId);
+                return `${lineId} (remaining ${remainingByLine.get(lineId) || 0}, received ${line?.receivedQuantity || 0})`;
+            });
+            throw new ReceivingPreviewError(`Full receipt requires every purchase-order line to account for its remaining quantity. Incomplete line(s): ${details.join(", ")}.`);
         }
         if (receiptMode === "partial" && completesPurchaseOrder) {
             throw new ReceivingPreviewError("This receipt completes the purchase order. Select Full Receipt instead.");
@@ -278,6 +300,9 @@ export async function POST(request: Request) {
         const incomingByLot = new Map<number, number>();
         for (const line of lines) {
             for (const allocation of normalizeReceivingLotAllocations(line.acceptedQuantity, line.acceptedLotAllocations, line.storageLotId)) {
+                incomingByLot.set(allocation.storageLotId, (incomingByLot.get(allocation.storageLotId) || 0) + allocation.quantity);
+            }
+            for (const allocation of normalizeRejectedLotAllocations(line.rejectedQuantity, line.rejectedLotAllocations, line.storageLotId)) {
                 incomingByLot.set(allocation.storageLotId, (incomingByLot.get(allocation.storageLotId) || 0) + allocation.quantity);
             }
         }
@@ -411,9 +436,20 @@ export async function POST(request: Request) {
                 line.acceptedLotAllocations,
                 line.storageLotId
             );
-            const primaryStorageLotId = line.storageLotId || acceptedLotAllocations[0]?.storageLotId || null;
+            const rejectedLotAllocations = normalizeRejectedLotAllocations(
+                result.rejectedQuantity,
+                line.rejectedLotAllocations,
+                line.storageLotId
+            );
+            const primaryStorageLotId = line.storageLotId
+                || acceptedLotAllocations[0]?.storageLotId
+                || rejectedLotAllocations[0]?.storageLotId
+                || null;
             const storageLot = primaryStorageLotId ? storageLotById.get(primaryStorageLotId) : undefined;
-            const storageLotNames = Object.fromEntries(acceptedLotAllocations.map(allocation => [
+            const storageLotNames = Object.fromEntries([
+                ...acceptedLotAllocations,
+                ...rejectedLotAllocations
+            ].map(allocation => [
                 allocation.storageLotId,
                 String(storageLotById.get(allocation.storageLotId)?.lot_name || "Unknown storage lot")
             ]));
@@ -445,6 +481,7 @@ export async function POST(request: Request) {
                     acceptedQuantity: result.acceptedQuantity,
                     acceptedLotAllocations,
                     rejectedQuantity: result.rejectedQuantity,
+                    rejectedLotAllocations,
                     createdBy: actor.userId,
                     sourceDocumentNo: receiptNumber,
                     storageLotId: primaryStorageLotId as number,

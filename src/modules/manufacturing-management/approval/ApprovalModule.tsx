@@ -17,7 +17,7 @@ import {
 import { toast } from "sonner";
 import { usePurchaseOrderApproval } from "../purchase-order-approval/hooks/usePurchaseOrderApproval";
 import type { PurchaseOrderDecisionStage } from "../purchase-order/types";
-import { INVENTORY_STATUS } from "@/app/api/manufacturing/procurement/_domain";
+import { INVENTORY_STATUS, PAYMENT_STATUS } from "@/app/api/manufacturing/procurement/_domain";
 
 type QueueTab = "Requested" | "Awaiting Payment" | "Approved" | "Rejected";
 
@@ -39,6 +39,7 @@ function dateTime(value?: string | null) {
 function statusBadge(status: string) {
     const styles: Record<string, string> = {
         Requested: "border-amber-300 bg-amber-50 text-amber-700",
+        "Pending Payment": "border-amber-300 bg-amber-50 text-amber-700",
         Approved: "border-emerald-300 bg-emerald-50 text-emerald-700",
         "Awaiting Payment": "border-orange-300 bg-orange-50 text-orange-700",
         Cancelled: "border-zinc-300 bg-zinc-50 text-zinc-700",
@@ -47,7 +48,13 @@ function statusBadge(status: string) {
     return <span className={`rounded border px-2 py-1 text-[10px] font-bold uppercase ${styles[status] || "border-border bg-muted text-muted-foreground"}`}>{status}</span>;
 }
 
-function statusForApprovalStage(status: string, inventoryStatus: number | null | undefined, stage: PurchaseOrderDecisionStage) {
+function statusForApprovalStage(
+    status: string,
+    inventoryStatus: number | null | undefined,
+    paymentStatus: number | null | undefined,
+    stage: PurchaseOrderDecisionStage
+) {
+    if (stage === "Finance" && Number(paymentStatus) === PAYMENT_STATUS.PENDING) return "Pending Payment";
     if (stage !== "Plant") return status;
     if (Number(inventoryStatus) === INVENTORY_STATUS.APPROVED) return "Approved";
     return status === "Awaiting Payment" ? "Requested" : status;
@@ -212,7 +219,7 @@ export default function ApprovalModule({ stage }: { stage: PurchaseOrderDecision
                                 ? order.supplier_id?.supplier_name
                                 : suppliers.find(item => item.id === Number(order.supplier_id))?.supplier_name;
                             const selected = selectedShipment?.shipment_id === order.shipment_id;
-                            const displayedStatus = statusForApprovalStage(order.status, order.inventory_status, stage);
+                            const displayedStatus = statusForApprovalStage(order.status, order.inventory_status, order.payment_status, stage);
                             const pendingStageLabel = stage === "Plant"
                                 ? (!order.approver_id && Number(order.inventory_status) === INVENTORY_STATUS.REQUESTED ? "Plant" : "")
                                 : (order.approval_requires_finance && !order.finance_id ? "Finance" : "");
@@ -255,7 +262,7 @@ export default function ApprovalModule({ stage }: { stage: PurchaseOrderDecision
                                 <div>
                                     <div className="flex items-center gap-2">
                                         <h2 className="text-sm font-bold">{approvalDetail.order.purchase_order_no || selectedShipment.reference_number}</h2>
-                                        {statusBadge(statusForApprovalStage(selectedShipment.status, selectedShipment.inventory_status, stage))}
+                                        {statusBadge(statusForApprovalStage(selectedShipment.status, selectedShipment.inventory_status, selectedShipment.payment_status, stage))}
                                     </div>
                                     <p className="mt-1 text-xs text-muted-foreground">{supplierName}</p>
                                 </div>

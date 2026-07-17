@@ -1,10 +1,14 @@
 import { z } from "zod";
 import { validateReceivingQuantities } from "../qa/_receiving-evaluation";
-import { receivingLotAllocationError } from "../qa-receiving/_lot-allocation";
+import { receivingLotAllocationError, rejectedLotAllocationError } from "../qa-receiving/_lot-allocation";
 
 const positiveId = z.coerce.number().int().positive();
 const nonNegativeNumber = z.coerce.number().finite().nonnegative();
 const acceptedLotAllocationSchema = z.object({
+    storage_lot_id: positiveId,
+    quantity: nonNegativeNumber
+});
+const rejectedLotAllocationSchema = z.object({
     storage_lot_id: positiveId,
     quantity: nonNegativeNumber
 });
@@ -21,7 +25,8 @@ export const receivingLineSchema = z.object({
     expiration_date: z.string().date().nullable(),
     rejection_reason: z.string().trim().nullable(),
     qa_status: z.enum(["Passed", "Partially Accepted", "Rejected"]),
-    accepted_lot_allocations: z.array(acceptedLotAllocationSchema).default([])
+    accepted_lot_allocations: z.array(acceptedLotAllocationSchema).default([]),
+    rejected_lot_allocations: z.array(rejectedLotAllocationSchema).default([])
 }).superRefine((line, context) => {
     const message = validateReceivingQuantities({
         receivedQuantity: line.quantity_received,
@@ -38,6 +43,15 @@ export const receivingLineSchema = z.object({
         line.lot_id
     );
     if (allocationMessage) context.addIssue({ code: z.ZodIssueCode.custom, path: ["accepted_lot_allocations"], message: allocationMessage });
+    const rejectedAllocationMessage = rejectedLotAllocationError(
+        line.quantity_rejected,
+        line.rejected_lot_allocations.map(allocation => ({
+            storageLotId: allocation.storage_lot_id,
+            quantity: allocation.quantity
+        })),
+        line.lot_id
+    );
+    if (rejectedAllocationMessage) context.addIssue({ code: z.ZodIssueCode.custom, path: ["rejected_lot_allocations"], message: rejectedAllocationMessage });
 });
 
 export const receivingSubmissionSchema = z.object({

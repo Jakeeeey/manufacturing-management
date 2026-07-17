@@ -294,7 +294,7 @@ export default function MovementPayloadModal({
                             <div className="flex justify-end gap-2">
                                 <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Close Preview</Button>
                                 <Button type="button" disabled={!verified || posting || !commitReady} onClick={onCommit}>
-                                    {posting ? "Posting..." : "Confirm & Post Receiving"}
+                                    {posting ? "Receiving..." : "Confirm & Receive"}
                                 </Button>
                             </div>
                         </>
