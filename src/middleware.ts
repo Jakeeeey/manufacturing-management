@@ -73,12 +73,6 @@ export async function middleware(req: NextRequest) {
 
     const { pathname } = req.nextUrl
 
-    if (pathname === "/mm/approval" || pathname.startsWith("/mm/approval/")) {
-        const url = req.nextUrl.clone()
-        url.pathname = pathname.replace(/^\/mm\/approval(?=\/|$)/, "/mm/plant-approval")
-        return NextResponse.redirect(url)
-    }
-
     if (
         pathname.startsWith("/_next") ||
         pathname.startsWith("/favicon.ico") ||
