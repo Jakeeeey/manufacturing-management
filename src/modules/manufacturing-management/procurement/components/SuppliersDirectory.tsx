@@ -22,7 +22,7 @@ interface SupplierFormState {
     delivery_terms: string;
     currency: string;
     notes_or_comments: string;
-    nonBuy?: boolean | number;
+    nonBuy: boolean | number;
     representatives: import("../types").SupplierRepresentative[];
 }
 

@@ -56,7 +56,7 @@ export function useProcurement(defaultTab: string = "suppliers") {
         delivery_terms: "",
         currency: "PHP",
         notes_or_comments: "",
-        nonBuy: false as boolean | number | undefined,
+        nonBuy: false as boolean | number,
         representatives: [] as SupplierRepresentative[]
     });
 
@@ -375,7 +375,7 @@ export function useProcurement(defaultTab: string = "suppliers") {
                 delivery_terms: "",
                 currency: "PHP",
                 notes_or_comments: "",
-                nonBuy: false as boolean | number | undefined,
+                nonBuy: false as boolean | number,
                 representatives: []
             });
             setSupplierError(null);
