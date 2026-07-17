@@ -1,7 +1,13 @@
 import { z } from "zod";
+import { validateReceivingQuantities } from "../qa/_receiving-evaluation";
+import { receivingLotAllocationError } from "../qa-receiving/_lot-allocation";
 
 const positiveId = z.coerce.number().int().positive();
 const nonNegativeNumber = z.coerce.number().finite().nonnegative();
+const acceptedLotAllocationSchema = z.object({
+    storage_lot_id: positiveId,
+    quantity: nonNegativeNumber
+});
 
 export const receivingLineSchema = z.object({
     line_id: positiveId,
@@ -14,7 +20,24 @@ export const receivingLineSchema = z.object({
     manufacturing_date: z.string().date().nullable().optional(),
     expiration_date: z.string().date().nullable(),
     rejection_reason: z.string().trim().nullable(),
-    qa_status: z.enum(["Passed", "Partially Accepted", "Rejected"])
+    qa_status: z.enum(["Passed", "Partially Accepted", "Rejected"]),
+    accepted_lot_allocations: z.array(acceptedLotAllocationSchema).default([])
+}).superRefine((line, context) => {
+    const message = validateReceivingQuantities({
+        receivedQuantity: line.quantity_received,
+        acceptedQuantity: line.quantity_accepted,
+        rejectedQuantity: line.quantity_rejected
+    });
+    if (message) context.addIssue({ code: z.ZodIssueCode.custom, path: ["quantity_received"], message });
+    const allocationMessage = receivingLotAllocationError(
+        line.quantity_accepted,
+        line.accepted_lot_allocations.map(allocation => ({
+            storageLotId: allocation.storage_lot_id,
+            quantity: allocation.quantity
+        })),
+        line.lot_id
+    );
+    if (allocationMessage) context.addIssue({ code: z.ZodIssueCode.custom, path: ["accepted_lot_allocations"], message: allocationMessage });
 });
 
 export const receivingSubmissionSchema = z.object({
@@ -25,21 +48,32 @@ export const receivingSubmissionSchema = z.object({
     lineItemUpdates: z.array(receivingLineSchema).min(1)
 });
 
+const directReceivingLineSchema = z.object({
+    product_id: positiveId,
+    batch_no: z.string().trim().min(1),
+    lot_id: positiveId,
+    accepted_lot_allocations: z.array(acceptedLotAllocationSchema).default([]),
+    expiry_date: z.string().date().nullable().optional(),
+    received_quantity: nonNegativeNumber,
+    unit_price: nonNegativeNumber,
+    total_amount: nonNegativeNumber,
+    qa_status: z.string().trim().nullable().optional(),
+    quantity_rejected: nonNegativeNumber.nullable().optional(),
+    rejection_reason: z.string().trim().nullable().optional()
+}).superRefine((line, context) => {
+    if (Number(line.quantity_rejected || 0) > line.received_quantity) {
+        context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["quantity_rejected"],
+            message: "Rejected quantity cannot exceed received quantity."
+        });
+    }
+});
+
 export const directReceivingSubmissionSchema = z.object({
     shipmentData: z.object({ shipment_id: positiveId }).passthrough(),
     branchId: positiveId,
-    lineItems: z.array(z.object({
-        product_id: positiveId,
-        batch_no: z.string().trim().min(1),
-        lot_id: positiveId,
-        expiry_date: z.string().date().nullable().optional(),
-        received_quantity: nonNegativeNumber,
-        unit_price: nonNegativeNumber,
-        total_amount: nonNegativeNumber,
-        qa_status: z.string().trim().nullable().optional(),
-        quantity_rejected: nonNegativeNumber.nullable().optional(),
-        rejection_reason: z.string().trim().nullable().optional()
-    })).min(1)
+    lineItems: z.array(directReceivingLineSchema).min(1)
 });
 
 export const expenseAllocationSchema = z.object({

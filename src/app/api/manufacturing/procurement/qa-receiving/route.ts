@@ -63,7 +63,41 @@ export async function GET(request: Request) {
                 { headers, cache: "no-store" }
             );
             if (!res.ok) throw new Error(`Directus error loading storage lots: ${res.status}`);
-            return NextResponse.json((await res.json()).data || []);
+            const lots = ((await res.json()).data || []) as Array<Record<string, unknown>>;
+            const lotIds = lots.map(lot => Number(lot.lot_id)).filter(id => Number.isSafeInteger(id) && id > 0);
+            const inventoryResponse = lotIds.length > 0
+                ? await fetch(
+                    `${DIRECTUS_URL}/items/inventory_lots?filter[lot_id][_in]=${lotIds.join(",")}&fields=lot_id,quantity&limit=-1`,
+                    { headers, cache: "no-store" }
+                )
+                : null;
+            if (inventoryResponse && !inventoryResponse.ok) {
+                throw new Error(`Directus error loading storage-lot occupancy: ${inventoryResponse.status}`);
+            }
+            const occupiedByLot = new Map<number, number>();
+            for (const row of ((inventoryResponse ? (await inventoryResponse.json()).data : []) || []) as Array<Record<string, unknown>>) {
+                const lotId = Number(typeof row.lot_id === "object" && row.lot_id
+                    ? (row.lot_id as Record<string, unknown>).lot_id
+                    : row.lot_id);
+                const quantity = Number(row.quantity || 0);
+                if (Number.isSafeInteger(lotId) && lotId > 0 && Number.isFinite(quantity)) {
+                    occupiedByLot.set(lotId, (occupiedByLot.get(lotId) || 0) + Math.max(0, quantity));
+                }
+            }
+            return NextResponse.json(lots.map(lot => {
+                const lotId = Number(lot.lot_id);
+                const maxBatchCapacity = lot.max_batch_capacity === null || lot.max_batch_capacity === undefined || lot.max_batch_capacity === ""
+                    ? null
+                    : Number(lot.max_batch_capacity);
+                const occupiedQuantity = occupiedByLot.get(lotId) || 0;
+                return {
+                    ...lot,
+                    occupiedQuantity,
+                    availableQuantity: maxBatchCapacity !== null && Number.isFinite(maxBatchCapacity)
+                        ? Math.max(0, maxBatchCapacity - occupiedQuantity)
+                        : null
+                };
+            }));
         }
 
         // Action: Fetch FIFO Inventory for a product across all branches

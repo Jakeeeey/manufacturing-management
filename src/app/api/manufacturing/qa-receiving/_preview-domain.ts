@@ -1,5 +1,6 @@
 import type { QaChecklistItemEvaluation } from "../qa/_purchase-specification-domain";
 import type { ReceivingDisposition } from "../qa/_receiving-evaluation";
+import type { ReceivingLotAllocation } from "./_lot-allocation";
 
 export type ReceivingRouteKind = "Passed" | "Rejected";
 
@@ -67,12 +68,14 @@ export interface ReceivingPreviewResult {
     workflowRevision: number;
     postingEnabled: boolean;
     destinationBranch: ReceivingRouteBranch;
-    generatedBy: number;
+    inspectorName: string;
     lines: ReceivingPreviewLineResult[];
 }
 
 interface RouteInput {
     acceptedQuantity: number;
+    acceptedLotAllocations: ReceivingLotAllocation[];
+    storageLotNames: Record<number, string>;
     rejectedQuantity: number;
     createdBy: number;
     sourceDocumentNo: string;
@@ -137,16 +140,20 @@ export function buildReceivingRoutes(
 
     if (input.acceptedQuantity > 0) {
         if (!passedTransactionType) throw new Error("Passed inventory routing is not configured.");
-        routes.push({
-            ...shared,
-            kind: "Passed",
-            qaStatus: "Passed",
-            quantity: input.acceptedQuantity,
-            branch: passedBranch,
-            transactionType: passedTransactionType,
-            remarks: input.remarks,
-            allocationDrafts: input.allocationDrafts,
-            unallocatedQuantity: input.unallocatedQuantity
+        input.acceptedLotAllocations.forEach((allocation, index) => {
+            routes.push({
+                ...shared,
+                kind: "Passed",
+                qaStatus: "Passed",
+                quantity: allocation.quantity,
+                branch: passedBranch,
+                transactionType: passedTransactionType,
+                storageLotId: allocation.storageLotId,
+        storageLotName: input.storageLotNames[allocation.storageLotId] || "Unknown storage lot",
+                remarks: input.remarks,
+                allocationDrafts: index === 0 ? input.allocationDrafts : [],
+                unallocatedQuantity: index === 0 ? input.unallocatedQuantity : 0
+            });
         });
     }
     if (input.rejectedQuantity > 0) {

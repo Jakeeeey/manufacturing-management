@@ -29,6 +29,7 @@ export default function QAReceivingModule() {
         qaReadings,
         qaEvaluationResults,
         receivingPreview,
+        receivingCommitReady,
         committedResult,
         previewOpen,
         setPreviewOpen,
@@ -40,6 +41,7 @@ export default function QAReceivingModule() {
         qaSubmissionBlockReason,
         handleSelectShipment,
         handleUpdateRow,
+        handleUpdateAllocations,
         handleUpdateQaReading,
         handleSubmitInspection,
         clearInspection,
@@ -162,6 +164,7 @@ export default function QAReceivingModule() {
                                 qaSubmissionBlockReason={qaSubmissionBlockReason}
                                 loadingLines={loadingLines}
                                 handleUpdateRow={handleUpdateRow}
+                                handleUpdateAllocations={handleUpdateAllocations}
                                 handleUpdateQaReading={handleUpdateQaReading}
                                 handleSubmitInspection={handleSubmitInspection}
                                 onReviewPreview={() => setPreviewOpen(true)}
@@ -200,6 +203,8 @@ export default function QAReceivingModule() {
                 onOpenChange={setPreviewOpen}
                 preview={receivingPreview}
                 lineItems={lineItems}
+                purchaseOrderReference={selectedShipment?.reference_number}
+                commitReady={receivingCommitReady}
                 posting={postingInspection}
                 onCommit={handleCommitReceiving}
                 committedResult={committedResult}
