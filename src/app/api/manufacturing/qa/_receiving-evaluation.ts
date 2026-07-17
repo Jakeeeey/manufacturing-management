@@ -8,28 +8,39 @@ export interface ReceivingQuantities {
 
 export class ReceivingQuantityError extends Error {}
 
-export function deriveReceivingDisposition(quantities: ReceivingQuantities): ReceivingDisposition {
+export function validateReceivingQuantities(quantities: ReceivingQuantities): string | null {
     const { receivedQuantity, acceptedQuantity, rejectedQuantity } = quantities;
     if (![receivedQuantity, acceptedQuantity, rejectedQuantity].every(Number.isFinite)) {
-        throw new ReceivingQuantityError("Receiving quantities must be finite numbers.");
+        return "Receiving quantities must be finite numbers.";
     }
     if (receivedQuantity < 0 || acceptedQuantity < 0 || rejectedQuantity < 0) {
-        throw new ReceivingQuantityError("Receiving quantities cannot be negative.");
+        return "Receiving quantities cannot be negative.";
     }
-    if (receivedQuantity === 0 && acceptedQuantity === 0 && rejectedQuantity === 0) return "Not Received";
+    if (receivedQuantity === 0 && acceptedQuantity === 0 && rejectedQuantity === 0) return null;
     if (receivedQuantity <= 0) {
-        throw new ReceivingQuantityError("Received quantity must be greater than zero for an included line.");
+        return "Received quantity must be greater than zero for an included line.";
+    }
+    if (acceptedQuantity > receivedQuantity || rejectedQuantity > receivedQuantity) {
+        return "Accepted and rejected quantities cannot exceed received quantity.";
     }
     if (Math.abs(receivedQuantity - acceptedQuantity - rejectedQuantity) > 1e-9) {
-        throw new ReceivingQuantityError("Accepted quantity plus rejected quantity must equal received quantity.");
+        return "Accepted quantity plus rejected quantity must equal received quantity.";
     }
+    return null;
+}
+
+export function deriveReceivingDisposition(quantities: ReceivingQuantities): ReceivingDisposition {
+    const { receivedQuantity, acceptedQuantity, rejectedQuantity } = quantities;
+    const validationError = validateReceivingQuantities(quantities);
+    if (validationError) throw new ReceivingQuantityError(validationError);
+    if (receivedQuantity === 0 && acceptedQuantity === 0 && rejectedQuantity === 0) return "Not Received";
     if (acceptedQuantity === receivedQuantity) return "Passed";
     if (rejectedQuantity === receivedQuantity) return "Rejected";
     return "Partially Accepted";
 }
 
 export function applyQaDecision(quantities: ReceivingQuantities, decision: QaChecklistDecision) {
-    const acceptedQuantity = decision.forceRejected ? 0 : quantities.acceptedQuantity;
+    const acceptedQuantity = decision.forceRejected ? 0 : quantities.receivedQuantity - quantities.rejectedQuantity;
     const rejectedQuantity = decision.forceRejected ? quantities.receivedQuantity : quantities.rejectedQuantity;
     return {
         disposition: deriveReceivingDisposition({
