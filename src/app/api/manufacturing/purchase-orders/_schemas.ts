@@ -2,7 +2,8 @@ import { z } from "zod";
 
 const MODULE_PATHS = {
     procurement: "/mm/incoming-shipments",
-    approval: "/mm/approval",
+    plantApproval: "/mm/plant-approval",
+    financeApproval: "/mm/finance-approval",
     receiving: "/mm/qa-receiving"
 } as const;
 
@@ -24,6 +25,8 @@ export const purchaseOrderListStatusSchema = z.enum([
 const receivingQueueStatusSchema = z.enum([
     "Approved", "En Route", "Receiving (QA)", "Partially Received", "Received"
 ]);
+
+export const purchaseOrderApprovalStageSchema = z.enum(["Plant", "Finance"]);
 
 export const purchaseOrderLineSchema = z.object({
     product_id: positiveId,
@@ -143,7 +146,8 @@ export const purchaseOrderListQuerySchema = z.object({
     startDate: dateOnly.optional(),
     endDate: dateOnly.optional(),
     sort: z.enum(["date_encoded", "purchase_order_no", "reference", "total_amount", "inventory_status"]).default("date_encoded"),
-    direction: z.enum(["asc", "desc"]).default("desc")
+    direction: z.enum(["asc", "desc"]).default("desc"),
+    approvalStage: purchaseOrderApprovalStageSchema.optional()
 }).superRefine((query, context) => {
     if (query.queue === "receiving" && query.status && !receivingQueueStatusSchema.safeParse(query.status).success) {
         context.addIssue({
@@ -159,5 +163,5 @@ export type PurchaseOrderListQuery = z.infer<typeof purchaseOrderListQuerySchema
 export function modulesForStatus(status: z.infer<typeof purchaseOrderStatusSchema>) {
     return status === "Receiving (QA)" || status === "Partially Received" || status === "Received" || status === "Rejected"
         ? [MODULE_PATHS.receiving]
-        : [MODULE_PATHS.procurement, MODULE_PATHS.approval];
+        : [MODULE_PATHS.procurement, MODULE_PATHS.plantApproval, MODULE_PATHS.financeApproval];
 }

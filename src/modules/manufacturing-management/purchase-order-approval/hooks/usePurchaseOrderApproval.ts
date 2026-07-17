@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { IncomingShipment, ShipmentLineItem, Supplier } from "../../procurement/types";
-import type { PurchaseOrderApprovalDetail, PurchaseOrderListQuery } from "../../purchase-order/types";
+import type { PurchaseOrderApprovalDetail, PurchaseOrderDecisionStage, PurchaseOrderListQuery } from "../../purchase-order/types";
 import { fetchSuppliers } from "../../procurement/services/procurement-api";
 import {
     fetchPurchaseOrderLines,
@@ -10,7 +10,7 @@ import {
     submitPurchaseOrderWorkflowAction
 } from "../../purchase-order/services/purchase-order-api";
 
-export function usePurchaseOrderApproval() {
+export function usePurchaseOrderApproval(stage: PurchaseOrderDecisionStage) {
     const [loading, setLoading] = useState(false);
     const [shipments, setShipments] = useState<IncomingShipment[]>([]);
     const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -19,17 +19,18 @@ export function usePurchaseOrderApproval() {
     const [approvalDetail, setApprovalDetail] = useState<PurchaseOrderApprovalDetail | null>(null);
     const listController = useRef<AbortController | null>(null);
     const detailController = useRef<AbortController | null>(null);
-    const lastQuery = useRef<PurchaseOrderListQuery>({ limit: 100 });
+    const lastQuery = useRef<PurchaseOrderListQuery>({ limit: 100, approvalStage: stage });
 
     const load = useCallback(async (query: PurchaseOrderListQuery = lastQuery.current) => {
-        lastQuery.current = query;
+        const stageQuery = { ...query, approvalStage: stage };
+        lastQuery.current = stageQuery;
         listController.current?.abort();
         const controller = new AbortController();
         listController.current = controller;
         setLoading(true);
         try {
             const [orders, supplierRows] = await Promise.all([
-                fetchPurchaseOrders(query, controller.signal),
+                fetchPurchaseOrders(stageQuery, controller.signal),
                 fetchSuppliers()
             ]);
             setShipments(orders.data);
@@ -39,7 +40,7 @@ export function usePurchaseOrderApproval() {
         } finally {
             if (!controller.signal.aborted) setLoading(false);
         }
-    }, []);
+    }, [stage]);
 
     useEffect(() => {
         void load();
@@ -62,7 +63,7 @@ export function usePurchaseOrderApproval() {
         detailController.current = controller;
         Promise.all([
             fetchPurchaseOrderLines(selectedShipment.shipment_id, controller.signal),
-            fetchPurchaseOrderApproval(selectedShipment.shipment_id, controller.signal)
+            fetchPurchaseOrderApproval(selectedShipment.shipment_id, stage, controller.signal)
         ])
             .then(([lines, detail]) => {
                 setSelectedShipmentLines(lines);
@@ -72,7 +73,7 @@ export function usePurchaseOrderApproval() {
                 if (error.name !== "AbortError") toast.error(error.message || "Failed to load purchase-order details.");
             });
         return () => controller.abort();
-    }, [selectedShipment]);
+    }, [selectedShipment, stage]);
 
     const approve = async (id: number, eta: string | undefined) => {
         if (!approvalDetail) throw new Error("Approval details are not loaded.");
@@ -81,7 +82,7 @@ export function usePurchaseOrderApproval() {
             workflowRevision: Number(approvalDetail.order.workflow_revision || 0),
             expectedRuleId: approvalDetail.matchedRule.ruleId,
             lead_time_receiving: eta
-        });
+        }, stage);
         setSelectedShipment(null);
         await load();
     };
@@ -93,7 +94,7 @@ export function usePurchaseOrderApproval() {
             workflowRevision: Number(approvalDetail.order.workflow_revision || 0),
             expectedRuleId: approvalDetail.matchedRule.ruleId,
             remarks
-        });
+        }, stage);
         setSelectedShipment(null);
         await load();
     };

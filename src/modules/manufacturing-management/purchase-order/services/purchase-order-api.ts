@@ -3,6 +3,7 @@ import type {
     PurchaseOrderApprovalCommand,
     PurchaseOrderApprovalDetail,
     PurchaseOrderCatalog,
+    PurchaseOrderDecisionStage,
     PurchaseOrderDraftPayload,
     PurchaseOrderListQuery,
     PurchaseOrderListResponse
@@ -81,14 +82,16 @@ export async function updatePurchaseOrderStatus(id: number, status: string) {
     return responseJson(response, "Failed to update purchase-order status.");
 }
 
-export async function fetchPurchaseOrderApproval(id: number, signal?: AbortSignal) {
-    const response = await fetch(`/api/manufacturing/purchase-orders/${id}/approvals`, { signal });
+export async function fetchPurchaseOrderApproval(id: number, approvalStage: PurchaseOrderDecisionStage, signal?: AbortSignal) {
+    const params = new URLSearchParams({ approvalStage });
+    const response = await fetch(`/api/manufacturing/purchase-orders/${id}/approvals?${params.toString()}`, { signal });
     const body = await responseJson<{ data: PurchaseOrderApprovalDetail }>(response, "Failed to load purchase-order approval details.");
     return body.data;
 }
 
-export async function submitPurchaseOrderWorkflowAction(id: number, payload: PurchaseOrderApprovalCommand) {
-    const response = await fetch(`/api/manufacturing/purchase-orders/${id}/approvals`, {
+export async function submitPurchaseOrderWorkflowAction(id: number, payload: PurchaseOrderApprovalCommand, approvalStage: PurchaseOrderDecisionStage) {
+    const params = new URLSearchParams({ approvalStage });
+    const response = await fetch(`/api/manufacturing/purchase-orders/${id}/approvals?${params.toString()}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)

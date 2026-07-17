@@ -6,6 +6,7 @@ import {
     type PurchaseOrderApprovalRule,
     type PurchaseOrderWorkflowStage
 } from "./_domain";
+import type { ApprovalStage } from "./_domain";
 import type { AuthorizedPurchaseOrderUser } from "./_auth";
 import type { z } from "zod";
 import type { purchaseOrderApprovalSchema } from "./_schemas";
@@ -216,7 +217,8 @@ function rollbackPayload(order: ApprovalOrder) {
 export async function submitPurchaseOrderApproval(
     id: number,
     command: ApprovalCommand,
-    actor: AuthorizedPurchaseOrderUser
+    actor: AuthorizedPurchaseOrderUser,
+    requestedStage: ApprovalStage
 ) {
     const order = await loadOrder(id);
     const revision = Number(order.workflow_revision || 0);
@@ -229,6 +231,12 @@ export async function submitPurchaseOrderApproval(
         throw new PurchaseOrderApprovalError("The matched approval rule changed. Reload the purchase order and review it again.", 409);
     }
     const stage = stageFor(order, rule.requiresFinance);
+    if (stage !== requestedStage) {
+        throw new PurchaseOrderApprovalError(
+            `This purchase order is not awaiting ${requestedStage} approval.`,
+            409
+        );
+    }
     if (stage !== "Plant" && stage !== "Finance") {
         throw new PurchaseOrderApprovalError("This purchase order has no pending approval action.", 409);
     }

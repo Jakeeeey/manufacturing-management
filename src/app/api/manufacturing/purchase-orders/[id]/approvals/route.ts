@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import {
-    PURCHASE_ORDER_MODULE_PATHS,
+    purchaseOrderApprovalModulePath,
     PurchaseOrderAuthorizationError,
     requirePurchaseOrderModuleAccess
 } from "../../_auth";
@@ -9,7 +9,7 @@ import {
     PurchaseOrderApprovalError,
     submitPurchaseOrderApproval
 } from "../../_approval-service";
-import { purchaseOrderApprovalSchema } from "../../_schemas";
+import { purchaseOrderApprovalSchema, purchaseOrderApprovalStageSchema } from "../../_schemas";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,11 +26,19 @@ function routeError(error: unknown) {
     }, { status });
 }
 
-export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
+function requestedStage(request: Request) {
+    const value = new URL(request.url).searchParams.get("approvalStage");
+    const parsed = purchaseOrderApprovalStageSchema.safeParse(value);
+    if (!parsed.success) throw new PurchaseOrderApprovalError("A valid approval stage is required.", 400);
+    return parsed.data;
+}
+
+export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
     const id = Number((await context.params).id);
     if (!Number.isSafeInteger(id) || id <= 0) return NextResponse.json({ error: "Invalid purchase-order ID." }, { status: 400 });
     try {
-        await requirePurchaseOrderModuleAccess({ modulePath: PURCHASE_ORDER_MODULE_PATHS.approval });
+        const stage = requestedStage(request);
+        await requirePurchaseOrderModuleAccess({ modulePath: purchaseOrderApprovalModulePath(stage) });
         return NextResponse.json({ data: await getPurchaseOrderApprovalDetail(id) });
     } catch (error) {
         return routeError(error);
@@ -41,12 +49,13 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const id = Number((await context.params).id);
     if (!Number.isSafeInteger(id) || id <= 0) return NextResponse.json({ error: "Invalid purchase-order ID." }, { status: 400 });
     try {
+        const stage = requestedStage(request);
         const parsed = purchaseOrderApprovalSchema.safeParse(await request.json().catch(() => null));
         if (!parsed.success) {
             return NextResponse.json({ error: "Invalid approval action.", details: parsed.error.flatten() }, { status: 400 });
         }
-        const actor = await requirePurchaseOrderModuleAccess({ modulePath: PURCHASE_ORDER_MODULE_PATHS.approval });
-        return NextResponse.json(await submitPurchaseOrderApproval(id, parsed.data, actor));
+        const actor = await requirePurchaseOrderModuleAccess({ modulePath: purchaseOrderApprovalModulePath(stage) });
+        return NextResponse.json(await submitPurchaseOrderApproval(id, parsed.data, actor, stage));
     } catch (error) {
         return routeError(error);
     }

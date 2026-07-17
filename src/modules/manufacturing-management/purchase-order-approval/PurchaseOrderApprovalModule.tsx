@@ -1,3 +1,8 @@
 "use client";
 
-export { default } from "../approval/ApprovalModule";
+import ApprovalModule from "../approval/ApprovalModule";
+import type { PurchaseOrderDecisionStage } from "../purchase-order/types";
+
+export default function PurchaseOrderApprovalModule({ stage }: { stage: PurchaseOrderDecisionStage }) {
+    return <ApprovalModule stage={stage} />;
+}

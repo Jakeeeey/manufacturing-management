@@ -201,6 +201,60 @@ async function findSupplierIds(search: string): Promise<number[]> {
     return rows.map(row => Number(row.id)).filter(id => Number.isSafeInteger(id) && id > 0);
 }
 
+async function findApprovalHistoryPurchaseOrderIds(stage: "Plant" | "Finance", action: "Rejected") {
+    const params = new URLSearchParams({
+        fields: "purchase_order_id",
+        filter: JSON.stringify({
+            _and: [
+                { approval_stage: { _eq: stage } },
+                { action: { _eq: action } }
+            ]
+        }),
+        limit: "-1"
+    });
+    const response = await fetch(`${DIRECTUS_URL}/items/purchase_order_approval_history?${params.toString()}`, { headers, cache: "no-store" });
+    if (!response.ok) throw new Error(`Failed to load ${stage} approval history (${response.status}).`);
+    const rows = ((await response.json()).data || []) as Array<{ purchase_order_id?: number | { purchase_order_id?: number } }>;
+    return [...new Set(rows.map(row => relationId(row.purchase_order_id, "purchase_order_id")).filter((id): id is number => id !== null))];
+}
+
+async function addApprovalStageFilter(clauses: Record<string, unknown>[], query: PurchaseOrderListQuery) {
+    if (!query.approvalStage) return;
+
+    if (!query.status || query.status === "Requested") {
+        clauses.push({ inventory_status: { _eq: INVENTORY_STATUS.REQUESTED } });
+        if (query.approvalStage === "Plant") {
+            clauses.push({ approver_id: { _null: true } });
+        } else {
+            clauses.push({
+                _and: [
+                    { approver_id: { _nnull: true } },
+                    { finance_id: { _null: true } },
+                    { approval_requires_finance: { _eq: 1 } }
+                ]
+            });
+        }
+        return;
+    }
+
+    if (query.status === "Approved") {
+        clauses.push({ inventory_status: { _eq: INVENTORY_STATUS.APPROVED } });
+        clauses.push({
+            [query.approvalStage === "Plant" ? "approver_id" : "finance_id"]: { _nnull: true }
+        });
+        return;
+    }
+
+    if (query.status === "Rejected") {
+        const rejectedIds = await findApprovalHistoryPurchaseOrderIds(query.approvalStage, "Rejected");
+        clauses.push({ inventory_status: { _eq: INVENTORY_STATUS.REJECTED } });
+        clauses.push({ purchase_order_id: { _in: rejectedIds.length ? rejectedIds : [-1] } });
+        return;
+    }
+
+    clauses.push({ purchase_order_id: { _in: [-1] } });
+}
+
 export async function fetchIncomingShipmentsPage(query: PurchaseOrderListQuery) {
     const filter: Record<string, unknown> = {};
     const clauses: Record<string, unknown>[] = [];
@@ -214,7 +268,7 @@ export async function fetchIncomingShipmentsPage(query: PurchaseOrderListQuery) 
             ]
         });
     }
-    if (query.queue === "receiving" && !query.status) {
+    if (query.queue === "receiving" && !query.status && !query.approvalStage) {
         clauses.push({
             inventory_status: {
                 _in: [
@@ -226,6 +280,7 @@ export async function fetchIncomingShipmentsPage(query: PurchaseOrderListQuery) 
     } else if (query.status) {
         clauses.push({ inventory_status: { _eq: shipmentStatusToInventoryStatus(query.status) } });
     }
+    await addApprovalStageFilter(clauses, query);
     if (query.startDate) clauses.push({ date_encoded: { _gte: `${query.startDate}T00:00:00` } });
     if (query.endDate) clauses.push({ date_encoded: { _lte: `${query.endDate}T23:59:59` } });
     if (clauses.length === 1) Object.assign(filter, clauses[0]);

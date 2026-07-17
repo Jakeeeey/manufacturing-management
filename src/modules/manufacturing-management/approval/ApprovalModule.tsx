@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { usePurchaseOrderApproval } from "../purchase-order-approval/hooks/usePurchaseOrderApproval";
+import type { PurchaseOrderDecisionStage } from "../purchase-order/types";
 
 type QueueTab = "Requested" | "Approved" | "Rejected";
 
@@ -41,7 +42,7 @@ function statusBadge(status: string) {
     return <span className={`rounded border px-2 py-1 text-[10px] font-bold uppercase ${styles[status] || "border-border bg-muted text-muted-foreground"}`}>{status}</span>;
 }
 
-export default function ApprovalModule() {
+export default function ApprovalModule({ stage }: { stage: PurchaseOrderDecisionStage }) {
     const {
         loading,
         suppliers,
@@ -53,7 +54,7 @@ export default function ApprovalModule() {
         approve,
         reject,
         load
-    } = usePurchaseOrderApproval();
+    } = usePurchaseOrderApproval(stage);
     const [tab, setTab] = useState<QueueTab>("Requested");
     const [search, setSearch] = useState("");
     const [eta, setEta] = useState("");
@@ -81,6 +82,10 @@ export default function ApprovalModule() {
 
     const handleApprove = async () => {
         if (!selectedShipment || !approvalDetail) return;
+        if (approvalDetail.stage !== stage) {
+            toast.error(`This purchase order is not awaiting ${stage} approval.`);
+            return;
+        }
         if (approvalDetail.stage === "Plant" && !eta) {
             toast.error("Set the estimated arrival date before Plant approval.");
             return;
@@ -103,6 +108,10 @@ export default function ApprovalModule() {
 
     const handleReject = async () => {
         if (!selectedShipment || !approvalDetail) return;
+        if (approvalDetail.stage !== stage) {
+            toast.error(`This purchase order is not awaiting ${stage} approval.`);
+            return;
+        }
         if (!remarks.trim()) {
             toast.error("Enter a rejection reason.");
             return;
@@ -123,14 +132,14 @@ export default function ApprovalModule() {
         }
     };
 
-    const actionable = approvalDetail?.stage === "Plant" || approvalDetail?.stage === "Finance";
+    const actionable = approvalDetail?.stage === stage;
 
     return (
         <div className="flex min-h-0 flex-1 flex-col gap-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                    <h1 className="text-base font-bold">Purchase Order Approval</h1>
-                    <p className="text-xs text-muted-foreground">Review Plant and Finance decisions against the matched approval rule.</p>
+                    <h1 className="text-base font-bold">Purchase Order {stage} Approval</h1>
+                    <p className="text-xs text-muted-foreground">Review purchase orders awaiting {stage.toLowerCase()} approval.</p>
                 </div>
             </div>
 

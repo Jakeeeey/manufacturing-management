@@ -27,6 +27,7 @@ export interface PurchaseOrderListQuery {
     endDate?: string;
     sort?: "date_encoded" | "purchase_order_no" | "reference" | "total_amount" | "inventory_status";
     direction?: "asc" | "desc";
+    approvalStage?: PurchaseOrderDecisionStage;
 }
 
 export interface PurchaseOrderCatalog {
@@ -66,6 +67,7 @@ export interface PurchaseOrderDraftPayload {
 }
 
 export type PurchaseOrderApprovalStage = "Plant" | "Finance" | "Complete" | "Rejected";
+export type PurchaseOrderDecisionStage = Extract<PurchaseOrderApprovalStage, "Plant" | "Finance">;
 
 export interface PurchaseOrderApprovalHistory {
     history_id: number;
