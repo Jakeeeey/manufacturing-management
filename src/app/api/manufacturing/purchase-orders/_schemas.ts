@@ -53,6 +53,16 @@ export const legacyPurchaseOrderEditSchema = legacyPurchaseOrderCreateSchema.ext
     shipmentId: positiveId
 });
 
+export const purchaseOrderRevisionSchema = legacyPurchaseOrderEditSchema.extend({
+    workflowRevision: z.coerce.number().int().nonnegative(),
+    remarks: z.string().trim().max(1000).optional()
+});
+
+export const purchaseOrderCancellationSchema = z.object({
+    workflowRevision: z.coerce.number().int().nonnegative(),
+    remarks: z.string().trim().max(1000).optional()
+});
+
 export const purchaseOrderExpectedTotalsSchema = z.object({
     grossPhp: nonNegativeMoney,
     discountPhp: nonNegativeMoney,

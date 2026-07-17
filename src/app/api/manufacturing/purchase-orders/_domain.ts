@@ -4,7 +4,7 @@ export type PurchaseIntent = typeof PURCHASE_INTENTS[number];
 export const APPROVAL_STAGES = ["Plant", "Finance"] as const;
 export type ApprovalStage = typeof APPROVAL_STAGES[number];
 
-export const APPROVAL_ACTIONS = ["Submitted", "PlantApproved", "FinanceApproved", "Rejected", "Cancelled"] as const;
+export const APPROVAL_ACTIONS = ["Submitted", "PlantApproved", "FinanceApproved", "Rejected", "Resubmitted", "Cancelled"] as const;
 export type ApprovalAction = typeof APPROVAL_ACTIONS[number];
 
 export const QA_PARAMETER_TYPES = ["Numeric", "Boolean", "Text"] as const;
