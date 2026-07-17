@@ -18,7 +18,7 @@ export async function PATCH(
         // Generate current Manila time (UTC+8) to save in Directus
         const now = new Date();
         const manilaTime = new Date(now.getTime() + 8 * 60 * 60 * 1000);
-        const manilaIsoString = manilaTime.toISOString();
+        const manilaIsoString = manilaTime.toISOString().replace("Z", "");
 
         const payload: Record<string, unknown> = {
             updated_at: manilaIsoString
