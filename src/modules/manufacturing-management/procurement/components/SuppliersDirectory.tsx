@@ -22,6 +22,7 @@ interface SupplierFormState {
     delivery_terms: string;
     currency: string;
     notes_or_comments: string;
+    nonBuy?: boolean | number;
     representatives: import("../types").SupplierRepresentative[];
 }
 
@@ -351,6 +352,11 @@ export default function SuppliersDirectory({
                                 <div className="flex items-start justify-between gap-2">
                                     <span className="font-semibold text-xs text-foreground truncate">{s.supplier_name}</span>
                                     <div className="flex items-center gap-1 shrink-0">
+                                        {(Number(s.nonBuy) === 1 || s.nonBuy === true) && (
+                                            <span className="bg-amber-500/15 text-amber-600 border border-amber-500/20 px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wide">
+                                                Non-Buy
+                                            </span>
+                                        )}
                                         {Number(s.isActive) === 0 && (
                                             <span className="bg-red-500/15 text-red-600 border border-red-500/20 px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wide">
                                                 Inactive
@@ -394,6 +400,11 @@ export default function SuppliersDirectory({
                                         ) : (
                                             <span className="bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase">
                                                 Active
+                                            </span>
+                                        )}
+                                        {(Number(activeSupplier.nonBuy) === 1 || activeSupplier.nonBuy === true) && (
+                                            <span className="bg-amber-500/10 text-amber-600 border border-amber-500/20 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase">
+                                                Non-Buy
                                             </span>
                                         )}
                                     </div>
@@ -1116,6 +1127,23 @@ export default function SuppliersDirectory({
                                             onChange={e => setSupplierForm({...supplierForm, notes_or_comments: e.target.value})}
                                             className="w-full rounded-lg border bg-background px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-primary font-medium min-h-[60px]"
                                         />
+                                    </div>
+
+                                    <div className="col-span-2 mt-2 p-3 rounded-xl border bg-muted/20 flex flex-col gap-2">
+                                        <label className="flex items-center gap-2 cursor-pointer select-none">
+                                            <input
+                                                type="checkbox"
+                                                checked={supplierForm.nonBuy === true || supplierForm.nonBuy === 1}
+                                                onChange={e => setSupplierForm({...supplierForm, nonBuy: e.target.checked})}
+                                                className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                                            />
+                                            <span className="text-xs font-bold text-foreground">Mark as Non-Buy Supplier</span>
+                                        </label>
+                                        <p className="text-[10px] text-muted-foreground leading-relaxed pl-6">
+                                            <strong>Legend:</strong> If this is ticked, the supplier is marked as <em>Non-Buy</em>. 
+                                            This means you cannot create or process purchase orders for them. They are retained 
+                                            in the system purely for reference, historical data, or non-procurement purposes.
+                                        </p>
                                     </div>
                                 </div>
 
