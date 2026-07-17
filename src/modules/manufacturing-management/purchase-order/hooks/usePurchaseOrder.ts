@@ -13,7 +13,9 @@ import {
     fetchPurchaseOrderLines,
     fetchPurchaseOrders,
     updatePurchaseOrderStatus,
-    fetchPurchaseOrderCatalog
+    fetchPurchaseOrderCatalog,
+    reviseRejectedPurchaseOrder,
+    cancelRejectedPurchaseOrder
 } from "../services/purchase-order-api";
 
 const blankLine = (): ManifestLineFormItem => ({
@@ -224,12 +226,35 @@ export function usePurchaseOrder() {
     const handleEditShipment = async (id: number, data: ShipmentFormState, lines: ManifestLineFormItem[]) => {
         setLoading(true);
         try {
-            await editPurchaseOrder(id, data, lines);
-            toast.success("Purchase order updated and resubmitted successfully.");
+            if (selectedShipment?.status === "Rejected") {
+                await reviseRejectedPurchaseOrder(id, data, lines, Number(data.workflow_revision || 0));
+                toast.success("Rejected purchase order revised and resubmitted for approval.");
+            } else {
+                await editPurchaseOrder(id, data, lines);
+                toast.success("Purchase order updated and resubmitted successfully.");
+            }
             setSelectedShipment(null);
             await loadShipments();
+            return true;
         } catch (error) {
             toast.error((error as Error).message || "Failed to update purchase order.");
+            return false;
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleCancelRejectedShipment = async (id: number, workflowRevision: number, remarks?: string) => {
+        setLoading(true);
+        try {
+            await cancelRejectedPurchaseOrder(id, workflowRevision, remarks);
+            toast.success("Rejected purchase order cancelled.");
+            const updated = await loadShipments();
+            setSelectedShipment(updated.find(item => item.shipment_id === id) || null);
+            return true;
+        } catch (error) {
+            toast.error((error as Error).message || "Failed to cancel purchase order.");
+            return false;
         } finally {
             setLoading(false);
         }
@@ -254,6 +279,6 @@ export function usePurchaseOrder() {
         selectedShipment, setSelectedShipment, selectedShipmentLines,
         isShipmentModalOpen, setIsShipmentModalOpen,
         shipmentForm, setShipmentForm, shipmentLinesForm, setShipmentLinesForm,
-        handleCreateShipment, handleEditShipment, handleUpdateShipmentStatus
+        handleCreateShipment, handleEditShipment, handleCancelRejectedShipment, handleUpdateShipmentStatus
     };
 }

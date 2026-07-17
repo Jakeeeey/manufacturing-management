@@ -23,6 +23,7 @@ export default function PurchaseOrderModule() {
                 setLinesForm={purchaseOrder.setShipmentLinesForm}
                 onCreateShipment={purchaseOrder.handleCreateShipment}
                 onEditShipment={purchaseOrder.handleEditShipment}
+                onCancelRejectedPurchaseOrder={purchaseOrder.handleCancelRejectedShipment}
                 onUpdateShipmentStatus={purchaseOrder.handleUpdateShipmentStatus}
                 onTriggerAllocation={() => undefined}
                 loading={purchaseOrder.loading}

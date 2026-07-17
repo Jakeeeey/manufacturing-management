@@ -54,6 +54,24 @@ export async function editPurchaseOrder(id: number, shipmentData: unknown, lineI
     return responseJson(response, "Failed to edit purchase order.");
 }
 
+export async function reviseRejectedPurchaseOrder(id: number, shipmentData: unknown, lineItems: unknown[], workflowRevision: number) {
+    const response = await fetch(`/api/manufacturing/purchase-orders/${id}/revision`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ shipmentData, lineItems, workflowRevision })
+    });
+    return responseJson(response, "Failed to revise purchase order.");
+}
+
+export async function cancelRejectedPurchaseOrder(id: number, workflowRevision: number, remarks?: string) {
+    const response = await fetch(`/api/manufacturing/purchase-orders/${id}/cancel`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workflowRevision, remarks })
+    });
+    return responseJson(response, "Failed to cancel purchase order.");
+}
+
 export async function updatePurchaseOrderStatus(id: number, status: string) {
     const response = await fetch(`/api/manufacturing/purchase-orders/${id}/status`, {
         method: "PATCH",

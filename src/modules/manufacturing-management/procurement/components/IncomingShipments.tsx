@@ -62,6 +62,7 @@ export interface ShipmentFormState {
     payment_type: number | null;
     price_type: string | null;
     currency_code?: "PHP" | "USD";
+    workflow_revision?: number;
 }
 
 interface IncomingShipmentsProps {
@@ -80,7 +81,8 @@ interface IncomingShipmentsProps {
     setLinesForm: React.Dispatch<React.SetStateAction<ManifestLineFormItem[]>>;
     onCreateShipment: (e: React.FormEvent) => void;
     onTriggerAllocation: (s: IncomingShipment) => void;
-    onEditShipment: (shipmentId: number, shipmentData: ShipmentFormState, lineItems: ManifestLineFormItem[]) => void;
+    onEditShipment: (shipmentId: number, shipmentData: ShipmentFormState, lineItems: ManifestLineFormItem[]) => void | Promise<boolean | void>;
+    onCancelRejectedPurchaseOrder?: (shipmentId: number, workflowRevision: number, remarks?: string) => void | Promise<boolean>;
     onUpdateShipmentStatus: (shipmentId: number, status: "Ordered" | "Approved" | "Cancelled" | "For Pickup" | "En Route" | "Receiving (QA)" | "Partially Received" | "Received" | "Rejected") => void;
     loading?: boolean;
     listLoading?: boolean;
@@ -481,6 +483,7 @@ export default function IncomingShipments({
     setLinesForm,
     onCreateShipment,
     onEditShipment,
+    onCancelRejectedPurchaseOrder,
     onUpdateShipmentStatus,
     loading = false,
     listLoading = false,
@@ -544,6 +547,7 @@ export default function IncomingShipments({
             payment_type: activeShipment.payment_type || 1,
             price_type: activeShipment.price_type || "Internal"
             ,currency_code: (activeShipment as IncomingShipment & { currency_code?: "PHP" | "USD" }).currency_code || "PHP"
+            ,workflow_revision: activeShipment.workflow_revision || 0
         });
 
         // Always re-fetch lines fresh to guarantee quantity_ordered is populated
@@ -620,9 +624,11 @@ export default function IncomingShipments({
         }
 
         if (editingShipmentId) {
-            await onEditShipment(editingShipmentId, shipmentForm, linesForm);
-            setEditingShipmentId(null);
-            setIsModalOpen(false);
+            const editSucceeded = await onEditShipment(editingShipmentId, shipmentForm, linesForm);
+            if (editSucceeded !== false) {
+                setEditingShipmentId(null);
+                setIsModalOpen(false);
+            }
         } else {
             onCreateShipment(e);
         }
@@ -1108,6 +1114,11 @@ export default function IncomingShipments({
                                         })()}
                                     </strong>
                                 </p>
+                                {activeShipment.status === "Rejected" && activeShipment.remark && (
+                                    <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                                        <strong>Rejection reason:</strong>{" "}{activeShipment.remark.replace(/^REJECTED:\s*/i, "")}
+                                    </div>
+                                )}
                                 <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs mt-2.5 text-muted-foreground bg-muted/40 border p-3 rounded-lg max-w-fit font-sans">
                                     <span>
                                         Destination Branch:{" "}
@@ -1153,7 +1164,9 @@ export default function IncomingShipments({
                                 <div className="mt-4 border bg-muted/20 rounded-xl p-4 space-y-3">
                                     <div className="text-[10px] font-extrabold text-muted-foreground uppercase tracking-wider block">{canonicalDrafting ? "Purchase Order Workflow Progress" : "Shipment Life Cycle Progress"}</div>
                                     <div className="flex items-center w-full relative">
-                                        {(activeShipment.status === "For Pickup"
+                                        {(activeShipment.status === "Rejected"
+                                            ? ["Ordered", "Approved", "Rejected"]
+                                            : activeShipment.status === "For Pickup"
                                             ? ["Ordered", "Approved", "For Pickup", "En Route", "Receiving (QA)", "Received"]
                                             : ["Ordered", "Approved", "En Route", "Receiving (QA)", "Received"]
                                         ).map((st, idx, arr) => {
@@ -1229,6 +1242,35 @@ export default function IncomingShipments({
                                                     Cancel PO
                                                 </button>
                                             )}
+                                        </div>
+                                    )}
+
+                                    {activeShipment.status === "Rejected" && onCancelRejectedPurchaseOrder && (
+                                        <div className="grid grid-cols-2 gap-2 mt-3">
+                                            <button
+                                                type="button"
+                                                disabled={loading}
+                                                onClick={handleStartEdit}
+                                                className="w-full bg-blue-600 hover:bg-blue-700 disabled:cursor-wait disabled:opacity-60 text-white font-bold py-2.5 px-3 rounded-lg text-xs transition-all shadow-sm cursor-pointer inline-flex items-center justify-center gap-1.5"
+                                            >
+                                                <Edit className="h-3.5 w-3.5" /> Revise &amp; Resubmit
+                                            </button>
+                                            <button
+                                                type="button"
+                                                disabled={loading}
+                                                onClick={() => {
+                                                    if (window.confirm("Cancel this rejected purchase order? This action cannot be undone.")) {
+                                                        onCancelRejectedPurchaseOrder(
+                                                            activeShipment.shipment_id,
+                                                            Number(activeShipment.workflow_revision || 0),
+                                                            "Purchase order cancelled after rejection."
+                                                        );
+                                                    }
+                                                }}
+                                                className="w-full border border-red-500/30 bg-red-500/10 text-red-700 hover:bg-red-500/20 disabled:cursor-wait disabled:opacity-60 font-bold py-2.5 px-3 rounded-lg text-xs transition-all inline-flex items-center justify-center gap-1.5"
+                                            >
+                                                <Trash2 className="h-3.5 w-3.5" /> Cancel PO
+                                            </button>
                                         </div>
                                     )}
 
@@ -1389,7 +1431,9 @@ export default function IncomingShipments({
                         <div className="flex items-center justify-between border-b pb-3 shrink-0">
                             <h3 id="purchase-order-dialog-title" className="font-bold text-sm flex items-center gap-2">
                                 <Anchor className="h-4.5 w-4.5 text-primary" />
-                                {editingShipmentId ? "Edit Requested Purchase Order" : canonicalDrafting ? "Create Purchase Order" : "Log Incoming Cargo & PO Line Items"}
+                                {editingShipmentId
+                                    ? activeShipment?.status === "Rejected" ? "Revise Rejected Purchase Order" : "Edit Requested Purchase Order"
+                                    : canonicalDrafting ? "Create Purchase Order" : "Log Incoming Cargo & PO Line Items"}
                             </h3>
                             <button
                                 onClick={handleCloseModal}
@@ -1925,9 +1969,13 @@ export default function IncomingShipments({
                                             {loading ? (
                                         <>
                                             <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                            {editingShipmentId ? "Saving Changes..." : canonicalDrafting ? "Creating Purchase Order..." : "Registering Shipment..."}
+                                            {editingShipmentId
+                                                ? activeShipment?.status === "Rejected" ? "Resubmitting Purchase Order..." : "Saving Changes..."
+                                                : canonicalDrafting ? "Creating Purchase Order..." : "Registering Shipment..."}
                                         </>
-                                    ) : (editingShipmentId ? "Save Requested PO" : canonicalDrafting ? "Create Purchase Order" : "Register Shipment")}
+                                    ) : (editingShipmentId
+                                        ? activeShipment?.status === "Rejected" ? "Revise & Resubmit PO" : "Save Requested PO"
+                                        : canonicalDrafting ? "Create Purchase Order" : "Register Shipment")}
                                 </button>
                             </div>
                         </form>
