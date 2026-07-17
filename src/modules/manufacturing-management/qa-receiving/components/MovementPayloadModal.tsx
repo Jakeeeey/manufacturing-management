@@ -12,6 +12,7 @@ interface MovementPayloadModalProps {
     preview: ReceivingPreview | null;
     lineItems: ShipmentLineItem[];
     purchaseOrderReference?: string | null;
+    commitReady: boolean;
     posting: boolean;
     onCommit: () => void;
     committedResult: ReceivingCommitResult | null;
@@ -31,6 +32,7 @@ export default function MovementPayloadModal({
     preview,
     lineItems,
     purchaseOrderReference,
+    commitReady,
     posting,
     onCommit,
     committedResult,
@@ -291,7 +293,7 @@ export default function MovementPayloadModal({
                             </label>
                             <div className="flex justify-end gap-2">
                                 <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Close Preview</Button>
-                                <Button type="button" disabled={!verified || posting || !preview?.postingEnabled} onClick={onCommit}>
+                                <Button type="button" disabled={!verified || posting || !commitReady} onClick={onCommit}>
                                     {posting ? "Posting..." : "Confirm & Post Receiving"}
                                 </Button>
                             </div>

@@ -29,6 +29,7 @@ export default function QAReceivingModule() {
         qaReadings,
         qaEvaluationResults,
         receivingPreview,
+        receivingCommitReady,
         committedResult,
         previewOpen,
         setPreviewOpen,
@@ -203,6 +204,7 @@ export default function QAReceivingModule() {
                 preview={receivingPreview}
                 lineItems={lineItems}
                 purchaseOrderReference={selectedShipment?.reference_number}
+                commitReady={receivingCommitReady}
                 posting={postingInspection}
                 onCommit={handleCommitReceiving}
                 committedResult={committedResult}

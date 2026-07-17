@@ -16,6 +16,12 @@ import { isReceivingQueueShipmentStatus, shipmentStatusMatchesFilter } from "@/a
 import { validateReceivingMetadata } from "../receiving-metadata";
 import { deriveReceivingDisposition } from "@/app/api/manufacturing/qa/_receiving-evaluation";
 
+interface ReceivingCommitContext {
+    preview: ReceivingPreview;
+    payload: ReceivingCommitPayload;
+    idempotencyKey: string;
+}
+
 export function useQAReceiving() {
     const listController = useRef<AbortController | null>(null);
     const detailController = useRef<AbortController | null>(null);
@@ -42,39 +48,35 @@ export function useQAReceiving() {
     const [qaSpecificationStates, setQaSpecificationStates] = useState<Record<number, QaSpecificationLoadState>>({});
     const [qaReadings, setQaReadings] = useState<QaSpecificationReadings>({});
     const [qaEvaluationResults, setQaEvaluationResults] = useState<Record<number, ReceivingQaEvaluation>>({});
-    const [receivingPreview, setReceivingPreview] = useState<ReceivingPreview | null>(null);
+    const [receivingCommitContext, setReceivingCommitContext] = useState<ReceivingCommitContext | null>(null);
     const [committedResult, setCommittedResult] = useState<ReceivingCommitResult | null>(null);
     const [previewOpen, setPreviewOpen] = useState(false);
     const [previewAcknowledged, setPreviewAcknowledged] = useState(false);
     const [validatingInspection, setValidatingInspection] = useState(false);
     const [postingInspection, setPostingInspection] = useState(false);
-    const [receivingCommitPayload, setReceivingCommitPayload] = useState<ReceivingCommitPayload | null>(null);
-    const [receivingIdempotencyKey, setReceivingIdempotencyKey] = useState<string | null>(null);
+    const receivingPreview = receivingCommitContext?.preview ?? null;
+    const receivingCommitReady = Boolean(receivingCommitContext?.preview.postingEnabled);
 
     const handleReceiptNumberChange = useCallback((value: string) => {
         previewController.current?.abort();
         setReceiptNumber(value);
         setQaEvaluationResults({});
-        setReceivingPreview(null);
+        setReceivingCommitContext(null);
         setCommittedResult(null);
         setPreviewOpen(false);
         setPreviewAcknowledged(false);
         setValidatingInspection(false);
-        setReceivingCommitPayload(null);
-        setReceivingIdempotencyKey(null);
     }, []);
 
     const handleDestinationBranchChange = useCallback((value: string) => {
         previewController.current?.abort();
         setSelectedBranchId(value);
         setQaEvaluationResults({});
-        setReceivingPreview(null);
+        setReceivingCommitContext(null);
         setCommittedResult(null);
         setPreviewOpen(false);
         setPreviewAcknowledged(false);
         setValidatingInspection(false);
-        setReceivingCommitPayload(null);
-        setReceivingIdempotencyKey(null);
     }, []);
 
     // FIFO inventory screen states
@@ -98,14 +100,12 @@ export function useQAReceiving() {
         setQaSpecificationStates({});
         setQaReadings({});
         setQaEvaluationResults({});
-        setReceivingPreview(null);
+        setReceivingCommitContext(null);
         setCommittedResult(null);
         setPreviewOpen(false);
         setPreviewAcknowledged(false);
         setValidatingInspection(false);
         setPostingInspection(false);
-        setReceivingCommitPayload(null);
-        setReceivingIdempotencyKey(null);
     }, []);
 
     // Filter states for shipments queue
@@ -231,7 +231,7 @@ export function useQAReceiving() {
         setQaSpecificationStates({});
         setQaReadings({});
         setQaEvaluationResults({});
-        setReceivingPreview(null);
+        setReceivingCommitContext(null);
         setCommittedResult(null);
         setPreviewOpen(false);
         setPreviewAcknowledged(false);
@@ -317,7 +317,7 @@ export function useQAReceiving() {
         if (selectedShipment?.status === "Received") return;
         previewController.current?.abort();
         setValidatingInspection(false);
-        setReceivingPreview(null);
+        setReceivingCommitContext(null);
         setCommittedResult(null);
         setPreviewOpen(false);
         setPreviewAcknowledged(false);
@@ -352,7 +352,7 @@ export function useQAReceiving() {
         if (selectedShipment?.status === "Received") return;
         previewController.current?.abort();
         setValidatingInspection(false);
-        setReceivingPreview(null);
+        setReceivingCommitContext(null);
         setCommittedResult(null);
         setPreviewOpen(false);
         setPreviewAcknowledged(false);
@@ -375,7 +375,7 @@ export function useQAReceiving() {
         if (selectedShipment?.status === "Received") return;
         previewController.current?.abort();
         setValidatingInspection(false);
-        setReceivingPreview(null);
+        setReceivingCommitContext(null);
         setCommittedResult(null);
         setPreviewOpen(false);
         setPreviewAcknowledged(false);
@@ -526,16 +526,16 @@ export function useQAReceiving() {
                 lines: evaluationLines
             }, controller.signal);
             if (controller.signal.aborted) return;
-            setReceivingPreview(preview);
-            setReceivingCommitPayload({
+            const idempotencyKey = uuidv4();
+            const payload: ReceivingCommitPayload = {
                 contractVersion: "v1",
                 workflowRevision: preview.workflowRevision,
                 shipmentId: selectedShipment.shipment_id,
                 receiptNumber: receiptNumber.trim(),
                 destinationBranchId: Number(selectedBranchId),
                 lines: evaluationLines
-            });
-            setReceivingIdempotencyKey(uuidv4());
+            };
+            setReceivingCommitContext({ preview, payload, idempotencyKey });
             setQaEvaluationResults(Object.fromEntries(preview.lines.map(result => [result.lineId, result])));
             setPreviewAcknowledged(false);
             setPreviewOpen(true);
@@ -565,12 +565,21 @@ export function useQAReceiving() {
     };
 
     const handleCommitReceiving = useCallback(async () => {
-        if (!receivingPreview?.postingEnabled || !receivingCommitPayload || !receivingIdempotencyKey) return;
+        if (postingInspection) return;
+        if (!receivingCommitContext) {
+            toast.error("The receiving preview is no longer valid. Generate a new preview before posting.");
+            return;
+        }
+        if (!receivingCommitContext.preview.postingEnabled) {
+            toast.error("Receiving posting is currently unavailable.");
+            return;
+        }
         setPostingInspection(true);
         try {
-            const result = await commitReceivingQa(receivingCommitPayload, receivingIdempotencyKey);
+            const result = await commitReceivingQa(receivingCommitContext.payload, receivingCommitContext.idempotencyKey);
             toast.success(`Receiving ${result.commitReference} posted as ${result.status}.`);
             setCommittedResult(result);
+            setPreviewAcknowledged(true);
             setPreviewOpen(true);
             await loadShipments({
                 search: searchPO.trim() || undefined,
@@ -584,7 +593,7 @@ export function useQAReceiving() {
         } finally {
             setPostingInspection(false);
         }
-    }, [receivingPreview, receivingCommitPayload, receivingIdempotencyKey, loadShipments, searchPO, searchStatus, startDate, endDate, showReceived]);
+    }, [postingInspection, receivingCommitContext, loadShipments, searchPO, searchStatus, startDate, endDate, showReceived]);
 
     const handlePreviewOpenChange = useCallback((open: boolean) => {
         setPreviewOpen(open);
@@ -713,6 +722,7 @@ export function useQAReceiving() {
         qaReadings,
         qaEvaluationResults,
         receivingPreview,
+        receivingCommitReady,
         committedResult,
         previewOpen,
         setPreviewOpen: handlePreviewOpenChange,
