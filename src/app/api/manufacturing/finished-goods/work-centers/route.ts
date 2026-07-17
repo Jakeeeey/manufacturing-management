@@ -2,24 +2,61 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { DIRECTUS_URL, headers } from "@/app/api/manufacturing/directus-api";
 
+interface UserRecord {
+    user_id: number;
+    user_fname?: string;
+    user_lname?: string;
+}
+
+interface DirectusWorkCenter {
+    work_center_id: number;
+    work_center_name: string;
+    asset_id?: number | Record<string, unknown> | null;
+    department_id?: number | Record<string, unknown> | null;
+    is_active?: string | number | boolean | null;
+    created_by?: number | null;
+    [key: string]: unknown;
+}
+
 export async function GET() {
     try {
-        const res = await fetch(`${DIRECTUS_URL}/items/manufacturing_work_centers?limit=-1&fields=*,asset_id.id,asset_id.item_image,asset_id.serial,asset_id.barcode,asset_id.condition,asset_id.item_id.id,asset_id.item_id.item_name,department_id.department_id,department_id.department_name`, { headers, cache: "no-store" });
+        const [res, usersRes] = await Promise.all([
+            fetch(`${DIRECTUS_URL}/items/manufacturing_work_centers?limit=-1&sort=-work_center_id&fields=*,asset_id.id,asset_id.item_image,asset_id.serial,asset_id.barcode,asset_id.condition,asset_id.item_id.id,asset_id.item_id.item_name,department_id.department_id,department_id.department_name`, { headers, cache: "no-store" }),
+            fetch(`${DIRECTUS_URL}/items/user?limit=-1&fields=user_id,user_fname,user_lname`, { headers, cache: "no-store" }).catch(() => null)
+        ]);
+
         if (!res.ok) throw new Error(`Directus failed to fetch work centers: ${res.status}`);
         const json = await res.json();
-        const workCenters = json.data || [];
+        const workCenters = (json.data || []) as DirectusWorkCenter[];
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const mappedWorkCenters = workCenters.map((wc: any) => {
+        let usersList: UserRecord[] = [];
+        if (usersRes && usersRes.ok) {
+            try {
+                const usersJson = await usersRes.json();
+                usersList = (usersJson.data || []) as UserRecord[];
+            } catch (err) {
+                console.error("Error parsing users in GET work centers:", err);
+            }
+        }
+
+        const mappedWorkCenters = workCenters.map((wc) => {
             const asset = wc.asset_id && typeof wc.asset_id === "object" ? wc.asset_id : null;
             const department = wc.department_id && typeof wc.department_id === "object" ? wc.department_id : null;
+
+            const matchedUser = usersList.find((u) => Number(u.user_id) === Number(wc.created_by));
+            let creatorName = "N/A";
+            if (matchedUser) {
+                creatorName = [matchedUser.user_fname, matchedUser.user_lname].filter(Boolean).join(" ") || "N/A";
+            }
+
             return {
                 ...wc,
-                asset_id: asset ? asset.id : wc.asset_id,
-                department_id: department ? department.department_id : wc.department_id,
+                asset_id: asset ? Number((asset as Record<string, unknown>).id) : wc.asset_id,
+                department_id: department ? Number((department as Record<string, unknown>).department_id) : wc.department_id,
                 is_active: wc.is_active === undefined || wc.is_active === null ? true : Boolean(Number(wc.is_active)),
                 asset,
-                department
+                department,
+                created_by_name: creatorName
             };
         });
 
@@ -62,7 +99,7 @@ export async function POST(request: Request) {
         // Generate current Manila time (UTC+8) to save in Directus
         const now = new Date();
         const manilaTime = new Date(now.getTime() + 8 * 60 * 60 * 1000);
-        const manilaIsoString = manilaTime.toISOString();
+        const manilaIsoString = manilaTime.toISOString().replace("Z", "");
 
         const payload = {
             work_center_name,
@@ -81,12 +118,12 @@ export async function POST(request: Request) {
             headers,
             body: JSON.stringify(payload)
         });
-        
+
         if (!res.ok) {
             const errText = await res.text();
             throw new Error(`Directus failed to create work center: ${res.status} - ${errText}`);
         }
-        
+
         const json = await res.json();
         const newWc = json.data;
         if (newWc && newWc.is_active !== undefined) newWc.is_active = Boolean(Number(newWc.is_active));

@@ -138,6 +138,8 @@ export interface WorkCenter {
     asset?: AssetRecord | null;
     department?: DepartmentRecord | null;
     created_by?: number | null;
+    created_by_name?: string;
+    created_at?: string;
 }
 
 export interface QATemplate {
