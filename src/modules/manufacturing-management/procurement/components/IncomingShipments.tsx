@@ -1589,7 +1589,8 @@ export default function IncomingShipments({
                                           {linesForm.map((line, idx) => {
                                              const lineErrors = getLineErrors(line);
                                              return (
-                                             <div key={idx} className={`grid grid-cols-1 gap-3 bg-muted/10 border p-3 pr-10 rounded-lg relative sm:grid-cols-2 lg:grid-cols-4 ${hasSubmitted && lineErrors.length > 0 ? "border-red-500/50 bg-red-500/5" : ""}`}>
+                                              <React.Fragment key={idx}>
+                                              <div className={`grid grid-cols-1 gap-3 bg-muted/10 border p-3 pr-10 rounded-lg relative sm:grid-cols-2 lg:grid-cols-4 ${hasSubmitted && lineErrors.length > 0 ? "border-red-500/50 bg-red-500/5" : ""}`}>
                                                 <div className="w-full min-w-0 space-y-1.5 flex flex-col relative">
                                                     <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Raw Product Name <span className="text-red-500">*</span></label>
                                                     <RawProductSelector
@@ -1831,23 +1832,26 @@ export default function IncomingShipments({
                                                          <Trash2 className="h-4 w-4" />
                                                      </button>
                                                  )}
-                                                 {hasSubmitted && lineErrors.length > 0 && (
-                                                     <p className="col-span-full text-[10px] font-semibold leading-relaxed text-red-600" role="alert">
-                                                         {lineErrors.join("; ")}
-                                                     </p>
-                                                 )}
-                                             </div>
-                                             );
+                                                  {hasSubmitted && lineErrors.length > 0 && (
+                                                      <p className="col-span-full text-[10px] font-semibold leading-relaxed text-red-600" role="alert">
+                                                          {lineErrors.join("; ")}
+                                                      </p>
+                                                  )}
+                                              </div>
+                                              {idx === linesForm.length - 1 && (
+                                                  <div className="mt-2 flex justify-end border-t pt-3">
+                                                      <button
+                                                          type="button"
+                                                          onClick={handleAddLineForm}
+                                                          className="inline-flex items-center gap-1 text-primary hover:text-primary/80 text-xs font-semibold"
+                                                      >
+                                                          <Plus className="h-3.5 w-3.5" /> Add Row
+                                                      </button>
+                                                  </div>
+                                              )}
+                                              </React.Fragment>
+                                              );
                                           })}
-                                         </div>
-                                         <div className="mt-2 flex justify-end self-end border-t pt-3">
-                                             <button
-                                                 type="button"
-                                                 onClick={handleAddLineForm}
-                                                 className="inline-flex items-center gap-1 text-primary hover:text-primary/80 text-xs font-semibold"
-                                             >
-                                                 <Plus className="h-3.5 w-3.5" /> Add Row
-                                             </button>
                                          </div>
                                      </div>
                                 )}
