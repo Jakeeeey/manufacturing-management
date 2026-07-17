@@ -50,10 +50,16 @@ export async function GET() {
             "updated_by"
         ].join(",");
 
-        const res = await fetch(
-            `${DIRECTUS_URL}/items/lots?limit=-1&sort=lot_id&fields=${fields}`,
-            { headers, cache: "no-store" }
-        );
+        const [res, usersRes] = await Promise.all([
+            fetch(
+                `${DIRECTUS_URL}/items/lots?limit=-1&sort=-lot_id&fields=${fields}`,
+                { headers, cache: "no-store" }
+            ),
+            fetch(
+                `${DIRECTUS_URL}/items/user?limit=-1&fields=user_id,user_fname,user_lname`,
+                { headers, cache: "no-store" }
+            ).catch(() => null)
+        ]);
 
         if (!res.ok) {
             throw new Error(`Directus failed to fetch lots: ${res.status}`);
@@ -61,6 +67,16 @@ export async function GET() {
 
         const json = await res.json();
         const rawLots: DirectusLot[] = json.data || [];
+
+        let usersList: { user_id: number; user_fname?: string; user_lname?: string }[] = [];
+        if (usersRes && usersRes.ok) {
+            try {
+                const usersJson = await usersRes.json();
+                usersList = usersJson.data || [];
+            } catch (err) {
+                console.error("Error parsing users in GET lots:", err);
+            }
+        }
 
         const mappedLots: Lot[] = rawLots.map((row) => {
             let inventoryTypeId = 0;
@@ -75,16 +91,28 @@ export async function GET() {
 
             let createdBy = "System";
             if (row.created_by) {
-                createdBy = typeof row.created_by === "object"
-                    ? (row.created_by.username || `User #${row.created_by.user_id}`)
-                    : `User #${row.created_by}`;
+                const userIdNum = typeof row.created_by === "object" && row.created_by !== null
+                    ? row.created_by.user_id
+                    : Number(row.created_by);
+                const matchedUser = usersList.find((u) => Number(u.user_id) === Number(userIdNum));
+                if (matchedUser) {
+                    createdBy = [matchedUser.user_fname, matchedUser.user_lname].filter(Boolean).join(" ") || `User #${userIdNum}`;
+                } else {
+                    createdBy = `User #${userIdNum}`;
+                }
             }
 
             let updatedBy = "System";
             if (row.updated_by) {
-                updatedBy = typeof row.updated_by === "object"
-                    ? (row.updated_by.username || `User #${row.updated_by.user_id}`)
-                    : `User #${row.updated_by}`;
+                const userIdNum = typeof row.updated_by === "object" && row.updated_by !== null
+                    ? row.updated_by.user_id
+                    : Number(row.updated_by);
+                const matchedUser = usersList.find((u) => Number(u.user_id) === Number(userIdNum));
+                if (matchedUser) {
+                    updatedBy = [matchedUser.user_fname, matchedUser.user_lname].filter(Boolean).join(" ") || `User #${userIdNum}`;
+                } else {
+                    updatedBy = `User #${userIdNum}`;
+                }
             }
 
             return {

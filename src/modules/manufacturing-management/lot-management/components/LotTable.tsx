@@ -1,5 +1,5 @@
 import React from "react";
-import { Search, RefreshCw, Pencil, Trash2, Loader2, Boxes, ChevronsLeft, ChevronsRight, Plus } from "lucide-react";
+import { Search, RefreshCw, Pencil, Loader2, Boxes, ChevronsLeft, ChevronsRight, Plus } from "lucide-react";
 import { Lot, InventoryType } from "../types";
 import {
     Table,
@@ -41,7 +41,6 @@ interface LotTableProps {
     onFilterTypeChange: (value: number | "all") => void;
     inventoryTypes: InventoryType[];
     onEdit: (lot: Lot) => void;
-    onDelete: (lotId: number) => void;
     onRefresh: () => void;
     onAddClick?: () => void;
 }
@@ -55,7 +54,6 @@ export default function LotTable({
     onFilterTypeChange,
     inventoryTypes,
     onEdit,
-    onDelete,
     onRefresh,
     onAddClick
 }: LotTableProps) {
@@ -77,16 +75,16 @@ export default function LotTable({
         <div className="space-y-4">
             {/* Header / Filter Bar */}
             <div className="flex flex-col sm:flex-row gap-3 justify-between items-start sm:items-center">
-                <div className="relative flex-1 w-full max-w-sm">
-                    <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input
-                        placeholder="Search lots by name..."
-                        value={searchQuery}
-                        onChange={(e) => onSearchChange(e.target.value)}
-                        className="pl-9 h-9"
-                    />
-                </div>
-                <div className="flex items-center gap-2 w-full sm:w-auto">
+                <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto flex-1 max-w-xl">
+                    <div className="relative flex-1 w-full">
+                        <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <Input
+                            placeholder="Search lots by name..."
+                            value={searchQuery}
+                            onChange={(e) => onSearchChange(e.target.value)}
+                            className="pl-9 h-9"
+                        />
+                    </div>
                     <Select
                         value={String(filterType)}
                         onValueChange={(val) => {
@@ -94,7 +92,7 @@ export default function LotTable({
                             onFilterTypeChange(parsed);
                         }}
                     >
-                        <SelectTrigger className="w-[180px] h-9">
+                        <SelectTrigger className="w-[180px] h-9 shrink-0">
                             <SelectValue placeholder="All Inventory Types" />
                         </SelectTrigger>
                         <SelectContent position="popper" sideOffset={4}>
@@ -109,6 +107,8 @@ export default function LotTable({
                             ))}
                         </SelectContent>
                     </Select>
+                </div>
+                <div className="flex items-center gap-2 w-full sm:w-auto shrink-0 justify-end">
                     <Button variant="outline" size="icon" onClick={onRefresh} className="h-9 w-9">
                         <RefreshCw className="h-4 w-4" />
                     </Button>
@@ -143,18 +143,18 @@ export default function LotTable({
                     <Table>
                         <TableHeader>
                             <TableRow>
-                                <TableHead className="w-[100px]">Lot ID</TableHead>
+                                <TableHead className="w-[100px]">No.</TableHead>
                                 <TableHead>Lot Name</TableHead>
                                 <TableHead>Inventory Type</TableHead>
                                 <TableHead>Max Batch Capacity</TableHead>
-                                <TableHead>Created At</TableHead>
+                                <TableHead>Created By</TableHead>
                                 <TableHead className="text-right w-[100px]">Actions</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
                             {paginatedLots.map((lot) => (
                                 <TableRow key={lot.lotId}>
-                                    <TableCell className="font-medium">#{lot.lotId}</TableCell>
+                                    <TableCell className="font-medium">{lot.displayNumber}</TableCell>
                                     <TableCell className="font-semibold text-foreground">
                                         {lot.lotName}
                                     </TableCell>
@@ -164,18 +164,8 @@ export default function LotTable({
                                         </span>
                                     </TableCell>
                                     <TableCell>{lot.maxBatchCapacity.toLocaleString()} batches</TableCell>
-                                    <TableCell>
-                                        {lot.createdAt
-                                            ? new Date(lot.createdAt).toLocaleString("en-PH", {
-                                                timeZone: "UTC",
-                                                year: "numeric",
-                                                month: "short",
-                                                day: "2-digit",
-                                                hour: "2-digit",
-                                                minute: "2-digit",
-                                                hour12: true
-                                              })
-                                            : "N/A"}
+                                    <TableCell className="text-muted-foreground">
+                                        {lot.createdBy || "System"}
                                     </TableCell>
                                     <TableCell className="text-right">
                                         <div className="flex justify-end gap-1">
@@ -186,14 +176,6 @@ export default function LotTable({
                                                 className="h-8 w-8 text-muted-foreground hover:text-primary"
                                             >
                                                 <Pencil className="h-4 w-4" />
-                                            </Button>
-                                            <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                onClick={() => onDelete(lot.lotId)}
-                                                className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                                            >
-                                                <Trash2 className="h-4 w-4" />
                                             </Button>
                                         </div>
                                     </TableCell>
@@ -252,7 +234,7 @@ export default function LotTable({
                         >
                             Previous
                         </Button>
-                        
+
                         <div className="flex items-center gap-1 px-2 font-semibold text-xs">
                             <span>Page</span>
                             <span className="text-foreground">{currentPage}</span>
