@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { DIRECTUS_URL, headers } from "@/app/api/manufacturing/directus-api";
 
 export async function GET() {
@@ -29,19 +30,48 @@ export async function GET() {
     }
 
     try {
-        const res = await fetch(
-            `${DIRECTUS_URL}/items/assets_and_equipment?limit=-1&fields=*,item_id.id,item_id.item_name,department.department_id,department.department_name`,
-            { headers, cache: "no-store" }
-        );
+        const [res, usersRes] = await Promise.all([
+            fetch(
+                `${DIRECTUS_URL}/items/assets_and_equipment?limit=-1&sort=-id&fields=*,item_id.id,item_id.item_name,department.department_id,department.department_name`,
+                { headers, cache: "no-store" }
+            ),
+            fetch(`${DIRECTUS_URL}/items/user?limit=-1&fields=user_id,user_fname,user_lname`, { headers, cache: "no-store" }).catch(() => null)
+        ]);
+
         if (!res.ok) throw new Error(`Directus failed to fetch assets: ${res.status}`);
         const json = await res.json();
         const assets = json.data || [];
+
+        interface UserRecord {
+            user_id: number | string;
+            user_fname?: string;
+            user_lname?: string;
+        }
+
+        let usersList: UserRecord[] = [];
+        if (usersRes && usersRes.ok) {
+            try {
+                const usersJson = await usersRes.json();
+                usersList = usersJson.data || [];
+            } catch (err) {
+                console.error("Error parsing users in GET assets:", err);
+            }
+        }
+
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const mappedAssets = assets.map((a: any) => ({
-            ...a,
-            is_active_warning: a.is_active_warning === undefined || a.is_active_warning === null ? false : Boolean(Number(a.is_active_warning)),
-            is_active: a.is_active === undefined || a.is_active === null ? true : Boolean(Number(a.is_active))
-        }));
+        const mappedAssets = assets.map((a: any) => {
+            const matchedUser = usersList.find((u) => Number(u.user_id) === Number(a.created_by));
+            let creatorName = "N/A";
+            if (matchedUser) {
+                creatorName = [matchedUser.user_fname, matchedUser.user_lname].filter(Boolean).join(" ") || "N/A";
+            }
+            return {
+                ...a,
+                is_active_warning: a.is_active_warning === undefined || a.is_active_warning === null ? false : Boolean(Number(a.is_active_warning)),
+                is_active: a.is_active === undefined || a.is_active === null ? true : Boolean(Number(a.is_active)),
+                created_by_name: creatorName
+            };
+        });
         return NextResponse.json(mappedAssets);
     } catch (e) {
         console.error("API Error fetching assets:", e);
@@ -49,10 +79,40 @@ export async function GET() {
     }
 }
 
+function formatManilaTimestamp(dateString: string): string {
+    if (!dateString) return "";
+    const match = dateString.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!match) return dateString;
+    const [, year, month, day] = match;
+    const now = new Date();
+    const timePart = now.toISOString().substring(11, 19);
+    return `${year}-${month}-${day}T${timePart}.000Z`;
+}
+
 export async function POST(request: Request) {
     try {
         const payload = await request.json();
         
+        // Get logged in user ID from secure access token cookie
+        let userId: number | null = null;
+        try {
+            const cookieStore = await cookies();
+            const token = cookieStore.get("vos_access_token")?.value;
+            if (token) {
+                const parts = token.split(".");
+                if (parts.length >= 2) {
+                    const base64Url = parts[1];
+                    let base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+                    while (base64.length % 4) base64 += "=";
+                    const jsonPayload = Buffer.from(base64, "base64").toString("utf8");
+                    const userPayload = JSON.parse(jsonPayload);
+                    userId = userPayload?.id || userPayload?.user_id || userPayload?.sub || null;
+                }
+            }
+        } catch (err) {
+            console.error("Error parsing user token in POST assets route:", err);
+        }
+
         // Clean payload fields
         const formattedPayload = {
             item_image: payload.item_image || null,
@@ -69,7 +129,8 @@ export async function POST(request: Request) {
             life_span: payload.life_span !== undefined ? Number(payload.life_span) : null,
             is_active_warning: payload.is_active_warning !== undefined ? !!payload.is_active_warning : false,
             is_active: payload.is_active !== undefined ? !!payload.is_active : true,
-            date_acquired: payload.date_acquired || null
+            date_acquired: payload.date_acquired ? formatManilaTimestamp(payload.date_acquired) : null,
+            created_by: userId ? Number(userId) : 24
         };
 
         const res = await fetch(`${DIRECTUS_URL}/items/assets_and_equipment`, {

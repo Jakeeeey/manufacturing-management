@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { DIRECTUS_URL, headers } from "../_directus";
 import { evaluateShelfLife, INVENTORY_STATUS, todayInManila } from "../_domain";
 import { receivingSubmissionSchema } from "../_schemas";
+import { validateReceivingQuantities } from "../../qa/_receiving-evaluation";
+import { normalizeReceivingLotAllocations, receivingLotAllocationError } from "../../qa-receiving/_lot-allocation";
 import { calculateLandedCostAllocations, fetchShipmentExpenses, normalizeAllocationMethod } from "../expenses/expenses-helper";
 
 class ReceivingError extends Error {
@@ -62,15 +64,17 @@ function movementKey(row: {
     receivingLineId: number;
     branchId: number;
     transactionTypeId: number;
+    storageLotId: number;
+    quantity: number;
 }): string {
-    return `${row.receivingLineId}:${row.branchId}:${row.transactionTypeId}`;
+    return `${row.receivingLineId}:${row.branchId}:${row.transactionTypeId}:${row.storageLotId}:${row.quantity}`;
 }
 
 async function loadMovementRows(receivingLineIds: number[]) {
     if (receivingLineIds.length === 0) return [];
     const params = new URLSearchParams({
         "filter[source_document_id][_in]": receivingLineIds.join(","),
-        fields: "movement_id,source_document_id,branch_id,transaction_type_id",
+        fields: "movement_id,source_document_id,branch_id,transaction_type_id,lot_id,quantity",
         limit: "-1"
     });
     const response = await fetch(`${DIRECTUS_URL}/items/inventory_movements?${params.toString()}`, {
@@ -89,7 +93,9 @@ function finalizeMovements(pending: PendingMovement[], rows: Record<string, unkn
         const key = movementKey({
             receivingLineId: relationId(row.source_document_id, "purchase_order_product_id"),
             branchId: relationId(row.branch_id, "id"),
-            transactionTypeId: relationId(row.transaction_type_id, "transaction_type_id")
+            transactionTypeId: relationId(row.transaction_type_id, "transaction_type_id"),
+            storageLotId: relationId(row.lot_id, "lot_id"),
+            quantity: Number(row.quantity)
         });
         if (!Number.isSafeInteger(movementId) || movementId <= 0 || movementByKey.has(key)) return null;
         movementByKey.set(key, movementId);
@@ -132,21 +138,34 @@ export async function handleQaReceivingPost(request: Request, options: Receiving
 
         const lineIds = lineItemUpdates.map(item => item.line_id);
         if (new Set(lineIds).size !== lineIds.length) throw new ReceivingError("Duplicate purchase-order lines are not allowed.", 400);
-        const requestedLotIds = [...new Set(lineItemUpdates.map(item => item.lot_id))];
+        const requestedLotIds = [...new Set(lineItemUpdates.flatMap(item => [
+            item.lot_id,
+            ...item.accepted_lot_allocations.map(allocation => allocation.storage_lot_id)
+        ]))];
 
-        const [headerRes, linesRes, lotsRes, branchesRes, movementTypesRes] = await Promise.all([
+        const [headerRes, linesRes, lotsRes, lotInventoryRes, branchesRes, movementTypesRes] = await Promise.all([
             fetch(`${DIRECTUS_URL}/items/purchase_order/${shipmentId}?fields=purchase_order_id,inventory_status,date_received`, { headers, cache: "no-store" }),
             fetch(`${DIRECTUS_URL}/items/purchase_order_products?filter[purchase_order_product_id][_in]=${lineIds.join(",")}&fields=*&limit=-1`, { headers, cache: "no-store" }),
-            fetch(`${DIRECTUS_URL}/items/lots?filter[lot_id][_in]=${requestedLotIds.join(",")}&fields=lot_id&limit=-1`, { headers, cache: "no-store" }),
+            fetch(`${DIRECTUS_URL}/items/lots?filter[lot_id][_in]=${requestedLotIds.join(",")}&fields=lot_id,max_batch_capacity&limit=-1`, { headers, cache: "no-store" }),
+            fetch(`${DIRECTUS_URL}/items/inventory_lots?filter[lot_id][_in]=${requestedLotIds.join(",")}&fields=lot_id,quantity&limit=-1`, { headers, cache: "no-store" }),
             fetch(`${DIRECTUS_URL}/items/branches?limit=200&fields=id,branch_name,branch_code`, { headers, cache: "no-store" }),
             fetch(`${DIRECTUS_URL}/items/inventory_transaction_types?fields=transaction_type_id,type_name,direction,origin_table&limit=-1`, { headers, cache: "no-store" })
         ]);
         if (!headerRes.ok) throw new ReceivingError("Purchase order not found.", 404);
-        if (!linesRes.ok || !lotsRes.ok || !branchesRes.ok || !movementTypesRes.ok) throw new Error("Failed to validate receiving reference data.");
+        if (!linesRes.ok || !lotsRes.ok || !lotInventoryRes.ok || !branchesRes.ok || !movementTypesRes.ok) throw new Error("Failed to validate receiving reference data.");
 
         const shipment = (await headerRes.json()).data as Record<string, unknown>;
         const poLines = ((await linesRes.json()).data || []) as Record<string, unknown>[];
-        const validLotIds = new Set(((await lotsRes.json()).data || []).map((lot: { lot_id: number }) => Number(lot.lot_id)));
+        const lotRows = ((await lotsRes.json()).data || []) as Array<Record<string, unknown>>;
+        const validLotIds = new Set(lotRows.map(lot => Number(lot.lot_id)));
+        const occupiedByLot = new Map<number, number>();
+        for (const row of (((await lotInventoryRes.json()).data || []) as Array<Record<string, unknown>>)) {
+            const lotId = relationId(row.lot_id, "lot_id");
+            const quantity = Number(row.quantity || 0);
+            if (Number.isSafeInteger(lotId) && lotId > 0 && Number.isFinite(quantity)) {
+                occupiedByLot.set(lotId, (occupiedByLot.get(lotId) || 0) + Math.max(0, quantity));
+            }
+        }
         const branches = ((await branchesRes.json()).data || []) as Array<{ id: number; branch_name: string; branch_code: string }>;
         const movementTypes = ((await movementTypesRes.json()).data || []) as DirectusMovementType[];
         const passedMovementTypeId = movementTypeId(movementTypes, "Purchase Receiving QA");
@@ -154,7 +173,32 @@ export async function handleQaReceivingPost(request: Request, options: Receiving
             ? movementTypeId(movementTypes, "QA Reject / Bad Order Receipt")
             : null;
         if (poLines.length !== lineIds.length) throw new ReceivingError("One or more purchase-order lines do not exist.", 400);
-        if (lineItemUpdates.some(item => !validLotIds.has(item.lot_id))) throw new ReceivingError("One or more storage lots do not exist.", 400);
+        if (lineItemUpdates.some(item => item.lot_id && !validLotIds.has(item.lot_id))) throw new ReceivingError("One or more storage lots do not exist.", 400);
+        if (lineItemUpdates.some(item => item.accepted_lot_allocations.some(allocation => !validLotIds.has(allocation.storage_lot_id)))) {
+            throw new ReceivingError("One or more accepted inventory storage lots do not exist.", 400);
+        }
+        const capacityByLot = new Map(lotRows.map(lot => [
+            Number(lot.lot_id),
+            lot.max_batch_capacity === null || lot.max_batch_capacity === undefined || lot.max_batch_capacity === ""
+                ? null
+                : Number(lot.max_batch_capacity)
+        ]));
+        const incomingByLot = new Map<number, number>();
+        for (const item of lineItemUpdates) {
+            for (const allocation of normalizeReceivingLotAllocations(
+                Number(item.quantity_accepted),
+                item.accepted_lot_allocations.map(value => ({ storageLotId: value.storage_lot_id, quantity: value.quantity })),
+                item.lot_id
+            )) {
+                incomingByLot.set(allocation.storageLotId, (incomingByLot.get(allocation.storageLotId) || 0) + allocation.quantity);
+            }
+        }
+        for (const [lotId, incomingQuantity] of incomingByLot) {
+            const capacity = capacityByLot.get(lotId);
+            if (capacity !== undefined && capacity !== null && Number.isFinite(capacity) && (occupiedByLot.get(lotId) || 0) + incomingQuantity > capacity + 1e-9) {
+                throw new ReceivingError(`Storage lot ${lotId} does not have enough remaining capacity.`, 409);
+            }
+        }
         if (!branches.some(branch => Number(branch.id) === branchId)) throw new ReceivingError("The selected receiving branch does not exist.", 400);
 
         const receiptNumbers = lineItemUpdates.map(item => `REC-${shipmentId}-${item.line_id}-${item.lot_id}`);
@@ -190,16 +234,19 @@ export async function handleQaReceivingPost(request: Request, options: Receiving
             if (!product) throw new ReceivingError(`Product ${productId} does not exist.`, 400);
 
             const received = Number(item.quantity_received);
-            const accepted = Number(item.quantity_accepted);
+            const declaredAccepted = Number(item.quantity_accepted);
             const rejected = Number(item.quantity_rejected);
             const ordered = Number(poLine.ordered_quantity || 0);
-            if (accepted <= received && received !== accepted + rejected) {
-                throw new ReceivingError(`Received must equal accepted plus rejected for product ${productId}.`, 400);
-            }
-            if ((received !== ordered || accepted > received || rejected > 0) && !item.rejection_reason?.trim()) {
+            const quantityError = validateReceivingQuantities({
+                receivedQuantity: received,
+                acceptedQuantity: declaredAccepted,
+                rejectedQuantity: rejected
+            });
+            if (quantityError) throw new ReceivingError(`${quantityError} Product ${productId}.`, 400);
+            if ((received !== ordered || declaredAccepted > received || rejected > 0) && !item.rejection_reason?.trim()) {
                 throw new ReceivingError(`Remarks are required for the quantity discrepancy on product ${productId}.`, 400);
             }
-            if (accepted > 0 && relationId(product.product_type, "id") !== 390 && !item.expiration_date) {
+            if (declaredAccepted > 0 && relationId(product.product_type, "id") !== 390 && !item.expiration_date) {
                 throw new ReceivingError(`Expiration date is required for product ${productId}.`, 400);
             }
             if (item.expiration_date && !evaluateShelfLife(todayInManila(), item.expiration_date, Number(product.product_shelf_life || 0)).valid) {
@@ -208,7 +255,20 @@ export async function handleQaReceivingPost(request: Request, options: Receiving
 
             const orderedQuantity = Math.max(1, Number(poLine.ordered_quantity || 1));
             const baseUnitCost = Number(poLine.net_amount ?? poLine.total_amount ?? poLine.unit_price ?? 0) / orderedQuantity;
-            return { item, poLine, product, productId, received, accepted, rejected, baseUnitCost };
+            const accepted = received - rejected;
+            const acceptedLotAllocations = normalizeReceivingLotAllocations(
+                accepted,
+                item.accepted_lot_allocations.map(allocation => ({
+                    storageLotId: allocation.storage_lot_id,
+                    quantity: allocation.quantity
+                })),
+                item.lot_id
+            );
+            const allocationError = receivingLotAllocationError(accepted, acceptedLotAllocations, item.lot_id);
+            if (allocationError) throw new ReceivingError(`${allocationError} Product ${productId}.`, 400);
+            const primaryLotId = item.lot_id || acceptedLotAllocations[0]?.storageLotId;
+            if (!primaryLotId) throw new ReceivingError(`A storage lot is required for product ${productId}.`, 400);
+            return { item, poLine, product, productId, received, accepted, rejected, baseUnitCost, acceptedLotAllocations, primaryLotId };
         });
 
         const expenses = await fetchShipmentExpenses(shipmentId);
@@ -265,7 +325,7 @@ export async function handleQaReceivingPost(request: Request, options: Receiving
             for (const line of prepared) {
                 const allocation = allocations.get(line.item.line_id)!;
                 const receiptRes = await fetch(`${DIRECTUS_URL}/items/purchase_order_receiving`, { method: "POST", headers, body: JSON.stringify({
-                    purchase_order_id: shipmentId, product_id: line.productId, batch_no: line.item.batch_no, lot_id: line.item.lot_id,
+                    purchase_order_id: shipmentId, product_id: line.productId, batch_no: line.item.batch_no, lot_id: line.primaryLotId,
                     expiry_date: line.item.expiration_date, received_quantity: line.received, unit_price: line.baseUnitCost,
                     discounted_amount: Number(line.poLine.discounted_amount || 0), discount_type: line.poLine.discount_type || null,
                     total_amount: Number(line.poLine.net_amount ?? line.poLine.total_amount ?? 0), allocated_expense_php: allocation.allocatedExpense,
@@ -278,19 +338,19 @@ export async function handleQaReceivingPost(request: Request, options: Receiving
                 if (!receiptId) throw new Error("Directus did not return the created receiving-record ID.");
                 receiptIds.push(receiptId);
 
-                const saveInventory = async (targetBranchId: number, quantity: number, qaStatus: string, reason: string | null): Promise<number | null> => {
+                const saveInventory = async (targetBranchId: number, storageLotId: number, quantity: number, qaStatus: string, reason: string | null): Promise<number | null> => {
                     if (quantity <= 0) return null;
                     const filter = encodeURIComponent(JSON.stringify({ _and: [
                         { source_type: { _eq: "procurement" } }, { source_reference: { _eq: String(shipmentId) } },
                         { product_id: { _eq: line.productId } }, { branch_id: { _eq: targetBranchId } },
-                        { batch_no: { _eq: line.item.batch_no } }, { lot_id: { _eq: line.item.lot_id } }
+                        { batch_no: { _eq: line.item.batch_no } }, { lot_id: { _eq: storageLotId } }
                     ] }));
                     const existingRes = await fetch(`${DIRECTUS_URL}/items/inventory_lots?filter=${filter}&fields=*&limit=1`, { headers });
                     if (!existingRes.ok) throw new Error(`Failed to load inventory for product ${line.productId}.`);
                     const existing = ((await existingRes.json()).data || [])[0] as Record<string, unknown> | undefined;
                     const payload = {
                         source_type: "procurement", source_reference: String(shipmentId), product_id: line.productId,
-                        batch_no: line.item.batch_no, lot_id: line.item.lot_id, expiry_date: line.item.expiration_date || null,
+                        batch_no: line.item.batch_no, lot_id: storageLotId, expiry_date: line.item.expiration_date || null,
                         quantity: Number(existing?.quantity || 0) + quantity, unit_cost: allocation.finalLandedUnitCost,
                         branch_id: targetBranchId, qa_status: qaStatus, rejection_reason: reason
                     };
@@ -315,13 +375,12 @@ export async function handleQaReceivingPost(request: Request, options: Receiving
                     }
                 };
 
-                const receiptNo = `REC-${shipmentId}-${line.item.line_id}-${line.item.lot_id}`;
-                const passedInventoryLotId = await saveInventory(branchId, line.accepted, line.item.qa_status, null);
-                const rejectedInventoryLotId = await saveInventory(Number(badBranch?.id), line.rejected, "Rejected", line.item.rejection_reason);
+                const receiptNo = `REC-${shipmentId}-${line.item.line_id}-${line.primaryLotId}`;
                 const addPendingMovement = (
                     kind: "Passed" | "Rejected",
                     inventoryLotId: number | null,
                     targetBranchId: number,
+                    storageLotId: number,
                     transactionTypeId: number,
                     quantity: number,
                     remarks: string | null
@@ -333,14 +392,14 @@ export async function handleQaReceivingPost(request: Request, options: Receiving
                         receivingLineId: receiptId,
                         inventoryLotId,
                         productId: line.productId,
-                        storageLotId: line.item.lot_id,
+                        storageLotId,
                         branchId: targetBranchId,
                         transactionTypeId,
                         sourceDocumentNo: receiptNo,
                         quantity,
                         payload: {
                             product_id: line.productId,
-                            lot_id: line.item.lot_id,
+                            lot_id: storageLotId,
                             branch_id: targetBranchId,
                             transaction_type_id: transactionTypeId,
                             source_document_id: receiptId,
@@ -354,9 +413,13 @@ export async function handleQaReceivingPost(request: Request, options: Receiving
                         }
                     });
                 };
-                addPendingMovement("Passed", passedInventoryLotId, branchId, passedMovementTypeId, line.accepted, line.item.rejection_reason);
+                for (const acceptedAllocation of line.acceptedLotAllocations) {
+                    const inventoryLotId = await saveInventory(branchId, acceptedAllocation.storageLotId, acceptedAllocation.quantity, line.item.qa_status, null);
+                    addPendingMovement("Passed", inventoryLotId, branchId, acceptedAllocation.storageLotId, passedMovementTypeId, acceptedAllocation.quantity, line.item.rejection_reason);
+                }
                 if (rejectedMovementTypeId) {
-                    addPendingMovement("Rejected", rejectedInventoryLotId, Number(badBranch?.id), rejectedMovementTypeId, line.rejected, line.item.rejection_reason);
+                    const inventoryLotId = await saveInventory(Number(badBranch?.id), line.primaryLotId, line.rejected, "Rejected", line.item.rejection_reason);
+                    addPendingMovement("Rejected", inventoryLotId, Number(badBranch?.id), line.primaryLotId, rejectedMovementTypeId, line.rejected, line.item.rejection_reason);
                 }
                 const ledgerEntries = [
                     line.accepted > 0 ? { branchId, quantity: line.accepted, type: "QA Receive", description: `QA Inspection Batch: ${line.item.batch_no} (${line.item.qa_status})` } : null,

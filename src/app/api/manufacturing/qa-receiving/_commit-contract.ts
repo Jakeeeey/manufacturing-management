@@ -1,10 +1,16 @@
 import { z } from "zod";
+import { validateReceivingQuantities } from "../qa/_receiving-evaluation";
+import { receivingLotAllocationError } from "./_lot-allocation";
 
 export const RECEIVING_COMMIT_CONTRACT_VERSION = "v1" as const;
 export const RECEIVING_POSTING_ENABLED = true;
 
 const quantity = z.number().finite().nonnegative();
 const optionalDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable();
+const acceptedLotAllocation = z.object({
+    storageLotId: z.number().int().positive(),
+    quantity
+});
 
 export const receivingCommitLineSchema = z.object({
     lineId: z.number().int().positive(),
@@ -13,6 +19,7 @@ export const receivingCommitLineSchema = z.object({
     acceptedQuantity: quantity,
     rejectedQuantity: quantity,
     storageLotId: z.number().int().positive().nullable(),
+    acceptedLotAllocations: z.array(acceptedLotAllocation).default([]),
     supplierBatchNumber: z.string().max(50),
     manufacturingDate: optionalDate,
     expiryDate: optionalDate,
@@ -22,6 +29,15 @@ export const receivingCommitLineSchema = z.object({
         specId: z.number().int().positive(),
         actualReading: z.string()
     }))
+}).superRefine((line, context) => {
+    const message = validateReceivingQuantities(line);
+    if (message) context.addIssue({ code: z.ZodIssueCode.custom, path: ["receivedQuantity"], message });
+    const allocationMessage = receivingLotAllocationError(
+        line.acceptedQuantity,
+        line.acceptedLotAllocations,
+        line.storageLotId
+    );
+    if (allocationMessage) context.addIssue({ code: z.ZodIssueCode.custom, path: ["acceptedLotAllocations"], message: allocationMessage });
 });
 
 export const receivingPreviewRequestSchema = z.object({
