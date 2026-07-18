@@ -25,6 +25,7 @@ import {
     rejectedLotAllocationError
 } from "../_lot-allocation";
 import { summarizeReceivingHistory } from "../_receiving-history";
+import { sumMovementQuantitiesByLot } from "../_movement-stock";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -197,7 +198,7 @@ export async function POST(request: Request) {
             procurementDirectusFetch(`/items/purchase_order/${shipmentId}?fields=purchase_order_id,inventory_status,workflow_revision`),
             procurementDirectusFetch(`/items/purchase_order_products?filter[purchase_order_id][_eq]=${shipmentId}&fields=purchase_order_product_id,purchase_order_id,product_id,purchase_intent,job_order_id,ordered_quantity&limit=-1`),
             procurementDirectusFetch(`/items/lots?filter[lot_id][_in]=${requestedLotIds.join(",")}&fields=lot_id,lot_name,max_batch_capacity&limit=${requestedLotIds.length}`),
-            procurementDirectusFetch(`/items/inventory_lots?filter[lot_id][_in]=${requestedLotIds.join(",")}&fields=lot_id,quantity&limit=-1`),
+            procurementDirectusFetch(`/items/inventory_movements?filter[lot_id][_in]=${requestedLotIds.join(",")}&fields=lot_id,quantity&limit=-1`),
             procurementDirectusFetch(`/items/purchase_order_receiving?filter[purchase_order_id][_eq]=${shipmentId}&filter[is_reverted][_eq]=0&fields=purchase_order_product_id,purchase_order_line_id,product_id,received_quantity,quantity_rejected&limit=-1`),
             loadBranch(destinationBranchId),
             procurementDirectusFetch("/items/inventory_transaction_types?fields=transaction_type_id,type_name,direction,origin_table&limit=-1")
@@ -294,12 +295,7 @@ export async function POST(request: Request) {
         if (requestedLotIds.some(id => !validLotIds.has(id))) {
             throw new ReceivingPreviewError("One or more storage lots do not exist.");
         }
-        const occupiedByLot = new Map<number, number>();
-        for (const row of rows(await lotInventoryResponse.json())) {
-            const lotId = positiveInteger(row.lot_id, "lot_id") || positiveInteger(row.lot_id);
-            const quantity = Number(row.quantity || 0);
-            if (lotId && Number.isFinite(quantity)) occupiedByLot.set(lotId, (occupiedByLot.get(lotId) || 0) + Math.max(0, quantity));
-        }
+        const occupiedByLot = sumMovementQuantitiesByLot(rows(await lotInventoryResponse.json()));
         const incomingByLot = new Map<number, number>();
         for (const line of lines) {
             for (const allocation of normalizeReceivingLotAllocations(line.acceptedQuantity, line.acceptedLotAllocations, line.storageLotId)) {

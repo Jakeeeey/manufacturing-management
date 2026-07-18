@@ -12,6 +12,7 @@ import {
 import { calculateLandedCostAllocations, fetchShipmentExpenses, normalizeAllocationMethod } from "../expenses/expenses-helper";
 import { receiptNumberForLine } from "../../qa-receiving/_commit-contract";
 import { summarizeReceivingHistory } from "../../qa-receiving/_receiving-history";
+import { sumMovementQuantitiesByLot } from "../../qa-receiving/_movement-stock";
 
 class ReceivingError extends Error {
     constructor(message: string, readonly status: number) {
@@ -155,7 +156,7 @@ export async function handleQaReceivingPost(request: Request, options: Receiving
             fetch(`${DIRECTUS_URL}/items/purchase_order/${shipmentId}?fields=purchase_order_id,inventory_status,date_received`, { headers, cache: "no-store" }),
             fetch(`${DIRECTUS_URL}/items/purchase_order_products?filter[purchase_order_id][_eq]=${shipmentId}&fields=*&limit=-1`, { headers, cache: "no-store" }),
             fetch(`${DIRECTUS_URL}/items/lots?filter[lot_id][_in]=${requestedLotIds.join(",")}&fields=lot_id,max_batch_capacity&limit=-1`, { headers, cache: "no-store" }),
-            fetch(`${DIRECTUS_URL}/items/inventory_lots?filter[lot_id][_in]=${requestedLotIds.join(",")}&fields=lot_id,quantity&limit=-1`, { headers, cache: "no-store" }),
+            fetch(`${DIRECTUS_URL}/items/inventory_movements?filter[lot_id][_in]=${requestedLotIds.join(",")}&fields=lot_id,quantity&limit=-1`, { headers, cache: "no-store" }),
             fetch(`${DIRECTUS_URL}/items/branches?limit=200&fields=id,branch_name,branch_code`, { headers, cache: "no-store" }),
             fetch(`${DIRECTUS_URL}/items/inventory_transaction_types?fields=transaction_type_id,type_name,direction,origin_table&limit=-1`, { headers, cache: "no-store" })
         ]);
@@ -166,14 +167,9 @@ export async function handleQaReceivingPost(request: Request, options: Receiving
         const poLines = ((await linesRes.json()).data || []) as Record<string, unknown>[];
         const lotRows = ((await lotsRes.json()).data || []) as Array<Record<string, unknown>>;
         const validLotIds = new Set(lotRows.map(lot => Number(lot.lot_id)));
-        const occupiedByLot = new Map<number, number>();
-        for (const row of (((await lotInventoryRes.json()).data || []) as Array<Record<string, unknown>>)) {
-            const lotId = relationId(row.lot_id, "lot_id");
-            const quantity = Number(row.quantity || 0);
-            if (Number.isSafeInteger(lotId) && lotId > 0 && Number.isFinite(quantity)) {
-                occupiedByLot.set(lotId, (occupiedByLot.get(lotId) || 0) + Math.max(0, quantity));
-            }
-        }
+        const occupiedByLot = sumMovementQuantitiesByLot(
+            (((await lotInventoryRes.json()).data || []) as Array<Record<string, unknown>>)
+        );
         const branches = ((await branchesRes.json()).data || []) as Array<{ id: number; branch_name: string; branch_code: string }>;
         const movementTypes = ((await movementTypesRes.json()).data || []) as DirectusMovementType[];
         const passedMovementTypeId = movementTypeId(movementTypes, "Purchase Receiving QA");
@@ -371,7 +367,6 @@ export async function handleQaReceivingPost(request: Request, options: Receiving
         if (prepared.some(line => line.rejected > 0) && !badBranch) throw new ReceivingError("No quarantine branch is configured for rejected stock.", 400);
 
         const receiptIds: number[] = [];
-        const ledgerIds: number[] = [];
         const pendingMovements: PendingMovement[] = [];
         let finalMovements: FinalReceivingMovement[] = [];
         let movementWriteAttempted = false;
@@ -396,7 +391,6 @@ export async function handleQaReceivingPost(request: Request, options: Receiving
             });
             if (!headerRestore.ok) return false;
             for (const change of [...lineChanges].reverse()) await mutate("purchase_order_products", change.id, "PATCH", { received: change.received });
-            for (const id of [...ledgerIds].reverse()) await mutate("product_ledger", id, "DELETE");
             for (const id of [...receiptIds].reverse()) await mutate("purchase_order_receiving", id, "DELETE");
             return true;
         };
@@ -431,7 +425,9 @@ export async function handleQaReceivingPost(request: Request, options: Receiving
                     const payload = {
                         source_type: "procurement", source_reference: String(shipmentId), product_id: line.productId,
                         batch_no: line.item.batch_no, lot_id: storageLotId, expiry_date: line.item.expiration_date || null,
-                        quantity: Number(existing?.quantity || 0) + quantity, unit_cost: allocation.finalLandedUnitCost,
+                        // Physical quantity is maintained by inventory_movements. Keep the
+                        // legacy field at zero for Directus schemas that require it.
+                        quantity: existing ? existing.quantity : 0, unit_cost: allocation.finalLandedUnitCost,
                         branch_id: targetBranchId, qa_status: qaStatus, rejection_reason: reason
                     };
                     if (existing) {
@@ -439,7 +435,7 @@ export async function handleQaReceivingPost(request: Request, options: Receiving
                             source_type: existing.source_type, source_reference: existing.source_reference,
                             product_id: relationId(existing.product_id, "product_id"), batch_no: existing.batch_no,
                             lot_id: relationId(existing.lot_id, "lot_id") || null, expiry_date: existing.expiry_date,
-                            quantity: existing.quantity, unit_cost: existing.unit_cost, branch_id: relationId(existing.branch_id, "id"),
+                            unit_cost: existing.unit_cost, branch_id: relationId(existing.branch_id, "id"),
                             qa_status: existing.qa_status, rejection_reason: existing.rejection_reason
                         } });
                         const updateRes = await mutate("inventory_lots", Number(existing.id), "PATCH", payload);
@@ -503,21 +499,6 @@ export async function handleQaReceivingPost(request: Request, options: Receiving
                         addPendingMovement("Rejected", inventoryLotId, Number(badBranch?.id), rejectedAllocation.storageLotId, rejectedMovementTypeId, rejectedAllocation.quantity, line.item.rejection_reason);
                     }
                 }
-                const ledgerEntries = [
-                    line.accepted > 0 ? { branchId, quantity: line.accepted, type: "QA Receive", description: `QA Inspection Batch: ${line.item.batch_no} (${line.item.qa_status})` } : null,
-                    line.rejected > 0 ? { branchId: Number(badBranch!.id), quantity: line.rejected, type: "QA Reject (BO)", description: `QA Bad Order Batch: ${line.item.batch_no} (Remarks: ${line.item.rejection_reason})` } : null
-                ].filter(Boolean) as Array<{ branchId: number; quantity: number; type: string; description: string }>;
-                for (const entry of ledgerEntries) {
-                    const ledgerRes = await fetch(`${DIRECTUS_URL}/items/product_ledger`, { method: "POST", headers, body: JSON.stringify({
-                        branchId: entry.branchId, productId: line.productId, quantity: entry.quantity, documentType: entry.type,
-                        documentNo: referenceNumber, documentDescription: entry.description, documentDate: todayInManila()
-                    }) });
-                    if (!ledgerRes.ok) throw new Error(`Failed to create inventory ledger for product ${line.productId}.`);
-                    const ledgerId = Number((await ledgerRes.json()).data.id);
-                    if (!ledgerId) throw new Error("Directus did not return the created ledger ID.");
-                    ledgerIds.push(ledgerId);
-                }
-
                 const cumulativeReceived = (previouslyReceivedByLine.get(line.item.line_id)?.received || 0) + line.received;
                 lineChanges.push({ id: line.item.line_id, received: line.poLine.received });
                 const lineUpdateRes = await mutate("purchase_order_products", line.item.line_id, "PATCH", { received: cumulativeReceived >= Number(line.poLine.ordered_quantity || 0) ? 1 : 0 });
