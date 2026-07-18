@@ -116,9 +116,14 @@ export function CreatableSelect({
                     </Button>
                 </PopoverTrigger>
             )}
-            <PopoverContent className={cn("w-[--radix-popover-trigger-width] p-0", popoverClassName)} align="start">
+            <PopoverContent
+                className={cn("w-[--radix-popover-trigger-width] p-0", popoverClassName)}
+                align="start"
+                onOpenAutoFocus={variant === "inline" ? (e) => e.preventDefault() : undefined}
+            >
                 <Command shouldFilter={false}>
                     {variant !== "inline" && (
+
                         <CommandInput
                             placeholder={`Search ${placeholder.toLowerCase()}...`}
                             value={searchQuery}
