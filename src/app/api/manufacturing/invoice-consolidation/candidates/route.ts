@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DIRECTUS_URL, headers as directusHeaders } from "../../directus-api";
 import { resolveVersions } from "../version-resolver";
+import { getUserIdFromToken } from "../_auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,6 +17,11 @@ interface CandidateProductLineResolved {
 
 export async function GET(req: NextRequest) {
     try {
+        const userId = await getUserIdFromToken();
+        if (!userId || isNaN(userId)) {
+            return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+        }
+
         const { searchParams } = new URL(req.url);
         const branchId = searchParams.get("branchId");
 
@@ -65,7 +71,7 @@ export async function GET(req: NextRequest) {
         }
 
         const clinvRes = await fetch(
-            `${DIRECTUS_URL}/items/consolidator_invoices?filter[consolidator_id][consolidator_no][_starts_with]=CLINV-&filter[consolidator_id][is_delete][_eq]=0&limit=-1&fields=invoice_id`,
+            `${DIRECTUS_URL}/items/consolidator_invoices?filter[consolidator_id][is_delete][_eq]=0&limit=-1&fields=invoice_id`,
             { headers: directusHeaders, cache: "no-store" }
         );
         if (!clinvRes.ok) {
@@ -96,8 +102,15 @@ export async function GET(req: NextRequest) {
         );
         const detsData: { detail_id: number; invoice_no: number; product_id: number; quantity: number }[] = detsRes.ok ? (await detsRes.json()).data || [] : [];
 
+        // Exclude invoice details with non-positive quantities so incomplete or zero-value
+        // placeholder lines cannot become consolidation candidates.
+        const positiveDetails = detsData.filter((d) => Number(d.quantity || 0) > 0);
+
+        // Exclude invoices whose customer cannot be resolved; consolidation needs the customer
+        // to resolve a recipe version per product.
         invoices = invoices.filter((invoice) => {
-            const invoiceDetails = detsData.filter((detail) => Number(detail.invoice_no) === Number(invoice.invoice_id));
+            if (!customerMap.has(invoice.customer_code)) return false;
+            const invoiceDetails = positiveDetails.filter((detail) => Number(detail.invoice_no) === Number(invoice.invoice_id));
             return invoiceDetails.length > 0;
         });
 
@@ -105,7 +118,7 @@ export async function GET(req: NextRequest) {
             return NextResponse.json([]);
         }
 
-        const prodIds = [...new Set(detsData.map((d) => d.product_id))];
+        const prodIds = [...new Set(positiveDetails.map((d) => d.product_id))];
         let prodMap = new Map<number, { product_name: string; product_code: string }>();
         if (prodIds.length > 0) {
             const prodRes = await fetch(
@@ -123,7 +136,7 @@ export async function GET(req: NextRequest) {
         for (const inv of invoices) {
             const cust = customerMap.get(inv.customer_code);
             if (!cust) continue;
-            const invDetails = detsData.filter((d) => d.invoice_no === inv.invoice_id);
+            const invDetails = positiveDetails.filter((d) => d.invoice_no === inv.invoice_id);
             for (const d of invDetails) {
                 const key = `${cust.id}:${d.product_id}`;
                 if (!versionPairs.has(key)) {
@@ -136,7 +149,7 @@ export async function GET(req: NextRequest) {
 
         // Aggregate detail rows within each invoice by product_id, attach version
         const detailsByInvoice = new Map<number, CandidateProductLineResolved[]>();
-        for (const d of detsData) {
+        for (const d of positiveDetails) {
             const invId = d.invoice_no;
             if (!detailsByInvoice.has(invId)) detailsByInvoice.set(invId, []);
             const existingLines = detailsByInvoice.get(invId)!;
@@ -160,6 +173,13 @@ export async function GET(req: NextRequest) {
                 });
             }
         }
+
+        // Exclude invoices whose product lines cannot be fully resolved to a manufacturing
+        // version. Consolidation creation cannot reserve stock without an exact version match.
+        invoices = invoices.filter((invoice) => {
+            const lines = detailsByInvoice.get(invoice.invoice_id) || [];
+            return lines.length > 0 && lines.every((line) => line.versionId !== null);
+        });
 
         // Build each candidate invoice entry
         const enriched = invoices.map((inv) => {

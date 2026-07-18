@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DIRECTUS_URL, headers as directusHeaders } from "../../directus-api";
+import { getUserIdFromToken } from "../_auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
     try {
+        const userId = await getUserIdFromToken();
+        if (!userId || isNaN(userId)) {
+            return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+        }
+
         const { searchParams } = new URL(req.url);
         const branchId = searchParams.get("branchId");
 

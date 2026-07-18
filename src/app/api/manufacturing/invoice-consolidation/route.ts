@@ -1,31 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { DIRECTUS_URL, headers as directusHeaders } from "../directus-api";
 import {
     allocateInvoicesForConsolidation,
     releaseReservationIds,
-} from "../invoicing/_reservation-service";
+} from "./_reservation-service";
+import { getUserIdFromToken } from "./_auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-async function getUserIdFromToken(): Promise<number | null> {
-    try {
-        const cookieStore = await cookies();
-        const token = cookieStore.get("vos_access_token")?.value;
-        if (!token) return null;
-        const parts = token.split(".");
-        if (parts.length < 2) return null;
-        const p = parts[1];
-        const b64 = p.replace(/-/g, "+").replace(/_/g, "/");
-        const padded = b64 + "=".repeat((4 - (b64.length % 4)) % 4);
-        const json = Buffer.from(padded, "base64").toString("utf8");
-        const payload = JSON.parse(json);
-        return Number(payload.user_id || payload.userId || payload.sub) || null;
-    } catch {
-        return null;
-    }
-}
 
 function requireAuth(userId: number | null): NextResponse | null {
     if (!userId || isNaN(userId)) {
@@ -303,7 +285,7 @@ export async function POST(req: NextRequest) {
         }
 
         const clinvRes = await fetch(
-            `${DIRECTUS_URL}/items/consolidator_invoices?filter[invoice_id][_in]=${uniqueIds.join(",")}&filter[consolidator_id][consolidator_no][_starts_with]=CLINV-&filter[consolidator_id][is_delete][_eq]=0&limit=-1&fields=invoice_id`,
+            `${DIRECTUS_URL}/items/consolidator_invoices?filter[invoice_id][_in]=${uniqueIds.join(",")}&filter[consolidator_id][is_delete][_eq]=0&limit=-1&fields=invoice_id`,
             { headers: directusHeaders, cache: "no-store" }
         );
         if (!clinvRes.ok) {
@@ -313,6 +295,26 @@ export async function POST(req: NextRequest) {
         if (linked.length > 0) {
             const alreadyLinked = linked.map((l) => l.invoice_id);
             return NextResponse.json({ message: `Invoices already in another batch: ${alreadyLinked.join(", ")}` }, { status: 409 });
+        }
+
+        // Validate invoice details: positive quantities only, all resolvable to a product.
+        const detCheckRes = await fetch(
+            `${DIRECTUS_URL}/items/sales_invoice_details?filter[invoice_no][_in]=${uniqueIds.join(",")}&fields=detail_id,invoice_no,product_id,quantity&limit=-1`,
+            { headers: directusHeaders, cache: "no-store" }
+        );
+        if (!detCheckRes.ok) {
+            return NextResponse.json({ message: `Failed to validate invoice details (HTTP ${detCheckRes.status})` }, { status: detCheckRes.status });
+        }
+        const detCheck: { detail_id: number; invoice_no: number; product_id: number; quantity: number }[] = (await detCheckRes.json()).data || [];
+        const invoicesWithoutDetails = uniqueIds.filter((id) => !detCheck.some((d) => Number(d.invoice_no) === id));
+        if (invoicesWithoutDetails.length > 0) {
+            return NextResponse.json({ message: `Invoices have no product details: ${invoicesWithoutDetails.join(", ")}` }, { status: 400 });
+        }
+        if (detCheck.some((d) => Number(d.quantity || 0) <= 0)) {
+            return NextResponse.json({ message: "One or more invoice lines have non-positive quantities" }, { status: 400 });
+        }
+        if (detCheck.some((d) => !d.product_id)) {
+            return NextResponse.json({ message: "One or more invoice lines are missing a product_id" }, { status: 400 });
         }
 
         const allocationOrder = [...siData]
@@ -331,7 +333,7 @@ export async function POST(req: NextRequest) {
         }
 
         const recheckRes = await fetch(
-            `${DIRECTUS_URL}/items/consolidator_invoices?filter[invoice_id][_in]=${uniqueIds.join(",")}&filter[consolidator_id][consolidator_no][_starts_with]=CLINV-&filter[consolidator_id][is_delete][_eq]=0&limit=1&fields=invoice_id`,
+            `${DIRECTUS_URL}/items/consolidator_invoices?filter[invoice_id][_in]=${uniqueIds.join(",")}&filter[consolidator_id][is_delete][_eq]=0&limit=1&fields=invoice_id`,
             { headers: directusHeaders, cache: "no-store" }
         );
         if (!recheckRes.ok || ((await recheckRes.json()).data || []).length > 0) {
@@ -381,13 +383,13 @@ export async function POST(req: NextRequest) {
             createdJunctionIds = linkData.map((j: { id: number }) => j.id);
 
             const detRes = await fetch(
-                `${DIRECTUS_URL}/items/sales_invoice_details?filter[invoice_no][_in]=${uniqueIds.join(",")}&limit=-1&fields=detail_id,invoice_no,product_id,quantity`,
+                `${DIRECTUS_URL}/items/sales_invoice_details?filter[invoice_no][_in]=${uniqueIds.join(",")}&fields=detail_id,invoice_no,product_id,quantity&limit=-1`,
                 { headers: directusHeaders, cache: "no-store" }
             );
             if (!detRes.ok) {
                 throw new Error(`Failed to fetch invoice details (HTTP ${detRes.status})`);
             }
-            const detData: { detail_id: number; invoice_no: number; product_id: number; quantity: number }[] = (await detRes.json()).data || [];
+            const detData: { detail_id: number; invoice_no: number; product_id: number; quantity: number }[] = ((await detRes.json()).data || []).filter((d: { quantity: number; product_id: number }) => Number(d.quantity || 0) > 0 && d.product_id);
 
             const detailIds = detData.map((detail) => detail.detail_id);
             const reservationRes = await fetch(
@@ -501,27 +503,37 @@ export async function POST(req: NextRequest) {
                 })),
             });
         } catch (e) {
+            const rollbackErrors: string[] = [];
             for (const pid of createdDetailIds) {
-                await fetch(`${DIRECTUS_URL}/items/consolidator_details/${pid}`, {
+                const res = await fetch(`${DIRECTUS_URL}/items/consolidator_details/${pid}`, {
                     method: "DELETE",
                     headers: directusHeaders,
-                }).catch(() => {});
+                }).catch(() => null);
+                if (!res || !res.ok) rollbackErrors.push(`consolidator_details ${pid}`);
             }
             for (const jid of createdJunctionIds) {
-                await fetch(`${DIRECTUS_URL}/items/consolidator_invoices/${jid}`, {
+                const res = await fetch(`${DIRECTUS_URL}/items/consolidator_invoices/${jid}`, {
                     method: "DELETE",
                     headers: directusHeaders,
-                }).catch(() => {});
+                }).catch(() => null);
+                if (!res || !res.ok) rollbackErrors.push(`consolidator_invoices ${jid}`);
             }
-            await fetch(`${DIRECTUS_URL}/items/consolidator/${newId}`, {
+            const softRes = await fetch(`${DIRECTUS_URL}/items/consolidator/${newId}`, {
                 method: "PATCH",
                 headers: directusHeaders,
                 body: JSON.stringify({ is_delete: 1, deleted_at: new Date().toISOString(), deleted_by: userId }),
-            }).catch(() => {});
-            await releaseReservationIds(createdReservationIds, userId!).catch(() => {});
+            }).catch(() => null);
+            if (!softRes || !softRes.ok) rollbackErrors.push(`consolidator soft-delete ${newId}`);
+            const releaseOk = await releaseReservationIds(createdReservationIds, userId!).catch(() => false);
+            if (!releaseOk) rollbackErrors.push("reservation release");
 
             const msg = e instanceof Error ? e.message : "Failed to create consolidation";
-            return NextResponse.json({ message: msg }, { status: 500 });
+            const body: Record<string, unknown> = { message: msg };
+            if (rollbackErrors.length > 0) {
+                body.rollbackErrors = rollbackErrors;
+                body.message = `${msg}. Rollback could not fully revert: ${rollbackErrors.join(", ")}. Manual cleanup required.`;
+            }
+            return NextResponse.json(body, { status: 500 });
         }
     } catch (e) {
         console.error("invoice-consolidation POST error:", e);

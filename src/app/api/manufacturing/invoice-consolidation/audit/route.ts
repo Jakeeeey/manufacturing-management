@@ -1,29 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { DIRECTUS_URL, headers as directusHeaders } from "../../directus-api";
 import { fetchSourceMovements, movementsExistForSource } from "../inventory-movements-client";
 import { productLedgerMatchesQuantities } from "../product-ledger-client";
-
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-
-async function getUserIdFromToken(): Promise<number | null> {
-    try {
-        const cookieStore = await cookies();
-        const token = cookieStore.get("vos_access_token")?.value;
-        if (!token) return null;
-        const parts = token.split(".");
-        if (parts.length < 2) return null;
-        const p = parts[1];
-        const b64 = p.replace(/-/g, "+").replace(/_/g, "/");
-        const padded = b64 + "=".repeat((4 - (b64.length % 4)) % 4);
-        const json = Buffer.from(padded, "base64").toString("utf8");
-        const payload = JSON.parse(json);
-        return Number(payload.user_id || payload.userId || payload.sub) || null;
-    } catch {
-        return null;
-    }
-}
+import { getUserIdFromToken } from "../_auth";
 
 const TXN_TYPE_SALES_ISSUE = 4;
 
@@ -55,7 +34,8 @@ export async function POST(req: NextRequest) {
 
         const consolidator = items[0];
         if (consolidator.status === "Audited") {
-            return NextResponse.json({ message: "Batch is already audited" }, { status: 400 });
+            // Idempotent retry: if already audited, return success.
+            return NextResponse.json({ success: true, message: "Batch is already audited" });
         }
         if (consolidator.status !== "Picked") {
             return NextResponse.json({ message: "Batch must be in Picked status before audit" }, { status: 400 });
@@ -96,16 +76,32 @@ export async function POST(req: NextRequest) {
         const junctions = (await invRes.json()).data || [];
         const details = (await detRes.json()).data || [];
 
+        // Reconfirm full picking before audit
+        const shortDetails = details.filter(
+            (d: { ordered_quantity: number; picked_quantity: number }) => Number(d.picked_quantity || 0) < Number(d.ordered_quantity || 0)
+        );
+        if (shortDetails.length > 0) {
+            const shortProductIds = shortDetails.map((d: { product_id: number }) => d.product_id);
+            return NextResponse.json({
+                message: `Cannot audit: products ${shortProductIds.join(", ")} are not fully picked`,
+            }, { status: 422 });
+        }
+
+        // Apply picked quantities (idempotent — PATCH to final value)
         for (const d of details) {
-            await fetch(`${DIRECTUS_URL}/items/consolidator_details/${d.id}`, {
+            const patchRes = await fetch(`${DIRECTUS_URL}/items/consolidator_details/${d.id}`, {
                 method: "PATCH",
                 headers: directusHeaders,
                 body: JSON.stringify({ applied_quantity: Number(d.picked_quantity || 0) }),
-            }).catch(() => {});
+            });
+            if (!patchRes.ok) {
+                return NextResponse.json({ message: `Failed to apply quantity for detail ${d.id}` }, { status: 502 });
+            }
         }
 
         if (junctions.length > 0) {
             const invoiceIds = junctions.map((j: { invoice_id: number }) => j.invoice_id);
+            // Dispatch invoices (idempotent — if already dispatched, PATCH still succeeds)
             const bulkRes = await fetch(`${DIRECTUS_URL}/items/sales_invoice`, {
                 method: "PATCH",
                 headers: directusHeaders,
@@ -144,6 +140,7 @@ export async function POST(req: NextRequest) {
                         headers: directusHeaders,
                         body: JSON.stringify({ status: "Released", updated_by: userId, updated_at: now }),
                     });
+                    // Idempotent: 204 or 200 on already-released rows is acceptable.
                     if (!releaseRes.ok) {
                         return NextResponse.json({ message: `Failed to release reservation ${reservation.id}` }, { status: 502 });
                     }

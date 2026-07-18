@@ -1,5 +1,5 @@
 import { DIRECTUS_URL, headers as directusHeaders } from "../directus-api";
-import { resolveVersions } from "../invoice-consolidation/version-resolver";
+import { resolveVersions } from "./version-resolver";
 
 type ReservationStatus = "Pending" | "Reserved" | "Consumed" | "Released";
 
@@ -455,16 +455,17 @@ export async function allocateInvoice(invoiceId: number, userId: number) {
     return { created: createdReservationIds.length, createdReservationIds };
 }
 
-export async function releaseReservationIds(reservationIds: number[], userId: number) {
-    if (reservationIds.length === 0) return;
+export async function releaseReservationIds(reservationIds: number[], userId: number): Promise<boolean> {
+    if (reservationIds.length === 0) return true;
     const now = new Date().toISOString();
-    await Promise.all(reservationIds.map((id) => directusJson(
+    const results = await Promise.all(reservationIds.map((id) => directusJson(
         `${DIRECTUS_URL}/items/sales_invoice_reservation/${id}`,
         {
             method: "PATCH",
             body: JSON.stringify({ status: "Released", updated_by: userId, updated_at: now }),
         }
-    )));
+    ).catch(() => null)));
+    return results.every(Boolean);
 }
 
 export async function allocateInvoicesForConsolidation(invoiceIds: number[], userId: number) {

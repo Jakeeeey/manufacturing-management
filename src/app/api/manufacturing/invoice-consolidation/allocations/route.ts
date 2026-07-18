@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DIRECTUS_URL, headers as directusHeaders } from "../../directus-api";
 import { MovementRow } from "../inventory-movements-client";
+import { getUserIdFromToken } from "../_auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,6 +21,11 @@ export interface LotAllocationDetail {
 
 export async function GET(req: NextRequest) {
     try {
+        const userId = await getUserIdFromToken();
+        if (!userId || isNaN(userId)) {
+            return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+        }
+
         const { searchParams } = new URL(req.url);
         const batchId = searchParams.get("batchId");
 

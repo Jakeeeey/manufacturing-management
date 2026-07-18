@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { DIRECTUS_URL, headers as directusHeaders } from "../../directus-api";
 import {
     fetchSourceMovements,
@@ -8,27 +7,7 @@ import {
     type PostMovementPayload,
 } from "../inventory-movements-client";
 import { productLedgerMatchesQuantities, syncProductLedgerToTarget } from "../product-ledger-client";
-
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-
-async function getUserIdFromToken(): Promise<number | null> {
-    try {
-        const cookieStore = await cookies();
-        const token = cookieStore.get("vos_access_token")?.value;
-        if (!token) return null;
-        const parts = token.split(".");
-        if (parts.length < 2) return null;
-        const p = parts[1];
-        const b64 = p.replace(/-/g, "+").replace(/_/g, "/");
-        const padded = b64 + "=".repeat((4 - (b64.length % 4)) % 4);
-        const json = Buffer.from(padded, "base64").toString("utf8");
-        const payload = JSON.parse(json);
-        return Number(payload.user_id || payload.userId || payload.sub) || null;
-    } catch {
-        return null;
-    }
-}
+import { getUserIdFromToken } from "../_auth";
 
 const TXN_TYPE_SALES_ISSUE = 4;
 
@@ -196,10 +175,23 @@ export async function POST(req: NextRequest) {
             if (!detailRes.ok) {
                 return NextResponse.json({ message: "Failed to load batch details" }, { status: 502 });
             }
-            const details: { id: number; product_id: number; picked_quantity: number }[] = (await detailRes.json()).data || [];
+            const details: { id: number; product_id: number; ordered_quantity: number; picked_quantity: number }[] = (await detailRes.json()).data || [];
 
             if (details.length === 0) {
                 return NextResponse.json({ message: "Batch has no details" }, { status: 400 });
+            }
+
+            // Require every product to be fully picked before completing.
+            const shortProductIds: number[] = [];
+            for (const d of details) {
+                if (Number(d.picked_quantity || 0) < Number(d.ordered_quantity || 0)) {
+                    shortProductIds.push(d.product_id);
+                }
+            }
+            if (shortProductIds.length > 0) {
+                return NextResponse.json({
+                    message: `Cannot complete picking: products ${shortProductIds.join(", ")} are not fully picked`,
+                }, { status: 422 });
             }
 
             // Allocate actual picked quantities only from invoice lots reserved before consolidation.
@@ -466,6 +458,21 @@ export async function PATCH(req: NextRequest) {
 
         if (consolidator.status !== "Picking") {
             return NextResponse.json({ message: "Can only update quantities for batches in Picking status" }, { status: 400 });
+        }
+
+        // Validate that every submitted detailId belongs to this batch
+        const batchDetailsRes = await fetch(
+            `${DIRECTUS_URL}/items/consolidator_details?filter[consolidator_id][_eq]=${batchId}&fields=id&limit=-1`,
+            { headers: directusHeaders, cache: "no-store" }
+        );
+        if (!batchDetailsRes.ok) {
+            return NextResponse.json({ message: "Failed to load batch details" }, { status: 502 });
+        }
+        const batchDetailIds = new Set<number>(((await batchDetailsRes.json()).data || []).map((d: { id: number }) => d.id));
+        for (const q of quantities) {
+            if (!batchDetailIds.has(q.detailId)) {
+                return NextResponse.json({ message: `Detail ${q.detailId} does not belong to this batch` }, { status: 403 });
+            }
         }
 
         for (const q of quantities) {

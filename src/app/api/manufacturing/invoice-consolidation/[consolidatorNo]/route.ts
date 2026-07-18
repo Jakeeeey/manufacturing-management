@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DIRECTUS_URL, headers as directusHeaders } from "../../directus-api";
 import { resolveVersions } from "../version-resolver";
+import { getUserIdFromToken } from "../_auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,10 +33,15 @@ interface InvoiceProduct {
 }
 
 export async function GET(
-    _req: NextRequest,
+    req: NextRequest,
     { params }: { params: Promise<{ consolidatorNo: string }> }
 ) {
     try {
+        const userId = await getUserIdFromToken();
+        if (!userId || isNaN(userId)) {
+            return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+        }
+
         const { consolidatorNo } = await params;
         const escNo = encodeURIComponent(consolidatorNo);
 

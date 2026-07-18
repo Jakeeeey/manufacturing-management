@@ -1,29 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { DIRECTUS_URL, headers as directusHeaders } from "../../../directus-api";
 import { fetchSourceMovements, postMovements, type PostMovementPayload } from "../../inventory-movements-client";
 import { syncProductLedgerToTarget } from "../../product-ledger-client";
-
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-
-async function getUserIdFromToken(): Promise<number | null> {
-    try {
-        const cookieStore = await cookies();
-        const token = cookieStore.get("vos_access_token")?.value;
-        if (!token) return null;
-        const parts = token.split(".");
-        if (parts.length < 2) return null;
-        const p = parts[1];
-        const b64 = p.replace(/-/g, "+").replace(/_/g, "/");
-        const padded = b64 + "=".repeat((4 - (b64.length % 4)) % 4);
-        const json = Buffer.from(padded, "base64").toString("utf8");
-        const payload = JSON.parse(json);
-        return Number(payload.user_id || payload.userId || payload.sub) || null;
-    } catch {
-        return null;
-    }
-}
+import { getUserIdFromToken } from "../../_auth";
 
 const TXN_TYPE_SALES_ISSUE = 4;
 
@@ -159,10 +138,22 @@ export async function POST(req: NextRequest) {
                 }
 
                 for (const [lotId, balance] of restoredByLot) {
+                    // Reload current lot quantity for retry safety — a previous
+                    // partial re-pick may have already restored some lots.
+                    const lotGetRes = await fetch(
+                        `${DIRECTUS_URL}/items/inventory_lots/${lotId}?fields=quantity`,
+                        { headers: directusHeaders, cache: "no-store" }
+                    );
+                    const lotCurrent = lotGetRes.ok
+                        ? Number(((await lotGetRes.json()).data || {}).quantity || 0)
+                        : Number(balance.current);
+                    const neededTotal = Number(balance.current) + Number(balance.restore);
+                    if (Number(lotCurrent) >= neededTotal) continue; // already restored
+
                     const lotPatchRes = await fetch(`${DIRECTUS_URL}/items/inventory_lots/${lotId}`, {
                         method: "PATCH",
                         headers: directusHeaders,
-                        body: JSON.stringify({ quantity: balance.current + balance.restore }),
+                        body: JSON.stringify({ quantity: neededTotal }),
                     });
                     if (!lotPatchRes.ok) {
                         return NextResponse.json({ message: `Failed to restore inventory lot ${lotId}` }, { status: 502 });
@@ -191,7 +182,7 @@ export async function POST(req: NextRequest) {
         if (detRes.ok) {
             const details: { id: number }[] = (await detRes.json()).data || [];
             for (const d of details) {
-                await fetch(`${DIRECTUS_URL}/items/consolidator_details/${d.id}`, {
+                const detailPatchRes = await fetch(`${DIRECTUS_URL}/items/consolidator_details/${d.id}`, {
                     method: "PATCH",
                     headers: directusHeaders,
                     body: JSON.stringify({
@@ -200,7 +191,10 @@ export async function POST(req: NextRequest) {
                         picked_at: null,
                         applied_quantity: 0,
                     }),
-                }).catch(() => {});
+                });
+                if (!detailPatchRes.ok) {
+                    return NextResponse.json({ message: `Failed to clear picking data for detail ${d.id}` }, { status: 502 });
+                }
             }
         }
 

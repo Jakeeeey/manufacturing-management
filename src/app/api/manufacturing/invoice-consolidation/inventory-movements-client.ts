@@ -35,6 +35,7 @@ export interface PostMovementPayload {
 /**
  * Check if movements already exist for this source document and type.
  * Used for idempotency before posting.
+ * Throws on network/API failure — callers must handle.
  */
 export async function movementsExistForSource(
     sourceDocumentId: number,
@@ -46,7 +47,7 @@ export async function movementsExistForSource(
         + `&limit=1`;
 
     const res = await fetch(url, { headers, cache: "no-store" });
-    if (!res.ok) return false;
+    if (!res.ok) throw new Error(`Failed to check movements for source ${sourceDocumentId}: ${res.status}`);
     const json = await res.json();
     const data: unknown[] = json.data || [];
     return data.length > 0;
@@ -55,6 +56,7 @@ export async function movementsExistForSource(
 /**
  * Check if net movement quantity for this source and type is zero.
  * Returns true when all negative movements have been compensated (re-picked).
+ * Throws on network/API failure.
  */
 export async function netMovementsZeroForSource(
     sourceDocumentId: number,
@@ -63,10 +65,10 @@ export async function netMovementsZeroForSource(
     const url = `${DIRECTUS_URL}/items/inventory_movements`
         + `?filter[source_document_id][_eq]=${sourceDocumentId}`
         + `&filter[transaction_type_id][_eq]=${transactionTypeId}`
-        + `&limit=500`;
+        + `&limit=-1`;
 
     const res = await fetch(url, { headers, cache: "no-store" });
-    if (!res.ok) return false;
+    if (!res.ok) throw new Error(`Failed to fetch movements for source ${sourceDocumentId}: ${res.status}`);
     const json = await res.json();
     const rows: MovementRow[] = json.data || [];
 
@@ -80,6 +82,7 @@ export async function netMovementsZeroForSource(
 /**
  * Fetch all movements (positive and negative) for a source document.
  * Used by re-pick to determine what needs compensating.
+ * Throws on network/API failure.
  */
 export async function fetchSourceMovements(
     sourceDocumentId: number,
@@ -88,12 +91,10 @@ export async function fetchSourceMovements(
     const url = `${DIRECTUS_URL}/items/inventory_movements`
         + `?filter[source_document_id][_eq]=${sourceDocumentId}`
         + `&filter[transaction_type_id][_eq]=${transactionTypeId}`
-        + `&limit=500`;
+        + `&limit=-1`;
 
     const res = await fetch(url, { headers, cache: "no-store" });
-    if (!res.ok) {
-        throw new Error(`Failed to fetch source movements: ${res.status}`);
-    }
+    if (!res.ok) throw new Error(`Failed to fetch source movements: ${res.status}`);
     const json = await res.json();
     return json.data || [];
 }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DIRECTUS_URL, headers as directusHeaders } from "../../directus-api";
+import { getUserIdFromToken } from "../_auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,6 +16,11 @@ interface ReservationRow {
 
 export async function GET(req: NextRequest) {
     try {
+        const userId = await getUserIdFromToken();
+        if (!userId || isNaN(userId)) {
+            return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+        }
+
         const batchId = Number(new URL(req.url).searchParams.get("batchId"));
         if (!Number.isInteger(batchId) || batchId <= 0) {
             return NextResponse.json({ message: "A valid batchId is required" }, { status: 400 });

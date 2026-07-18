@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { previewConsolidationAllocations } from "../../invoicing/_reservation-service";
+import { previewConsolidationAllocations } from "../_reservation-service";
+import { getUserIdFromToken } from "../_auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
     try {
+        const userId = await getUserIdFromToken();
+        if (!userId || isNaN(userId)) {
+            return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+        }
+
         const body = await req.json();
         const branchId = Number(body.branchId);
         const invoiceIds = Array.isArray(body.invoiceIds)
