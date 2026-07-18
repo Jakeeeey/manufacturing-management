@@ -171,14 +171,24 @@ export function useLotManagement() {
     };
 
     const filteredLots = useMemo(() => {
-        return lots.filter((lot) => {
-            const matchesSearch = lot.lotName
-                .toLowerCase()
-                .includes(searchQuery.toLowerCase());
-            const matchesType =
-                filterType === "all" || lot.inventoryTypeId === Number(filterType);
-            return matchesSearch && matchesType;
-        });
+        return lots
+            .filter((lot) => {
+                const matchesSearch = lot.lotName
+                    .toLowerCase()
+                    .includes(searchQuery.toLowerCase());
+                const matchesType =
+                    filterType === "all" || lot.inventoryTypeId === Number(filterType);
+                return matchesSearch && matchesType;
+            })
+            .sort((a, b) => b.lotId - a.lotId)
+            .map((lot) => {
+                const originalIndex = lots.findIndex((l) => l.lotId === lot.lotId);
+                const displayNumber = originalIndex !== -1 ? lots.length - originalIndex : 0;
+                return {
+                    ...lot,
+                    displayNumber
+                };
+            });
     }, [lots, searchQuery, filterType]);
 
     return {

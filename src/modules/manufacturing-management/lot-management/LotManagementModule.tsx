@@ -1,19 +1,9 @@
 "use client";
 
-import React, { useState } from "react";
+import React from "react";
 import { useLotManagement } from "./hooks/useLotManagement";
 import LotTable from "./components/LotTable";
 import LotFormDialog from "./components/LotFormDialog";
-import {
-    AlertDialog,
-    AlertDialogContent,
-    AlertDialogHeader,
-    AlertDialogTitle,
-    AlertDialogDescription,
-    AlertDialogFooter,
-    AlertDialogCancel,
-    AlertDialogAction
-} from "@/components/ui/alert-dialog";
 
 export default function LotManagementModule() {
     const {
@@ -34,18 +24,8 @@ export default function LotManagementModule() {
         handleFormChange,
         handleCreate,
         handleUpdate,
-        handleDelete,
         loadLots
     } = useLotManagement();
-
-    const [deletingLotId, setDeletingLotId] = useState<number | null>(null);
-
-    const confirmDelete = async () => {
-        if (deletingLotId !== null) {
-            await handleDelete(deletingLotId);
-            setDeletingLotId(null);
-        }
-    };
 
     return (
         <div className="space-y-4">
@@ -59,7 +39,6 @@ export default function LotManagementModule() {
                 onFilterTypeChange={setFilterType}
                 inventoryTypes={inventoryTypes}
                 onEdit={openEditDialog}
-                onDelete={(id) => setDeletingLotId(id)}
                 onRefresh={loadLots}
                 onAddClick={openCreateDialog}
             />
@@ -75,34 +54,6 @@ export default function LotManagementModule() {
                 inventoryTypes={inventoryTypes}
                 saving={saving}
             />
-
-            {/* Two-step Delete Confirmation Dialog */}
-            <AlertDialog
-                open={deletingLotId !== null}
-                onOpenChange={(open) => {
-                    if (!open) setDeletingLotId(null);
-                }}
-            >
-                <AlertDialogContent>
-                    <AlertDialogHeader>
-                        <AlertDialogTitle>Delete Storage Lot</AlertDialogTitle>
-                        <AlertDialogDescription>
-                            This action cannot be undone. Are you sure you want to delete this lot?
-                        </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                        <AlertDialogCancel onClick={() => setDeletingLotId(null)}>
-                            Cancel
-                        </AlertDialogCancel>
-                        <AlertDialogAction
-                            onClick={confirmDelete}
-                            className="bg-destructive text-destructive-foreground hover:bg-destructive/95"
-                        >
-                            Delete Lot
-                        </AlertDialogAction>
-                    </AlertDialogFooter>
-                </AlertDialogContent>
-            </AlertDialog>
         </div>
     );
 }

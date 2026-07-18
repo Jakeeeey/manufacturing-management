@@ -6,10 +6,17 @@ const ACCESS_TOKEN_COOKIE = "vos_access_token";
 
 export const PURCHASE_ORDER_MODULE_PATHS = {
     procurement: "/mm/incoming-shipments",
-    approval: "/mm/approval",
+    plantApproval: "/mm/plant-approval",
+    financeApproval: "/mm/finance-approval",
     receiving: "/mm/qa-receiving",
     expenses: "/mm/shipment-expenses"
 } as const;
+
+export function purchaseOrderApprovalModulePath(stage: ApprovalStage) {
+    return stage === "Plant"
+        ? PURCHASE_ORDER_MODULE_PATHS.plantApproval
+        : PURCHASE_ORDER_MODULE_PATHS.financeApproval;
+}
 
 export type PurchaseOrderModulePath = typeof PURCHASE_ORDER_MODULE_PATHS[keyof typeof PURCHASE_ORDER_MODULE_PATHS];
 
@@ -30,6 +37,16 @@ interface DirectusUserRecord {
     isAdmin?: unknown;
 }
 
+interface AuthenticatedUserResponse {
+    id?: unknown;
+    admin?: unknown;
+    isAdmin?: unknown;
+    firstName?: unknown;
+    middleName?: unknown;
+    lastName?: unknown;
+    suffixName?: unknown;
+}
+
 interface ModuleAccessRecord {
     module_id?: { base_path?: unknown } | number | null;
 }
@@ -41,6 +58,7 @@ interface ApprovalPermissionRecord {
 
 export interface AuthorizedPurchaseOrderUser {
     userId: number;
+    displayName: string;
     roleId: number | null;
     admin: boolean;
     modulePath: PurchaseOrderModulePath;
@@ -56,6 +74,14 @@ function positiveInteger(value: unknown): number | null {
 function relationId(value: DirectusUserRecord["role_id"]): number | null {
     if (typeof value === "number") return positiveInteger(value);
     return value && typeof value === "object" ? positiveInteger(value.id) : null;
+}
+
+function authenticatedUserDisplayName(user: AuthenticatedUserResponse): string {
+    const name = [user.firstName, user.middleName, user.lastName, user.suffixName]
+        .filter((part): part is string => typeof part === "string" && part.trim().length > 0)
+        .map(part => part.trim())
+        .join(" ");
+    return name || "Unknown inspector";
 }
 
 async function responseData<T>(response: Response, message: string): Promise<T> {
@@ -90,7 +116,7 @@ export async function requirePurchaseOrderModuleAccess(options: {
     }
     if (!authResponse.ok) throw new PurchaseOrderAuthorizationError(503, "Authentication service is unavailable.");
 
-    const authenticated = await authResponse.json();
+    const authenticated = await authResponse.json() as AuthenticatedUserResponse;
     const userId = positiveInteger(authenticated?.id);
     if (!userId) throw new PurchaseOrderAuthorizationError(401, "Unable to verify the current user.");
 
@@ -131,6 +157,7 @@ export async function requirePurchaseOrderModuleAccess(options: {
     if (!options.approvalStage || admin) {
         return {
             userId,
+            displayName: authenticatedUserDisplayName(authenticated),
             roleId,
             admin,
             modulePath: requestedPaths[0],
@@ -164,6 +191,7 @@ export async function requirePurchaseOrderModuleAccess(options: {
 
     return {
         userId,
+        displayName: authenticatedUserDisplayName(authenticated),
         roleId,
         admin,
         modulePath: requestedPaths[0],

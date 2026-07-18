@@ -13,12 +13,14 @@ import {
     fetchPurchaseOrderLines,
     fetchPurchaseOrders,
     updatePurchaseOrderStatus,
-    fetchPurchaseOrderCatalog
+    fetchPurchaseOrderCatalog,
+    reviseRejectedPurchaseOrder,
+    cancelRejectedPurchaseOrder
 } from "../services/purchase-order-api";
 
 const blankLine = (): ManifestLineFormItem => ({
     parent_product_id: "", product_id: "", quantity_ordered: "", base_unit_cost_php: "",
-    purchase_intent: "Buffer_Stock", job_order_id: "", discount_percent: "0", vat_percent: "0", withholding_percent: "0"
+    purchase_intent: "Buffer_Stock", job_order_id: "", discount_percent: "", vat_percent: "", withholding_percent: ""
 });
 const blankForm = (): ShipmentFormState => ({
     reference_number: "", supplier_id: "", exchange_rate: "", total_foreign_currency: "0", total_php_value: "0",
@@ -47,6 +49,7 @@ function calculateDraftTotals(lines: PurchaseOrderDraftPayload["lines"], exchang
 
 export function usePurchaseOrder() {
     const [loading, setLoading] = useState(false);
+    const [listLoading, setListLoading] = useState(false);
     const [suppliers, setSuppliers] = useState<Supplier[]>([]);
     const [shipments, setShipments] = useState<IncomingShipment[]>([]);
     const [rawMaterials, setRawMaterials] = useState<RawMaterial[]>([]);
@@ -67,6 +70,7 @@ export function usePurchaseOrder() {
         listController.current?.abort();
         const controller = new AbortController();
         listController.current = controller;
+        setListLoading(true);
         try {
             const result = await fetchPurchaseOrders(query, controller.signal);
             setShipments(result.data);
@@ -75,6 +79,8 @@ export function usePurchaseOrder() {
         } catch (error) {
             if ((error as Error).name !== "AbortError") toast.error((error as Error).message || "Failed to load purchase orders.");
             return [];
+        } finally {
+            if (!controller.signal.aborted) setListLoading(false);
         }
     }, []);
 
@@ -138,9 +144,51 @@ export function usePurchaseOrder() {
 
     const handleCreateShipment = async (event: React.FormEvent) => {
         event.preventDefault();
-        const lines = shipmentLinesForm.filter(line => line.product_id && line.quantity_ordered && line.base_unit_cost_php);
-        if (!shipmentForm.supplier_id || !shipmentForm.branch_id || !shipmentForm.payment_type || !shipmentForm.price_type || lines.length === 0) {
-            toast.error("Complete the purchase-order header and all required line fields.");
+        const invalidRows = shipmentLinesForm.flatMap((line, index) => {
+            const errors: string[] = [];
+            const quantity = Number(line.quantity_ordered);
+            const unitPrice = Number(line.base_unit_cost_php);
+            const discount = Number(line.discount_percent || 0);
+            const vat = Number(line.vat_percent || 0);
+            const withholding = Number(line.withholding_percent || 0);
+
+            if (!line.product_id) errors.push("select a product");
+            if (!Number.isInteger(quantity) || quantity <= 0) errors.push("enter a positive whole quantity");
+            if (line.base_unit_cost_php === "" || !Number.isFinite(unitPrice) || unitPrice < 0) errors.push("enter a non-negative unit price");
+            if (!Number.isFinite(discount) || discount < 0 || discount > 100) errors.push("set Discount between 0 and 100");
+            if (!Number.isFinite(vat) || vat < 0 || vat > 100) errors.push("set VAT between 0 and 100");
+            if (!Number.isFinite(withholding) || withholding < 0 || withholding > 100) errors.push("set Withholding between 0 and 100");
+            if (line.purchase_intent === "MRP_Demand" && (!Number.isInteger(Number(line.job_order_id)) || Number(line.job_order_id) <= 0)) {
+                errors.push("select a valid Job Order for MRP Demand");
+            }
+            if (line.purchase_intent === "Buffer_Stock" && line.job_order_id) errors.push("remove the Job Order for Buffer Stock");
+
+            return errors.length > 0 ? [`Row ${index + 1}: ${errors.join(", ")}.`] : [];
+        });
+        if (invalidRows.length > 0) {
+            toast.error(invalidRows[0]);
+            return;
+        }
+
+        const lines = shipmentLinesForm;
+        if (!shipmentForm.supplier_id) {
+            toast.error("Supplier is required.");
+            return;
+        }
+        if (!shipmentForm.branch_id) {
+            toast.error("Destination Branch is required.");
+            return;
+        }
+        if (!shipmentForm.payment_type) {
+            toast.error("Payment Type is required.");
+            return;
+        }
+        if (!shipmentForm.price_type) {
+            toast.error("Price Type is required.");
+            return;
+        }
+        if (lines.length === 0) {
+            toast.error("Add at least one Purchase Order Line.");
             return;
         }
         const exchangeRate = Number(shipmentForm.exchange_rate);
@@ -194,12 +242,35 @@ export function usePurchaseOrder() {
     const handleEditShipment = async (id: number, data: ShipmentFormState, lines: ManifestLineFormItem[]) => {
         setLoading(true);
         try {
-            await editPurchaseOrder(id, data, lines);
-            toast.success("Purchase order updated and resubmitted successfully.");
+            if (selectedShipment?.status === "Rejected") {
+                await reviseRejectedPurchaseOrder(id, data, lines, Number(data.workflow_revision || 0));
+                toast.success("Rejected purchase order revised and resubmitted for approval.");
+            } else {
+                await editPurchaseOrder(id, data, lines);
+                toast.success("Purchase order updated and resubmitted successfully.");
+            }
             setSelectedShipment(null);
             await loadShipments();
+            return true;
         } catch (error) {
             toast.error((error as Error).message || "Failed to update purchase order.");
+            return false;
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleCancelRejectedShipment = async (id: number, workflowRevision: number, remarks?: string) => {
+        setLoading(true);
+        try {
+            await cancelRejectedPurchaseOrder(id, workflowRevision, remarks);
+            toast.success("Rejected purchase order cancelled.");
+            const updated = await loadShipments();
+            setSelectedShipment(updated.find(item => item.shipment_id === id) || null);
+            return true;
+        } catch (error) {
+            toast.error((error as Error).message || "Failed to cancel purchase order.");
+            return false;
         } finally {
             setLoading(false);
         }
@@ -220,10 +291,10 @@ export function usePurchaseOrder() {
     };
 
     return {
-        loading, suppliers, shipments, rawMaterials, supplierLinkedProducts, jobOrders, listMeta, loadShipments,
+        loading, listLoading, suppliers, shipments, rawMaterials, supplierLinkedProducts, jobOrders, listMeta, loadShipments,
         selectedShipment, setSelectedShipment, selectedShipmentLines,
         isShipmentModalOpen, setIsShipmentModalOpen,
         shipmentForm, setShipmentForm, shipmentLinesForm, setShipmentLinesForm,
-        handleCreateShipment, handleEditShipment, handleUpdateShipmentStatus
+        handleCreateShipment, handleEditShipment, handleCancelRejectedShipment, handleUpdateShipmentStatus
     };
 }

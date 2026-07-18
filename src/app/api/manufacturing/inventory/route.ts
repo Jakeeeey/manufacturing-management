@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { DIRECTUS_URL, headers } from "@/app/api/manufacturing/directus-api";
 import { canonicalBatchNumber } from "@/app/api/manufacturing/procurement/_domain";
+import { movementStockKey, sumMovementQuantitiesByStock } from "@/app/api/manufacturing/qa-receiving/_movement-stock";
 
 interface InventoryLot {
     id: number;
@@ -26,7 +27,10 @@ interface LedgerEntry {
 
 interface DirectusMovementRaw {
     movement_id: number;
-    lot_id: number;
+    product_id: number | { product_id?: number };
+    branch_id: number | { id?: number };
+    lot_id: number | { lot_id?: number };
+    batch_no?: string | null;
     quantity: number | string;
     remarks?: string | null;
     transaction_type_id?: number | {
@@ -85,12 +89,16 @@ export async function GET() {
         // Group movements by lot_id
         const movementsByLot = new Map<number, DirectusMovementRaw[]>();
         rawMovements.forEach((m: DirectusMovementRaw) => {
-            if (m.lot_id) {
-                const list = movementsByLot.get(m.lot_id) || [];
+            const lotId = typeof m.lot_id === "object" ? m.lot_id?.lot_id : m.lot_id;
+            if (lotId) {
+                const list = movementsByLot.get(Number(lotId)) || [];
                 list.push(m);
-                movementsByLot.set(m.lot_id, list);
+                movementsByLot.set(Number(lotId), list);
             }
         });
+        const movementStock = sumMovementQuantitiesByStock(
+            rawMovements as unknown as Array<Record<string, unknown>>
+        );
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const products = productsData.map((p: any) => {
@@ -132,7 +140,7 @@ export async function GET() {
                 lot_name: lotName,
                 storage_assignment_state: lotId ? "assigned" : "legacy_unassigned",
                 expiration_date: b.expiry_date || null,
-                quantity_received: Number(b.quantity || 0),
+                quantity_received: movementStock.get(movementStockKey(b as unknown as Record<string, unknown>)) || 0,
                 base_unit_cost_php: Number(b.unit_cost || 0),
                 allocated_expense_php: 0,
                 final_landed_unit_cost: Number(b.unit_cost || 0),

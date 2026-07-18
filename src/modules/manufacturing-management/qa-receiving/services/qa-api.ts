@@ -54,6 +54,7 @@ export async function fetchProductQaSpecifications(productId: number, signal?: A
 export async function previewReceivingQa(payload: {
     shipmentId: number;
     receiptNumber: string;
+    receiptMode: "full" | "partial";
     destinationBranchId: number;
     lines: Array<{
         lineId: number;
@@ -62,6 +63,8 @@ export async function previewReceivingQa(payload: {
         acceptedQuantity: number;
         rejectedQuantity: number;
         storageLotId: number | null;
+        acceptedLotAllocations: Array<{ storageLotId: number; quantity: number }>;
+        rejectedLotAllocations: Array<{ storageLotId: number; quantity: number }>;
         supplierBatchNumber: string;
         manufacturingDate: string | null;
         expiryDate: string | null;
@@ -80,7 +83,7 @@ export async function previewReceivingQa(payload: {
     if (!res.ok) {
         throw new Error(body.error || "Failed to generate receiving preview.");
     }
-    if (!body.data || !Array.isArray(body.data.lines)) {
+    if (!body.data || !Array.isArray(body.data.lines) || typeof body.data.postingEnabled !== "boolean") {
         throw new Error("Receiving preview returned an invalid response.");
     }
     return body.data as ReceivingPreview;

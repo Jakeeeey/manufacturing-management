@@ -22,6 +22,8 @@ export default function QAReceivingModule() {
         readOnly,
         receiptNumber,
         setReceiptNumber,
+        receiptMode,
+        setReceiptMode,
         selectedBranchId,
         setSelectedBranchId,
         inspectionRows,
@@ -29,6 +31,7 @@ export default function QAReceivingModule() {
         qaReadings,
         qaEvaluationResults,
         receivingPreview,
+        receivingCommitReady,
         committedResult,
         previewOpen,
         setPreviewOpen,
@@ -40,6 +43,8 @@ export default function QAReceivingModule() {
         qaSubmissionBlockReason,
         handleSelectShipment,
         handleUpdateRow,
+        handleUpdateAllocations,
+        handleUpdateRejectedAllocations,
         handleUpdateQaReading,
         handleSubmitInspection,
         clearInspection,
@@ -150,6 +155,8 @@ export default function QAReceivingModule() {
                                 storageLots={storageLots}
                                 receiptNumber={receiptNumber}
                                 setReceiptNumber={setReceiptNumber}
+                                receiptMode={receiptMode}
+                                setReceiptMode={setReceiptMode}
                                 selectedBranchId={selectedBranchId}
                                 setSelectedBranchId={setSelectedBranchId}
                                 inspectionRows={inspectionRows}
@@ -162,6 +169,8 @@ export default function QAReceivingModule() {
                                 qaSubmissionBlockReason={qaSubmissionBlockReason}
                                 loadingLines={loadingLines}
                                 handleUpdateRow={handleUpdateRow}
+                                handleUpdateAllocations={handleUpdateAllocations}
+                                handleUpdateRejectedAllocations={handleUpdateRejectedAllocations}
                                 handleUpdateQaReading={handleUpdateQaReading}
                                 handleSubmitInspection={handleSubmitInspection}
                                 onReviewPreview={() => setPreviewOpen(true)}
@@ -200,6 +209,8 @@ export default function QAReceivingModule() {
                 onOpenChange={setPreviewOpen}
                 preview={receivingPreview}
                 lineItems={lineItems}
+                purchaseOrderReference={selectedShipment?.reference_number}
+                commitReady={receivingCommitReady}
                 posting={postingInspection}
                 onCommit={handleCommitReceiving}
                 committedResult={committedResult}

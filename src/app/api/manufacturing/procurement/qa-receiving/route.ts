@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { DIRECTUS_URL, headers } from "../_directus";
 import { canonicalBatchNumber } from "../_domain";
 import { handleQaReceivingPost } from "./_receiving-service";
+import { movementStockKey, sumMovementQuantitiesByLot, sumMovementQuantitiesByStock } from "../../qa-receiving/_movement-stock";
 import {
     PURCHASE_ORDER_MODULE_PATHS,
     PurchaseOrderAuthorizationError,
@@ -63,19 +64,54 @@ export async function GET(request: Request) {
                 { headers, cache: "no-store" }
             );
             if (!res.ok) throw new Error(`Directus error loading storage lots: ${res.status}`);
-            return NextResponse.json((await res.json()).data || []);
+            const lots = ((await res.json()).data || []) as Array<Record<string, unknown>>;
+            const lotIds = lots.map(lot => Number(lot.lot_id)).filter(id => Number.isSafeInteger(id) && id > 0);
+            const inventoryResponse = lotIds.length > 0
+                ? await fetch(
+                    `${DIRECTUS_URL}/items/inventory_movements?filter[lot_id][_in]=${lotIds.join(",")}&fields=lot_id,quantity&limit=-1`,
+                    { headers, cache: "no-store" }
+                )
+                : null;
+            if (inventoryResponse && !inventoryResponse.ok) {
+                throw new Error(`Directus error loading storage-lot occupancy: ${inventoryResponse.status}`);
+            }
+            const occupiedByLot = sumMovementQuantitiesByLot(
+                ((inventoryResponse ? (await inventoryResponse.json()).data : []) || []) as Array<Record<string, unknown>>
+            );
+            return NextResponse.json(lots.map(lot => {
+                const lotId = Number(lot.lot_id);
+                const maxBatchCapacity = lot.max_batch_capacity === null || lot.max_batch_capacity === undefined || lot.max_batch_capacity === ""
+                    ? null
+                    : Number(lot.max_batch_capacity);
+                const occupiedQuantity = occupiedByLot.get(lotId) || 0;
+                return {
+                    ...lot,
+                    occupiedQuantity,
+                    availableQuantity: maxBatchCapacity !== null && Number.isFinite(maxBatchCapacity)
+                        ? Math.max(0, maxBatchCapacity - occupiedQuantity)
+                        : null
+                };
+            }));
         }
 
         // Action: Fetch FIFO Inventory for a product across all branches
         if (productId) {
             const res = await fetch(
-                `${DIRECTUS_URL}/items/inventory_lots?filter[product_id][_eq]=${productId}&filter[quantity][_gt]=0&fields=*,lot_id.lot_id,lot_id.lot_name&limit=150`,
+                `${DIRECTUS_URL}/items/inventory_lots?filter[product_id][_eq]=${productId}&fields=*,lot_id.lot_id,lot_id.lot_name&limit=150`,
                 { headers }
             );
             if (!res.ok) throw new Error(`Directus error loading product receiving logs: ${res.status}`);
             const json = await res.json();
 
-            const rawLogs = (json.data || []) as DirectusLotLog[];
+            const movementRes = await fetch(
+                `${DIRECTUS_URL}/items/inventory_movements?filter[product_id][_eq]=${productId}&fields=product_id,branch_id,lot_id,batch_no,quantity&limit=-1`,
+                { headers, cache: "no-store" }
+            );
+            if (!movementRes.ok) throw new Error(`Directus error loading product movement stock: ${movementRes.status}`);
+            const movementStock = sumMovementQuantitiesByStock(((await movementRes.json()).data || []) as Array<Record<string, unknown>>);
+            const rawLogs = ((json.data || []) as DirectusLotLog[])
+                .map(log => ({ ...log, quantity: movementStock.get(movementStockKey(log as unknown as Record<string, unknown>)) || 0 }))
+                .filter(log => log.quantity > 0);
             const productIds = rawLogs.map((r) => typeof r.product_id === "object" && r.product_id ? r.product_id.product_id : r.product_id).filter(Boolean);
             let products: DirectusProductMin[] = [];
             if (productIds.length > 0) {
@@ -157,13 +193,21 @@ export async function GET(request: Request) {
         // Action: Fetch FIFO Inventory for a branch
         if (branchId) {
             const res = await fetch(
-                `${DIRECTUS_URL}/items/inventory_lots?filter[branch_id][_eq]=${branchId}&filter[quantity][_gt]=0&fields=*,lot_id.lot_id,lot_id.lot_name&limit=150`,
+                `${DIRECTUS_URL}/items/inventory_lots?filter[branch_id][_eq]=${branchId}&fields=*,lot_id.lot_id,lot_id.lot_name&limit=150`,
                 { headers }
             );
             if (!res.ok) throw new Error(`Directus error loading branch receiving logs: ${res.status}`);
             const json = await res.json();
 
-            const rawLogs = (json.data || []) as DirectusLotLog[];
+            const movementRes = await fetch(
+                `${DIRECTUS_URL}/items/inventory_movements?filter[branch_id][_eq]=${branchId}&fields=product_id,branch_id,lot_id,batch_no,quantity&limit=-1`,
+                { headers, cache: "no-store" }
+            );
+            if (!movementRes.ok) throw new Error(`Directus error loading branch movement stock: ${movementRes.status}`);
+            const movementStock = sumMovementQuantitiesByStock(((await movementRes.json()).data || []) as Array<Record<string, unknown>>);
+            const rawLogs = ((json.data || []) as DirectusLotLog[])
+                .map(log => ({ ...log, quantity: movementStock.get(movementStockKey(log as unknown as Record<string, unknown>)) || 0 }))
+                .filter(log => log.quantity > 0);
             const productIds = rawLogs.map((r) => typeof r.product_id === "object" && r.product_id ? r.product_id.product_id : r.product_id).filter(Boolean);
             let products: DirectusProductMin[] = [];
             if (productIds.length > 0) {

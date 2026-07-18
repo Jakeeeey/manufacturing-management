@@ -120,6 +120,8 @@ export interface AssetRecord {
     is_active_warning?: boolean;
     is_active?: boolean;
     date_acquired?: string | null;
+    created_by?: number | null;
+    created_by_name?: string | null;
 }
 
 export interface DepartmentRecord {
@@ -138,6 +140,8 @@ export interface WorkCenter {
     asset?: AssetRecord | null;
     department?: DepartmentRecord | null;
     created_by?: number | null;
+    created_by_name?: string;
+    created_at?: string;
 }
 
 export interface QATemplate {

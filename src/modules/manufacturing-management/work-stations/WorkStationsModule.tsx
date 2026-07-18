@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
-import { Plus, Search, Edit, DollarSign, Activity, Settings, Check, LayoutGrid, Image as ImageIcon, ChevronsLeft, ChevronsRight, RefreshCw } from "lucide-react";
+import { Plus, Search, Edit, DollarSign, Activity, Settings, Check, LayoutGrid, Image as ImageIcon, ChevronsLeft, ChevronsRight, RefreshCw, MoreHorizontal, Eye, Info, Calendar, User } from "lucide-react";
 import { toast } from "sonner";
 import { WorkCenter, AssetRecord, DepartmentRecord } from "@/modules/manufacturing-management/finished-goods/types";
 import { 
@@ -19,7 +19,13 @@ import {
     SelectTrigger,
     SelectValue
 } from "@/components/ui/select";
-import { formatNumber } from "@/lib/utils";
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger
+} from "@/components/ui/dropdown-menu";
+import { formatNumber, formatCurrency } from "@/lib/utils";
 
 export default function WorkStationsModule() {
     const [workCenters, setWorkCenters] = useState<WorkCenter[]>([]);
@@ -35,6 +41,13 @@ export default function WorkStationsModule() {
     // Modal state
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingWorkCenter, setEditingWorkCenter] = useState<WorkCenter | null>(null);
+    const [isViewModalOpen, setIsViewModalOpen] = useState(false);
+    const [viewingWorkCenter, setViewingWorkCenter] = useState<WorkCenter | null>(null);
+
+    const handleOpenViewModal = (wc: WorkCenter) => {
+        setViewingWorkCenter(wc);
+        setIsViewModalOpen(true);
+    };
 
     // Form inputs
     const [wcName, setWcName] = useState("");
@@ -68,6 +81,24 @@ export default function WorkStationsModule() {
         return label;
     };
 
+    const formatTimestamp = (dateStr?: string | null) => {
+        if (!dateStr) return "N/A";
+        try {
+            const date = new Date(dateStr);
+            return date.toLocaleString("en-PH", {
+                timeZone: "Asia/Manila",
+                year: "numeric",
+                month: "long",
+                day: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+                hour12: true
+            });
+        } catch {
+            return dateStr;
+        }
+    };
+
     const loadData = async () => {
         setLoading(true);
         try {
@@ -93,7 +124,7 @@ export default function WorkStationsModule() {
 
     // Filtered Work Centers list
     const filteredWorkCenters = useMemo(() => {
-        return workCenters.filter(wc => {
+        const filtered = workCenters.filter(wc => {
             const query = searchQuery.toLowerCase();
             const matchesName = wc.work_center_name.toLowerCase().includes(query);
             const assetName = typeof wc.asset?.item_id === 'object' ? wc.asset?.item_id?.item_name || "" : "";
@@ -103,6 +134,9 @@ export default function WorkStationsModule() {
             const matchesDept = wc.department?.department_name?.toLowerCase().includes(query);
             return matchesName || matchesAsset || matchesDept;
         });
+
+        // Priority the newly created data to show first (newest ID first)
+        return [...filtered].sort((a, b) => b.work_center_id - a.work_center_id);
     }, [workCenters, searchQuery]);
 
     // Reset page to 1 when search query, filter result length, or page size changes
@@ -384,14 +418,33 @@ export default function WorkStationsModule() {
                                         </span>
                                     </td>
                                     <td className="p-4 align-middle text-center">
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            onClick={() => handleOpenEditModal(wc)}
-                                            className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-md"
-                                        >
-                                            <Edit className="h-4 w-4" />
-                                        </Button>
+                                        <DropdownMenu>
+                                            <DropdownMenuTrigger asChild>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-md"
+                                                >
+                                                    <MoreHorizontal className="h-4 w-4" />
+                                                </Button>
+                                            </DropdownMenuTrigger>
+                                            <DropdownMenuContent align="end" className="w-36 bg-popover border border-border text-foreground rounded-lg p-1 shadow-md animate-in fade-in slide-in-from-top-1">
+                                                <DropdownMenuItem
+                                                    onClick={() => handleOpenViewModal(wc)}
+                                                    className="flex items-center gap-2 px-2.5 py-2 text-xs font-semibold cursor-pointer hover:bg-muted rounded-md transition-colors"
+                                                >
+                                                    <Eye className="h-3.5 w-3.5 text-muted-foreground" />
+                                                    View Details
+                                                </DropdownMenuItem>
+                                                <DropdownMenuItem
+                                                    onClick={() => handleOpenEditModal(wc)}
+                                                    className="flex items-center gap-2 px-2.5 py-2 text-xs font-semibold cursor-pointer hover:bg-muted rounded-md transition-colors"
+                                                >
+                                                    <Edit className="h-3.5 w-3.5 text-muted-foreground" />
+                                                    Edit Details
+                                                </DropdownMenuItem>
+                                            </DropdownMenuContent>
+                                        </DropdownMenu>
                                     </td>
                                 </tr>
                             ))}
@@ -746,6 +799,160 @@ export default function WorkStationsModule() {
                                 </button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {/* View Details Modal popup */}
+            {isViewModalOpen && viewingWorkCenter && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md animate-in fade-in duration-200">
+                    <div className="bg-card border border-border/85 rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
+                        {/* Modal Header */}
+                        <div className="flex items-center justify-between px-6 py-4 border-b shrink-0 bg-muted/20">
+                            <div className="flex items-center gap-2">
+                                <Info className="h-5 w-5 text-primary" />
+                                <div>
+                                    <h3 className="text-base font-bold text-foreground">Work Station Profile</h3>
+                                    <p className="text-xs text-muted-foreground">Detailed parameters and metadata for the workstation.</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Modal Body */}
+                        <div className="flex-1 overflow-y-auto p-6 space-y-6 text-xs text-foreground">
+                            {/* Work Station Name & Status */}
+                            <div className="flex justify-between items-start gap-4">
+                                <div className="space-y-1">
+                                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Work Station Name</span>
+                                    <h4 className="text-lg font-bold text-foreground">{viewingWorkCenter.work_center_name}</h4>
+                                </div>
+                                <div className="text-right space-y-1">
+                                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Status</span>
+                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase ${
+                                        Boolean(viewingWorkCenter.is_active) 
+                                            ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20" 
+                                            : "bg-destructive/10 text-destructive border border-destructive/20"
+                                    }`}>
+                                        {Boolean(viewingWorkCenter.is_active) ? "Active" : "Inactive"}
+                                    </span>
+                                </div>
+                            </div>
+
+                            {/* Details Grid */}
+                            <div className="grid grid-cols-2 gap-4 bg-muted/10 p-4 rounded-xl border border-border/50">
+                                <div className="space-y-1">
+                                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Overhead Cost / Hour</span>
+                                    <span className="text-sm font-semibold text-foreground">
+                                        {formatCurrency(viewingWorkCenter.overhead_cost_per_hour)}
+                                    </span>
+                                </div>
+                                <div className="space-y-1">
+                                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Capacity / Hour</span>
+                                    <span className="text-sm font-semibold text-foreground">
+                                        {formatNumber(Number(viewingWorkCenter.capacity_per_hour) || 0, "en-PH", 0)} units
+                                    </span>
+                                </div>
+                                <div className="space-y-1 col-span-2 pt-2 border-t border-border/30">
+                                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Owner Department</span>
+                                    <span className="text-xs font-semibold text-foreground">
+                                        {(() => {
+                                            const dept = departments.find(d => d.department_id === viewingWorkCenter.department_id) || viewingWorkCenter.department;
+                                            return dept ? (
+                                                <span className="bg-primary/5 text-primary border border-primary/10 px-2 py-0.5 rounded font-medium inline-block mt-0.5">
+                                                    {dept.department_name}
+                                                </span>
+                                            ) : (
+                                                <span className="text-muted-foreground/50 italic">None mapped</span>
+                                            );
+                                        })()}
+                                    </span>
+                                </div>
+                            </div>
+
+                            {/* Associated Asset / Equipment */}
+                            <div className="space-y-2">
+                                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Associated Asset &amp; Equipment</span>
+                                {viewingWorkCenter.asset ? (() => {
+                                    const assetName = typeof viewingWorkCenter.asset.item_id === 'object' ? viewingWorkCenter.asset.item_id?.item_name || "" : "";
+                                    return (
+                                        <div className="border border-border/60 rounded-xl p-4 flex flex-col md:flex-row gap-4 bg-background">
+                                            {/* Left: Image Container */}
+                                            <div className="w-full md:w-1/3 shrink-0">
+                                                {viewingWorkCenter.asset.item_image ? (
+                                                    // eslint-disable-next-line @next/next/no-img-element
+                                                    <img 
+                                                        src={viewingWorkCenter.asset.item_image} 
+                                                        alt={assetName || "Asset image"} 
+                                                        className="w-full h-24 object-cover rounded-lg border border-border bg-muted/5 shrink-0"
+                                                    />
+                                                ) : (
+                                                    <div className="w-full h-24 bg-muted/20 border border-dashed rounded-lg flex flex-col items-center justify-center text-muted-foreground/30 gap-1 shrink-0">
+                                                        <ImageIcon className="h-6 w-6" />
+                                                        <span className="text-[9px] font-semibold uppercase tracking-wider">No Image</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                            {/* Right: Info details */}
+                                            <div className="flex-1 space-y-2">
+                                                <div>
+                                                    <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">Asset/Item Name</span>
+                                                    <span className="font-bold text-foreground text-sm">{assetName || "Equipment Asset"}</span>
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-2 text-[11px]">
+                                                    <div>
+                                                        <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">Serial Number</span>
+                                                        <span className="font-semibold text-foreground truncate block">{viewingWorkCenter.asset.serial || "N/A"}</span>
+                                                    </div>
+                                                    <div>
+                                                        <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">Barcode</span>
+                                                        <span className="font-semibold text-foreground truncate block">{viewingWorkCenter.asset.barcode || "N/A"}</span>
+                                                    </div>
+                                                    <div className="col-span-2">
+                                                        <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">Condition</span>
+                                                        <span className="font-semibold text-foreground">{viewingWorkCenter.asset.condition || "Good"}</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })() : (
+                                    <div className="border border-dashed border-border/80 rounded-xl p-6 text-center text-muted-foreground bg-muted/5">
+                                        <ImageIcon className="h-8 w-8 mx-auto text-muted-foreground/20 mb-1.5" />
+                                        <span className="font-semibold text-xs block text-muted-foreground/70">No Asset Associated</span>
+                                        <p className="text-[10px] text-muted-foreground/50 mt-0.5">Use the Edit Modal to link a piece of machinery or equipment.</p>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Metadata */}
+                            <div className="pt-4 border-t border-border/30 grid grid-cols-2 gap-4 text-muted-foreground">
+                                <div className="flex items-center gap-2">
+                                    <Calendar className="h-4 w-4 text-muted-foreground/60 shrink-0" />
+                                    <div className="min-w-0">
+                                        <span className="text-[9px] font-bold uppercase tracking-wider block text-muted-foreground/50">Created At</span>
+                                        <span className="font-medium text-foreground/80 truncate block">{formatTimestamp(viewingWorkCenter.created_at)}</span>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <User className="h-4 w-4 text-muted-foreground/60 shrink-0" />
+                                    <div className="min-w-0">
+                                        <span className="text-[9px] font-bold uppercase tracking-wider block text-muted-foreground/50">Created By</span>
+                                        <span className="font-medium text-foreground/80 truncate block">{viewingWorkCenter.created_by_name || "System"}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Modal Footer */}
+                        <div className="flex justify-end p-4 border-t shrink-0 bg-muted/10">
+                            <button
+                                type="button"
+                                onClick={() => setIsViewModalOpen(false)}
+                                className="px-5 py-2 bg-primary hover:bg-primary/95 text-primary-foreground font-semibold rounded-lg text-xs transition-colors shadow-md shadow-primary/20"
+                            >
+                                Close
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

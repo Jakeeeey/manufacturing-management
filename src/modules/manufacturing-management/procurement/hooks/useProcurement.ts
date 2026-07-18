@@ -56,6 +56,7 @@ export function useProcurement(defaultTab: string = "suppliers") {
         delivery_terms: "",
         currency: "PHP",
         notes_or_comments: "",
+        nonBuy: false as boolean | number,
         representatives: [] as SupplierRepresentative[]
     });
 
@@ -374,6 +375,7 @@ export function useProcurement(defaultTab: string = "suppliers") {
                 delivery_terms: "",
                 currency: "PHP",
                 notes_or_comments: "",
+                nonBuy: false as boolean | number,
                 representatives: []
             });
             setSupplierError(null);
@@ -409,6 +411,7 @@ export function useProcurement(defaultTab: string = "suppliers") {
             delivery_terms: supplier.delivery_terms || "",
             currency: currency,
             notes_or_comments: cleanNotes,
+            nonBuy: supplier.nonBuy === 1 || supplier.nonBuy === true,
             representatives: supplier.representatives || []
         });
 
@@ -586,7 +589,7 @@ export function useProcurement(defaultTab: string = "suppliers") {
         }
     };
 
-    const handleUpdateShipmentStatus = async (shipmentId: number, status: "Ordered" | "Approved" | "Cancelled" | "For Pickup" | "En Route" | "Receiving (QA)" | "Partially Received" | "Received" | "Rejected") => {
+    const handleUpdateShipmentStatus = async (shipmentId: number, status: "Ordered" | "Approved" | "Awaiting Payment" | "Cancelled" | "For Pickup" | "En Route" | "Receiving (QA)" | "Partially Received" | "Received" | "Rejected") => {
         setLoading(true);
         try {
             await updateShipmentStatus(shipmentId, status);
