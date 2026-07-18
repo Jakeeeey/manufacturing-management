@@ -121,7 +121,7 @@ export function useQAReceiving() {
     const [loadingFifo, setLoadingFifo] = useState(false);
     const [expandedProducts, setExpandedProducts] = useState<Record<number, boolean>>({});
     const [fifoSearch, setFifoSearch] = useState("");
-    const [showReceived, setShowReceived] = useState(false);
+    const [showReceived, setShowReceived] = useState(true);
 
     const clearInspection = useCallback(() => {
         detailController.current?.abort();

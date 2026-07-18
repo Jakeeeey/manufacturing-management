@@ -37,7 +37,7 @@ export const receivingCommitLineSchema = z.object({
     isPackaging: z.boolean(),
     readings: z.array(z.object({
         specId: z.number().int().positive(),
-        actualReading: z.string()
+        actualReading: z.string().trim().min(1).max(100)
     }))
 }).superRefine((line, context) => {
     const message = validateReceivingQuantities(line);
@@ -100,6 +100,7 @@ export interface FinalReceivingRecord {
     expirationDate: string | null;
     receivedDate: string | null;
     inventoryLotIds: number[];
+    qaResultIds: number[];
 }
 
 export interface ReceivingCommitResult {
