@@ -1,13 +1,21 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { Search, Loader2, ScanLine, SquarePen, Building2 } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { Search, ScanLine, Building2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useRouter } from "next/navigation";
 import { InvoiceConsolidation, Branch } from "../../invoice-consolidation/types";
 import { fetchConsolidations, fetchBranches } from "../../invoice-consolidation/services/invoice-consolidation-api";
+import {
+    ConsolidationEmptyState,
+    ConsolidationHeader,
+    ConsolidationSection,
+    ConsolidationShell,
+    ConsolidationStatusBadge,
+    FilterField,
+} from "../shared/consolidation-ui";
 
 export default function PickingQueueModule() {
     const router = useRouter();
@@ -66,17 +74,16 @@ export default function PickingQueueModule() {
     const orderedTotal = (batch: InvoiceConsolidation) => batch.details?.reduce((s, d) => s + d.orderedQuantity, 0) || 0;
 
     return (
-        <div className="min-h-0 flex-1 flex flex-col bg-background text-foreground">
-            <div className="sticky top-0 z-40 bg-background/95 backdrop-blur-xl border-b border-border/50 shadow-sm px-4 md:px-8 py-4 flex flex-col md:flex-row justify-between md:items-center gap-6">
-                <div className="flex items-center gap-4 md:gap-5 shrink-0">
-                    <div className="p-3 md:p-4 bg-primary rounded-2xl shadow-lg shadow-primary/20 shrink-0">
-                        <SquarePen className="h-7 w-7 md:h-8 md:w-8 text-primary-foreground stroke-[2.5px]" />
-                    </div>
-                    <div className="space-y-0.5 shrink-0">
-                        <h2 className="text-2xl md:text-4xl font-black tracking-tighter uppercase italic leading-none whitespace-nowrap">
-                            Floor <span className="text-primary">Picking</span>
-                        </h2>
-                        <div className="mt-1 md:mt-0">
+        <ConsolidationShell>
+            <ConsolidationHeader
+                icon={ScanLine}
+                eyebrow="Consolidation Operations"
+                title="Picking"
+                accent="Queue"
+                description="Select and continue batches currently being picked."
+                controls={
+                    <div className="grid w-full gap-3 sm:grid-cols-2 lg:w-auto lg:grid-cols-[260px_320px]">
+                        <FilterField label="Branch">
                             <SearchableSelect
                                 value={selectedBranchId ? String(selectedBranchId) : ""}
                                 onValueChange={(value) => setSelectedBranchId(Number(value))}
@@ -85,57 +92,46 @@ export default function PickingQueueModule() {
                                     label: `${branch.branchName} (${branch.branchCode})`,
                                 }))}
                                 placeholder="Search and select branch..."
-                                className="h-9 bg-card text-xs font-bold md:w-[260px]"
+                                className="h-10 rounded-xl bg-background text-sm font-bold normal-case tracking-normal"
                             />
-                        </div>
+                        </FilterField>
+                        <FilterField label="Search">
+                            <div className="relative">
+                                <Search className="absolute left-3.5 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                                <Input
+                                    placeholder="Search batch number..."
+                                    className="h-10 rounded-xl bg-background pl-10 font-bold"
+                                    value={searchQuery}
+                                    onChange={(event) => setSearchQuery(event.target.value)}
+                                    autoFocus
+                                />
+                            </div>
+                        </FilterField>
                     </div>
-                </div>
+                }
+            />
 
-                <div className="relative w-full md:w-[400px] group">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground z-10 opacity-60" />
-                    <Input
-                        placeholder="Search Batch Number..."
-                        className="relative pl-12 bg-muted/30 border-border/60 h-14 shadow-inner font-black placeholder:font-bold text-base md:text-lg rounded-2xl focus-visible:ring-primary/20 z-10"
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        autoFocus
-                    />
-                </div>
-            </div>
-
-            <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-8">
-                <motion.div layout className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                    <AnimatePresence mode="popLayout">
-                        {!selectedBranchId ? (
-                            <motion.div key="empty-branch" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="col-span-full py-32 flex flex-col items-center justify-center text-muted-foreground/40">
-                                <Building2 className="w-20 h-20 mb-4" />
-                                <h3 className="font-black uppercase tracking-widest text-lg">Select Branch</h3>
-                            </motion.div>
-                        ) : loading ? (
-                            <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="col-span-full py-32 flex flex-col items-center justify-center text-primary">
-                                <Loader2 className="w-12 h-12 animate-spin mb-4" />
-                                <h3 className="font-black uppercase tracking-widest text-sm">Loading Batches...</h3>
-                            </motion.div>
-                        ) : batches.length === 0 ? (
-                            <motion.div key="empty-list" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="col-span-full py-32 flex flex-col items-center justify-center text-muted-foreground/40">
-                                <ScanLine className="w-20 h-20 mb-4" />
-                                <h3 className="font-black uppercase tracking-widest text-lg">No Picking Batches</h3>
-                                <p className="text-xs font-medium text-muted-foreground/60 mt-2">Batches in Picking status will appear here.</p>
-                            </motion.div>
-                        ) : (
-                            batches.map((batch) => {
+            <ConsolidationSection eyebrow="Active Work" title="Batches In Picking">
+                {!selectedBranchId ? (
+                    <ConsolidationEmptyState icon={Building2} title="Select Branch" description="Choose a branch to view its picking queue." />
+                ) : loading ? (
+                    <div className="grid gap-4 p-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 md:p-7" aria-label="Loading picking batches">
+                        {Array.from({ length: 8 }, (_, index) => <Skeleton key={index} className="h-48 rounded-2xl" />)}
+                    </div>
+                ) : batches.length === 0 ? (
+                    <ConsolidationEmptyState icon={ScanLine} title="No Picking Batches" description="Batches in Picking status will appear here." />
+                ) : (
+                    <div className="grid gap-4 p-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 md:p-7">
+                        {batches.map((batch) => {
                                 const pct = progressPct(batch);
                                 const picked = pickedTotal(batch);
                                 const ordered = orderedTotal(batch);
                                 return (
-                                    <motion.div
+                                    <button
+                                        type="button"
                                         key={batch.id}
-                                        layout
-                                        initial={{ opacity: 0, y: 20 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        exit={{ opacity: 0, scale: 0.95 }}
                                         onClick={() => handleBatchClick(batch)}
-                                        className="bg-card border border-border/60 hover:border-primary/40 rounded-2xl p-5 shadow-sm hover:shadow-lg transition-all cursor-pointer group"
+                                        className="group rounded-2xl border border-border/60 bg-card p-5 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-blue-500/40 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/30"
                                     >
                                         <div className="flex items-start justify-between mb-4">
                                             <div className="min-w-0 flex-1">
@@ -146,9 +142,7 @@ export default function PickingQueueModule() {
                                                     {batch.branchName || `Branch #${batch.branchId}`}
                                                 </p>
                                             </div>
-                                            <span className="text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full border bg-blue-500/10 border-blue-500/20 text-blue-500 shrink-0 ml-2">
-                                                Picking
-                                            </span>
+                                            <ConsolidationStatusBadge status="Picking" />
                                         </div>
 
                                         <div className="space-y-2">
@@ -157,12 +151,7 @@ export default function PickingQueueModule() {
                                                 <span className="text-xs font-black tabular-nums">{picked}/{ordered}</span>
                                             </div>
                                             <div className="h-2 bg-muted rounded-full overflow-hidden">
-                                                <motion.div
-                                                    className="h-full bg-primary rounded-full"
-                                                    initial={{ width: 0 }}
-                                                    animate={{ width: `${pct}%` }}
-                                                    transition={{ ease: "circOut", duration: 0.8 }}
-                                                />
+                                                <div className="h-full rounded-full bg-blue-500 transition-[width] duration-700" style={{ width: `${pct}%` }} />
                                             </div>
                                         </div>
 
@@ -170,17 +159,16 @@ export default function PickingQueueModule() {
                                             <span className="text-[10px] font-bold text-muted-foreground">
                                                 {batch.invoices?.length || 0} invoice(s)
                                             </span>
-                                            <span className="text-[9px] font-black text-primary uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <span className="text-[9px] font-black uppercase tracking-widest text-blue-600 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
                                                 Open &rarr;
                                             </span>
                                         </div>
-                                    </motion.div>
+                                    </button>
                                 );
-                            })
-                        )}
-                    </AnimatePresence>
-                </motion.div>
-            </div>
-        </div>
+                        })}
+                    </div>
+                )}
+            </ConsolidationSection>
+        </ConsolidationShell>
     );
 }

@@ -8,8 +8,8 @@ import {
     ShieldCheck, RefreshCcw
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
+import { ConsolidationShell, ConsolidationStatusBadge } from "../shared/consolidation-ui";
 import { InvoiceConsolidation } from "../../invoice-consolidation/types";
 import {
     fetchConsolidationByNo,
@@ -108,54 +108,48 @@ export default function AuditWorkspaceModule({ batchNo }: AuditWorkspaceModulePr
     }
 
     return (
-        <div className="flex-1 flex flex-col min-h-0">
-            <header className="shrink-0 bg-card border-b px-6 py-4 flex items-center justify-between shadow-sm">
+        <ConsolidationShell className="flex-1 overflow-y-auto pb-28">
+            <header className="overflow-hidden rounded-3xl border border-border/60 bg-card shadow-sm">
+                <div className="flex flex-col gap-6 p-5 lg:flex-row lg:items-center lg:justify-between lg:p-7">
                 <div className="flex items-center gap-4">
                     <Button
                         variant="outline"
                         size="icon"
                         onClick={() => router.push("/mm/consolidation/auditing")}
-                        className="h-10 w-10 rounded-xl"
+                        className="h-11 w-11 shrink-0 rounded-2xl"
                         disabled={submitting}
                         suppressHydrationWarning
                     >
                         <ArrowLeft className="h-5 w-5" />
                     </Button>
                     <div>
-                        <div className="flex items-center gap-3">
-                            <h1 className="text-xl font-black uppercase italic tracking-tighter">
+                        <p className="text-[10px] font-black uppercase tracking-[0.28em] text-violet-600">Audit Workspace</p>
+                        <div className="mt-1 flex flex-wrap items-center gap-3">
+                            <h1 className="text-2xl font-black uppercase italic tracking-tighter md:text-4xl">
                                 {consolidation.consolidatorNo}
                             </h1>
-                            <Badge variant="outline" className="bg-purple-500/10 text-purple-500 border-purple-500/20 font-black tracking-widest text-[9px]">
-                                Picked
-                            </Badge>
+                            <ConsolidationStatusBadge status="Picked" />
                         </div>
                         <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mt-0.5">
                             {consolidation.branchName || `Branch #${consolidation.branchId}`}
                         </p>
                     </div>
                 </div>
-                <div className="flex items-center gap-6">
-                    <div className="text-right">
-                        <div className="text-2xl font-black leading-none text-blue-500">
+                <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-2xl bg-muted/45 px-4 py-3 text-right">
+                        <div className="text-2xl font-black leading-none text-emerald-600 tabular-nums">
                             {auditedCount} <span className="text-sm text-muted-foreground/50">/ {totalItems}</span>
                         </div>
                         <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest mt-0.5">Audited SKUs</p>
                     </div>
+                    <div className="rounded-2xl bg-muted/45 px-4 py-3 text-right"><div className="text-2xl font-black leading-none tabular-nums">{progressPercent.toFixed(0)}%</div><p className="mt-0.5 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Progress</p></div>
                 </div>
+                </div>
+                <div className="h-3 overflow-hidden rounded-full bg-muted shadow-inner"><motion.div className="h-full rounded-full bg-emerald-500" initial={{ width: 0 }} animate={{ width: `${progressPercent}%` }} transition={{ ease: "circOut", duration: 0.5 }} /></div>
             </header>
 
-            <div className="h-2 bg-muted shrink-0">
-                <motion.div
-                    className="h-full bg-blue-500"
-                    initial={{ width: 0 }}
-                    animate={{ width: `${progressPercent}%` }}
-                    transition={{ ease: "circOut", duration: 0.5 }}
-                />
-            </div>
-
-            <div className="flex-1 min-h-0 overflow-y-auto p-6">
-                <div className="max-w-4xl mx-auto space-y-3">
+            <section className="overflow-hidden rounded-3xl border border-border/60 bg-card shadow-sm">
+                <div className="mx-auto space-y-3 p-4 md:p-6">
                     <div className="flex items-center justify-between mb-4">
                         <h2 className="text-xs font-bold text-muted-foreground uppercase tracking-wide">
                             Products to Verify ({totalItems})
@@ -172,13 +166,13 @@ export default function AuditWorkspaceModule({ batchNo }: AuditWorkspaceModulePr
                             <div
                                 key={d.id}
                                 onClick={() => handleToggleAudit(d.id)}
-                                className={`border rounded-xl p-4 transition-all cursor-pointer ${
+                                className={`rounded-2xl border p-4 transition-all cursor-pointer ${
                                     isAudited
                                         ? "bg-emerald-500/5 border-emerald-500/30"
                                         : "bg-card border-border hover:border-blue-500/30 hover:shadow-sm"
                                 }`}
                             >
-                                <div className="flex items-center justify-between gap-4">
+                                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                                     <div className="flex-1 min-w-0">
                                         <h3 className={`text-sm font-bold leading-tight truncate ${isAudited ? "line-through text-muted-foreground" : "text-foreground"}`}>
                                             {d.productName || `Product #${d.productId}`}
@@ -188,7 +182,7 @@ export default function AuditWorkspaceModule({ batchNo }: AuditWorkspaceModulePr
                                         </p>
                                     </div>
 
-                                    <div className="flex items-center gap-5 shrink-0">
+                                    <div className="flex items-center justify-between gap-5 sm:shrink-0 sm:justify-start">
                                         <div className="text-right">
                                             <p className="text-[9px] font-bold text-muted-foreground uppercase">Ordered</p>
                                             <p className="text-sm font-black text-foreground">{d.orderedQuantity}</p>
@@ -218,9 +212,9 @@ export default function AuditWorkspaceModule({ batchNo }: AuditWorkspaceModulePr
                         );
                     })}
                 </div>
-            </div>
+            </section>
 
-            <footer className="shrink-0 bg-card border-t px-6 py-4 flex items-center justify-between shadow-sm">
+            <footer className="fixed inset-x-4 bottom-4 z-40 mx-auto flex max-w-[1544px] flex-col gap-3 rounded-2xl border border-border/70 bg-card/95 px-4 py-3 shadow-lg backdrop-blur sm:flex-row sm:items-center sm:justify-between md:inset-x-8">
                 <div className="flex items-center gap-4 text-xs text-muted-foreground">
                     <span>
                         Verified: <strong className={isComplete ? "text-emerald-500" : "text-foreground"}>{auditedCount}/{totalItems}</strong>
@@ -231,12 +225,12 @@ export default function AuditWorkspaceModule({ batchNo }: AuditWorkspaceModulePr
                         </span>
                     )}
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
                     <Button
                         variant="outline"
                         onClick={() => setShowRepickConfirm(true)}
                         disabled={submitting}
-                        className="flex items-center gap-1.5 text-xs font-bold border-destructive/30 text-destructive hover:bg-destructive/5"
+                        className="col-span-2 flex items-center gap-1.5 border-destructive/30 text-xs font-bold text-destructive hover:bg-destructive/5 sm:col-span-1"
                         suppressHydrationWarning
                     >
                         {submitting ? (
@@ -292,21 +286,24 @@ export default function AuditWorkspaceModule({ batchNo }: AuditWorkspaceModulePr
                             </p>
                         </div>
                         <div className="flex items-center justify-end gap-2 pt-2">
-                            <button
+                            <Button
+                                variant="outline"
+                                size="sm"
                                 onClick={() => setShowRepickConfirm(false)}
-                                className="px-3.5 py-1.5 text-xs font-bold bg-muted hover:bg-muted/80 rounded-lg transition-colors cursor-pointer"
+                                className="text-xs font-bold"
                                 suppressHydrationWarning
                             >
                                 Cancel
-                            </button>
-                            <button
+                            </Button>
+                            <Button
+                                size="sm"
                                 onClick={handleRepick}
                                 disabled={submitting}
-                                className="px-3.5 py-1.5 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                                className="bg-amber-600 text-xs font-bold text-white hover:bg-amber-700"
                                 suppressHydrationWarning
                             >
                                 {submitting ? "Processing..." : "Confirm Re-pick"}
-                            </button>
+                            </Button>
                         </div>
                     </div>
                 </div>
@@ -326,34 +323,29 @@ export default function AuditWorkspaceModule({ batchNo }: AuditWorkspaceModulePr
                                 </p>
                             </div>
                         </div>
-                        {details.some((d) => d.orderedQuantity > d.pickedQuantity) && (
-                            <div className="flex items-start gap-2 p-3 bg-amber-500/5 border border-amber-500/20 rounded-xl">
-                                <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
-                                <p className="text-[10px] font-medium text-amber-600">
-                                    Some products have shortages. These will be applied with the picked quantity.
-                                </p>
-                            </div>
-                        )}
                         <div className="flex items-center justify-end gap-2 pt-2">
-                            <button
+                            <Button
+                                variant="outline"
+                                size="sm"
                                 onClick={() => setShowConfirm(false)}
-                                className="px-3.5 py-1.5 text-xs font-bold bg-muted hover:bg-muted/80 rounded-lg transition-colors cursor-pointer"
+                                className="text-xs font-bold"
                                 suppressHydrationWarning
                             >
                                 Cancel
-                            </button>
-                            <button
+                            </Button>
+                            <Button
+                                size="sm"
                                 onClick={handleFinalize}
                                 disabled={submitting}
-                                className="px-3.5 py-1.5 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                                className="bg-emerald-600 text-xs font-bold text-white hover:bg-emerald-700"
                                 suppressHydrationWarning
                             >
                                 {submitting ? "Processing..." : "Confirm Audit"}
-                            </button>
+                            </Button>
                         </div>
                     </div>
                 </div>
             )}
-        </div>
+        </ConsolidationShell>
     );
 }

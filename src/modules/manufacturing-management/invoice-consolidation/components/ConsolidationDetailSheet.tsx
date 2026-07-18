@@ -27,6 +27,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { InvoiceConsolidation } from "../types";
 import { generateConsolidationPDF } from "../utils/ConsolidationSummaryPrint";
 import { fetchAllocations, type LotAllocation } from "../services/invoice-consolidation-api";
+import { ConsolidationStatusBadge } from "../../consolidation/shared/consolidation-ui";
 
 type DetailAction = "revert" | "audit" | "start-picking";
 
@@ -117,13 +118,13 @@ export default function ConsolidationDetailSheet({ consolidation, submitting, on
 
     return (
         <Sheet open onOpenChange={(open) => !open && onClose()}>
-            <SheetContent className="flex w-full flex-col overflow-hidden rounded-l-[2rem] bg-background p-0 sm:max-w-2xl">
-                <div className="shrink-0 border-b border-border/50 bg-muted/10 p-5 lg:p-6">
+            <SheetContent className="flex w-full flex-col overflow-hidden bg-background p-0 sm:max-w-2xl sm:rounded-l-3xl">
+                <div className="shrink-0 border-b border-border/60 bg-card p-5 lg:p-7">
                     <SheetHeader className="space-y-3 text-left">
                         <div className="flex items-start justify-between gap-3 pr-6">
                             <div className="min-w-0 space-y-1">
                                 <div className="flex flex-wrap items-center gap-2">
-                                    <Badge className="border-none bg-primary/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-primary">Vertex Terminal</Badge>
+                                    <Badge className="border-none bg-primary/10 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-primary">Batch Details</Badge>
                                     <Badge variant="outline" className="text-[9px] font-black uppercase tracking-widest">
                                         <Building2 className="mr-1 h-2.5 w-2.5" />
                                         {consolidation.branchName}
@@ -137,7 +138,7 @@ export default function ConsolidationDetailSheet({ consolidation, submitting, on
                                     {consolidation.consolidatorNo}
                                 </SheetTitle>
                             </div>
-                            <StatusBadge status={consolidation.status} />
+                            <ConsolidationStatusBadge status={consolidation.status} />
                         </div>
                         <div className="flex flex-wrap items-center gap-2 pt-1">
                             <MiniStat label="Products" value={consolidation.details.length} icon={<Box className="text-blue-500" />} />
@@ -149,14 +150,14 @@ export default function ConsolidationDetailSheet({ consolidation, submitting, on
                 </div>
 
                 <Tabs defaultValue="products" className="flex min-h-0 flex-1 flex-col">
-                    <div className="flex shrink-0 items-center justify-between gap-4 border-b border-border/40 bg-card/30 px-5 py-3 backdrop-blur-md">
+                    <div className="flex shrink-0 flex-col gap-3 border-b border-border/60 bg-card px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
                         <TabsList className="h-9 rounded-xl border border-border/20 bg-muted/30 p-1">
                             <TabsTrigger value="products" className="px-4 text-[10px] font-black uppercase tracking-widest">Picking List</TabsTrigger>
                             <TabsTrigger value="invoices" className="px-4 text-[10px] font-black uppercase tracking-widest">Invoices</TabsTrigger>
                         </TabsList>
-                        <div className="relative max-w-[180px] flex-1">
+                        <div className="relative w-full sm:max-w-[220px] sm:flex-1">
                             <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/50" />
-                            <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Filter product..." className="h-8 rounded-lg border-none bg-muted/20 pl-8 text-[11px] font-bold" />
+                            <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Filter products..." className="h-9 rounded-xl pl-8 text-xs" />
                         </div>
                     </div>
 
@@ -170,7 +171,7 @@ export default function ConsolidationDetailSheet({ consolidation, submitting, on
                                 const itemProgress = detail.orderedQuantity > 0 ? (detail.pickedQuantity / detail.orderedQuantity) * 100 : 0;
                                 const shortage = detail.pickedQuantity < detail.orderedQuantity && consolidation.status !== "Pending";
                                 return (
-                                    <div key={detail.id} className={`group relative flex items-center justify-between gap-4 overflow-hidden rounded-xl border px-4 py-3 ${shortage ? "border-amber-500/30 bg-amber-500/5" : "border-border/40 bg-card/40"}`}>
+                                    <div key={detail.id} className={`group relative flex flex-col gap-3 overflow-hidden rounded-2xl border px-4 py-3 sm:flex-row sm:items-center sm:justify-between ${shortage ? "border-amber-500/30 bg-amber-500/5" : "border-border/60 bg-card"}`}>
                                         {shortage && <div className="absolute inset-y-0 left-0 w-1 bg-amber-500" />}
                                         <div className="min-w-0 flex-1">
                                             <h4 className="truncate text-[11px] font-black uppercase tracking-tight text-foreground/90">{detail.productName}</h4>
@@ -215,7 +216,7 @@ export default function ConsolidationDetailSheet({ consolidation, submitting, on
                                 </div>
                             ) : (
                                 allocations.map((allocation) => (
-                                    <div key={`${allocation.productId}-${allocation.lotId}-${allocation.batchNo}`} className="rounded-xl border border-border/40 bg-card/40 px-4 py-3">
+                                    <div key={`${allocation.productId}-${allocation.lotId}-${allocation.batchNo}`} className="rounded-2xl border border-border/60 bg-card px-4 py-3">
                                         <div className="flex items-start justify-between gap-4">
                                             <div className="min-w-0">
                                                 <p className="truncate text-[11px] font-black uppercase tracking-tight text-foreground/90">{allocation.productName}</p>
@@ -239,7 +240,7 @@ export default function ConsolidationDetailSheet({ consolidation, submitting, on
                             {consolidation.invoices.map((invoice) => {
                                 const expanded = expandedInvoiceId === invoice.id;
                                 return (
-                                    <div key={invoice.id} className="overflow-hidden rounded-xl border border-border/40 bg-card/40">
+                                    <div key={invoice.id} className="overflow-hidden rounded-2xl border border-border/60 bg-card">
                                         <button type="button" onClick={() => setExpandedInvoiceId(expanded ? null : invoice.id)} className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left">
                                             <div className="min-w-0"><p className="truncate font-mono text-xs font-black">{invoice.invoiceNo}</p><p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground">Invoice ID #{invoice.invoiceId}</p></div>
                                             <div className="flex items-center gap-2"><Badge variant="outline" className="text-[9px]">{invoice.products?.length ?? 0} Products</Badge>{expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}</div>
@@ -252,22 +253,16 @@ export default function ConsolidationDetailSheet({ consolidation, submitting, on
                     </div>
                 </Tabs>
 
-                <div className="z-30 flex shrink-0 items-center gap-3 border-t border-border/50 bg-card/50 p-6">
+                <div className="z-30 grid shrink-0 grid-cols-1 gap-3 border-t border-border/60 bg-card p-4 sm:grid-cols-2 sm:p-6">
                     <Button variant="outline" onClick={() => handlePrint(consolidation).catch((error: Error) => toast.error(error.message))} className="h-12 flex-1 rounded-xl text-[10px] font-black uppercase tracking-widest" title="Print Summary"><Printer className="mr-2 h-4 w-4" />Print</Button>
                     {consolidation.status === "Pending" && <Button disabled={submitting} onClick={() => onRequestAction("start-picking", consolidation.id)} className="h-12 flex-1 rounded-xl text-[10px] font-black uppercase tracking-widest"><Play className="mr-2 h-4 w-4" />Initialize Picking</Button>}
                     {consolidation.status === "Picking" && <Button asChild className="h-12 flex-1 rounded-xl bg-blue-600 text-[10px] font-black uppercase tracking-widest hover:bg-blue-700"><Link href={`/mm/consolidation/picking/${encodeURIComponent(consolidation.consolidatorNo)}`}><Play className="mr-2 h-4 w-4" />Picking Active</Link></Button>}
-                    {consolidation.status === "Picked" && <Button disabled={submitting} onClick={() => onRequestAction("audit", consolidation.id)} className="h-12 flex-1 rounded-xl bg-emerald-600 text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700"><ShieldCheck className="mr-2 h-4 w-4" />Verify Batch</Button>}
+                    {consolidation.status === "Picked" && <Button disabled={submitting} onClick={() => onRequestAction("audit", consolidation.id)} className="h-12 flex-1 rounded-xl bg-violet-600 text-[10px] font-black uppercase tracking-widest hover:bg-violet-700"><ShieldCheck className="mr-2 h-4 w-4" />Verify Batch</Button>}
                 </div>
             </SheetContent>
         </Sheet>
     );
 }
-
 function MiniStat({ label, value, icon }: { label: string; value: string | number; icon: React.ReactNode }) {
     return <div className="flex items-center gap-1.5 rounded-lg border border-border/40 bg-background/50 px-2.5 py-1.5 shadow-sm"><span className="flex h-3.5 w-3.5 items-center justify-center">{icon}</span><strong className="text-xs">{value}</strong><span className="text-[8px] font-black uppercase tracking-tighter text-muted-foreground">{label}</span></div>;
-}
-
-function StatusBadge({ status }: { status: string }) {
-    const styles: Record<string, string> = { Pending: "bg-amber-500/10 text-amber-600", Picking: "bg-blue-500/10 text-blue-600", Picked: "bg-emerald-500/10 text-emerald-600", Audited: "bg-purple-500/10 text-purple-600" };
-    return <Badge className={`border-none px-2 py-1 text-[9px] font-black uppercase tracking-widest ${styles[status] ?? ""}`}>{status}</Badge>;
 }
