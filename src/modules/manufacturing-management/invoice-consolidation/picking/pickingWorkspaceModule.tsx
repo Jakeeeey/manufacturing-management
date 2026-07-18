@@ -11,6 +11,10 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import {
+    ConsolidationShell,
+    ConsolidationStatusBadge,
+} from "../../consolidation/shared/consolidation-ui";
 
 interface PickingWorkspaceModuleProps {
     batchNo: string;
@@ -73,12 +77,12 @@ export default function PickingWorkspaceModule({ batchNo }: PickingWorkspaceModu
 
     const {
         localItems, hasChanges, editingDetailId, editValue,
-        showCompleteConfirm, showCloseConfirm, saving,
-        totals, shortProducts, validationErrors,
+        showCloseConfirm, saving,
+        totals, validationErrors,
         stockReady, stockChecking, stockError, completionBlocked,
-        setEditValue, setShowCompleteConfirm, setShowCloseConfirm,
+        setEditValue, setShowCloseConfirm,
         increment, decrement, startEdit, commitEdit, cancelEdit,
-        handleSave, handleComplete, handleConfirmShortComplete,
+        handleSave, handleComplete,
     } = usePickingModal(consolidation, submitting, handleSaveQuantities, handleCompletePicking, handleClose);
 
     const focusNextRow = useCallback((currentDetailId: number) => {
@@ -132,62 +136,59 @@ export default function PickingWorkspaceModule({ batchNo }: PickingWorkspaceModu
     }
 
     return (
-        <div className="flex-1 flex flex-col min-h-0">
-            {/* Header */}
-            <header className="shrink-0 bg-card border-b px-6 py-4 flex items-center justify-between shadow-sm">
+        <ConsolidationShell className="flex-1 overflow-y-auto pb-28">
+            <header className="overflow-hidden rounded-3xl border border-border/60 bg-card shadow-sm">
+                <div className="flex flex-col gap-6 p-5 lg:flex-row lg:items-center lg:justify-between lg:p-7">
                 <div className="flex items-center gap-4">
                     <Button
                         variant="outline"
                         size="icon"
                         onClick={handleClose}
-                        className="h-10 w-10 rounded-xl"
+                        className="h-11 w-11 shrink-0 rounded-2xl"
                         disabled={saving || submitting}
                         suppressHydrationWarning
                     >
                         <ArrowLeft className="h-5 w-5" />
                     </Button>
                     <div>
-                        <div className="flex items-center gap-3">
-                            <h1 className="text-xl font-black uppercase italic tracking-tighter">
+                        <p className="text-[10px] font-black uppercase tracking-[0.28em] text-blue-600">Picking Workspace</p>
+                        <div className="mt-1 flex flex-wrap items-center gap-3">
+                            <h1 className="text-2xl font-black uppercase italic tracking-tighter md:text-4xl">
                                 {consolidation.consolidatorNo}
                             </h1>
-                            <span className="text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full border bg-blue-500/10 border-blue-500/20 text-blue-500">
-                                Picking
-                            </span>
+                            <ConsolidationStatusBadge status="Picking" />
                         </div>
                         <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mt-0.5">
                             {consolidation.branchName || `Branch #${consolidation.branchId}`}
                         </p>
                     </div>
                 </div>
-                <div className="flex items-center gap-6">
-                    <div className="text-right">
-                        <div className="text-2xl font-black leading-none text-primary">
+                <div className="grid grid-cols-3 gap-2 sm:gap-3">
+                    <div className="rounded-2xl bg-muted/45 px-4 py-3 text-right">
+                        <div className="text-2xl font-black leading-none text-blue-600 tabular-nums">
                             {totals.picked} <span className="text-sm text-muted-foreground/50">/ {totals.ordered}</span>
                         </div>
                         <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest mt-0.5">Items Picked</p>
                     </div>
-                    <div className="text-right">
-                        <div className="text-2xl font-black leading-none text-amber-500">
+                    <div className="rounded-2xl bg-muted/45 px-4 py-3 text-right">
+                        <div className="text-2xl font-black leading-none tabular-nums">
                             {totals.short}
                         </div>
-                        <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest mt-0.5">Short</p>
+                        <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest mt-0.5">Remaining</p>
                     </div>
+                    <div className="rounded-2xl bg-muted/45 px-4 py-3 text-right">
+                        <div className="text-2xl font-black leading-none tabular-nums">{totals.pct.toFixed(0)}%</div>
+                        <p className="mt-0.5 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Progress</p>
+                    </div>
+                </div>
+                </div>
+                <div className="h-3 overflow-hidden rounded-full bg-muted shadow-inner">
+                    <motion.div className="h-full rounded-full bg-blue-500" initial={{ width: 0 }} animate={{ width: `${totals.pct}%` }} transition={{ ease: "circOut", duration: 0.5 }} />
                 </div>
             </header>
 
-            {/* Progress bar */}
-            <div className="h-2 bg-muted shrink-0">
-                <motion.div
-                    className="h-full bg-primary"
-                    initial={{ width: 0 }}
-                    animate={{ width: `${totals.pct}%` }}
-                    transition={{ ease: "circOut", duration: 0.5 }}
-                />
-            </div>
-
             {/* Keyboard legend */}
-            <div className="shrink-0 flex items-center gap-3 border-b border-border/30 bg-card/40 px-6 py-2 text-[9px] font-bold uppercase tracking-wider text-muted-foreground">
+            <div className="hidden flex-wrap items-center gap-3 rounded-2xl border border-border/60 bg-card/70 px-5 py-3 text-[9px] font-bold uppercase tracking-wider text-muted-foreground md:flex">
                 <kbd className="rounded border border-border/40 bg-background px-1.5 py-0.5 font-mono text-[9px] font-black text-foreground">Tab</kbd>
                 <span>Next product</span>
                 <span className="text-muted-foreground/30">|</span>
@@ -229,8 +230,8 @@ export default function PickingWorkspaceModule({ batchNo }: PickingWorkspaceModu
             </div>
 
             {/* Product list */}
-            <div className="flex-1 min-h-0 overflow-y-auto p-6">
-                <div className="max-w-4xl mx-auto space-y-2">
+            <section className="overflow-hidden rounded-3xl border border-border/60 bg-card shadow-sm">
+                <div className="mx-auto space-y-3 p-4 md:p-6">
                     <div className="flex items-center justify-between mb-4">
                         <h2 className="text-xs font-bold text-muted-foreground uppercase tracking-wide">
                             Products ({localItems.length})
@@ -260,7 +261,7 @@ export default function PickingWorkspaceModule({ batchNo }: PickingWorkspaceModu
                                         setTimeout(() => document.getElementById(inputId)?.focus(), 0);
                                     }
                                 }}
-                                className={`border rounded-xl p-4 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
+                                className={`rounded-2xl border p-4 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 ${
                                     isEditing ? "ring-2 ring-primary/30" : ""
                                 } ${
                                     hasStockError
@@ -270,7 +271,7 @@ export default function PickingWorkspaceModule({ batchNo }: PickingWorkspaceModu
                                         : "bg-card border-border hover:border-primary/30"
                                 }`}
                             >
-                                <div className="flex items-center justify-between gap-4">
+                                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                                     <div className="flex-1 min-w-0">
                                         <h3 className={`text-sm font-bold leading-tight truncate ${isComplete ? "line-through text-muted-foreground" : "text-foreground"}`}>
                                             {item.productName || `Product #${item.productId}`}
@@ -286,7 +287,7 @@ export default function PickingWorkspaceModule({ batchNo }: PickingWorkspaceModu
                                         )}
                                     </div>
 
-                                    <div className="flex items-center gap-3 shrink-0">
+                                    <div className="grid grid-cols-[auto_1fr_auto_auto] items-end gap-3 sm:flex sm:shrink-0 sm:items-center">
                                         <div className="text-right">
                                             <p className="text-[9px] font-bold text-muted-foreground uppercase">Ordered</p>
                                             <p className="text-sm font-black text-foreground">{item.orderedQuantity}</p>
@@ -385,10 +386,10 @@ export default function PickingWorkspaceModule({ batchNo }: PickingWorkspaceModu
                         );
                     })}
                 </div>
-            </div>
+            </section>
 
             {/* Footer */}
-            <footer className="shrink-0 bg-card border-t px-6 py-4 flex items-center justify-between shadow-sm">
+            <footer className="fixed inset-x-4 bottom-4 z-40 mx-auto flex max-w-[1544px] flex-col gap-3 rounded-2xl border border-border/70 bg-card/95 px-4 py-3 shadow-lg backdrop-blur sm:flex-row sm:items-center sm:justify-between md:inset-x-8">
                 <div className="flex items-center gap-4 text-xs text-muted-foreground">
                     <span>
                         Progress: <strong className="text-foreground">{totals.pct.toFixed(0)}%</strong>
@@ -397,7 +398,7 @@ export default function PickingWorkspaceModule({ batchNo }: PickingWorkspaceModu
                         Short: <strong className={totals.short > 0 ? "text-amber-500" : "text-foreground"}>{totals.short}</strong>
                     </span>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
                     <Button
                         id="picking-save-btn"
                         variant="outline"
@@ -415,8 +416,8 @@ export default function PickingWorkspaceModule({ batchNo }: PickingWorkspaceModu
                     </Button>
                     <Button
                         onClick={handleComplete}
-                        disabled={saving || submitting || completionBlocked}
-                        className="flex items-center gap-1.5 text-xs font-bold bg-purple-600 hover:bg-purple-700 text-white disabled:opacity-40"
+                        disabled={saving || submitting || completionBlocked || totals.short > 0}
+                        className="flex items-center gap-1.5 bg-violet-600 text-xs font-bold text-white hover:bg-violet-700 disabled:opacity-40"
                         suppressHydrationWarning
                     >
                         {saving || stockChecking ? (
@@ -428,64 +429,6 @@ export default function PickingWorkspaceModule({ batchNo }: PickingWorkspaceModu
                     </Button>
                 </div>
             </footer>
-
-            {/* Partial picking confirmation */}
-            <AnimatePresence>
-                {showCompleteConfirm && (
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm"
-                    >
-                        <motion.div
-                            initial={{ scale: 0.95, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            exit={{ scale: 0.95, opacity: 0 }}
-                            className="bg-card border rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4"
-                        >
-                            <div className="flex items-center gap-3">
-                                <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-500">
-                                    <AlertTriangle className="h-5 w-5" />
-                                </div>
-                                <div>
-                                    <h3 className="text-sm font-bold text-foreground">Complete with Short Items?</h3>
-                                    <p className="text-[11px] text-muted-foreground mt-0.5">
-                                        {shortProducts.length} product(s) with {totals.short} total missing unit(s) will be marked as short-picked.
-                                    </p>
-                                </div>
-                            </div>
-                            <div className="max-h-24 overflow-y-auto space-y-1">
-                                {shortProducts.map((sp) => (
-                                    <div key={sp.detailId} className="flex items-center justify-between text-[10px] bg-muted/20 rounded px-2 py-1">
-                                        <span className="font-medium text-foreground truncate">{sp.productName}</span>
-                                        <span className="font-bold text-amber-500 shrink-0 ml-2">
-                                            {sp.orderedQuantity - sp.pickedQuantity} short
-                                        </span>
-                                    </div>
-                                ))}
-                            </div>
-                            <div className="flex items-center justify-end gap-2 pt-2">
-                                <button
-                                    onClick={() => setShowCompleteConfirm(false)}
-                                    className="px-3.5 py-1.5 text-xs font-bold bg-muted hover:bg-muted/80 rounded-lg transition-colors cursor-pointer"
-                                    suppressHydrationWarning
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={handleConfirmShortComplete}
-                                    disabled={saving || completionBlocked}
-                                    className="px-3.5 py-1.5 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors cursor-pointer disabled:opacity-50"
-                                    suppressHydrationWarning
-                                >
-                                    Confirm Complete
-                                </button>
-                            </div>
-                        </motion.div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
 
             {/* Close confirmation */}
             <AnimatePresence>
@@ -514,25 +457,29 @@ export default function PickingWorkspaceModule({ batchNo }: PickingWorkspaceModu
                                 </div>
                             </div>
                             <div className="flex items-center justify-end gap-2 pt-2">
-                                <button
+                                <Button
+                                    variant="outline"
+                                    size="sm"
                                     onClick={() => setShowCloseConfirm(false)}
-                                    className="px-3.5 py-1.5 text-xs font-bold bg-muted hover:bg-muted/80 rounded-lg transition-colors cursor-pointer"
+                                    className="text-xs font-bold"
                                     suppressHydrationWarning
                                 >
                                     Continue Editing
-                                </button>
-                                <button
+                                </Button>
+                                <Button
+                                    variant="destructive"
+                                    size="sm"
                                     onClick={handleClose}
-                                    className="px-3.5 py-1.5 text-xs font-bold bg-destructive hover:bg-destructive/90 text-destructive-foreground rounded-lg transition-colors cursor-pointer"
+                                    className="text-xs font-bold"
                                     suppressHydrationWarning
                                 >
                                     Discard & Close
-                                </button>
+                                </Button>
                             </div>
                         </motion.div>
                     </motion.div>
                 )}
             </AnimatePresence>
-        </div>
+        </ConsolidationShell>
     );
 }
