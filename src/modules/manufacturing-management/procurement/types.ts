@@ -29,6 +29,7 @@ export interface Supplier {
     delivery_terms?: string;
     notes_or_comments?: string;
     isActive?: number;
+    nonBuy?: boolean | number;
     representatives?: SupplierRepresentative[];
 }
 
@@ -162,6 +163,7 @@ export interface DirectusSupplier {
     supplier_name: string;
     supplier_shortcut?: string | null;
     isActive?: boolean;
+    nonBuy?: boolean | number;
 }
 
 export interface DirectusShipment {
