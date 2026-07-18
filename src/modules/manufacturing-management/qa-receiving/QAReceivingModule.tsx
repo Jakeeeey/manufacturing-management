@@ -41,6 +41,7 @@ export default function QAReceivingModule() {
         handleFinishCommitted,
         validatingInspection,
         qaSubmissionBlockReason,
+        receivingValidationIssues,
         handleSelectShipment,
         handleUpdateRow,
         handleUpdateAllocations,
@@ -167,6 +168,7 @@ export default function QAReceivingModule() {
                                 previewAcknowledged={previewAcknowledged}
                                 validatingInspection={validatingInspection}
                                 qaSubmissionBlockReason={qaSubmissionBlockReason}
+                                receivingValidationIssues={receivingValidationIssues}
                                 loadingLines={loadingLines}
                                 handleUpdateRow={handleUpdateRow}
                                 handleUpdateAllocations={handleUpdateAllocations}

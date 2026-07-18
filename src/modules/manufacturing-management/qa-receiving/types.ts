@@ -27,6 +27,7 @@ export interface Shipment {
     status: string;
     total_php_value: string;
     created_at: string;
+    inventory_status?: number | null;
     supplier_id: unknown;
     date_received: string;
     branch_id?: number | null;
