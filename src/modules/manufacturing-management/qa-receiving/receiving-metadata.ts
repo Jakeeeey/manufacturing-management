@@ -1,4 +1,5 @@
 export interface ReceivingMetadataLine {
+    lineId: number;
     productName: string;
     isPackaging: boolean;
     receivedQuantity: number;
@@ -8,32 +9,50 @@ export interface ReceivingMetadataLine {
     expirationDate: string;
 }
 
+export interface ReceivingValidationIssue {
+    field: string;
+    lineId?: number;
+    productName?: string;
+    message: string;
+}
+
 export function validateReceivingMetadata(
     receiptNumber: string,
     branchId: string,
     lines: ReceivingMetadataLine[]
-): string | null {
+): ReceivingValidationIssue[] {
+    const issues: ReceivingValidationIssue[] = [];
     const normalizedReceiptNumber = receiptNumber.trim();
-    if (!normalizedReceiptNumber) return "Please enter the Receiving Ticket / DR Number.";
-    if (normalizedReceiptNumber.length > 50) return "Receiving Ticket / DR Number cannot exceed 50 characters.";
-    if (!Number.isInteger(Number(branchId)) || Number(branchId) <= 0) return "Please select a receiving warehouse branch.";
+    if (!normalizedReceiptNumber) {
+        issues.push({ field: "receiptNumber", message: "Receiving Ticket / DR Number is required." });
+    } else if (normalizedReceiptNumber.length > 50) {
+        issues.push({ field: "receiptNumber", message: "Receiving Ticket / DR Number cannot exceed 50 characters." });
+    }
+    if (!Number.isInteger(Number(branchId)) || Number(branchId) <= 0) {
+        issues.push({ field: "branchId", message: "Receiving Branch is required." });
+    }
 
     for (const line of lines) {
         if (line.receivedQuantity === 0) continue;
-        if (!line.batchNumber.trim()) return `Please enter Supplier Batch Number for: ${line.productName}`;
-        if (line.batchNumber.trim().length > 50) return `Supplier Batch Number cannot exceed 50 characters for: ${line.productName}`;
-        if (!Number.isInteger(Number(line.lotId)) || Number(line.lotId) <= 0) return `Please select a Storage Lot for: ${line.productName}`;
+        if (!line.batchNumber.trim()) {
+            issues.push({ lineId: line.lineId, productName: line.productName, field: "batchNumber", message: `${line.productName}: Supplier Batch Number is required.` });
+        } else if (line.batchNumber.trim().length > 50) {
+            issues.push({ lineId: line.lineId, productName: line.productName, field: "batchNumber", message: `${line.productName}: Supplier Batch Number cannot exceed 50 characters.` });
+        }
+        if (!Number.isInteger(Number(line.lotId)) || Number(line.lotId) <= 0) {
+            issues.push({ lineId: line.lineId, productName: line.productName, field: "storageLot", message: `${line.productName}: Storage Lot allocation is required.` });
+        }
 
         if (!line.isPackaging && !line.manufacturingDate) {
-            return `Manufacturing Date is mandatory for Raw Material: ${line.productName}`;
+            issues.push({ lineId: line.lineId, productName: line.productName, field: "manufacturingDate", message: `${line.productName}: Manufacturing Date is required for raw materials.` });
         }
         if (!line.isPackaging && !line.expirationDate) {
-            return `Expiry Date is mandatory for Raw Material: ${line.productName}`;
+            issues.push({ lineId: line.lineId, productName: line.productName, field: "expirationDate", message: `${line.productName}: Expiry Date is required for raw materials.` });
         }
         if (line.manufacturingDate && line.expirationDate && line.manufacturingDate > line.expirationDate) {
-            return `Manufacturing Date cannot be later than Expiry Date for: ${line.productName}`;
+            issues.push({ lineId: line.lineId, productName: line.productName, field: "expirationDate", message: `${line.productName}: Manufacturing Date cannot be later than Expiry Date.` });
         }
     }
 
-    return null;
+    return issues;
 }

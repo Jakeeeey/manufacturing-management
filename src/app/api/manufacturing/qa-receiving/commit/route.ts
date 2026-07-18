@@ -46,12 +46,16 @@ async function directusRows(path: string, message: string) {
 
 async function assertReceivingStatusOpen(shipmentId: number) {
     const headerRows = await directusRows(
-        `/items/purchase_order/${shipmentId}?fields=purchase_order_id,inventory_status&limit=1`,
+        `/items/purchase_order?filter[purchase_order_id][_eq]=${shipmentId}&fields=purchase_order_id,inventory_status&limit=1`,
         "Unable to verify the current purchase-order status."
     );
     const status = Number(headerRows[0]?.inventory_status);
     if (status === INVENTORY_STATUS.PARTIALLY_RECEIVED) {
         throw new CommitError(409, "Partially received purchase orders are view-only and cannot be received again.");
+    }
+    if (status === INVENTORY_STATUS.RECEIVED) return;
+    if (status !== INVENTORY_STATUS.FOR_PICKUP) {
+        throw new CommitError(409, "The purchase order must be moved to QA (Receiving) before it can be received.");
     }
 }
 
