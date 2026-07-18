@@ -12,9 +12,10 @@ import {
     fetchStorageLots,
     fetchProductQaSpecifications
 } from "../services/qa-api";
-import { isReceivingQueueShipmentStatus, shipmentStatusMatchesFilter } from "@/app/api/manufacturing/procurement/_domain";
-import { validateReceivingMetadata } from "../receiving-metadata";
+import { INVENTORY_STATUS, isReceivingQueueShipmentStatus, shipmentStatusMatchesFilter } from "@/app/api/manufacturing/procurement/_domain";
+import { validateReceivingMetadata, type ReceivingValidationIssue } from "../receiving-metadata";
 import { deriveReceivingDisposition } from "@/app/api/manufacturing/qa/_receiving-evaluation";
+import { evaluateQaReading } from "@/app/api/manufacturing/qa/_purchase-specification-domain";
 
 interface ReceivingCommitContext {
     preview: ReceivingPreview;
@@ -152,6 +153,9 @@ export function useQAReceiving() {
 
     const filteredShipments = useMemo(() => {
         return shipments.filter(s => {
+            // Plant-approved and en-route orders must enter QA through For Pickup.
+            if (!isReceivingQueueShipmentStatus(s.inventory_status ?? s.status) && s.status !== "Received") return false;
+
             // 1. PO# filter (case-insensitive search on reference_number or shipment_id)
             if (searchPO.trim()) {
                 const poMatch = s.reference_number.toLowerCase().includes(searchPO.toLowerCase()) || 
@@ -253,10 +257,10 @@ export function useQAReceiving() {
     };
 
     const handleSelectShipment = async (shipment: Shipment) => {
-        const isReceived = shipment.status === "Received";
+        const isReceived = shipment.status === "Received" || Number(shipment.inventory_status) === INVENTORY_STATUS.RECEIVED;
         const isPartiallyReceived = shipment.status === "Partially Received";
-        if (!isReceivingQueueShipmentStatus(shipment.status) && !isReceived) {
-            toast.error("This purchase order is not eligible for receiving.");
+        if (!isReceivingQueueShipmentStatus(shipment.inventory_status ?? shipment.status) && !isReceived) {
+            toast.error("The purchase order must be moved to QA (Receiving) before it can be received.");
             clearInspection();
             return;
         }
@@ -532,18 +536,11 @@ export function useQAReceiving() {
         return null;
     }, [lineItems, qaSpecificationStates]);
 
-    const handleSubmitInspection = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!selectedShipment || isLockedReceivingShipment(selectedShipment)) {
-            if (selectedShipment?.status === "Partially Received") {
-                toast.error("Partially received purchase orders are view-only and cannot be received again.");
-            }
-            return;
-        }
-
-        const metadataError = validateReceivingMetadata(receiptNumber, selectedBranchId, lineItems.map(line => {
+    const receivingValidationIssues = useMemo<ReceivingValidationIssue[]>(() => {
+        const issues = validateReceivingMetadata(receiptNumber, selectedBranchId, lineItems.map(line => {
             const row = inspectionRows[line.line_id];
             return {
+                lineId: line.line_id,
                 productName: line.product_id?.product_name || `Item ${line.line_id}`,
                 isPackaging: Boolean(row?.isPackaging),
                 receivedQuantity: Number(row?.receivedQty || 0),
@@ -553,8 +550,91 @@ export function useQAReceiving() {
                 expirationDate: row?.expirationDate || ""
             };
         }));
-        if (metadataError) {
-            toast.error(metadataError);
+        const addIssue = (issue: ReceivingValidationIssue) => {
+            if (!issues.some(existing => existing.field === issue.field && existing.lineId === issue.lineId && existing.message === issue.message)) {
+                issues.push(issue);
+            }
+        };
+        const receivedLines = lineItems.filter(line => Number(inspectionRows[line.line_id]?.receivedQty || 0) > 0);
+
+        if (receivedLines.length === 0) {
+            addIssue({ field: "receivedQuantity", message: "Enter a positive received quantity for at least one purchase-order line." });
+        }
+
+        for (const line of lineItems) {
+            const row = inspectionRows[line.line_id];
+            const productName = line.product_id?.product_name || `Item ${line.line_id}`;
+            const received = Number(row?.receivedQty || 0);
+            const accepted = Number(row?.acceptedQty || 0);
+            const rejected = Number(row?.rejectedQty || 0);
+            const ordered = Number(line.quantity_ordered || 0);
+            const remaining = Math.max(0, Number(line.remaining_quantity ?? (ordered - Number(line.quantity_received || 0))));
+
+            if (receiptMode === "full" && Math.abs(received - remaining) > 1e-9) {
+                addIssue({ lineId: line.line_id, productName, field: "receivedQuantity", message: "Complete the remaining quantities for Full Receipt, or select Partial Receipt." });
+            }
+            if (received <= 0) continue;
+
+            if (![received, accepted, rejected].every(Number.isFinite)
+                || accepted < 0
+                || rejected < 0
+                || accepted > received
+                || rejected > received
+                || Math.abs(received - accepted - rejected) > 1e-9) {
+                addIssue({ lineId: line.line_id, productName, field: "quantity", message: `${productName}: Received Quantity must equal Accepted Quantity plus Rejected Quantity.` });
+            }
+
+            const acceptedAllocations = row?.acceptedLotAllocations || [];
+            const acceptedAllocated = acceptedAllocations.reduce((sum, allocation) => sum + Number(allocation.quantity || 0), 0);
+            if (accepted > 0 && (acceptedAllocations.length === 0 || Math.abs(acceptedAllocated - accepted) > 1e-9)) {
+                addIssue({ lineId: line.line_id, productName, field: "acceptedStorageLot", message: `${productName}: allocate all accepted quantity to storage lots.` });
+            }
+
+            const rejectedAllocations = row?.rejectedLotAllocations || [];
+            const rejectedAllocated = rejectedAllocations.reduce((sum, allocation) => sum + Number(allocation.quantity || 0), 0);
+            if (rejected > 0 && (rejectedAllocations.length === 0 || Math.abs(rejectedAllocated - rejected) > 1e-9)) {
+                addIssue({ lineId: line.line_id, productName, field: "rejectedStorageLot", message: `${productName}: allocate all rejected quantity to storage lots.` });
+            }
+
+            if ((rejected > 0 || Math.abs(received - remaining) > 1e-9) && !row?.rejectionReason?.trim()) {
+                addIssue({ lineId: line.line_id, productName, field: "remarks", message: `${productName}: Remarks are required for rejected or discrepancy quantities.` });
+            }
+
+            const qaState = qaSpecificationStates[Number(line.product_id?.product_id)];
+            if (qaState?.status === "loaded") {
+                for (const specification of qaState.specifications) {
+                    const reading = qaReadings[line.line_id]?.[specification.specId] ?? "";
+                    if (evaluateQaReading(specification, reading).status === "incomplete") {
+                        addIssue({ lineId: line.line_id, productName, field: "qaReading", message: `${productName}: QA reading is required for ${specification.parameter.parameterName}.` });
+                    }
+                }
+            }
+        }
+
+        const completesPurchaseOrder = lineItems.length > 0 && lineItems.every(line => {
+            const received = Number(inspectionRows[line.line_id]?.receivedQty || 0);
+            const ordered = Number(line.quantity_ordered || 0);
+            const remaining = Math.max(0, Number(line.remaining_quantity ?? (ordered - Number(line.quantity_received || 0))));
+            return Math.abs(received - remaining) <= 1e-9;
+        });
+        if (receiptMode === "partial" && completesPurchaseOrder) {
+            addIssue({ field: "receiptMode", message: "Partial Receipt requires at least one line to remain below its remaining quantity." });
+        }
+
+        return issues;
+    }, [inspectionRows, lineItems, qaReadings, qaSpecificationStates, receiptMode, receiptNumber, selectedBranchId]);
+
+    const handleSubmitInspection = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!selectedShipment || isLockedReceivingShipment(selectedShipment)) {
+            if (selectedShipment?.status === "Partially Received") {
+                toast.error("Partially received purchase orders are view-only and cannot be received again.");
+            }
+            return;
+        }
+
+        if (receivingValidationIssues.length > 0) {
+            toast.error(receivingValidationIssues.slice(0, 3).map(issue => issue.message).join(" "));
             return;
         }
         if (qaSubmissionBlockReason) {
@@ -593,7 +673,7 @@ export function useQAReceiving() {
             }
 
             if (receiptMode === "full" && Math.abs(received - remaining) > 1e-9) {
-                toast.error(`Full Receipt: ${name} requires ${remaining.toLocaleString()} remaining unit(s); received ${received.toLocaleString()}. Select Partial Receipt to receive only part of this PO.`);
+                toast.error("Complete the remaining quantities for Full Receipt, or select Partial Receipt.");
                 return;
             }
             if (Math.abs(received - remaining) > 1e-9) completesPurchaseOrder = false;
@@ -887,6 +967,7 @@ export function useQAReceiving() {
         handleCommitReceiving,
         validatingInspection,
         qaSubmissionBlockReason,
+        receivingValidationIssues,
         handleSelectShipment,
         handleUpdateRow,
         handleUpdateAllocations,

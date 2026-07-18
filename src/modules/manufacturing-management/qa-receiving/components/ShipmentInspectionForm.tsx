@@ -2,6 +2,7 @@ import React from "react";
 import Image from "next/image";
 import { ArrowLeft, MapPin, AlertTriangle, CheckCircle2, Search, ChevronDown, Plus, Minus, Loader2, ReceiptText } from "lucide-react";
 import { Shipment, ShipmentLineItem, Branch, InspectionRow, StorageLot, QaSpecificationLoadState, QaSpecificationReadings, ReceivingQaEvaluation, ReceivingLotAllocationInput } from "../types";
+import type { ReceivingValidationIssue } from "../receiving-metadata";
 import ProductQaChecklist from "./ProductQaChecklist";
 
 interface ShipmentInspectionFormProps {
@@ -24,6 +25,7 @@ interface ShipmentInspectionFormProps {
     previewAcknowledged: boolean;
     validatingInspection: boolean;
     qaSubmissionBlockReason: string | null;
+    receivingValidationIssues: ReceivingValidationIssue[];
     loadingLines: boolean;
     handleUpdateRow: (lineId: number, field: string, value: string | number | boolean) => void;
     handleUpdateAllocations: (lineId: number, allocations: ReceivingLotAllocationInput[]) => void;
@@ -54,6 +56,7 @@ export default function ShipmentInspectionForm({
     previewAcknowledged,
     validatingInspection,
     qaSubmissionBlockReason,
+    receivingValidationIssues,
     loadingLines,
     handleUpdateRow,
     handleUpdateAllocations,
@@ -70,6 +73,8 @@ export default function ShipmentInspectionForm({
     const [dropdownOpen, setDropdownOpen] = React.useState(false);
     const [dropdownSearch, setDropdownSearch] = React.useState("");
     const [highlightedLineId, setHighlightedLineId] = React.useState<number | null>(null);
+
+    const issueFor = (lineId: number | undefined, field: string) => receivingValidationIssues.find(issue => issue.lineId === lineId && issue.field === field);
 
     const dropdownRef = React.useRef<HTMLDivElement>(null);
     React.useEffect(() => {
@@ -325,9 +330,12 @@ export default function ShipmentInspectionForm({
                             value={receiptNumber}
                             onChange={(event) => setReceiptNumber(event.target.value)}
                             disabled={readOnly}
-                            className="w-full h-10 rounded-xl border bg-background text-foreground text-xs font-semibold pl-9 pr-3 py-2 outline-none focus:ring-1 focus:ring-primary"
+                            aria-invalid={Boolean(issueFor(undefined, "receiptNumber"))}
+                            aria-describedby={issueFor(undefined, "receiptNumber") ? "receiving-receipt-number-error" : undefined}
+                            className={`w-full h-10 rounded-xl border bg-background text-foreground text-xs font-semibold pl-9 pr-3 py-2 outline-none focus:ring-1 focus:ring-primary ${issueFor(undefined, "receiptNumber") ? "border-red-500" : ""}`}
                         />
                     </div>
+                    {issueFor(undefined, "receiptNumber") && <p id="receiving-receipt-number-error" className="text-[9px] font-semibold text-red-600" role="alert">{issueFor(undefined, "receiptNumber")?.message}</p>}
                 </div>
 
                 <fieldset className="space-y-1">
@@ -372,7 +380,9 @@ export default function ShipmentInspectionForm({
                             value={selectedBranchId}
                             onChange={(event) => setSelectedBranchId(event.target.value)}
                             disabled={readOnly}
-                            className="w-full h-10 rounded-xl border bg-background text-foreground text-xs font-semibold pl-9 pr-3 py-2 outline-none focus:ring-1 focus:ring-primary cursor-pointer"
+                            aria-invalid={Boolean(issueFor(undefined, "branchId"))}
+                            aria-describedby={issueFor(undefined, "branchId") ? "receiving-branch-error" : undefined}
+                            className={`w-full h-10 rounded-xl border bg-background text-foreground text-xs font-semibold pl-9 pr-3 py-2 outline-none focus:ring-1 focus:ring-primary cursor-pointer ${issueFor(undefined, "branchId") ? "border-red-500" : ""}`}
                         >
                             <option value="">Select receiving branch...</option>
                             {filteredBranches.map(branch => (
@@ -380,6 +390,7 @@ export default function ShipmentInspectionForm({
                             ))}
                         </select>
                     </div>
+                    {issueFor(undefined, "branchId") && <p id="receiving-branch-error" className="text-[9px] font-semibold text-red-600" role="alert">{issueFor(undefined, "branchId")?.message}</p>}
                 </div>
             </div>
 
@@ -407,8 +418,6 @@ export default function ShipmentInspectionForm({
                         const receivedVal = row.receivedQty !== "" ? Number(row.receivedQty) : 0;
                         const orderedVal = Number(line.quantity_ordered || 0);
                         const previouslyReceivedVal = Number(line.previously_received_quantity ?? Math.max(0, orderedVal - Number(line.remaining_quantity ?? orderedVal)));
-                        const previouslyRejectedVal = Number(line.previously_rejected_quantity ?? line.quantity_rejected ?? 0);
-                        const previouslyAcceptedVal = Math.max(0, previouslyReceivedVal - previouslyRejectedVal);
                         const remainingVal = Math.max(0, Number(line.remaining_quantity ?? (orderedVal - previouslyReceivedVal)));
                         const acceptedVal = row.acceptedQty !== "" ? Number(row.acceptedQty) : 0;
                         const rejectedVal = row.rejectedQty !== "" ? Number(row.rejectedQty) : 0;
@@ -420,6 +429,8 @@ export default function ShipmentInspectionForm({
                             && Math.abs(receivedVal - acceptedVal - rejectedVal) <= 1e-9;
                         const isRemarksMandatory = rejectedVal > 0 || (receivedVal > 0 && receivedVal !== remainingVal);
                         const evaluation = qaEvaluationResults[line.line_id];
+                        const lineIssue = (field: string) => issueFor(line.line_id, field);
+                        const quantityIssue = lineIssue("quantity") || lineIssue("receivedQuantity");
 
                         return (
                             <div
@@ -448,11 +459,6 @@ export default function ShipmentInspectionForm({
                                         <span className="font-bold text-xs sm:text-sm text-foreground block truncate">{prod.product_name}</span>
                                         <span className="text-[10px] text-muted-foreground font-mono">SKU: {prod.product_code || `ID-${prod.product_id}`}</span>
                                         <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[9px] font-semibold text-muted-foreground">
-                                            <span>Ordered: <strong className="text-foreground">{orderedVal.toLocaleString()}</strong></span>
-                                            <span>Cumulative received: <strong className="text-foreground">{previouslyReceivedVal.toLocaleString()}</strong></span>
-                                            <span>Cumulative accepted: <strong className="text-foreground">{previouslyAcceptedVal.toLocaleString()}</strong></span>
-                                            <span>Cumulative rejected: <strong className="text-foreground">{previouslyRejectedVal.toLocaleString()}</strong></span>
-                                            <span>Remaining: <strong className="text-primary">{remainingVal.toLocaleString()}</strong></span>
                                             {selectedShipment.status === "Partially Received" && line.latest_receipt?.receipt_number && (
                                                 <span>Previous receipt: <strong className="text-foreground">{line.latest_receipt.receipt_number}</strong></span>
                                             )}
@@ -477,9 +483,6 @@ export default function ShipmentInspectionForm({
                                 {readOnly ? (
                                     <div className="border-t pt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[10px] text-muted-foreground">
                                         <span><strong className="text-foreground">Recorded QA status:</strong> {line.qa_status || "Received"}</span>
-                                        <span><strong className="text-foreground">Cumulative received:</strong> {previouslyReceivedVal.toLocaleString()}</span>
-                                        <span><strong className="text-foreground">Cumulative accepted:</strong> {previouslyAcceptedVal.toLocaleString()}</span>
-                                        <span><strong className="text-foreground">Cumulative rejected:</strong> {previouslyRejectedVal.toLocaleString()}</span>
                                     </div>
                                 ) : (
                                     <ProductQaChecklist
@@ -489,6 +492,14 @@ export default function ShipmentInspectionForm({
                                         onReadingChange={handleUpdateQaReading}
                                         readOnly={readOnly}
                                     />
+                                )}
+                                {lineIssue("qaReading") && (
+                                    <p className="border-t pt-2 text-[9px] font-semibold text-red-600" role="alert">
+                                        {receivingValidationIssues
+                                            .filter(issue => issue.lineId === line.line_id && issue.field === "qaReading")
+                                            .map(issue => issue.message)
+                                            .join(" ")}
+                                    </p>
                                 )}
 
                                  {/* QA Inputs Grid - Touch Optimized layout */}
@@ -510,7 +521,7 @@ export default function ShipmentInspectionForm({
                                              {/* Received Quantity Stepper */}
                                              <div className="space-y-1">
                                                  <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">
-                                                      This Receipt - Received Quantity
+                                                      This Receipt - Received Quantity {receivedVal > 0 && <span className="text-red-500">*</span>}
                                                  </label>
                                                  <div className="flex items-center">
                                                      <button
@@ -529,6 +540,7 @@ export default function ShipmentInspectionForm({
                                                         value={row.receivedQty}
                                                         onChange={e => handleUpdateRow(line.line_id, "receivedQty", e.target.value === "" ? "" : Number(e.target.value))}
                                                         disabled={readOnly}
+                                                        aria-invalid={Boolean(quantityIssue)}
                                                         className="w-full h-10 border border-border bg-background text-center text-xs font-semibold text-foreground outline-none focus:ring-0 transition-all"
                                                      />
                                                      <button
@@ -550,7 +562,7 @@ export default function ShipmentInspectionForm({
                                             {/* Accepted Quantity Stepper */}
                                             <div className="space-y-1">
                                                 <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">
-                                                     This Receipt - Accepted Quantity
+                                                     This Receipt - Accepted Quantity {receivedVal > 0 && <span className="text-red-500">*</span>}
                                                 </label>
                                                 <div className="flex items-center">
                                                     <button
@@ -570,7 +582,7 @@ export default function ShipmentInspectionForm({
                                                         value={row.acceptedQty}
                                                         onChange={e => handleUpdateRow(line.line_id, "acceptedQty", e.target.value === "" ? "" : Number(e.target.value))}
                                                         disabled={readOnly}
-                                                        aria-invalid={!quantitiesReconcile}
+                                                        aria-invalid={!quantitiesReconcile || Boolean(quantityIssue)}
                                                         className={`w-full h-10 border bg-background text-center text-xs font-semibold text-foreground outline-none focus:ring-0 ${!quantitiesReconcile ? "border-red-500 bg-red-500/5" : ""}`}
                                                     />
                                                     <button
@@ -591,8 +603,8 @@ export default function ShipmentInspectionForm({
 
                                             {/* Rejected Quantity */}
                                             <div className="space-y-1">
-                                                 <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">
-                                                     This Receipt - Rejected Quantity
+                                                <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">
+                                                     This Receipt - Rejected Quantity {receivedVal > 0 && <span className="text-red-500">*</span>}
                                                 </label>
                                                 <div className="flex items-center">
                                                     <button
@@ -612,7 +624,7 @@ export default function ShipmentInspectionForm({
                                                         value={row.rejectedQty}
                                                         onChange={event => handleUpdateRow(line.line_id, "rejectedQty", event.target.value === "" ? "" : Number(event.target.value))}
                                                         disabled={readOnly}
-                                                        aria-invalid={!quantitiesReconcile}
+                                                        aria-invalid={!quantitiesReconcile || Boolean(quantityIssue)}
                                                         className={`w-full h-10 border bg-background text-center text-xs font-semibold text-foreground outline-none focus:ring-0 ${!quantitiesReconcile ? "border-red-500 bg-red-500/5" : ""}`}
                                                     />
                                                     <button
@@ -630,8 +642,9 @@ export default function ShipmentInspectionForm({
                                                     </span>
                                                 )}
                                             </div>
-                                        </div>
-                                    );
+                                         {quantityIssue && <p className="sm:col-span-3 text-[9px] font-semibold text-red-600" role="alert">{quantityIssue.message}</p>}
+                                         </div>
+                                     );
                                 })()}
 
                                 <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 pt-1">
@@ -647,8 +660,11 @@ export default function ShipmentInspectionForm({
                                             value={row.batchNumber}
                                             onChange={e => handleUpdateRow(line.line_id, "batchNumber", e.target.value)}
                                             disabled={readOnly}
-                                            className="w-full h-10 bg-background border text-foreground rounded-lg px-3 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-primary"
+                                            aria-invalid={Boolean(lineIssue("batchNumber"))}
+                                            aria-describedby={lineIssue("batchNumber") ? `batch-number-error-${line.line_id}` : undefined}
+                                            className={`w-full h-10 bg-background border text-foreground rounded-lg px-3 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-primary ${lineIssue("batchNumber") ? "border-red-500" : ""}`}
                                         />
+                                        {lineIssue("batchNumber") && <p id={`batch-number-error-${line.line_id}`} className="text-[9px] font-semibold text-red-600" role="alert">{lineIssue("batchNumber")?.message}</p>}
                                     </div>
 
                                     <div className="space-y-1">
@@ -666,9 +682,12 @@ export default function ShipmentInspectionForm({
                                                 max={row.expirationDate || undefined}
                                                 value={row.manufacturingDate}
                                                 onChange={event => handleUpdateRow(line.line_id, "manufacturingDate", event.target.value)}
-                                                className="w-full h-10 bg-background border text-foreground rounded-lg px-3 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-primary"
+                                                aria-invalid={Boolean(lineIssue("manufacturingDate"))}
+                                                aria-describedby={lineIssue("manufacturingDate") ? `manufacturing-date-error-${line.line_id}` : undefined}
+                                                className={`w-full h-10 bg-background border text-foreground rounded-lg px-3 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-primary ${lineIssue("manufacturingDate") ? "border-red-500" : ""}`}
                                             />
                                         )}
+                                        {lineIssue("manufacturingDate") && <p id={`manufacturing-date-error-${line.line_id}`} className="text-[9px] font-semibold text-red-600" role="alert">{lineIssue("manufacturingDate")?.message}</p>}
                                     </div>
 
                                     <div className="space-y-1">
@@ -682,8 +701,11 @@ export default function ShipmentInspectionForm({
                                             value={row.expirationDate}
                                             onChange={e => handleUpdateRow(line.line_id, "expirationDate", e.target.value)}
                                             disabled={readOnly}
-                                            className="w-full h-10 bg-background border text-foreground rounded-lg px-3 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-primary"
+                                            aria-invalid={Boolean(lineIssue("expirationDate"))}
+                                            aria-describedby={lineIssue("expirationDate") ? `expiration-date-error-${line.line_id}` : undefined}
+                                            className={`w-full h-10 bg-background border text-foreground rounded-lg px-3 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-primary ${lineIssue("expirationDate") ? "border-red-500" : ""}`}
                                         />
+                                        {lineIssue("expirationDate") && <p id={`expiration-date-error-${line.line_id}`} className="text-[9px] font-semibold text-red-600" role="alert">{lineIssue("expirationDate")?.message}</p>}
                                     </div>
 
                                     <div className="space-y-1">
@@ -720,6 +742,11 @@ export default function ShipmentInspectionForm({
                                                 <p className="text-[10px] text-muted-foreground">
                                                     Assign accepted and rejected quantities to their storage lots below.
                                                 </p>
+                                                {(lineIssue("acceptedStorageLot") || lineIssue("rejectedStorageLot")) && (
+                                                    <p className="text-[9px] font-semibold text-red-600" role="alert">
+                                                        {lineIssue("acceptedStorageLot")?.message || lineIssue("rejectedStorageLot")?.message}
+                                                    </p>
+                                                )}
                                             </div>
                                             {!readOnly && acceptedVal > 0 && (
                                                 <button
@@ -906,8 +933,11 @@ export default function ShipmentInspectionForm({
                                         value={row.rejectionReason}
                                         onChange={e => handleUpdateRow(line.line_id, "rejectionReason", e.target.value)}
                                         disabled={readOnly}
-                                        className="w-full h-10 bg-background border text-foreground rounded-lg px-3 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-primary"
+                                        aria-invalid={Boolean(lineIssue("remarks"))}
+                                        aria-describedby={lineIssue("remarks") ? `remarks-error-${line.line_id}` : undefined}
+                                        className={`w-full h-10 bg-background border text-foreground rounded-lg px-3 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-primary ${lineIssue("remarks") ? "border-red-500" : ""}`}
                                     />
+                                    {lineIssue("remarks") && <p id={`remarks-error-${line.line_id}`} className="text-[9px] font-semibold text-red-600" role="alert">{lineIssue("remarks")?.message}</p>}
                                 </div>
 
                                 {/* Discrepancy warnings */}
@@ -954,6 +984,17 @@ export default function ShipmentInspectionForm({
                         <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
                         <span>{qaSubmissionBlockReason}</span>
                     </div>
+                ) : receivingValidationIssues.length > 0 ? (
+                    <div className="flex items-start gap-2 text-[10px] text-red-700 max-w-xl" role="alert" aria-live="polite">
+                        <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                        <div>
+                            <strong>Complete the required fields before previewing:</strong>
+                            <ul className="mt-1 list-disc pl-4 space-y-0.5">
+                                {receivingValidationIssues.slice(0, 6).map(issue => <li key={`${issue.lineId || "global"}-${issue.field}-${issue.message}`}>{issue.message}</li>)}
+                            </ul>
+                            {receivingValidationIssues.length > 6 && <span>Resolve the remaining {receivingValidationIssues.length - 6} issue(s) shown on the manifest lines.</span>}
+                        </div>
+                    </div>
                 ) : hasQuantityMismatch ? (
                     <div className="flex items-start gap-2 text-[10px] text-red-700 max-w-xl" role="alert">
                         <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
@@ -987,10 +1028,10 @@ export default function ShipmentInspectionForm({
                     <button
                         type={hasPreview ? "button" : "submit"}
                         onClick={hasPreview ? onReviewPreview : undefined}
-                        disabled={loadingLines || validatingInspection || Boolean(qaSubmissionBlockReason) || hasQuantityMismatch || hasAllocationMismatch || hasRejectedAllocationMismatch}
+                        disabled={loadingLines || validatingInspection || Boolean(qaSubmissionBlockReason) || receivingValidationIssues.length > 0 || hasQuantityMismatch || hasAllocationMismatch || hasRejectedAllocationMismatch}
                         className="px-5 py-2.5 bg-primary text-primary-foreground rounded-xl text-xs font-bold flex items-center gap-1.5 shadow h-11 justify-center cursor-pointer disabled:opacity-60 disabled:cursor-wait"
                     >
-                        {validatingInspection ? <><Loader2 className="h-4 w-4 animate-spin" /> Generating...</> : qaSubmissionBlockReason ? <><AlertTriangle className="h-4 w-4" /> QA Configuration Required</> : hasPreview ? <><ReceiptText className="h-4 w-4" /> Review Movement Preview</> : <><CheckCircle2 className="h-4 w-4" /> Preview QA & Routes</>}
+                        {validatingInspection ? <><Loader2 className="h-4 w-4 animate-spin" /> Generating...</> : qaSubmissionBlockReason ? <><AlertTriangle className="h-4 w-4" /> QA Configuration Required</> : receivingValidationIssues.length > 0 ? <><AlertTriangle className="h-4 w-4" /> Complete Required Fields</> : hasPreview ? <><ReceiptText className="h-4 w-4" /> Review Movement Preview</> : <><CheckCircle2 className="h-4 w-4" /> Preview QA & Routes</>}
                     </button>
                 )}
                 </div>

@@ -11,9 +11,7 @@ export const INVENTORY_STATUS = {
 } as const;
 
 export const RECEIVING_QUEUE_INVENTORY_STATUS_IDS = [
-    INVENTORY_STATUS.APPROVED,
     INVENTORY_STATUS.FOR_PICKUP,
-    INVENTORY_STATUS.EN_ROUTE,
     INVENTORY_STATUS.PARTIALLY_RECEIVED
 ] as const;
 
@@ -65,10 +63,9 @@ export function canTransitionInventoryStatus(current: number, target: number): b
 
 export type ShipmentStatusLabel = "Ordered" | "Approved" | "Awaiting Payment" | "Cancelled" | "For Pickup" | "En Route" | "Receiving (QA)" | "Partially Received" | "Received" | "Rejected";
 
-export function isReceivingQueueShipmentStatus(status: string): boolean {
-    return status === "Approved"
-        || status === "For Pickup"
-        || status === "En Route"
+export function isReceivingQueueShipmentStatus(status: string | number | null | undefined): boolean {
+    if (Number(status) === INVENTORY_STATUS.FOR_PICKUP || Number(status) === INVENTORY_STATUS.PARTIALLY_RECEIVED) return true;
+    return status === "For Pickup"
         || status === "Receiving (QA)"
         || status === "Partially Received";
 }
