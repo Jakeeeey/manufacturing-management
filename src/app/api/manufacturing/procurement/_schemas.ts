@@ -12,6 +12,11 @@ const rejectedLotAllocationSchema = z.object({
     storage_lot_id: positiveId,
     quantity: nonNegativeNumber
 });
+const qaResultSchema = z.object({
+    spec_id: positiveId,
+    actual_reading: z.string().trim().min(1).max(100),
+    is_passed: z.boolean()
+});
 
 export const receivingLineSchema = z.object({
     line_id: positiveId,
@@ -26,7 +31,8 @@ export const receivingLineSchema = z.object({
     rejection_reason: z.string().trim().nullable(),
     qa_status: z.enum(["Passed", "Partially Accepted", "Rejected"]),
     accepted_lot_allocations: z.array(acceptedLotAllocationSchema).default([]),
-    rejected_lot_allocations: z.array(rejectedLotAllocationSchema).default([])
+    rejected_lot_allocations: z.array(rejectedLotAllocationSchema).default([]),
+    qa_results: z.array(qaResultSchema).default([])
 }).superRefine((line, context) => {
     const message = validateReceivingQuantities({
         receivedQuantity: line.quantity_received,

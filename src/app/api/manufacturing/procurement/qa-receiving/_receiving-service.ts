@@ -13,6 +13,7 @@ import { calculateLandedCostAllocations, fetchShipmentExpenses, normalizeAllocat
 import { receiptNumberForLine } from "../../qa-receiving/_commit-contract";
 import { summarizeReceivingHistory } from "../../qa-receiving/_receiving-history";
 import { sumMovementQuantitiesByLot } from "../../qa-receiving/_movement-stock";
+import { ensureQaResults, QaResultPersistenceError } from "./_qa-results";
 
 class ReceivingError extends Error {
     constructor(message: string, readonly status: number) {
@@ -242,6 +243,16 @@ export async function handleQaReceivingPost(request: Request, options: Receiving
             throw new ReceivingError("Partially received purchase orders are view-only and cannot be received again.", 409);
         }
         if (existingReceipts.length === receiptNumbers.length) {
+            for (const item of lineItemUpdates) {
+                const existingReceipt = existingReceipts.find((row: Record<string, unknown>) => String(row.receipt_no) === receiptNumberForLine(referenceNumber, item.line_id));
+                const receivingLineId = Number(existingReceipt?.purchase_order_product_id);
+                if (!receivingLineId) throw new ReceivingError(`Receiving record for line ${item.line_id} could not be correlated.`, 409);
+                await ensureQaResults({
+                    receivingLineId,
+                    productId: item.product_id,
+                    results: item.qa_results
+                });
+            }
             return NextResponse.json({ success: true, idempotent: true, status: shipment.inventory_status });
         }
         const receivableStatuses: number[] = [INVENTORY_STATUS.FOR_PICKUP, INVENTORY_STATUS.EN_ROUTE];
@@ -411,6 +422,11 @@ export async function handleQaReceivingPost(request: Request, options: Receiving
                 const receiptId = Number((await receiptRes.json()).data.purchase_order_product_id);
                 if (!receiptId) throw new Error("Directus did not return the created receiving-record ID.");
                 receiptIds.push(receiptId);
+                await ensureQaResults({
+                    receivingLineId: receiptId,
+                    productId: line.productId,
+                    results: line.item.qa_results
+                });
 
                 const saveInventory = async (targetBranchId: number, storageLotId: number, quantity: number, qaStatus: string, reason: string | null): Promise<number | null> => {
                     if (quantity <= 0) return null;
@@ -575,7 +591,11 @@ export async function handleQaReceivingPost(request: Request, options: Receiving
     } catch (error) {
         console.error("API Error submitting QA Receiving:", error);
         return NextResponse.json({ error: (error as Error).message || "Failed to process QA receiving" }, {
-            status: error instanceof ReceivingError ? error.status : 500
+            status: error instanceof ReceivingError
+                ? error.status
+                : error instanceof QaResultPersistenceError
+                    ? error.status
+                    : 500
         });
     } finally {
         if (lockedShipmentId !== null) activeShipments.delete(lockedShipmentId);

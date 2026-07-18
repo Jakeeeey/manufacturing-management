@@ -19,6 +19,7 @@ import {
 import type { ReceivingPreviewResult } from "../_preview-domain";
 import { POST as previewReceiving } from "../preview/route";
 import { normalizeReceivingLotAllocations, normalizeRejectedLotAllocations } from "../_lot-allocation";
+import { fetchQaResults, qaResultsMatch, type QaResultExpectation } from "../../procurement/qa-receiving/_qa-results";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -156,6 +157,28 @@ async function persistedResult(input: ReceivingCommitRequest, idempotentReplay: 
     if (receivingIds.some(id => !Number.isSafeInteger(id) || id <= 0)) {
         throw new CommitError(409, "The purchase order status changed but its receiving record IDs are invalid. Reconciliation is required.");
     }
+    const qaRows = await fetchQaResults(receivingIds);
+    const qaRowsByReceivingId = new Map<number, typeof qaRows>();
+    for (const row of qaRows) {
+        const existing = qaRowsByReceivingId.get(row.receiving_line_id) || [];
+        existing.push(row);
+        qaRowsByReceivingId.set(row.receiving_line_id, existing);
+    }
+    for (const line of input.lines) {
+        const receiptNo = receiptNumberForLine(input.receiptNumber, line.lineId);
+        const receiving = receivingRows.find(row => String(row.receipt_no) === receiptNo);
+        const receivingLineId = Number(receiving?.purchase_order_product_id);
+        if (!receivingLineId) {
+            throw new CommitError(409, `Receiving record for line ${line.lineId} could not be correlated.`);
+        }
+        const expectedQa: QaResultExpectation[] = line.readings.map(reading => ({
+            spec_id: reading.specId,
+            actual_reading: reading.actualReading.trim()
+        }));
+        if (!qaResultsMatch(expectedQa, qaRowsByReceivingId.get(receivingLineId) || [])) {
+            throw new CommitError(409, `The purchase order status changed but QA results for line ${line.lineId} are incomplete. Reconciliation is required.`);
+        }
+    }
     const expectedMovementCount = input.lines.reduce((count, line) =>
         count + normalizeReceivingLotAllocations(line.acceptedQuantity, line.acceptedLotAllocations, line.storageLotId).length
         + normalizeRejectedLotAllocations(line.rejectedQuantity, line.rejectedLotAllocations, line.storageLotId).length, 0);
@@ -252,7 +275,8 @@ async function persistedResult(input: ReceivingCommitRequest, idempotentReplay: 
             receivedDate: receiving.received_date ? String(receiving.received_date) : null,
             inventoryLotIds: [...new Set(finalMovements
                 .filter(movement => movement.receivingLineId === receivingLineId)
-                .map(movement => movement.inventoryLotId))]
+                .map(movement => movement.inventoryLotId))],
+            qaResultIds: (qaRowsByReceivingId.get(receivingLineId) || []).map(row => row.result_id)
         });
     }
     return {
@@ -355,6 +379,11 @@ export async function POST(request: Request) {
                         rejected_lot_allocations: line.rejectedLotAllocations.map(allocation => ({
                             storage_lot_id: allocation.storageLotId,
                             quantity: allocation.quantity
+                        })),
+                        qa_results: result.evaluations.map(evaluation => ({
+                            spec_id: evaluation.specId,
+                            actual_reading: line.readings.find(reading => reading.specId === evaluation.specId)?.actualReading || "",
+                            is_passed: evaluation.status === "passed"
                         })),
                         manufacturing_date: line.manufacturingDate,
                         expiration_date: line.expiryDate,
