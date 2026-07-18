@@ -218,7 +218,7 @@ export async function POST(request: Request) {
             throw new ReceivingPreviewError("Partially received purchase orders are view-only and cannot be received again.", 409);
         }
         if (!RECEIVING_QUEUE_INVENTORY_STATUS_IDS.some(eligible => eligible === statusId)) {
-            throw new ReceivingPreviewError("This purchase order is not eligible for receiving.", 409);
+            throw new ReceivingPreviewError("The purchase order must be moved to QA (Receiving) before it can be received.", 409);
         }
         if (!enabled(destinationBranch.isActive) || enabled(destinationBranch.isBadStock)) {
             throw new ReceivingPreviewError("Select an active standard branch as the receiving destination.");

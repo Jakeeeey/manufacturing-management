@@ -255,9 +255,12 @@ export async function handleQaReceivingPost(request: Request, options: Receiving
             }
             return NextResponse.json({ success: true, idempotent: true, status: shipment.inventory_status });
         }
-        const receivableStatuses: number[] = [INVENTORY_STATUS.FOR_PICKUP, INVENTORY_STATUS.EN_ROUTE];
-        if (existingReceipts.length > 0 || !receivableStatuses.includes(Number(shipment.inventory_status))) {
-            throw new ReceivingError("The shipment is not in a receivable state or has a partial previous attempt.", 409);
+        const receivableStatuses: number[] = [INVENTORY_STATUS.FOR_PICKUP];
+        if (existingReceipts.length > 0) {
+            throw new ReceivingError("This purchase order has a partial previous receiving attempt and requires reconciliation.", 409);
+        }
+        if (!receivableStatuses.includes(Number(shipment.inventory_status))) {
+            throw new ReceivingError("The purchase order must be moved to QA (Receiving) before it can be received.", 409);
         }
 
         const receivingHistory = summarizeReceivingHistory(allExistingReceipts as Array<Record<string, unknown>>, poLines);

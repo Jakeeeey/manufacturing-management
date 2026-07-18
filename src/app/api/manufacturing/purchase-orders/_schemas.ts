@@ -25,7 +25,7 @@ export const purchaseOrderListStatusSchema = z.enum([
 ]);
 
 const receivingQueueStatusSchema = z.enum([
-    "Approved", "For Pickup", "En Route", "Receiving (QA)", "Partially Received", "Received"
+    "For Pickup", "Receiving (QA)", "Partially Received", "Received"
 ]);
 
 export const purchaseOrderApprovalStageSchema = z.enum(["Plant", "Finance"]);
@@ -155,7 +155,7 @@ export const purchaseOrderListQuerySchema = z.object({
         context.addIssue({
             code: "custom",
             path: ["status"],
-            message: "Receiving queue status must be Approved, For Pickup, En Route, Receiving (QA), Partially Received, or Received."
+            message: "Receiving queue status must be For Pickup, Receiving (QA), Partially Received, or Received."
         });
     }
 });
