@@ -4,6 +4,8 @@ import React, { useEffect, useState, useMemo } from "react";
 import { X, Search, Loader2, CheckSquare, Square, FileText, Building2, Package, ChevronRight, ChevronDown, MapPin, AlertTriangle } from "lucide-react";
 import { CandidateInvoice, Branch, AllocationPreview } from "../types";
 import { fetchAllocationPreview } from "../services/invoice-consolidation-api";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 interface Props {
     isOpen: boolean;
@@ -135,39 +137,41 @@ export default function CreateConsolidationModal({ isOpen, onClose, branch, cand
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-md">
-            <div className="flex h-[100dvh] w-screen flex-col overflow-hidden bg-background shadow-2xl sm:h-[95vh] sm:max-w-[95vw] sm:rounded-2xl sm:border sm:border-border/60 sm:bg-background/95 lg:max-w-[1440px]">
-                <div className="flex shrink-0 items-center justify-between border-b border-border/40 bg-card/30 px-4 py-4 sm:px-6 lg:px-8 lg:py-6">
-                    <div className="flex items-center gap-2">
-                        <FileText className="h-6 w-6 text-primary sm:h-8 sm:w-8" />
-                        <h2 className="text-xl font-black uppercase italic tracking-tighter text-foreground sm:text-2xl lg:text-3xl">Consolidation <span className="text-primary">Wizard</span></h2>
-                        <span className="text-[10px] text-muted-foreground bg-muted px-2 py-0.5 rounded-full flex items-center gap-1 ml-2">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm sm:p-4">
+            <div className="flex h-[100dvh] w-screen flex-col overflow-hidden bg-background shadow-2xl sm:h-[95vh] sm:max-w-[95vw] sm:rounded-3xl sm:border sm:border-border/60 lg:max-w-[1440px]">
+                <div className="flex shrink-0 items-start justify-between gap-4 border-b border-border/60 bg-card px-4 py-5 sm:px-7">
+                    <div className="flex min-w-0 items-center gap-3">
+                        <div className="rounded-2xl bg-primary p-3 shadow-lg shadow-primary/20"><FileText className="h-6 w-6 text-primary-foreground" /></div>
+                        <div className="min-w-0">
+                            <p className="text-[10px] font-black uppercase tracking-[0.28em] text-primary">New Batch</p>
+                            <h2 className="text-xl font-black uppercase italic tracking-tighter text-foreground sm:text-3xl">Consolidation <span className="text-primary">Creation</span></h2>
+                            <p className="mt-1 text-xs text-muted-foreground">Select eligible invoices and review FEFO allocations before creating the batch.</p>
+                        </div>
+                        <span className="hidden items-center gap-1 rounded-full border border-border/60 bg-muted/40 px-2.5 py-1 text-[10px] font-bold text-muted-foreground lg:flex">
                             <Building2 className="h-3 w-3" />
                             {branch.branchName}
                         </span>
                     </div>
-                    <button onClick={onClose} className="p-1 rounded-lg hover:bg-muted transition-colors cursor-pointer" suppressHydrationWarning>
+                    <Button variant="ghost" size="icon" onClick={onClose} className="shrink-0 rounded-xl">
                         <X className="h-4 w-4 text-muted-foreground" />
-                    </button>
+                    </Button>
                 </div>
 
                 <div className="shrink-0 border-b bg-muted/20 px-4 py-3 sm:px-6">
-                    <div className="flex items-center gap-3">
+                    <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center">
                         <div className="relative flex-1">
-                            <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                            <input
+                            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                            <Input
                                 type="text"
                                 placeholder="Search invoices by no, customer..."
                                 value={search}
                                 onChange={(e) => setSearch(e.target.value)}
-                                className="pl-9 w-full bg-background border border-input rounded-lg px-3.5 py-2 text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
-                                suppressHydrationWarning
+                                className="h-10 rounded-xl pl-9"
                             />
                         </div>
-                        <button
+                        <Button variant="outline" size="sm"
                             onClick={toggleAll}
-                            className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground px-3 py-2 rounded-lg hover:bg-muted transition-colors cursor-pointer"
-                            suppressHydrationWarning
+                            className="rounded-xl"
                         >
                             {selectedIds.size === filtered.length && filtered.length > 0 ? (
                                 <CheckSquare className="h-4 w-4" />
@@ -175,7 +179,7 @@ export default function CreateConsolidationModal({ isOpen, onClose, branch, cand
                                 <Square className="h-4 w-4" />
                             )}
                             {selectedIds.size === filtered.length ? "Deselect All" : "Select All"}
-                        </button>
+                        </Button>
                         <span className="text-xs text-muted-foreground">
                             {selectedIds.size} of {filtered.length} selected
                         </span>
@@ -195,7 +199,7 @@ export default function CreateConsolidationModal({ isOpen, onClose, branch, cand
                             </p>
                         </div>
                     ) : (
-                        <div className="overflow-x-auto rounded-xl border border-border/40">
+                        <div className="overflow-x-auto rounded-3xl border border-border/60 bg-card shadow-sm">
                         <table className="min-w-[720px] w-full text-left border-collapse text-xs">
                             <thead className="sticky top-0 z-10 bg-muted/80 backdrop-blur-xl">
                                 <tr className="border-b bg-muted/20">
@@ -287,7 +291,7 @@ export default function CreateConsolidationModal({ isOpen, onClose, branch, cand
                     )}
 
                     {selectedIds.size > 0 && aggregatedProducts.length > 0 && (
-                        <div className="mt-4 border rounded-xl bg-muted/10">
+                        <div className="mt-4 overflow-hidden rounded-3xl border border-border/60 bg-card shadow-sm">
                             <div className="flex items-center gap-1.5 px-4 py-2.5 border-b">
                                 <Package className="h-3.5 w-3.5 text-muted-foreground" />
                                 <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">
@@ -328,7 +332,7 @@ export default function CreateConsolidationModal({ isOpen, onClose, branch, cand
                     )}
 
                     {selectedIds.size > 0 && (
-                        <div className="mt-4 overflow-hidden rounded-xl border border-border/60 bg-card/40">
+                        <div className="mt-4 overflow-hidden rounded-3xl border border-border/60 bg-card shadow-sm">
                             <div className="flex items-center justify-between gap-3 border-b px-4 py-2.5">
                                 <div className="flex items-center gap-1.5">
                                     <MapPin className="h-3.5 w-3.5 text-primary" />
@@ -397,7 +401,7 @@ export default function CreateConsolidationModal({ isOpen, onClose, branch, cand
                     )}
                 </div>
 
-                <div className="flex shrink-0 flex-col items-stretch justify-between gap-3 border-t bg-muted/20 px-4 py-4 sm:flex-row sm:items-center sm:px-6 sm:rounded-b-2xl">
+                <div className="flex shrink-0 flex-col items-stretch justify-between gap-3 border-t border-border/60 bg-card px-4 py-4 sm:flex-row sm:items-center sm:px-7">
                     <div className="text-xs text-muted-foreground">
                         {selectedIds.size > 0 && (
                             <>
@@ -410,23 +414,20 @@ export default function CreateConsolidationModal({ isOpen, onClose, branch, cand
                         )}
                     </div>
                     <div className="flex items-center justify-end gap-2">
-                        <button
+                        <Button variant="ghost"
                             onClick={onClose}
                             disabled={submitting}
-                            className="px-4 py-2 text-xs font-bold text-muted-foreground hover:text-foreground rounded-lg hover:bg-muted transition-colors cursor-pointer disabled:opacity-50"
-                            suppressHydrationWarning
                         >
                             Cancel
-                        </button>
-                        <button
+                        </Button>
+                        <Button
                             onClick={handleSubmit}
                             disabled={selectedIds.size === 0 || submitting || previewLoading || !!previewError || !allocationPreview || allocationPreview.shortages.length > 0}
-                            className="px-5 py-2 bg-primary text-primary-foreground text-xs font-bold rounded-lg hover:bg-primary/90 transition-colors cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
-                            suppressHydrationWarning
+                            className="rounded-xl px-5 font-black uppercase tracking-wider"
                         >
                             {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                             Create Batch ({selectedIds.size})
-                        </button>
+                        </Button>
                     </div>
                 </div>
             </div>

@@ -22,6 +22,17 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+    ConsolidationEmptyState,
+    ConsolidationHeader,
+    ConsolidationSection,
+    ConsolidationShell,
+    ConsolidationStatusBadge,
+    FilterField,
+} from "../consolidation/shared/consolidation-ui";
 import {
     AlertDialog,
     AlertDialogAction,
@@ -103,40 +114,25 @@ export default function InvoiceConsolidationModule() {
         }
     }, [confirmAction, handleAudit, handleRevert, handleStartPicking]);
 
-    const getStatusBadge = (status: string) => {
-        const styles: Record<string, string> = {
-            Pending: "bg-amber-500/10 border-amber-500/20 text-amber-500",
-            Picking: "bg-blue-500/10 border-blue-500/20 text-blue-500",
-            Picked: "bg-purple-500/10 border-purple-500/20 text-purple-500",
-            Audited: "bg-emerald-500/10 border-emerald-500/20 text-emerald-500",
-        };
-        return (
-            <span className={`text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full border ${styles[status] || styles.Pending}`}>
-                {status}
-            </span>
-        );
-    };
-
     const summaryCards = [
         { label: "All", value: summary.All, color: "text-zinc-400", icon: <ListOrdered className="h-4 w-4" /> },
         { label: "Pending", value: summary.Pending, color: "bg-amber-500/10 border-amber-500/20 text-amber-500", icon: <Package className="h-5 w-5" /> },
         { label: "Picking", value: summary.Picking, color: "bg-blue-500/10 border-blue-500/20 text-blue-500", icon: <Play className="h-5 w-5" /> },
-        { label: "Picked", value: summary.Picked, color: "bg-purple-500/10 border-purple-500/20 text-purple-500", icon: <SquarePen className="h-5 w-5" /> },
+        { label: "Picked", value: summary.Picked, color: "text-violet-600", icon: <SquarePen className="h-5 w-5" /> },
         { label: "Audited", value: summary.Audited, color: "bg-emerald-500/10 border-emerald-500/20 text-emerald-500", icon: <ClipboardCheck className="h-5 w-5" /> },
     ];
 
     const dashboardHeader = (
-        <div className="sticky top-0 z-30 flex flex-col gap-4 border-b border-border/40 bg-background/90 py-2 backdrop-blur-md xl:flex-row xl:items-center xl:justify-between xl:border-transparent sm:py-4">
-            <div className="flex w-full shrink-0 flex-col gap-4 sm:flex-row sm:items-center sm:gap-5 xl:w-auto">
-                <div className="hidden rotate-3 rounded-2xl bg-primary p-3 shadow-xl shadow-primary/20 sm:flex">
-                    <Layers className="h-6 w-6 text-primary-foreground stroke-[2.5px] lg:h-8 lg:w-8" />
-                </div>
-                <div className="w-full space-y-2 sm:w-auto sm:space-y-0.5">
-                    <h2 className="flex items-center gap-2 whitespace-nowrap text-2xl font-black uppercase italic leading-none tracking-tighter sm:text-3xl md:text-4xl">
-                        <Layers className="h-5 w-5 text-primary stroke-[3px] sm:hidden" />
-                        Invoice <span className="text-primary">Consolidation</span>
-                    </h2>
-                    <SearchableSelect
+        <ConsolidationHeader
+            icon={Layers}
+            eyebrow="Batch Operations"
+            title="Consolidation"
+            accent="Creation"
+            description="Create and manage invoice consolidation batches for each branch."
+            controls={
+                <div className="grid w-full gap-3 sm:grid-cols-2 lg:w-auto lg:grid-cols-[240px_240px_auto]">
+                    <FilterField label="Branch">
+                        <SearchableSelect
                         value={selectedBranch ? String(selectedBranch.id) : ""}
                         onValueChange={(value) => {
                             const branch = branches.find((item) => item.id === Number(value));
@@ -147,36 +143,23 @@ export default function InvoiceConsolidationModule() {
                             label: `${branch.branchName} (${branch.branchCode})`,
                         }))}
                         placeholder="Search and select branch..."
-                        className="h-11 w-full border-border/40 bg-card/40 text-sm font-bold shadow-inner backdrop-blur-md sm:w-[260px]"
-                    />
-                </div>
-            </div>
-
-            <div className="flex w-full flex-col items-stretch gap-3 sm:flex-row sm:items-center xl:w-auto">
-                <div className="group relative w-full sm:w-64 md:w-72">
-                    <div className="absolute -inset-0.5 rounded-xl bg-gradient-to-r from-primary/30 to-blue-500/30 opacity-0 blur transition duration-500 group-focus-within:opacity-100" />
-                    <Search className="absolute left-3.5 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-muted-foreground opacity-50" />
-                    <input
-                        type="text"
-                        placeholder="Find batch or invoice..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        disabled={!selectedBranch}
-                        className="relative z-10 h-10 w-full rounded-xl border border-border/40 bg-card/50 pl-10 pr-3 text-xs font-bold shadow-inner outline-none backdrop-blur-sm placeholder:font-medium focus:ring-2 focus:ring-primary/20 disabled:opacity-50 sm:h-12 sm:text-sm"
-                        suppressHydrationWarning
-                    />
-                </div>
-                <button
+                            className="h-10 rounded-xl bg-background text-sm font-bold normal-case tracking-normal"
+                        />
+                    </FilterField>
+                    <FilterField label="Search batches">
+                        <div className="relative">
+                            <Search className="absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                            <Input value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} disabled={!selectedBranch} placeholder="Batch or invoice number..." className="h-10 rounded-xl pl-9" />
+                        </div>
+                    </FilterField>
+                    <Button
                     onClick={() => setShowCreateModal(true)}
                     disabled={!selectedBranch}
-                    className="flex h-10 items-center justify-center gap-2 rounded-xl bg-primary px-4 text-[10px] font-black uppercase tracking-widest text-primary-foreground shadow-lg shadow-primary/20 transition-all hover:scale-[1.02] hover:bg-primary/90 active:scale-95 disabled:pointer-events-none disabled:opacity-40 sm:h-12 sm:px-8 sm:text-xs"
-                    suppressHydrationWarning
-                >
-                    <Plus className="h-4 w-4 stroke-[3.5px]" />
-                    Generate Batch
-                </button>
-            </div>
-        </div>
+                    className="h-10 self-end rounded-xl px-5 font-black uppercase tracking-wider"
+                    ><Plus />Create Batch</Button>
+                </div>
+            }
+        />
     );
 
     const statusOverview = (
@@ -193,15 +176,14 @@ export default function InvoiceConsolidationModule() {
                         }}
                         disabled={!selectedBranch}
                         className={cn(
-                            "group relative overflow-hidden rounded-xl border-none p-3 text-left transition-all duration-500 sm:rounded-2xl sm:p-4",
+                            "group relative overflow-hidden rounded-2xl border border-border/60 bg-card p-4 text-left shadow-sm transition-colors",
                             active
-                                ? "scale-[1.02] bg-card shadow-[0_15px_30px_-10px_rgba(0,0,0,0.3)] ring-1 ring-primary/40"
-                                : "bg-card/40 backdrop-blur-sm hover:bg-card/60",
+                                ? "ring-2 ring-primary/30"
+                                : "hover:border-primary/30",
                             !selectedBranch && "pointer-events-none opacity-60"
                         )}
-                        suppressHydrationWarning
                     >
-                        {active && <div className="absolute inset-x-0 top-0 h-[1.5px] bg-gradient-to-r from-transparent via-primary to-transparent" />}
+                        {card.label !== "All" && <div className={cn("absolute inset-x-0 bottom-0 h-1", card.label === "Pending" ? "bg-amber-500" : card.label === "Picking" ? "bg-blue-500" : card.label === "Picked" ? "bg-violet-500" : "bg-emerald-500")} />}
                         <div className="flex items-center justify-between">
                             <div className={cn("rounded-lg bg-muted/50 p-2 transition-transform group-hover:rotate-12", active && "rotate-6 bg-primary text-primary-foreground", !active && card.color)}>
                                 {card.icon}
@@ -227,14 +209,9 @@ export default function InvoiceConsolidationModule() {
 
     if (!selectedBranch) {
         return (
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col space-y-6 bg-background p-1 pb-20 text-foreground sm:p-4 md:space-y-8 md:p-6">
+            <ConsolidationShell>
                 {dashboardHeader}
-                <div className="flex min-h-[360px] flex-1 flex-col overflow-hidden rounded-xl border border-border/30 bg-card/20 shadow-[0_16px_40px_-12px_rgba(0,0,0,0.1)] backdrop-blur-sm sm:rounded-[2rem]">
-                    <div className="flex flex-1 flex-col items-center justify-center px-4 py-32 text-center">
-                        <Building2 className="mb-4 h-12 w-12 animate-bounce text-muted-foreground" />
-                        <p className="text-sm font-black uppercase tracking-widest text-muted-foreground">Select Branch to Stream Data</p>
-                    </div>
-                </div>
+                <section className="overflow-hidden rounded-3xl border border-dashed border-border/60 bg-card/50"><ConsolidationEmptyState icon={Building2} title="Select a branch" description="Choose a branch to view and create consolidation batches." /></section>
 
                 {selectedBranch && (
                     <CreateConsolidationModal
@@ -247,12 +224,12 @@ export default function InvoiceConsolidationModule() {
                         onSubmit={handleCreate}
                     />
                 )}
-            </div>
+            </ConsolidationShell>
         );
     }
 
     return (
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col space-y-6 bg-background p-1 pb-20 text-foreground sm:p-4 md:space-y-8 md:p-6">
+        <ConsolidationShell>
             {dashboardHeader}
             {statusOverview}
 
@@ -278,7 +255,7 @@ export default function InvoiceConsolidationModule() {
             </AlertDialog>
 
             {/* Main Table */}
-            <div className="relative flex min-h-[420px] flex-1 flex-col overflow-hidden rounded-xl border border-border/30 bg-card/20 shadow-[0_16px_40px_-12px_rgba(0,0,0,0.1)] backdrop-blur-sm sm:rounded-[2rem] sm:shadow-[0_32px_64px_-12px_rgba(0,0,0,0.2)]">
+            <ConsolidationSection eyebrow="Batch Register" title="Consolidation Batches" className="relative min-h-[420px]" >
                 {loading && (
                     <div className="absolute inset-0 z-40 flex flex-col items-center justify-center gap-5 bg-background/70 backdrop-blur-sm">
                         <div className="rounded-3xl border border-border/50 bg-card p-5 shadow-2xl"><Loader2 className="h-10 w-10 animate-spin text-primary" /></div>
@@ -293,34 +270,25 @@ export default function InvoiceConsolidationModule() {
                             No Consolidation Batches
                         </h5>
                         <p className="text-[10px] text-muted-foreground mt-1">
-                            Click &quot;New Consolidation&quot; to create an invoice consolidation batch for <strong>{selectedBranch.branchName}</strong>.
+                            Click &quot;Create Batch&quot; to create an invoice consolidation batch for <strong>{selectedBranch.branchName}</strong>.
                         </p>
                     </div>
                 ) : (
                     <div className="min-h-0 flex-1 overflow-auto custom-scrollbar">
-                        <table className="min-w-[760px] w-full border-collapse text-left text-xs">
-                            <thead className="sticky top-0 z-10 border-b border-border/50 bg-muted/50 backdrop-blur-xl">
-                                <tr className="border-b bg-muted/20">
-                                    <th className="p-3 font-semibold text-muted-foreground uppercase">Consolidator No</th>
-                                    <th className="p-3 font-semibold text-muted-foreground uppercase">Branch</th>
-                                    <th className="p-3 font-semibold text-muted-foreground uppercase">Invoices</th>
-                                    <th className="p-3 font-semibold text-muted-foreground uppercase text-right">Total Amount</th>
-                                    <th className="p-3 font-semibold text-muted-foreground uppercase">Created</th>
-                                    <th className="p-3 font-semibold text-muted-foreground uppercase text-center">Status</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y">
+                        <Table className="min-w-[760px]">
+                            <TableHeader className="sticky top-0 z-10 bg-muted/80"><TableRow><TableHead className="pl-5 md:pl-7">Batch</TableHead><TableHead>Branch</TableHead><TableHead>Invoices</TableHead><TableHead className="text-right">Total Amount</TableHead><TableHead>Created</TableHead><TableHead className="pr-5 text-center md:pr-7">Status</TableHead></TableRow></TableHeader>
+                            <TableBody>
                                 {consolidations.map((c) => (
                                     <React.Fragment key={c.id}>
-                                        <tr
+                                        <TableRow
                                             onClick={() => handleRowClick(c)}
                                             onKeyDown={(e) => handleRowKeyDown(e, c)}
                                             tabIndex={0}
                                             className="group cursor-pointer border-border/30 transition-all hover:bg-primary/[0.02] focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary/30"
                                         >
-                                             <td className="p-3"><span className="rounded bg-muted/50 px-2 py-1 font-mono font-black tracking-tight text-foreground/90">{c.consolidatorNo}</span></td>
-                                            <td className="p-3 text-muted-foreground">{c.branchName || selectedBranch.branchName}</td>
-                                            <td className="p-3 text-muted-foreground">
+                                             <TableCell className="pl-5 font-mono font-black md:pl-7">{c.consolidatorNo}</TableCell>
+                                            <TableCell className="text-muted-foreground">{c.branchName || selectedBranch.branchName}</TableCell>
+                                            <TableCell className="text-muted-foreground">
                                                 <button
                                                     onClick={(e) => toggleExpand(e, c.id)}
                                                     className="text-primary font-semibold hover:underline cursor-pointer"
@@ -328,15 +296,15 @@ export default function InvoiceConsolidationModule() {
                                                 >
                                                     {c.invoices?.length || 0} invoice(s)
                                                 </button>
-                                            </td>
-                                            <td className="p-3 text-right font-black text-foreground">
+                                            </TableCell>
+                                            <TableCell className="text-right font-black tabular-nums">
                                                 P{Number(c.totalSalesOrderAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                                            </td>
-                                            <td className="p-3 text-muted-foreground">
+                                            </TableCell>
+                                            <TableCell className="text-muted-foreground">
                                                 {c.createdAt ? new Date(c.createdAt).toLocaleDateString() : "—"}
-                                            </td>
-                                            <td className="p-3 text-center">{getStatusBadge(c.status)}</td>
-                                        </tr>
+                                            </TableCell>
+                                            <TableCell className="pr-5 text-center md:pr-7"><ConsolidationStatusBadge status={c.status} /></TableCell>
+                                        </TableRow>
                                         {expandedId === c.id && (
                                             <tr className="bg-muted/5">
                                                 <td colSpan={6} className="p-0">
@@ -361,8 +329,8 @@ export default function InvoiceConsolidationModule() {
                                         )}
                                     </React.Fragment>
                                 ))}
-                            </tbody>
-                        </table>
+                            </TableBody>
+                        </Table>
                     </div>
                 )}
 
@@ -372,25 +340,21 @@ export default function InvoiceConsolidationModule() {
                             Page {page + 1} of {Math.max(1, totalPages)} <span className="mx-2 opacity-20">|</span> {summary.All} Total Entries
                         </span>
                         <div className="flex items-center gap-2">
-                            <button
+                            <Button variant="outline" size="sm"
                                 onClick={() => setPage(Math.max(0, page - 1))}
                                 disabled={page === 0}
-                                className="rounded-lg border px-4 py-2 text-[10px] font-black uppercase tracking-widest transition-colors hover:bg-background disabled:opacity-30"
-                                suppressHydrationWarning
                             >
                                 Previous
-                            </button>
-                            <button
+                            </Button>
+                            <Button variant="outline" size="sm"
                                 onClick={() => setPage(Math.min(totalPages - 1, page + 1))}
                                 disabled={page >= totalPages - 1}
-                                className="rounded-lg border px-4 py-2 text-[10px] font-black uppercase tracking-widest transition-colors hover:bg-background disabled:opacity-30"
-                                suppressHydrationWarning
                             >
                                 Next
-                            </button>
+                            </Button>
                         </div>
                     </div>
-            </div>
+            </ConsolidationSection>
 
             <ConsolidationDetailSheet
                 consolidation={selectedConsolidation}
@@ -412,6 +376,6 @@ export default function InvoiceConsolidationModule() {
                 />
             )}
 
-        </div>
+        </ConsolidationShell>
     );
 }
