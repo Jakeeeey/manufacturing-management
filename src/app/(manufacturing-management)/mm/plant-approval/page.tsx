@@ -1,4 +1,4 @@
-import PurchaseOrderApprovalPage from "../_components/purchase-order-approval-page";
+import PurchaseOrderApprovalPage from "../approval/_components/purchase-order-approval-page";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
