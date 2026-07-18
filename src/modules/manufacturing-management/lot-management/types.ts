@@ -28,6 +28,7 @@ export interface Lot {
     updatedAt: string;
     createdBy: string;
     updatedBy: string;
+    displayNumber?: number;
 }
 
 export interface InventoryType {
