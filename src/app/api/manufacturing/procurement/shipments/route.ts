@@ -27,6 +27,9 @@ async function requireAllowedTransition(shipmentId: number, targetStatus: number
     if (!response.ok) throw new Error("Failed to load the current purchase order status.");
     const order = (await response.json()).data || {};
     const currentStatus = Number(order.inventory_status || 0);
+    if (currentStatus === INVENTORY_STATUS.PARTIALLY_RECEIVED) {
+        throw new InvalidTransitionError("Partially received purchase orders are view-only and cannot be changed.");
+    }
     if (!canTransitionInventoryStatus(currentStatus, targetStatus)) {
         throw new InvalidTransitionError(`Invalid purchase order status transition from ${currentStatus} to ${targetStatus}.`);
     }

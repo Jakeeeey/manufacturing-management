@@ -43,6 +43,17 @@ async function directusRows(path: string, message: string) {
     return rows(await response.json());
 }
 
+async function assertReceivingStatusOpen(shipmentId: number) {
+    const headerRows = await directusRows(
+        `/items/purchase_order/${shipmentId}?fields=purchase_order_id,inventory_status&limit=1`,
+        "Unable to verify the current purchase-order status."
+    );
+    const status = Number(headerRows[0]?.inventory_status);
+    if (status === INVENTORY_STATUS.PARTIALLY_RECEIVED) {
+        throw new CommitError(409, "Partially received purchase orders are view-only and cannot be received again.");
+    }
+}
+
 async function inventoryRowsForMovements(shipmentId: number, movementRows: Record<string, unknown>[]) {
     if (movementRows.length === 0) return [];
 
@@ -272,6 +283,7 @@ export async function POST(request: Request) {
         if (!parsed.success) {
             return NextResponse.json({ error: "Invalid receiving commit request.", details: parsed.error.flatten() }, { status: 400 });
         }
+        await assertReceivingStatusOpen(parsed.data.shipmentId);
         const completed = await persistedResult(parsed.data, true);
         if (completed) return NextResponse.json({ data: completed });
 

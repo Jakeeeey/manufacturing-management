@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { RECEIVING_QUEUE_INVENTORY_STATUS_IDS } from "../../procurement/_domain";
+import { INVENTORY_STATUS, RECEIVING_QUEUE_INVENTORY_STATUS_IDS } from "../../procurement/_domain";
 import { procurementDirectusFetch } from "../../procurement/_directus";
 import {
     PURCHASE_ORDER_MODULE_PATHS,
@@ -213,6 +213,9 @@ export async function POST(request: Request) {
 
         const header = (await headerResponse.json()).data as Record<string, unknown>;
         const statusId = positiveInteger(header.inventory_status, "transaction_status_id") || Number(header.inventory_status);
+        if (statusId === INVENTORY_STATUS.PARTIALLY_RECEIVED) {
+            throw new ReceivingPreviewError("Partially received purchase orders are view-only and cannot be received again.", 409);
+        }
         if (!RECEIVING_QUEUE_INVENTORY_STATUS_IDS.some(eligible => eligible === statusId)) {
             throw new ReceivingPreviewError("This purchase order is not eligible for receiving.", 409);
         }

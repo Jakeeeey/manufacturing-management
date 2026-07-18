@@ -242,10 +242,13 @@ export async function handleQaReceivingPost(request: Request, options: Receiving
         if (Number(shipment.inventory_status) === INVENTORY_STATUS.REJECTED) {
             throw new ReceivingError("Rejected purchase orders cannot continue to receiving.", 409);
         }
+        if (Number(shipment.inventory_status) === INVENTORY_STATUS.PARTIALLY_RECEIVED) {
+            throw new ReceivingError("Partially received purchase orders are view-only and cannot be received again.", 409);
+        }
         if (existingReceipts.length === receiptNumbers.length) {
             return NextResponse.json({ success: true, idempotent: true, status: shipment.inventory_status });
         }
-        const receivableStatuses: number[] = [INVENTORY_STATUS.FOR_PICKUP, INVENTORY_STATUS.EN_ROUTE, INVENTORY_STATUS.PARTIALLY_RECEIVED];
+        const receivableStatuses: number[] = [INVENTORY_STATUS.FOR_PICKUP, INVENTORY_STATUS.EN_ROUTE];
         if (existingReceipts.length > 0 || !receivableStatuses.includes(Number(shipment.inventory_status))) {
             throw new ReceivingError("The shipment is not in a receivable state or has a partial previous attempt.", 409);
         }

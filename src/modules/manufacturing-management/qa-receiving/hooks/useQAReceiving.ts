@@ -52,6 +52,10 @@ function resizeLotAllocations(
     return resized;
 }
 
+function isLockedReceivingShipment(shipment: Shipment | null): boolean {
+    return shipment?.status === "Received" || shipment?.status === "Partially Received";
+}
+
 export function useQAReceiving() {
     const listController = useRef<AbortController | null>(null);
     const detailController = useRef<AbortController | null>(null);
@@ -393,7 +397,7 @@ export function useQAReceiving() {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const handleUpdateRow = (lineId: number, field: string, value: any) => {
-        if (selectedShipment?.status === "Received") return;
+        if (isLockedReceivingShipment(selectedShipment)) return;
         previewController.current?.abort();
         setValidatingInspection(false);
         setReceivingCommitContext(null);
@@ -449,7 +453,7 @@ export function useQAReceiving() {
     };
 
     const handleUpdateAllocations = (lineId: number, allocations: ReceivingLotAllocationInput[]) => {
-        if (selectedShipment?.status === "Received") return;
+        if (isLockedReceivingShipment(selectedShipment)) return;
         previewController.current?.abort();
         setValidatingInspection(false);
         setReceivingCommitContext(null);
@@ -472,7 +476,7 @@ export function useQAReceiving() {
     };
 
     const handleUpdateRejectedAllocations = (lineId: number, allocations: ReceivingLotAllocationInput[]) => {
-        if (selectedShipment?.status === "Received") return;
+        if (isLockedReceivingShipment(selectedShipment)) return;
         previewController.current?.abort();
         setValidatingInspection(false);
         setReceivingCommitContext(null);
@@ -495,7 +499,7 @@ export function useQAReceiving() {
     };
 
     const handleUpdateQaReading = (lineId: number, specId: number, value: string) => {
-        if (selectedShipment?.status === "Received") return;
+        if (isLockedReceivingShipment(selectedShipment)) return;
         previewController.current?.abort();
         setValidatingInspection(false);
         setReceivingCommitContext(null);
@@ -530,7 +534,12 @@ export function useQAReceiving() {
 
     const handleSubmitInspection = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!selectedShipment || selectedShipment.status === "Received") return;
+        if (!selectedShipment || isLockedReceivingShipment(selectedShipment)) {
+            if (selectedShipment?.status === "Partially Received") {
+                toast.error("Partially received purchase orders are view-only and cannot be received again.");
+            }
+            return;
+        }
 
         const metadataError = validateReceivingMetadata(receiptNumber, selectedBranchId, lineItems.map(line => {
             const row = inspectionRows[line.line_id];
@@ -705,6 +714,10 @@ export function useQAReceiving() {
 
     const handleCommitReceiving = useCallback(async () => {
         if (postingInspection) return;
+        if (selectedShipment?.status === "Partially Received") {
+            toast.error("Partially received purchase orders are view-only and cannot be received again.");
+            return;
+        }
         if (!receivingCommitContext) {
             toast.error("The receiving preview is no longer valid. Generate a new preview before posting.");
             return;
@@ -732,7 +745,7 @@ export function useQAReceiving() {
         } finally {
             setPostingInspection(false);
         }
-    }, [postingInspection, receivingCommitContext, loadShipments, searchPO, searchStatus, startDate, endDate, showReceived]);
+    }, [postingInspection, selectedShipment?.status, receivingCommitContext, loadShipments, searchPO, searchStatus, startDate, endDate, showReceived]);
 
     const handlePreviewOpenChange = useCallback((open: boolean) => {
         setPreviewOpen(open);
@@ -847,7 +860,7 @@ export function useQAReceiving() {
         loadingShipments,
         loadingBranches,
         selectedShipment,
-        readOnly: selectedShipment?.status === "Received",
+        readOnly: isLockedReceivingShipment(selectedShipment),
         setSelectedShipment,
         lineItems,
         setLineItems,

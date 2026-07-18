@@ -247,8 +247,8 @@ export default function ShipmentInspectionForm({
                                 </span>
                             )}
                             {selectedShipment.status === "Partially Received" && (
-                                <span className="text-[9px] bg-amber-500/10 text-amber-700 px-1.5 py-0.5 rounded font-extrabold whitespace-nowrap">
-                                    Partial Receipt - Editable
+                                <span className="text-[9px] bg-slate-500/10 text-slate-700 px-1.5 py-0.5 rounded font-extrabold whitespace-nowrap">
+                                    Partially Received - View Only
                                 </span>
                             )}
                             <span className="text-[9px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-extrabold whitespace-nowrap">
@@ -354,8 +354,8 @@ export default function ShipmentInspectionForm({
                     </div>
                     <p className="text-[9px] text-muted-foreground">Choose Partial Receipt when any counted quantity is below its remaining quantity.</p>
                     {selectedShipment.status === "Partially Received" && (
-                        <p className="text-[9px] text-amber-700 font-semibold">
-                            Previous receipt values are restored. Update this receipt to the remaining quantity before choosing Full Receipt.
+                        <p className="text-[9px] text-slate-700 font-semibold">
+                            This purchase order is locked after partial receipt. Previous receiving details and the remaining quantity are view-only.
                         </p>
                     )}
                 </fieldset>
@@ -529,12 +529,7 @@ export default function ShipmentInspectionForm({
                                                         value={row.receivedQty}
                                                         onChange={e => handleUpdateRow(line.line_id, "receivedQty", e.target.value === "" ? "" : Number(e.target.value))}
                                                         disabled={readOnly}
-                                                        aria-invalid={!quantitiesReconcile}
-                                                        className={`w-full h-10 border text-center text-xs font-semibold text-foreground outline-none focus:ring-0 transition-all ${
-                                                             !quantitiesReconcile || (row.receivedQty !== "" && receivedVal > remainingVal)
-                                                                ? "border-red-500 bg-red-500/5 focus:bg-red-500/5"
-                                                                : "border-border bg-background"
-                                                        }`}
+                                                        className="w-full h-10 border border-border bg-background text-center text-xs font-semibold text-foreground outline-none focus:ring-0 transition-all"
                                                      />
                                                      <button
                                                          type="button"
@@ -545,11 +540,6 @@ export default function ShipmentInspectionForm({
                                                          <Plus className="h-3.5 w-3.5" />
                                                      </button>
                                                  </div>
-                                                  {row.receivedQty !== "" && receivedVal > remainingVal && (
-                                                     <span className="text-[9px] text-red-500 font-extrabold block mt-1 bg-red-500/5 px-2 py-0.5 rounded border border-red-500/10 w-fit select-none">
-                                                         Warning: Exceeds Remaining Qty ({remainingVal})
-                                                     </span>
-                                                 )}
                                                  {receivedEquiv > 0 && convFactor !== 1 && (
                                                      <span className="text-[9px] text-primary font-bold block mt-1 bg-primary/5 px-2 py-0.5 rounded border border-primary/10 w-fit select-none">
                                                          = {receivedEquiv.toLocaleString()} {baseUom}
