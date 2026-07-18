@@ -109,6 +109,8 @@ export async function commitReceivingQa(payload: ReceivingCommitPayload, idempot
             || !Number.isSafeInteger(Number(record.lineId))
             || !Array.isArray(record.inventoryLotIds)
             || record.inventoryLotIds.some((id: unknown) => !Number.isSafeInteger(Number(id)))
+            || !Array.isArray(record.qaResultIds)
+            || record.qaResultIds.some((id: unknown) => !Number.isSafeInteger(Number(id)))
         )
         || !Array.isArray(body.data?.movements)
         || body.data.movements.some((movement: Record<string, unknown>) =>

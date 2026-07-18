@@ -193,6 +193,7 @@ export interface FinalReceivingRecord {
     expirationDate: string | null;
     receivedDate: string | null;
     inventoryLotIds: number[];
+    qaResultIds: number[];
 }
 
 export interface FinalReceivingMovement {
