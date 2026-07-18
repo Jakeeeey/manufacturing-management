@@ -12,6 +12,8 @@ interface ShipmentInspectionFormProps {
     storageLots: StorageLot[];
     receiptNumber: string;
     setReceiptNumber: (val: string) => void;
+    receiptMode: "full" | "partial";
+    setReceiptMode: (val: "full" | "partial") => void;
     selectedBranchId: string;
     setSelectedBranchId: (val: string) => void;
     inspectionRows: Record<number, InspectionRow>;
@@ -25,6 +27,7 @@ interface ShipmentInspectionFormProps {
     loadingLines: boolean;
     handleUpdateRow: (lineId: number, field: string, value: string | number | boolean) => void;
     handleUpdateAllocations: (lineId: number, allocations: ReceivingLotAllocationInput[]) => void;
+    handleUpdateRejectedAllocations: (lineId: number, allocations: ReceivingLotAllocationInput[]) => void;
     handleUpdateQaReading: (lineId: number, specId: number, value: string) => void;
     handleSubmitInspection: (e: React.FormEvent) => void;
     onReviewPreview: () => void;
@@ -39,6 +42,8 @@ export default function ShipmentInspectionForm({
     storageLots,
     receiptNumber,
     setReceiptNumber,
+    receiptMode,
+    setReceiptMode,
     selectedBranchId,
     setSelectedBranchId,
     inspectionRows,
@@ -52,6 +57,7 @@ export default function ShipmentInspectionForm({
     loadingLines,
     handleUpdateRow,
     handleUpdateAllocations,
+    handleUpdateRejectedAllocations,
     handleUpdateQaReading,
     handleSubmitInspection,
     onReviewPreview,
@@ -109,6 +115,15 @@ export default function ShipmentInspectionForm({
         return allocations.length === 0 || Math.abs(total - accepted) > 1e-9;
     }), [inspectionRows, lineItems]);
 
+    const hasRejectedAllocationMismatch = React.useMemo(() => lineItems.some(line => {
+        const row = inspectionRows[line.line_id];
+        const rejected = Number(row?.rejectedQty || 0);
+        const allocations = row?.rejectedLotAllocations || [];
+        if (rejected <= 0) return allocations.length > 0;
+        const total = allocations.reduce((sum, allocation) => sum + Number(allocation.quantity || 0), 0);
+        return allocations.length === 0 || Math.abs(total - rejected) > 1e-9;
+    }), [inspectionRows, lineItems]);
+
     const addAcceptedLot = (lineId: number, row: InspectionRow) => {
         const accepted = Number(row.acceptedQty || 0);
         const allocated = row.acceptedLotAllocations.reduce((sum, allocation) => sum + Number(allocation.quantity || 0), 0);
@@ -134,6 +149,33 @@ export default function ShipmentInspectionForm({
             allocationIndex === index ? { ...allocation, [field]: value } : allocation
         );
         handleUpdateAllocations(lineId, allocations);
+    };
+
+    const addRejectedLot = (lineId: number, row: InspectionRow) => {
+        const rejected = Number(row.rejectedQty || 0);
+        const allocated = row.rejectedLotAllocations.reduce((sum, allocation) => sum + Number(allocation.quantity || 0), 0);
+        const remaining = Math.max(0, rejected - allocated);
+        const selectedIds = new Set(row.rejectedLotAllocations.map(allocation => Number(allocation.storageLotId)));
+        const availableLot = storageLots.find(lot => {
+            const available = lot.availableQuantity;
+            return !selectedIds.has(lot.lot_id) && (available === null || available === undefined || available > 0);
+        });
+        if (!availableLot) return;
+        const initialQuantity = availableLot.availableQuantity === null || availableLot.availableQuantity === undefined
+            ? remaining
+            : Math.min(remaining, availableLot.availableQuantity);
+        if (initialQuantity <= 0) return;
+        handleUpdateRejectedAllocations(lineId, [
+            ...row.rejectedLotAllocations,
+            { storageLotId: String(availableLot.lot_id), quantity: initialQuantity }
+        ]);
+    };
+
+    const updateRejectedLot = (lineId: number, row: InspectionRow, index: number, field: "storageLotId" | "quantity", value: string | number) => {
+        const allocations = row.rejectedLotAllocations.map((allocation, allocationIndex) =>
+            allocationIndex === index ? { ...allocation, [field]: value } : allocation
+        );
+        handleUpdateRejectedAllocations(lineId, allocations);
     };
 
     const handleSelectProduct = (lineId: number) => {
@@ -204,6 +246,11 @@ export default function ShipmentInspectionForm({
                                     Received - View Only
                                 </span>
                             )}
+                            {selectedShipment.status === "Partially Received" && (
+                                <span className="text-[9px] bg-slate-500/10 text-slate-700 px-1.5 py-0.5 rounded font-extrabold whitespace-nowrap">
+                                    Partially Received - View Only
+                                </span>
+                            )}
                             <span className="text-[9px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-extrabold whitespace-nowrap">
                                 Original PO Branch: {originalBranchName}
                             </span>
@@ -262,7 +309,7 @@ export default function ShipmentInspectionForm({
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 border-b bg-background shrink-0">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 border-b bg-background shrink-0">
                 <div className="space-y-1">
                     <label htmlFor="receiving-receipt-number" className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">
                         Receiving Ticket / DR Number <span className="text-red-500">*</span>
@@ -282,6 +329,36 @@ export default function ShipmentInspectionForm({
                         />
                     </div>
                 </div>
+
+                <fieldset className="space-y-1">
+                    <legend className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">Receiving Mode</legend>
+                    <div className="grid grid-cols-2 gap-1 rounded-xl border p-1 h-10">
+                        <button
+                            type="button"
+                            disabled={readOnly}
+                            onClick={() => setReceiptMode("full")}
+                            aria-pressed={receiptMode === "full"}
+                            className={`rounded-lg text-[10px] font-bold transition-colors ${receiptMode === "full" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}
+                        >
+                            Full Receipt
+                        </button>
+                        <button
+                            type="button"
+                            disabled={readOnly}
+                            onClick={() => setReceiptMode("partial")}
+                            aria-pressed={receiptMode === "partial"}
+                            className={`rounded-lg text-[10px] font-bold transition-colors ${receiptMode === "partial" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}
+                        >
+                            Partial Receipt
+                        </button>
+                    </div>
+                    <p className="text-[9px] text-muted-foreground">Choose Partial Receipt when any counted quantity is below its remaining quantity.</p>
+                    {selectedShipment.status === "Partially Received" && (
+                        <p className="text-[9px] text-slate-700 font-semibold">
+                            This purchase order is locked after partial receipt. Previous receiving details and the remaining quantity are view-only.
+                        </p>
+                    )}
+                </fieldset>
 
                 <div className="space-y-1">
                     <label htmlFor="receiving-branch" className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">
@@ -329,6 +406,10 @@ export default function ShipmentInspectionForm({
 
                         const receivedVal = row.receivedQty !== "" ? Number(row.receivedQty) : 0;
                         const orderedVal = Number(line.quantity_ordered || 0);
+                        const previouslyReceivedVal = Number(line.previously_received_quantity ?? Math.max(0, orderedVal - Number(line.remaining_quantity ?? orderedVal)));
+                        const previouslyRejectedVal = Number(line.previously_rejected_quantity ?? line.quantity_rejected ?? 0);
+                        const previouslyAcceptedVal = Math.max(0, previouslyReceivedVal - previouslyRejectedVal);
+                        const remainingVal = Math.max(0, Number(line.remaining_quantity ?? (orderedVal - previouslyReceivedVal)));
                         const acceptedVal = row.acceptedQty !== "" ? Number(row.acceptedQty) : 0;
                         const rejectedVal = row.rejectedQty !== "" ? Number(row.rejectedQty) : 0;
                         const quantitiesReconcile = [receivedVal, acceptedVal, rejectedVal].every(Number.isFinite)
@@ -337,7 +418,7 @@ export default function ShipmentInspectionForm({
                             && acceptedVal <= receivedVal
                             && rejectedVal <= receivedVal
                             && Math.abs(receivedVal - acceptedVal - rejectedVal) <= 1e-9;
-                        const isRemarksMandatory = rejectedVal > 0 || (receivedVal > 0 && receivedVal !== orderedVal);
+                        const isRemarksMandatory = rejectedVal > 0 || (receivedVal > 0 && receivedVal !== remainingVal);
                         const evaluation = qaEvaluationResults[line.line_id];
 
                         return (
@@ -366,6 +447,16 @@ export default function ShipmentInspectionForm({
                                     <div className="flex-1 min-w-0">
                                         <span className="font-bold text-xs sm:text-sm text-foreground block truncate">{prod.product_name}</span>
                                         <span className="text-[10px] text-muted-foreground font-mono">SKU: {prod.product_code || `ID-${prod.product_id}`}</span>
+                                        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[9px] font-semibold text-muted-foreground">
+                                            <span>Ordered: <strong className="text-foreground">{orderedVal.toLocaleString()}</strong></span>
+                                            <span>Cumulative received: <strong className="text-foreground">{previouslyReceivedVal.toLocaleString()}</strong></span>
+                                            <span>Cumulative accepted: <strong className="text-foreground">{previouslyAcceptedVal.toLocaleString()}</strong></span>
+                                            <span>Cumulative rejected: <strong className="text-foreground">{previouslyRejectedVal.toLocaleString()}</strong></span>
+                                            <span>Remaining: <strong className="text-primary">{remainingVal.toLocaleString()}</strong></span>
+                                            {selectedShipment.status === "Partially Received" && line.latest_receipt?.receipt_number && (
+                                                <span>Previous receipt: <strong className="text-foreground">{line.latest_receipt.receipt_number}</strong></span>
+                                            )}
+                                        </div>
                                     </div>
 
                                     <div className="flex flex-col items-end gap-1.5 shrink-0">
@@ -386,8 +477,9 @@ export default function ShipmentInspectionForm({
                                 {readOnly ? (
                                     <div className="border-t pt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[10px] text-muted-foreground">
                                         <span><strong className="text-foreground">Recorded QA status:</strong> {line.qa_status || "Received"}</span>
-                                        <span><strong className="text-foreground">Received:</strong> {Number(line.quantity_received || 0).toLocaleString()}</span>
-                                        <span><strong className="text-foreground">Rejected:</strong> {Number(line.quantity_rejected || 0).toLocaleString()}</span>
+                                        <span><strong className="text-foreground">Cumulative received:</strong> {previouslyReceivedVal.toLocaleString()}</span>
+                                        <span><strong className="text-foreground">Cumulative accepted:</strong> {previouslyAcceptedVal.toLocaleString()}</span>
+                                        <span><strong className="text-foreground">Cumulative rejected:</strong> {previouslyRejectedVal.toLocaleString()}</span>
                                     </div>
                                 ) : (
                                     <ProductQaChecklist
@@ -418,7 +510,7 @@ export default function ShipmentInspectionForm({
                                              {/* Received Quantity Stepper */}
                                              <div className="space-y-1">
                                                  <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">
-                                                     Received Quantity
+                                                      This Receipt - Received Quantity
                                                  </label>
                                                  <div className="flex items-center">
                                                      <button
@@ -437,12 +529,7 @@ export default function ShipmentInspectionForm({
                                                         value={row.receivedQty}
                                                         onChange={e => handleUpdateRow(line.line_id, "receivedQty", e.target.value === "" ? "" : Number(e.target.value))}
                                                         disabled={readOnly}
-                                                        aria-invalid={!quantitiesReconcile}
-                                                        className={`w-full h-10 border text-center text-xs font-semibold text-foreground outline-none focus:ring-0 transition-all ${
-                                                            !quantitiesReconcile || (row.receivedQty !== "" && receivedVal > orderedVal)
-                                                                ? "border-red-500 bg-red-500/5 focus:bg-red-500/5"
-                                                                : "border-border bg-background"
-                                                        }`}
+                                                        className="w-full h-10 border border-border bg-background text-center text-xs font-semibold text-foreground outline-none focus:ring-0 transition-all"
                                                      />
                                                      <button
                                                          type="button"
@@ -453,11 +540,6 @@ export default function ShipmentInspectionForm({
                                                          <Plus className="h-3.5 w-3.5" />
                                                      </button>
                                                  </div>
-                                                 {row.receivedQty !== "" && receivedVal > orderedVal && (
-                                                     <span className="text-[9px] text-red-500 font-extrabold block mt-1 bg-red-500/5 px-2 py-0.5 rounded border border-red-500/10 w-fit select-none">
-                                                         Warning: Exceeds Ordered Qty ({orderedVal})
-                                                     </span>
-                                                 )}
                                                  {receivedEquiv > 0 && convFactor !== 1 && (
                                                      <span className="text-[9px] text-primary font-bold block mt-1 bg-primary/5 px-2 py-0.5 rounded border border-primary/10 w-fit select-none">
                                                          = {receivedEquiv.toLocaleString()} {baseUom}
@@ -468,7 +550,7 @@ export default function ShipmentInspectionForm({
                                             {/* Accepted Quantity Stepper */}
                                             <div className="space-y-1">
                                                 <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">
-                                                    Accepted Quantity
+                                                     This Receipt - Accepted Quantity
                                                 </label>
                                                 <div className="flex items-center">
                                                     <button
@@ -509,8 +591,8 @@ export default function ShipmentInspectionForm({
 
                                             {/* Rejected Quantity */}
                                             <div className="space-y-1">
-                                                <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">
-                                                    Rejected Quantity
+                                                 <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">
+                                                     This Receipt - Rejected Quantity
                                                 </label>
                                                 <div className="flex items-center">
                                                     <button
@@ -567,30 +649,6 @@ export default function ShipmentInspectionForm({
                                             disabled={readOnly}
                                             className="w-full h-10 bg-background border text-foreground rounded-lg px-3 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-primary"
                                         />
-                                    </div>
-
-                                    <div className="space-y-1">
-                                        <label className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">
-                                            Primary / Rejected Lot {receivedVal > 0 && <span className="text-red-500">*</span>}
-                                        </label>
-                                        <select
-                                            required={receivedVal > 0}
-                                            value={row.lotId}
-                                            onChange={e => handleUpdateRow(line.line_id, "lotId", e.target.value)}
-                                            disabled={readOnly}
-                                            className="w-full h-10 bg-background border text-foreground rounded-lg px-3 py-1.5 text-xs font-semibold focus:ring-1 focus:ring-primary"
-                                        >
-                                            <option value="">Select storage lot...</option>
-                                            {storageLots.map(lot => (
-                                                <option
-                                                    key={lot.lot_id}
-                                                    value={lot.lot_id}
-                                                    disabled={lot.availableQuantity !== null && lot.availableQuantity !== undefined && lot.availableQuantity <= 0 && String(lot.lot_id) !== row.lotId}
-                                                >
-                                                    {lot.lot_name} (available {lot.availableQuantity ?? lot.max_batch_capacity})
-                                                </option>
-                                            ))}
-                                        </select>
                                     </div>
 
                                     <div className="space-y-1">
@@ -654,16 +712,16 @@ export default function ShipmentInspectionForm({
                                     </div>
                                 </div>
 
-                                {receivedVal > 0 && acceptedVal > 0 && (
-                                    <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3 space-y-2" aria-label="Accepted storage-lot allocations">
+                                {receivedVal > 0 && (acceptedVal > 0 || rejectedVal > 0) && (
+                                    <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3 space-y-3" aria-label="Inventory storage-lot allocations">
                                         <div className="flex items-center justify-between gap-2">
                                             <div>
-                                                <p className="text-[9px] font-extrabold uppercase tracking-wider text-emerald-700">Accepted inventory allocation</p>
+                                                <p className="text-[9px] font-extrabold uppercase tracking-wider text-emerald-700">Inventory allocation</p>
                                                 <p className="text-[10px] text-muted-foreground">
-                                                    Allocate {acceptedVal.toLocaleString()} accepted unit(s) across one or more storage lots.
+                                                    Assign accepted and rejected quantities to their storage lots below.
                                                 </p>
                                             </div>
-                                            {!readOnly && (
+                                            {!readOnly && acceptedVal > 0 && (
                                                 <button
                                                     type="button"
                                                     onClick={() => addAcceptedLot(line.line_id, row)}
@@ -675,15 +733,17 @@ export default function ShipmentInspectionForm({
                                                 </button>
                                             )}
                                         </div>
+                                        {acceptedVal > 0 && (
+                                            <div className="space-y-2">
+                                                <p className="text-[9px] font-extrabold uppercase tracking-wider text-emerald-700">Accepted quantity by storage lot</p>
                                         <div className="space-y-2">
                                             {row.acceptedLotAllocations.map((allocation, allocationIndex) => {
                                                 const selectedLot = storageLots.find(lot => String(lot.lot_id) === String(allocation.storageLotId));
-                                                const allocatedElsewhere = row.acceptedLotAllocations.reduce((sum, current, index) =>
-                                                    index === allocationIndex || String(current.storageLotId) !== String(allocation.storageLotId)
-                                                        ? sum
-                                                        : sum + Number(current.quantity || 0), 0);
                                                 const available = selectedLot?.availableQuantity;
-                                                const overCapacity = available !== null && available !== undefined && Number(allocation.quantity || 0) > available + allocatedElsewhere;
+                                                const incomingForLot = [...row.acceptedLotAllocations, ...row.rejectedLotAllocations]
+                                                    .filter(current => String(current.storageLotId) === String(allocation.storageLotId))
+                                                    .reduce((sum, current) => sum + Number(current.quantity || 0), 0);
+                                                const overCapacity = available !== null && available !== undefined && incomingForLot > available;
                                                 return (
                                                     <div key={`${line.line_id}-accepted-lot-${allocationIndex}`} className="grid grid-cols-[minmax(0,1fr)_130px_auto] gap-2 items-center">
                                                         <select
@@ -731,6 +791,84 @@ export default function ShipmentInspectionForm({
                                         <div className={`text-[10px] font-bold ${Math.abs(row.acceptedLotAllocations.reduce((sum, allocation) => sum + Number(allocation.quantity || 0), 0) - acceptedVal) > 1e-9 ? "text-red-600" : "text-emerald-700"}`}>
                                             Allocated: {row.acceptedLotAllocations.reduce((sum, allocation) => sum + Number(allocation.quantity || 0), 0).toLocaleString()} / {acceptedVal.toLocaleString()}
                                         </div>
+                                            </div>
+                                        )}
+                                        {rejectedVal > 0 && (
+                                            <div className="space-y-2 border-t border-red-500/20 pt-3">
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <div>
+                                                    <p className="text-[9px] font-extrabold uppercase tracking-wider text-red-700">Rejected quantity by storage lot</p>
+                                                    <p className="text-[10px] text-muted-foreground">Allocate rejected quantity across one or more storage lots.</p>
+                                                    </div>
+                                                    {!readOnly && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => addRejectedLot(line.line_id, row)}
+                                                            disabled={row.rejectedLotAllocations.length >= storageLots.length
+                                                                || row.rejectedLotAllocations.reduce((sum, allocation) => sum + Number(allocation.quantity || 0), 0) >= rejectedVal}
+                                                            className="h-8 px-2.5 rounded-lg border border-red-500/30 bg-background text-red-700 text-[10px] font-extrabold flex items-center gap-1.5 hover:bg-red-500/10 disabled:opacity-50"
+                                                        >
+                                                            <Plus className="h-3.5 w-3.5" /> Add storage lot
+                                                        </button>
+                                                    )}
+                                                </div>
+                                                <div className="space-y-2">
+                                                    {row.rejectedLotAllocations.map((allocation, allocationIndex) => {
+                                                        const selectedLot = storageLots.find(lot => String(lot.lot_id) === String(allocation.storageLotId));
+                                                        const available = selectedLot?.availableQuantity;
+                                                        const incomingForLot = [...row.acceptedLotAllocations, ...row.rejectedLotAllocations]
+                                                            .filter(current => String(current.storageLotId) === String(allocation.storageLotId))
+                                                            .reduce((sum, current) => sum + Number(current.quantity || 0), 0);
+                                                        const overCapacity = available !== null && available !== undefined && incomingForLot > available;
+                                                        return (
+                                                            <div key={`${line.line_id}-rejected-lot-${allocationIndex}`} className="grid grid-cols-[minmax(0,1fr)_130px_auto] gap-2 items-center">
+                                                                <select
+                                                                    value={allocation.storageLotId}
+                                                                    disabled={readOnly}
+                                                                    onChange={event => updateRejectedLot(line.line_id, row, allocationIndex, "storageLotId", event.target.value)}
+                                                                    className="h-9 min-w-0 bg-background border text-foreground rounded-lg px-2.5 text-[10px] font-semibold"
+                                                                >
+                                                                    <option value="">Select storage lot...</option>
+                                                                    {storageLots.map(lot => {
+                                                                        const alreadySelected = row.rejectedLotAllocations.some((current, index) => index !== allocationIndex && String(current.storageLotId) === String(lot.lot_id));
+                                                                        const full = lot.availableQuantity !== null && lot.availableQuantity !== undefined && lot.availableQuantity <= 0;
+                                                                        return (
+                                                                            <option key={lot.lot_id} value={lot.lot_id} disabled={alreadySelected || (full && String(lot.lot_id) !== String(allocation.storageLotId))}>
+                                                                                {lot.lot_name} ({lot.availableQuantity ?? lot.max_batch_capacity} available)
+                                                                            </option>
+                                                                        );
+                                                                    })}
+                                                                </select>
+                                                                <input
+                                                                    type="number"
+                                                                    min="0"
+                                                                    step="any"
+                                                                    value={allocation.quantity}
+                                                                    disabled={readOnly}
+                                                                    onChange={event => updateRejectedLot(line.line_id, row, allocationIndex, "quantity", event.target.value === "" ? "" : Number(event.target.value))}
+                                                                    className={`h-9 bg-background border rounded-lg px-2.5 text-[10px] font-semibold text-right ${overCapacity ? "border-red-500" : ""}`}
+                                                                    aria-label={`Rejected quantity for storage lot ${selectedLot?.lot_name || allocation.storageLotId}`}
+                                                                />
+                                                                {!readOnly && (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleUpdateRejectedAllocations(line.line_id, row.rejectedLotAllocations.filter((_, index) => index !== allocationIndex))}
+                                                                        className="h-9 w-9 rounded-lg border text-muted-foreground hover:text-red-600 hover:border-red-300 flex items-center justify-center"
+                                                                        aria-label="Remove rejected storage-lot allocation"
+                                                                    >
+                                                                        <Minus className="h-3.5 w-3.5" />
+                                                                    </button>
+                                                                )}
+                                                                {overCapacity && <span className="col-span-2 text-[9px] text-red-600">This allocation exceeds the lot&apos;s remaining capacity.</span>}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                                <div className={`text-[10px] font-bold ${Math.abs(row.rejectedLotAllocations.reduce((sum, allocation) => sum + Number(allocation.quantity || 0), 0) - rejectedVal) > 1e-9 ? "text-red-600" : "text-red-700"}`}>
+                                                    Allocated: {row.rejectedLotAllocations.reduce((sum, allocation) => sum + Number(allocation.quantity || 0), 0).toLocaleString()} / {rejectedVal.toLocaleString()}
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 )}
 
@@ -826,10 +964,15 @@ export default function ShipmentInspectionForm({
                         <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
                         <span>Allocate every accepted unit to storage lots before generating the movement preview.</span>
                     </div>
+                ) : hasRejectedAllocationMismatch ? (
+                    <div className="flex items-start gap-2 text-[10px] text-red-700 max-w-xl" role="alert">
+                        <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                        <span>Assign every rejected unit to a storage lot in the Inventory Allocation section before generating the movement preview.</span>
+                    </div>
                 ) : (
                     <div className="flex items-start gap-2 text-[10px] text-muted-foreground max-w-xl">
                         <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" />
-                        <span>{previewAcknowledged ? "Receiving was posted." : "Review the movement preview, then use Confirm & Post Receiving to create the records."}</span>
+                        <span>{previewAcknowledged ? "Receiving was completed." : "Review the movement preview, then use Confirm & Receive to create the records."}</span>
                     </div>
                 )}
                 <div className="flex justify-end gap-3">
@@ -844,7 +987,7 @@ export default function ShipmentInspectionForm({
                     <button
                         type={hasPreview ? "button" : "submit"}
                         onClick={hasPreview ? onReviewPreview : undefined}
-                        disabled={loadingLines || validatingInspection || Boolean(qaSubmissionBlockReason) || hasQuantityMismatch || hasAllocationMismatch}
+                        disabled={loadingLines || validatingInspection || Boolean(qaSubmissionBlockReason) || hasQuantityMismatch || hasAllocationMismatch || hasRejectedAllocationMismatch}
                         className="px-5 py-2.5 bg-primary text-primary-foreground rounded-xl text-xs font-bold flex items-center gap-1.5 shadow h-11 justify-center cursor-pointer disabled:opacity-60 disabled:cursor-wait"
                     >
                         {validatingInspection ? <><Loader2 className="h-4 w-4 animate-spin" /> Generating...</> : qaSubmissionBlockReason ? <><AlertTriangle className="h-4 w-4" /> QA Configuration Required</> : hasPreview ? <><ReceiptText className="h-4 w-4" /> Review Movement Preview</> : <><CheckCircle2 className="h-4 w-4" /> Preview QA & Routes</>}

@@ -129,12 +129,18 @@ export interface PurchaseOrderWorkflowState {
     requiresFinance: boolean;
 }
 
+export function pendingPurchaseOrderApprovalStages(state: PurchaseOrderWorkflowState): Array<"Plant" | "Finance"> {
+    if (state.inventoryStatus !== 1 && state.inventoryStatus !== 3) return [];
+    const stages: Array<"Plant" | "Finance"> = [];
+    if (state.inventoryStatus === 1 && !state.approverId) stages.push("Plant");
+    if (state.requiresFinance && !state.financeId) stages.push("Finance");
+    return stages;
+}
+
 export function derivePurchaseOrderWorkflowStage(state: PurchaseOrderWorkflowState): PurchaseOrderWorkflowStage {
     if (state.inventoryStatus === 13) return "Rejected";
-    if (state.inventoryStatus !== 1) return "Complete";
-    if (!state.approverId) return "Plant";
-    if (state.requiresFinance && !state.financeId) return "Finance";
-    return "Complete";
+    const pendingStages = pendingPurchaseOrderApprovalStages(state);
+    return pendingStages[0] || "Complete";
 }
 
 function dateOnly(value: string): number {

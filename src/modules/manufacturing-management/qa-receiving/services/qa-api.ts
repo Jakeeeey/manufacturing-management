@@ -54,6 +54,7 @@ export async function fetchProductQaSpecifications(productId: number, signal?: A
 export async function previewReceivingQa(payload: {
     shipmentId: number;
     receiptNumber: string;
+    receiptMode: "full" | "partial";
     destinationBranchId: number;
     lines: Array<{
         lineId: number;
@@ -63,6 +64,7 @@ export async function previewReceivingQa(payload: {
         rejectedQuantity: number;
         storageLotId: number | null;
         acceptedLotAllocations: Array<{ storageLotId: number; quantity: number }>;
+        rejectedLotAllocations: Array<{ storageLotId: number; quantity: number }>;
         supplierBatchNumber: string;
         manufacturingDate: string | null;
         expiryDate: string | null;

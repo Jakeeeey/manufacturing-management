@@ -55,6 +55,24 @@ export interface ShipmentLineItem {
     quantity_ordered: number;
     quantity_received: number;
     quantity_rejected: number;
+    previously_received_quantity?: number;
+    previously_rejected_quantity?: number;
+    remaining_quantity?: number;
+    latest_receipt?: {
+        receipt_number: string;
+        received_quantity: number;
+        accepted_quantity: number;
+        rejected_quantity: number;
+        supplier_batch_number: string;
+        storage_lot_id: number | null;
+        accepted_lot_allocations: Array<{ storage_lot_id: number; quantity: number }>;
+        rejected_lot_allocations: Array<{ storage_lot_id: number; quantity: number }>;
+        manufacturing_date: string | null;
+        expiration_date: string | null;
+        rejection_reason: string;
+        qa_status: string;
+        branch_id: number | null;
+    } | null;
     base_unit_cost_php: number;
     lot_number?: string;
     batch_no?: string;
@@ -79,6 +97,7 @@ export interface InspectionRow {
     rejectionReason: string;
     isPackaging: boolean;
     acceptedLotAllocations: ReceivingLotAllocationInput[];
+    rejectedLotAllocations: ReceivingLotAllocationInput[];
 }
 
 export type QaSpecification = import("@/app/api/manufacturing/qa/_purchase-specification-domain").ProductQaSpecification;
@@ -114,6 +133,7 @@ export interface ReceivingPreview {
     postingEnabled: boolean;
     destinationBranch: { id: number; name: string; code: string };
     inspectorName: string;
+    receiptMode: "full" | "partial";
     lines: ReceivingQaEvaluation[];
 }
 
@@ -122,6 +142,7 @@ export interface ReceivingCommitPayload {
     workflowRevision: number;
     shipmentId: number;
     receiptNumber: string;
+    receiptMode: "full" | "partial";
     destinationBranchId: number;
     lines: Array<{
         lineId: number;
@@ -131,6 +152,7 @@ export interface ReceivingCommitPayload {
         rejectedQuantity: number;
         storageLotId: number | null;
         acceptedLotAllocations: Array<{ storageLotId: number; quantity: number }>;
+        rejectedLotAllocations: Array<{ storageLotId: number; quantity: number }>;
         supplierBatchNumber: string;
         manufacturingDate: string | null;
         expiryDate: string | null;
@@ -144,7 +166,7 @@ export interface ReceivingCommitResult {
     mode: "compatibility";
     commitReference: string;
     shipmentId: number;
-    status: "Received" | "Rejected";
+    status: "Partially Received" | "Received" | "Rejected";
     workflowRevision: number;
     idempotentReplay: boolean;
     receivingRecordIds: number[];

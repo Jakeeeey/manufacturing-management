@@ -22,6 +22,8 @@ export default function QAReceivingModule() {
         readOnly,
         receiptNumber,
         setReceiptNumber,
+        receiptMode,
+        setReceiptMode,
         selectedBranchId,
         setSelectedBranchId,
         inspectionRows,
@@ -42,6 +44,7 @@ export default function QAReceivingModule() {
         handleSelectShipment,
         handleUpdateRow,
         handleUpdateAllocations,
+        handleUpdateRejectedAllocations,
         handleUpdateQaReading,
         handleSubmitInspection,
         clearInspection,
@@ -152,6 +155,8 @@ export default function QAReceivingModule() {
                                 storageLots={storageLots}
                                 receiptNumber={receiptNumber}
                                 setReceiptNumber={setReceiptNumber}
+                                receiptMode={receiptMode}
+                                setReceiptMode={setReceiptMode}
                                 selectedBranchId={selectedBranchId}
                                 setSelectedBranchId={setSelectedBranchId}
                                 inspectionRows={inspectionRows}
@@ -165,6 +170,7 @@ export default function QAReceivingModule() {
                                 loadingLines={loadingLines}
                                 handleUpdateRow={handleUpdateRow}
                                 handleUpdateAllocations={handleUpdateAllocations}
+                                handleUpdateRejectedAllocations={handleUpdateRejectedAllocations}
                                 handleUpdateQaReading={handleUpdateQaReading}
                                 handleSubmitInspection={handleSubmitInspection}
                                 onReviewPreview={() => setPreviewOpen(true)}

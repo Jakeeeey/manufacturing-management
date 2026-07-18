@@ -27,6 +27,7 @@ export interface PurchaseOrderListQuery {
     endDate?: string;
     sort?: "date_encoded" | "purchase_order_no" | "reference" | "total_amount" | "inventory_status";
     direction?: "asc" | "desc";
+    approvalStage?: PurchaseOrderDecisionStage;
 }
 
 export interface PurchaseOrderCatalog {
@@ -66,6 +67,7 @@ export interface PurchaseOrderDraftPayload {
 }
 
 export type PurchaseOrderApprovalStage = "Plant" | "Finance" | "Complete" | "Rejected";
+export type PurchaseOrderDecisionStage = Extract<PurchaseOrderApprovalStage, "Plant" | "Finance">;
 
 export interface PurchaseOrderApprovalHistory {
     history_id: number;
@@ -87,6 +89,7 @@ export interface PurchaseOrderApprovalDetail {
         purchase_order_no?: string | null;
         reference?: string | null;
         inventory_status: number;
+        payment_status?: number | null;
         total_amount?: number | string | null;
         gross_amount?: number | string | null;
         currency_code?: string | null;
@@ -100,6 +103,7 @@ export interface PurchaseOrderApprovalDetail {
         date_financed?: string | null;
     };
     stage: PurchaseOrderApprovalStage;
+    pendingStages?: PurchaseOrderDecisionStage[];
     matchedRule: {
         ruleId: number;
         ruleName: string;
@@ -112,7 +116,7 @@ export interface PurchaseOrderApprovalDetail {
 }
 
 export interface PurchaseOrderApprovalCommand {
-    action: "approve" | "reject";
+    action: "approve" | "reject" | "awaiting_payment" | "cancel";
     workflowRevision: number;
     expectedRuleId?: number;
     lead_time_receiving?: string;

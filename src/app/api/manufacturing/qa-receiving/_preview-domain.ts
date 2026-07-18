@@ -52,6 +52,8 @@ export interface ReceivingMovementRoute {
 
 export interface ReceivingPreviewLineResult {
     lineId: number;
+    previouslyReceivedQuantity: number;
+    remainingQuantity: number;
     disposition: ReceivingDisposition;
     receivedQuantity: number;
     acceptedQuantity: number;
@@ -75,6 +77,7 @@ export interface ReceivingPreviewResult {
 interface RouteInput {
     acceptedQuantity: number;
     acceptedLotAllocations: ReceivingLotAllocation[];
+    rejectedLotAllocations?: ReceivingLotAllocation[];
     storageLotNames: Record<number, string>;
     rejectedQuantity: number;
     createdBy: number;
@@ -160,16 +163,25 @@ export function buildReceivingRoutes(
         if (!rejectedBranch || !rejectedTransactionType) {
             throw new Error("Rejected inventory routing is not configured.");
         }
-        routes.push({
-            ...shared,
-            kind: "Rejected",
-            qaStatus: "Rejected",
-            quantity: input.rejectedQuantity,
-            branch: rejectedBranch,
-            transactionType: rejectedTransactionType,
-            remarks: input.rejectionReason || input.remarks,
-            allocationDrafts: [],
-            unallocatedQuantity: 0
+        const rejectedLotAllocations = input.rejectedLotAllocations?.length
+            ? input.rejectedLotAllocations
+            : input.storageLotId > 0
+                ? [{ storageLotId: input.storageLotId, quantity: input.rejectedQuantity }]
+                : [];
+        rejectedLotAllocations.forEach(allocation => {
+            routes.push({
+                ...shared,
+                kind: "Rejected",
+                qaStatus: "Rejected",
+                quantity: allocation.quantity,
+                branch: rejectedBranch,
+                transactionType: rejectedTransactionType,
+                storageLotId: allocation.storageLotId,
+                storageLotName: input.storageLotNames[allocation.storageLotId] || "Unknown storage lot",
+                remarks: input.rejectionReason || input.remarks,
+                allocationDrafts: [],
+                unallocatedQuantity: 0
+            });
         });
     }
     return routes;

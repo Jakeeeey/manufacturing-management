@@ -74,6 +74,7 @@ export default function InboundShipmentsList({
                         >
                             <option value="">All Statuses</option>
                             <option value="Approved">Approved</option>
+                            <option value="For Pickup">QA (Receiving)</option>
                             <option value="En Route">En Route</option>
                             <option value="Partially Received">Partially Received / Receiving (QA)</option>
                             <option value="Received">Received</option>
@@ -124,11 +125,11 @@ export default function InboundShipmentsList({
                                     {s.reference_number}
                                 </span>
                                 <span className={`px-1.5 py-0.5 rounded text-[8px] uppercase font-extrabold border ${
-                                    s.status === "Receiving (QA)"
+                                    s.status === "Receiving (QA)" || s.status === "For Pickup"
                                         ? "bg-amber-500/10 text-amber-500 border-amber-500/20"
                                         : "bg-blue-500/10 text-blue-500 border-blue-500/20"
                                 }`}>
-                                    {s.status}
+                                    {s.status === "For Pickup" ? "QA (Receiving)" : s.status}
                                 </span>
                             </div>
                             <div className="flex justify-between text-[10px] text-muted-foreground">

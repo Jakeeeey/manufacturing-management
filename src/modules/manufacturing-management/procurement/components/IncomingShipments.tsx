@@ -32,6 +32,7 @@ import { toast } from "sonner";
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { BOMMaterialSelect } from "@/modules/manufacturing-management/finished-goods/components/BOMMaterialSelect";
 import { CreatableSelect } from "@/modules/manufacturing-management/finished-goods/components/CreatableSelect";
+import { INVENTORY_STATUS, PAYMENT_STATUS } from "@/app/api/manufacturing/procurement/_domain";
 
 export interface ManifestLineFormItem {
     product_id: string;
@@ -56,7 +57,7 @@ export interface ShipmentFormState {
     exchange_rate: string;
     total_foreign_currency: string;
     total_php_value: string;
-    status: "Ordered" | "Approved" | "Cancelled" | "For Pickup" | "En Route" | "Receiving (QA)" | "Partially Received" | "Received" | "Rejected";
+    status: "Ordered" | "Approved" | "Awaiting Payment" | "Cancelled" | "For Pickup" | "En Route" | "Receiving (QA)" | "Partially Received" | "Received" | "Rejected";
     date_received: string;
     branch_id: number | null;
     payment_type: number | null;
@@ -83,7 +84,7 @@ interface IncomingShipmentsProps {
     onTriggerAllocation: (s: IncomingShipment) => void;
     onEditShipment: (shipmentId: number, shipmentData: ShipmentFormState, lineItems: ManifestLineFormItem[]) => void | Promise<boolean | void>;
     onCancelRejectedPurchaseOrder?: (shipmentId: number, workflowRevision: number, remarks?: string) => void | Promise<boolean>;
-    onUpdateShipmentStatus: (shipmentId: number, status: "Ordered" | "Approved" | "Cancelled" | "For Pickup" | "En Route" | "Receiving (QA)" | "Partially Received" | "Received" | "Rejected") => void;
+    onUpdateShipmentStatus: (shipmentId: number, status: "Ordered" | "Approved" | "Awaiting Payment" | "Cancelled" | "For Pickup" | "En Route" | "Receiving (QA)" | "Partially Received" | "Received" | "Rejected") => void;
     loading?: boolean;
     listLoading?: boolean;
     serverList?: {
@@ -612,14 +613,11 @@ export default function IncomingShipments({
         e.preventDefault();
         setHasSubmitted(true);
         
-        const hasBlankProduct = linesForm.some(l => !l.product_id || l.product_id.trim() === "");
-        if (hasBlankProduct) {
-            toast.error("Please select a valid Raw Product Name for all rows in the cargo manifest.");
-            return;
-        }
-
-        if (linesForm.some(line => getLineErrors(line).length > 0)) {
-            toast.error("Review the highlighted purchase-order line fields before continuing.");
+        const firstInvalidLine = linesForm
+            .map((line, index) => ({ index, errors: getLineErrors(line) }))
+            .find(item => item.errors.length > 0);
+        if (firstInvalidLine) {
+            toast.error(`Purchase Order Line ${firstInvalidLine.index + 1}: ${firstInvalidLine.errors[0]}.`);
             return;
         }
 
@@ -867,14 +865,14 @@ export default function IncomingShipments({
         const vat = Number(line.vat_percent || 0);
         const withholding = Number(line.withholding_percent || 0);
 
-        if (!line.product_id) errors.push("Select a product");
+        if (!line.product_id) errors.push("Raw Product Name is required");
         if (!Number.isInteger(quantity) || quantity <= 0) errors.push("Quantity must be a positive whole number");
-        if (line.base_unit_cost_php === "" || !Number.isFinite(unitPrice) || unitPrice < 0) errors.push("Unit price must be non-negative");
-        if (!Number.isFinite(discount) || discount < 0 || discount > 100) errors.push("Discount must be 0-100");
-        if (!Number.isFinite(vat) || vat < 0 || vat > 100) errors.push("VAT must be 0-100");
-        if (!Number.isFinite(withholding) || withholding < 0 || withholding > 100) errors.push("Withholding must be 0-100");
+        if (line.base_unit_cost_php === "" || !Number.isFinite(unitPrice) || unitPrice < 0) errors.push("FOB Unit Cost must be a non-negative number");
+        if (!Number.isFinite(discount) || discount < 0 || discount > 100) errors.push("Discount must be between 0 and 100");
+        if (!Number.isFinite(vat) || vat < 0 || vat > 100) errors.push("VAT must be between 0 and 100");
+        if (!Number.isFinite(withholding) || withholding < 0 || withholding > 100) errors.push("Withholding must be between 0 and 100");
         if (line.purchase_intent === "MRP_Demand" && (!Number.isInteger(Number(line.job_order_id)) || Number(line.job_order_id) <= 0)) {
-            errors.push("Select a Job Order for MRP Demand");
+            errors.push("Job Order is required for MRP Demand");
         }
         if (line.purchase_intent === "Buffer_Stock" && line.job_order_id) errors.push("Remove the Job Order for Buffer Stock");
         return errors;
@@ -882,12 +880,16 @@ export default function IncomingShipments({
 
     const getStatusBadge = (status: string) => {
         switch (status) {
+            case "Pending":
+                return <span className="bg-amber-500/10 text-amber-700 border border-amber-500/20 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase">Pending</span>;
             case "Requested":
                 return <span className="bg-blue-500/10 text-blue-600 border border-blue-500/20 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase">Requested</span>;
             case "Ordered":
                 return <span className="bg-blue-500/10 text-blue-600 border border-blue-500/20 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase">{canonicalDrafting ? "Requested" : "Ordered"}</span>;
             case "Approved":
                 return <span className="bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase">Approved</span>;
+            case "Awaiting Payment":
+                return <span className="bg-orange-500/10 text-orange-700 border border-orange-500/20 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase">Awaiting Payment</span>;
             case "Cancelled":
                 return <span className="bg-zinc-500/10 text-zinc-600 border border-zinc-500/20 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase">Cancelled</span>;
             case "For Pickup":
@@ -905,6 +907,13 @@ export default function IncomingShipments({
             default:
                 return <span className="bg-muted text-muted-foreground border px-2 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase">{status}</span>;
         }
+    };
+
+    const displayShipmentStatus = (shipment: Pick<IncomingShipment, "status" | "inventory_status" | "payment_status">) => {
+        if (Number(shipment.inventory_status) === INVENTORY_STATUS.FOR_PICKUP) return "Receiving (QA)";
+        if (shipment.status !== "Awaiting Payment") return shipment.status;
+        if (Number(shipment.inventory_status) !== INVENTORY_STATUS.APPROVED) return "Pending";
+        return Number(shipment.payment_status) === PAYMENT_STATUS.AWAITING_PAYMENT ? "Approved" : shipment.status;
     };
 
     return (
@@ -958,6 +967,7 @@ export default function IncomingShipments({
                             <option value="All">All Statuses</option>
                             <option value={canonicalDrafting ? "Requested" : "Ordered"}>{canonicalDrafting ? "Requested" : "Ordered"}</option>
                             <option value="Approved">Approved</option>
+                            <option value="Awaiting Payment">Awaiting Payment</option>
                             <option value="Cancelled">Cancelled</option>
                             <option value="For Pickup">For Pickup</option>
                             <option value="En Route">En Route</option>
@@ -1021,7 +1031,7 @@ export default function IncomingShipments({
                                 >
                                     <div className="flex items-start justify-between gap-2">
                                         <span className="font-bold text-xs text-foreground truncate">{canonicalDrafting ? `PO: ${s.purchase_order_no || s.reference_number}` : `BL/PO: ${s.reference_number}`}</span>
-                                        {getStatusBadge(s.status)}
+                                        {getStatusBadge(displayShipmentStatus(s))}
                                     </div>
                                     <div className="flex items-center justify-between text-[11px] text-muted-foreground font-semibold">
                                         <span>{supName}</span>
@@ -1101,7 +1111,7 @@ export default function IncomingShipments({
                             <div className="space-y-1.5">
                                 <div className="flex items-center gap-2">
                                     <h2 className="text-base font-extrabold text-foreground leading-tight">{canonicalDrafting ? `Purchase Order: ${activeShipment.purchase_order_no || activeShipment.reference_number}` : `Cargo Invoice / BL: ${activeShipment.reference_number}`}</h2>
-                                    {getStatusBadge(activeShipment.status)}
+                                    {getStatusBadge(displayShipmentStatus(activeShipment))}
                                 </div>
                                 <p className="text-xs text-muted-foreground">
                                     Supplier Source:{" "}
@@ -1165,13 +1175,17 @@ export default function IncomingShipments({
                                     <div className="text-[10px] font-extrabold text-muted-foreground uppercase tracking-wider block">{canonicalDrafting ? "Purchase Order Workflow Progress" : "Shipment Life Cycle Progress"}</div>
                                     <div className="flex items-center w-full relative">
                                         {(activeShipment.status === "Rejected"
-                                            ? ["Ordered", "Approved", "Rejected"]
-                                            : activeShipment.status === "For Pickup"
-                                            ? ["Ordered", "Approved", "For Pickup", "En Route", "Receiving (QA)", "Received"]
-                                            : ["Ordered", "Approved", "En Route", "Receiving (QA)", "Received"]
+                                            ? ["Requested", "Approved", "Rejected"]
+                                            : ["Requested", "Approved", "En Route", "Receiving (QA)", "Received"]
                                         ).map((st, idx, arr) => {
                                             const statuses = arr;
-                                            const currentStatus = activeShipment.status === "Requested" ? "Ordered" : activeShipment.status;
+                                            const currentStatus = activeShipment.status === "Requested" || activeShipment.status === "Ordered"
+                                                ? "Requested"
+                                                : activeShipment.status === "For Pickup" || activeShipment.status === "Partially Received"
+                                                ? "Receiving (QA)"
+                                                : activeShipment.status === "Awaiting Payment"
+                                                ? (Number(activeShipment.inventory_status) === INVENTORY_STATUS.APPROVED ? "Approved" : "Requested")
+                                                : activeShipment.status;
                                             const currentIdx = statuses.indexOf(currentStatus);
                                             const stepIdx = statuses.indexOf(st);
                                             
@@ -1192,7 +1206,7 @@ export default function IncomingShipments({
                                                         </div>
                                                         <span className={`text-[9px] font-bold mt-1.5 truncate max-w-[70px] ${
                                                             isActive ? "text-primary animate-pulse" : "text-muted-foreground"
-                                                        }`}>{canonicalDrafting && st === "Ordered" ? "Requested" : st}</span>
+                          }`}>{st}</span>
                                                     </div>
                                                     {idx < arr.length - 1 && (
                                                         <div className={`flex-1 h-[2px] -mt-4 transition-all ${
@@ -1205,7 +1219,7 @@ export default function IncomingShipments({
                                     </div>
 
                                     {/* Explicit Action Buttons for status turnover */}
-                                    {activeShipment.status === "Approved" && (
+                                    {(activeShipment.status === "Approved" || activeShipment.status === "Awaiting Payment") && Number(activeShipment.inventory_status) === INVENTORY_STATUS.APPROVED && (
                                         <button
                                             type="button"
                                             disabled={statusLoading !== null}
@@ -1216,7 +1230,7 @@ export default function IncomingShipments({
                                             }}
                                             className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-60 disabled:cursor-wait text-white font-bold py-2 px-3 rounded-lg text-xs transition-all shadow-sm cursor-pointer mt-3 inline-flex items-center justify-center gap-1.5"
                                         >
-                                            {statusLoading === "en-route" ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Processing...</> : "Mark Cargo as En Route (Departed)"}
+                                            {statusLoading === "en-route" ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Processing...</> : "Dispatch Cargo (Mark En Route)"}
                                         </button>
                                     )}
 
