@@ -286,7 +286,7 @@ export function useQAReceiving() {
             const rowsInit: Record<number, InspectionRow> = {};
             lines.forEach(l => {
                 const prodName = l.product_id?.product_name?.toLowerCase() || "";
-                const latestReceipt = isPartiallyReceived ? l.latest_receipt : null;
+                const latestReceipt = isReceived || isPartiallyReceived ? l.latest_receipt : null;
                 const latestReceivedQuantity = Number(latestReceipt?.received_quantity ?? l.quantity_received ?? 0);
                 const latestAcceptedQuantity = Number(latestReceipt?.accepted_quantity ?? Math.max(0, latestReceivedQuantity - Number(l.quantity_rejected || 0)));
                 const latestRejectedQuantity = Number(latestReceipt?.rejected_quantity ?? l.quantity_rejected ?? 0);
@@ -345,6 +345,15 @@ export function useQAReceiving() {
                 };
             });
             setInspectionRows(rowsInit);
+
+            const storedReceiptNumber = lines
+                .map(line => {
+                    const receipt = line.latest_receipt?.receipt_number?.trim() || "";
+                    const suffix = `-${line.line_id}`;
+                    return receipt.endsWith(suffix) ? receipt.slice(0, -suffix.length) : receipt;
+                })
+                .find(Boolean) || "";
+            setReceiptNumber(isReceived || isPartiallyReceived ? storedReceiptNumber : "");
 
             // Reuse the last partial receipt branch when available; otherwise use the PO branch.
             const latestReceiptBranchId = isPartiallyReceived
@@ -537,6 +546,8 @@ export function useQAReceiving() {
     }, [lineItems, qaSpecificationStates]);
 
     const receivingValidationIssues = useMemo<ReceivingValidationIssue[]>(() => {
+        if (isLockedReceivingShipment(selectedShipment)) return [];
+
         const issues = validateReceivingMetadata(receiptNumber, selectedBranchId, lineItems.map(line => {
             const row = inspectionRows[line.line_id];
             return {
@@ -622,7 +633,7 @@ export function useQAReceiving() {
         }
 
         return issues;
-    }, [inspectionRows, lineItems, qaReadings, qaSpecificationStates, receiptMode, receiptNumber, selectedBranchId]);
+    }, [inspectionRows, lineItems, qaReadings, qaSpecificationStates, receiptMode, receiptNumber, selectedBranchId, selectedShipment]);
 
     const handleSubmitInspection = async (e: React.FormEvent) => {
         e.preventDefault();
