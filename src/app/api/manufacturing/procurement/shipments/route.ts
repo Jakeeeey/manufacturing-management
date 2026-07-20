@@ -19,6 +19,7 @@ import {
     purchaseOrderStatusUpdateSchema
 } from "../../purchase-orders/_schemas";
 import { buildPurchaseOrderProductPayload, calculatePurchaseOrderTotals } from "../../purchase-orders/_domain";
+import { assertMrpProductJobOrderPairs, MrpPairValidationError } from "../../purchase-orders/_mrp-validation";
 
 class InvalidTransitionError extends Error {}
 
@@ -84,7 +85,7 @@ export async function POST(request: Request) {
     } catch (e) {
         console.error("API Error creating incoming shipment:", e);
         return NextResponse.json({ error: (e as Error).message || "Failed to create shipment" }, {
-            status: e instanceof PurchaseOrderAuthorizationError ? e.status : 500
+            status: e instanceof PurchaseOrderAuthorizationError || e instanceof MrpPairValidationError ? e.status : 500
         });
     }
 }
@@ -130,6 +131,7 @@ export async function PUT(request: Request) {
         if (!parsed.success) return NextResponse.json({ error: "Invalid purchase-order edit.", details: parsed.error.flatten() }, { status: 400 });
         await requirePurchaseOrderModuleAccess({ modulePath: PURCHASE_ORDER_MODULE_PATHS.procurement });
         const { shipmentId, shipmentData, lineItems } = parsed.data;
+        await assertMrpProductJobOrderPairs(lineItems);
 
         const currentResponse = await fetch(
             `${DIRECTUS_URL}/items/purchase_order/${shipmentId}?fields=inventory_status,currency_code,exchange_rate`,
@@ -243,7 +245,7 @@ export async function PUT(request: Request) {
     } catch (e) {
         console.error("API Error updating shipment:", e);
         return NextResponse.json({ error: (e as Error).message || "Failed to update shipment" }, {
-            status: e instanceof PurchaseOrderAuthorizationError ? e.status : 500
+            status: e instanceof PurchaseOrderAuthorizationError || e instanceof MrpPairValidationError ? e.status : 500
         });
     }
 }

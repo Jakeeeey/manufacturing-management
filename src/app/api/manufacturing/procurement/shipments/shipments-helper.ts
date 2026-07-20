@@ -5,6 +5,7 @@ import { DirectusShipment } from "@/modules/manufacturing-management/procurement
 import type { PurchaseOrderListQuery } from "../../purchase-orders/_schemas";
 import { buildPurchaseOrderProductPayload, calculatePurchaseOrderLine } from "../../purchase-orders/_domain";
 import { resolvePurchaseOrderLineId, summarizeReceivingHistory } from "../../qa-receiving/_receiving-history";
+import { assertMrpProductJobOrderPairs } from "../../purchase-orders/_mrp-validation";
 
 interface DirectusPO {
     purchase_order_id: number;
@@ -602,6 +603,7 @@ export async function createIncomingShipment(
     let poId: number | null = null;
     const createdProductIds: number[] = [];
     try {
+        await assertMrpProductJobOrderPairs(lineItems);
         const totalPhp = Number(shipmentData.total_php_value || 0);
         const extendedData = shipmentData as ExtendedShipment;
 

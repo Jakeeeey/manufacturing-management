@@ -9,6 +9,7 @@ import {
 import type { z } from "zod";
 import type { purchaseOrderCancellationSchema, purchaseOrderRevisionSchema } from "./_schemas";
 import type { AuthorizedPurchaseOrderUser } from "./_auth";
+import { assertMrpProductJobOrderPairs } from "./_mrp-validation";
 
 type RevisionCommand = z.infer<typeof purchaseOrderRevisionSchema>;
 type CancellationCommand = z.infer<typeof purchaseOrderCancellationSchema>;
@@ -170,6 +171,7 @@ async function validateRevisionReferences(command: RevisionCommand) {
             throw new PurchaseOrderLifecycleError("One or more revised job orders do not exist.", 400);
         }
     }
+    await assertMrpProductJobOrderPairs(command.lineItems);
 }
 
 async function resolveApprovalRule(totalPhp: number, currencyCode: string, productIds: number[]) {

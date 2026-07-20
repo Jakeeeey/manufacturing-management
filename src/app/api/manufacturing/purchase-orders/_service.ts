@@ -8,6 +8,7 @@ import {
 } from "./_domain";
 import type { z } from "zod";
 import type { purchaseOrderCreateSchema } from "./_schemas";
+import { assertMrpProductJobOrderPairs } from "./_mrp-validation";
 
 type PurchaseOrderDraft = z.infer<typeof purchaseOrderCreateSchema>;
 
@@ -116,6 +117,7 @@ async function validateDraft(order: PurchaseOrderDraft) {
     }
     if (products.length !== productIds.length) throw new PurchaseOrderDraftError("One or more selected products do not exist.");
     if (jobOrders.length !== jobOrderIds.length) throw new PurchaseOrderDraftError("One or more selected job orders do not exist.");
+    await assertMrpProductJobOrderPairs(order.lines);
 
     const mappedIds = new Set(mappings.map(mapping =>
         typeof mapping.product_id === "object" ? Number(mapping.product_id?.product_id) : Number(mapping.product_id)
