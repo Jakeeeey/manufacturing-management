@@ -1,6 +1,7 @@
 import { INVENTORY_STATUS, todayInManila } from "../procurement/_domain";
 import { procurementDirectusFetch } from "../procurement/_directus";
 import {
+    buildPurchaseOrderProductPayload,
     calculatePurchaseOrderTotals,
     selectPurchaseOrderApprovalRule,
     type PurchaseOrderApprovalRule
@@ -204,30 +205,21 @@ function legacyLineAmounts(line: RevisionCommand["lineItems"][number], exchangeR
 function linePayload(
     purchaseOrderId: number,
     line: RevisionCommand["lineItems"][number],
-    amount: ReturnType<typeof calculatePurchaseOrderTotals>["lines"][number]
+    amount: ReturnType<typeof calculatePurchaseOrderTotals>["lines"][number],
+    exchangeRate: number
 ) {
-    const quantity = Number(line.quantity_ordered);
-    const unitPrice = Number(line.base_unit_cost_php);
-    return {
-        purchase_order_id: purchaseOrderId,
-        product_id: Number(line.product_id),
-        ordered_quantity: quantity,
-        unit_price: unitPrice,
-        approved_price: unitPrice,
-        gross_amount: amount.grossPhp,
-        discounted_price: (amount.grossPhp - amount.discountPhp) / quantity,
-        discounted_amount: amount.discountPhp,
-        net_amount: amount.netPhp,
-        total_amount: amount.netPhp,
-        purchase_intent: line.purchase_intent || "Buffer_Stock",
-        job_order_id: line.job_order_id ? Number(line.job_order_id) : null,
-        unit_price_foreign: unitPrice,
-        gross_amount_foreign: amount.grossForeign,
-        net_amount_foreign: amount.netForeign,
-        discount_percent: Number(line.discount_percent || 0),
-        vat_percent: Number(line.vat_percent || 0),
-        withholding_percent: Number(line.withholding_percent || 0)
-    };
+    return buildPurchaseOrderProductPayload({
+        purchaseOrderId,
+        productId: Number(line.product_id),
+        quantity: Number(line.quantity_ordered),
+        unitPrice: Number(line.base_unit_cost_php),
+        discountPercent: Number(line.discount_percent || 0),
+        vatPercent: Number(line.vat_percent || 0),
+        withholdingPercent: Number(line.withholding_percent || 0),
+        exchangeRate,
+        purchaseIntent: line.purchase_intent === "MRP_Demand" ? "MRP_Demand" : "Buffer_Stock",
+        jobOrderId: line.job_order_id ? Number(line.job_order_id) : null
+    }, amount);
 }
 
 async function conditionalPatch(id: number, expectedRevision: number, data: Record<string, unknown>, status?: number) {
@@ -404,7 +396,7 @@ export async function reviseRejectedPurchaseOrder(id: number, command: RevisionC
             deletedLineIds.push(line.purchase_order_product_id);
         }
         for (let index = 0; index < command.lineItems.length; index += 1) {
-            createdLineIds.push(await createLine(linePayload(id, command.lineItems[index], totals.lines[index])));
+            createdLineIds.push(await createLine(linePayload(id, command.lineItems[index], totals.lines[index], exchangeRate)));
         }
         await writeHistory(
             id,

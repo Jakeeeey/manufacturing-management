@@ -486,8 +486,10 @@ export async function handleQaReceivingPost(request: Request, options: Receiving
                 throw new ReceivingError(`Expiry date must be after the receipt date for product ${productId}.`, 400);
             }
 
-            const orderedQuantity = Math.max(1, Number(poLine.ordered_quantity || 1));
-            const baseUnitCost = Number(poLine.net_amount ?? poLine.total_amount ?? poLine.unit_price ?? 0) / orderedQuantity;
+            // unit_price is the stored PHP base cost. Taxes, discounts, and
+            // withholding are line totals and must not be converted back into
+            // a unit cost for receiving or landed-cost allocation.
+            const baseUnitCost = Number(poLine.unit_price || 0);
             const accepted = received - rejected;
             const acceptedLotAllocations = normalizeReceivingLotAllocations(
                 accepted,

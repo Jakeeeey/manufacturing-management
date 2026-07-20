@@ -18,7 +18,7 @@ import {
     legacyPurchaseOrderEditSchema,
     purchaseOrderStatusUpdateSchema
 } from "../../purchase-orders/_schemas";
-import { calculatePurchaseOrderTotals } from "../../purchase-orders/_domain";
+import { buildPurchaseOrderProductPayload, calculatePurchaseOrderTotals } from "../../purchase-orders/_domain";
 
 class InvalidTransitionError extends Error {}
 
@@ -151,14 +151,25 @@ export async function PUT(request: Request) {
         // Recompute total from the actual submitted line items (quantity_ordered is the correct field
         // from ManifestLineFormItem; shipmentData.total_php_value may be stale)
         const exchangeRate = Number(shipmentData.exchange_rate) || 1;
+        const currencyCode = String((shipmentData as { currency_code?: string }).currency_code || "").toUpperCase();
+        const isCanonicalPurchaseOrder = currencyCode === "PHP" || currencyCode === "USD";
+        // The legacy shipment form submits a PHP unit cost even though it also
+        // carries the site's forex rate. Canonical purchase orders submit the
+        // transaction-currency unit cost and must be converted to PHP.
+        const calculationExchangeRate = isCanonicalPurchaseOrder ? exchangeRate : 1;
         const calculated = calculatePurchaseOrderTotals(lineItems.map(item => ({
             quantity: Number(item.quantity_ordered || 0),
             unitPrice: Number(item.base_unit_cost_php || 0),
             discountPercent: Number((item as { discount_percent?: number }).discount_percent || 0),
             vatPercent: Number((item as { vat_percent?: number }).vat_percent || 0),
             withholdingPercent: Number((item as { withholding_percent?: number }).withholding_percent || 0)
-        })), exchangeRate);
-        const totalPhp = calculated.netPhp;
+        })), calculationExchangeRate);
+        const totalPhp = isCanonicalPurchaseOrder
+            ? calculated.netPhp
+            : Number(shipmentData.total_php_value || calculated.netPhp);
+        const totalForeign = isCanonicalPurchaseOrder
+            ? calculated.netForeign
+            : Number(shipmentData.total_foreign_currency || calculated.netForeign);
 
         // 1. Update purchase_order header
         const poPayload = {
@@ -169,7 +180,7 @@ export async function PUT(request: Request) {
             total_amount: totalPhp,
             inventory_status: 1, // Reset to Requested (Ordered)
             exchange_rate: exchangeRate,
-            total_foreign_currency: calculated.netForeign,
+            total_foreign_currency: totalForeign,
             date_received: shipmentData.date_received || null,
             lead_time_receiving: null,
             approver_id: null,
@@ -206,33 +217,24 @@ export async function PUT(request: Request) {
             const item = lineItems[index];
             const qty = Number((item as { quantity_ordered?: number | string }).quantity_ordered || 0);
             const price = Number(item.base_unit_cost_php || 0);
-            const discountPercent = Number((item as { discount_percent?: number }).discount_percent || 0);
             const amounts = calculated.lines[index];
 
             const createResponse = await fetch(`${DIRECTUS_URL}/items/purchase_order_products`, {
                 method: "POST",
                 headers,
-                body: JSON.stringify({
-                    purchase_order_id: shipmentId,
-                    product_id: Number(item.product_id),
-                    ordered_quantity: qty,
-                    unit_price: price,
-                    approved_price: price,
-                    discount_type: (item as { discount_type?: number | null }).discount_type || null,
-                    gross_amount: amounts.grossPhp,
-                    discounted_price: (amounts.grossPhp - amounts.discountPhp) / qty,
-                    discounted_amount: amounts.discountPhp,
-                    net_amount: amounts.netPhp,
-                    total_amount: amounts.netPhp,
-                    purchase_intent: (item as { purchase_intent?: string }).purchase_intent || "Buffer_Stock",
-                    job_order_id: (item as { job_order_id?: number | null }).job_order_id || null,
-                    unit_price_foreign: price,
-                    gross_amount_foreign: amounts.grossForeign,
-                    net_amount_foreign: amounts.netForeign,
-                    discount_percent: discountPercent,
-                    vat_percent: Number((item as { vat_percent?: number }).vat_percent || 0),
-                    withholding_percent: Number((item as { withholding_percent?: number }).withholding_percent || 0)
-                })
+                body: JSON.stringify(buildPurchaseOrderProductPayload({
+                    purchaseOrderId: shipmentId,
+                    productId: Number(item.product_id),
+                    quantity: qty,
+                    unitPrice: price,
+                    discountPercent: Number((item as { discount_percent?: number }).discount_percent || 0),
+                    vatPercent: Number((item as { vat_percent?: number }).vat_percent || 0),
+                    withholdingPercent: Number((item as { withholding_percent?: number }).withholding_percent || 0),
+                    exchangeRate: calculationExchangeRate,
+                    branchId: shipmentData.branch_id,
+                    purchaseIntent: (item as { purchase_intent?: "MRP_Demand" | "Buffer_Stock" }).purchase_intent || "Buffer_Stock",
+                    jobOrderId: (item as { job_order_id?: number | null }).job_order_id || null
+                }, amounts))
             });
             if (!createResponse.ok) throw new Error(`Failed to create replacement purchase-order line ${index + 1}.`);
         }
