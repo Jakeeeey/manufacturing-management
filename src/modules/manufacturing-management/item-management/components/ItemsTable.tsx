@@ -1,5 +1,5 @@
 import React from "react";
-import { ChevronsLeft, ChevronsRight, Boxes } from "lucide-react";
+import { ChevronsLeft, ChevronsRight, Boxes, Edit } from "lucide-react";
 import { CatalogItem } from "../types";
 import {
     Table,
@@ -20,9 +20,10 @@ import { Button } from "@/components/ui/button";
 
 interface ItemsTableProps {
     items: CatalogItem[];
+    onEdit: (item: CatalogItem) => void;
 }
 
-export default function ItemsTable({ items }: ItemsTableProps) {
+export default function ItemsTable({ items, onEdit }: ItemsTableProps) {
     const [currentPage, setCurrentPage] = React.useState(1);
     const [pageSize, setPageSize] = React.useState(10);
 
@@ -56,6 +57,9 @@ export default function ItemsTable({ items }: ItemsTableProps) {
                                 <TableHead>Item Name</TableHead>
                                 <TableHead>Item Type</TableHead>
                                 <TableHead>Item Classification</TableHead>
+                                <TableHead>Created By</TableHead>
+                                <TableHead>Updated By</TableHead>
+                                <TableHead className="w-[80px] text-right">Actions</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -87,6 +91,22 @@ export default function ItemsTable({ items }: ItemsTableProps) {
                                             <span className="px-2 py-0.5 rounded text-xs font-semibold bg-primary/10 text-primary border border-transparent">
                                                 {classificationName}
                                             </span>
+                                        </TableCell>
+                                        <TableCell className="text-muted-foreground text-xs">
+                                            {item.created_by_name || "N/A"}
+                                        </TableCell>
+                                        <TableCell className="text-muted-foreground text-xs">
+                                            {item.updated_by_name || "N/A"}
+                                        </TableCell>
+                                        <TableCell className="text-right">
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted"
+                                                onClick={() => onEdit(item)}
+                                            >
+                                                <Edit className="h-4 w-4" />
+                                            </Button>
                                         </TableCell>
                                     </TableRow>
                                 );

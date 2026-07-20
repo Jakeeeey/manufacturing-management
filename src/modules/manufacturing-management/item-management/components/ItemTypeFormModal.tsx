@@ -3,21 +3,26 @@ import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
+import { ItemType } from "../types";
+
 interface ItemTypeFormModalProps {
     isOpen: boolean;
     onClose: () => void;
     onSave: (name: string) => Promise<boolean>;
+    itemType?: ItemType;
 }
 
-export default function ItemTypeFormModal({ isOpen, onClose, onSave }: ItemTypeFormModalProps) {
-    const [typeName, setTypeName] = useState("");
+export default function ItemTypeFormModal({ isOpen, onClose, onSave, itemType }: ItemTypeFormModalProps) {
+    const [typeName, setTypeName] = useState(itemType?.type_name || "");
     const [submitting, setSubmitting] = useState(false);
+    const [error, setError] = useState(false);
 
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         const trimmed = typeName.trim();
         if (!trimmed) {
+            setError(true);
             toast.error("Item Type Name is required.");
             return;
         }
@@ -41,7 +46,9 @@ export default function ItemTypeFormModal({ isOpen, onClose, onSave }: ItemTypeF
             >
                 {/* Header */}
                 <div className="flex items-center justify-between px-5 py-4 border-b shrink-0 bg-muted/10">
-                    <h3 className="text-sm font-bold text-foreground">Register New Item Type</h3>
+                    <h3 className="text-sm font-bold text-foreground">
+                        {itemType ? "Edit Item Type" : "Register New Item Type"}
+                    </h3>
                     <button
                         type="button"
                         onClick={onClose}
@@ -53,19 +60,35 @@ export default function ItemTypeFormModal({ isOpen, onClose, onSave }: ItemTypeF
                 </div>
 
                 {/* Form */}
-                <form onSubmit={handleSubmit} className="p-5 space-y-4 text-xs">
+                <form 
+                    onSubmit={handleSubmit} 
+                    onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                            e.preventDefault();
+                        }
+                    }}
+                    className="p-5 space-y-4 text-xs"
+                >
                     <div className="space-y-1">
                         <label className="text-[10px] font-bold text-muted-foreground uppercase block mb-1">
                             Type Name <span className="text-destructive">*</span>
                         </label>
                         <input
                             type="text"
-                            required
                             placeholder="e.g. Machinery"
                             value={typeName}
-                            onChange={(e) => setTypeName(e.target.value)}
+                            onChange={(e) => {
+                                setTypeName(e.target.value);
+                                if (e.target.value.trim()) {
+                                    setError(false);
+                                }
+                            }}
                             disabled={submitting}
-                            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
+                            className={`w-full rounded-lg border bg-background px-3 py-2 text-xs text-foreground outline-none focus:ring-1 transition-all ${
+                                error
+                                    ? "border-destructive focus:ring-destructive"
+                                    : "border-border focus:ring-primary"
+                            }`}
                         />
                     </div>
 
@@ -88,10 +111,10 @@ export default function ItemTypeFormModal({ isOpen, onClose, onSave }: ItemTypeF
                             {submitting ? (
                                 <>
                                     <Loader2 className="h-3 w-3 animate-spin mr-1.5" />
-                                    Registering...
+                                    {itemType ? "Saving..." : "Registering..."}
                                 </>
                             ) : (
-                                "Register Type"
+                                itemType ? "Save Changes" : "Register Type"
                             )}
                         </Button>
                     </div>
