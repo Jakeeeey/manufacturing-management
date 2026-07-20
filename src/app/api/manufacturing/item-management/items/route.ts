@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { DIRECTUS_URL, headers } from "@/app/api/manufacturing/directus-api";
-import { getUserIdFromToken } from "../auth-helper";
+import { getUserIdFromToken, getManilaTimeString } from "../auth-helper";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -139,11 +139,14 @@ export async function POST(request: Request) {
         }
 
         const userId = await getUserIdFromToken();
+        const manilaTime = getManilaTimeString();
         const payload = {
             item_name: trimmedName,
             item_type: Number(item_type),
             item_classification: Number(item_classification),
-            created_by: userId ? Number(userId) : null
+            created_by: userId ? Number(userId) : null,
+            created_at: manilaTime,
+            updated_at: manilaTime
         };
 
         const res = await fetch(`${DIRECTUS_URL}/items/items`, {
@@ -210,11 +213,13 @@ export async function PATCH(request: Request) {
         }
 
         const userId = await getUserIdFromToken();
+        const manilaTime = getManilaTimeString();
         const payload = {
             item_name: trimmedName,
             item_type: Number(item_type),
             item_classification: Number(item_classification),
-            updated_by: userId ? Number(userId) : null
+            updated_by: userId ? Number(userId) : null,
+            updated_at: manilaTime
         };
 
         const res = await fetch(`${DIRECTUS_URL}/items/items/${id}`, {

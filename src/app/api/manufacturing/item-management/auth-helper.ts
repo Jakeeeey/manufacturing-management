@@ -21,3 +21,9 @@ export async function getUserIdFromToken(): Promise<number | null> {
     }
     return null;
 }
+
+export function getManilaTimeString(): string {
+    const now = new Date();
+    const manilaTime = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+    return manilaTime.toISOString().replace("Z", "");
+}
