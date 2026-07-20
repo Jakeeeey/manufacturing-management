@@ -281,6 +281,7 @@ export default function ApprovalModule({ stage }: { stage: PurchaseOrderDecision
                                 <div><div className="text-[10px] uppercase text-muted-foreground">Revision</div><div className="mt-1 text-sm font-bold">{approvalDetail.order.workflow_revision || 0}</div></div>
                             </div>
 
+                            {stage === "Finance" && (
                             <div className="rounded-md border bg-muted/20 p-3">
                                 <div className="flex flex-wrap items-center justify-between gap-2">
                                     <div>
@@ -295,6 +296,7 @@ export default function ApprovalModule({ stage }: { stage: PurchaseOrderDecision
                                     Categories: {approvalDetail.categoryIds.length ? approvalDetail.categoryIds.join(", ") : "Uncategorized"} | Self-approval: Permitted
                                 </div>
                             </div>
+                            )}
 
                             {actionable && (
                                 <div className="space-y-3 border-y py-4">

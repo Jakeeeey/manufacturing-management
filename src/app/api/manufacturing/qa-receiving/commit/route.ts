@@ -11,6 +11,7 @@ import {
     RECEIVING_POSTING_ENABLED,
     receivingCommitRequestSchema,
     type FinalReceivingMovement,
+    type FinalReceivingAllocation,
     type FinalReceivingRecord,
     type ReceivingCommitRequest,
     type ReceivingCommitResult,
@@ -123,6 +124,19 @@ async function movementRowsForCommit(
     return sourceNumberRows.length > 0 ? sourceNumberRows : sourceIdRows;
 }
 
+async function allocationRowsForReceiving(receivingIds: number[]) {
+    if (receivingIds.length === 0) return [];
+    const params = new URLSearchParams({
+        "filter[purchase_order_receiving_id][_in]": receivingIds.join(","),
+        fields: "jo_materials_reservation_id,product_id,jo_material_id,purchase_order_receiving_id,reserved_quantity,actual_used_quantity",
+        limit: "-1"
+    });
+    return directusRows(
+        `/items/manufacturing_job_order_materials_reservations?${params.toString()}`,
+        "Unable to verify the created MRP allocations."
+    );
+}
+
 function statusLabel(status: number): "Partially Received" | "Received" | "Rejected" {
     if (status === INVENTORY_STATUS.PARTIALLY_RECEIVED) return "Partially Received";
     if (status === INVENTORY_STATUS.REJECTED) return "Rejected";
@@ -130,7 +144,11 @@ function statusLabel(status: number): "Partially Received" | "Received" | "Rejec
     throw new CommitError(500, "Receiving records were posted but the purchase order did not reach a terminal receiving status.");
 }
 
-async function persistedResult(input: ReceivingCommitRequest, idempotentReplay: boolean): Promise<ReceivingCommitResult | null> {
+async function persistedResult(
+    input: ReceivingCommitRequest,
+    idempotentReplay: boolean,
+    expectedAllocationLineIds: Set<number> = new Set()
+): Promise<ReceivingCommitResult | null> {
     const receiptNumbers = input.lines.map(line => receiptNumberForLine(input.receiptNumber, line.lineId));
     const receiptParams = new URLSearchParams({
         "filter[receipt_no][_in]": receiptNumbers.join(","),
@@ -191,8 +209,48 @@ async function persistedResult(input: ReceivingCommitRequest, idempotentReplay: 
         throw new CommitError(409, `The purchase order status changed but its inventory movements are incomplete (expected ${expectedMovementCount}, found ${movementRows.length}). Reconciliation is required.`);
     }
     const inventoryRows = await inventoryRowsForMovements(input.shipmentId, movementRows);
-
+    const allocationRows = await allocationRowsForReceiving(receivingIds);
+    const allocationMaterialIds = [...new Set(allocationRows
+        .map(row => relationId(row.jo_material_id, "jo_material_id"))
+        .filter(id => Number.isSafeInteger(id) && id > 0))];
+    const allocationMaterialRows = allocationMaterialIds.length > 0
+        ? await directusRows(
+            `/items/manufacturing_job_order_materials?filter[jo_material_id][_in]=${allocationMaterialIds.join(",")}&fields=jo_material_id,job_order_id,product_id,allocated_quantity,reserved_quantity&limit=-1`,
+            "Unable to verify the Job Order materials for the created MRP allocations."
+        )
+        : [];
+    const materialById = new Map(allocationMaterialRows.map(row => [relationId(row.jo_material_id, "jo_material_id"), row]));
+    const allMaterialAllocationRows = allocationMaterialIds.length > 0
+        ? await directusRows(
+            `/items/manufacturing_job_order_materials_reservations?filter[jo_material_id][_in]=${allocationMaterialIds.join(",")}&fields=jo_material_id,reserved_quantity&limit=-1`,
+            "Unable to verify the Job Order reservation totals for the created MRP allocations."
+        )
+        : [];
+    const reservationTotalsByMaterial = new Map<number, number>();
+    for (const row of allMaterialAllocationRows) {
+        const materialId = relationId(row.jo_material_id, "jo_material_id");
+        const quantity = Number(row.reserved_quantity || 0);
+        if (Number.isSafeInteger(materialId) && materialId > 0 && Number.isFinite(quantity)) {
+            reservationTotalsByMaterial.set(materialId, (reservationTotalsByMaterial.get(materialId) || 0) + quantity);
+        }
+    }
+    for (const materialId of allocationMaterialIds) {
+        const material = materialById.get(materialId);
+        const allocatedQuantity = Number(material?.allocated_quantity || 0);
+        const reservedQuantity = Number(material?.reserved_quantity || 0);
+        const persistedReservationTotal = reservationTotalsByMaterial.get(materialId) || 0;
+        if (!material
+            || !Number.isFinite(allocatedQuantity)
+            || !Number.isFinite(reservedQuantity)
+            || !Number.isFinite(persistedReservationTotal)
+            || reservedQuantity < -1e-9
+            || reservedQuantity > allocatedQuantity + 1e-9
+            || Math.abs(reservedQuantity - persistedReservationTotal) > 1e-9) {
+            throw new CommitError(409, `Job-order material ${materialId} reservation totals are inconsistent. Reconciliation is required.`);
+        }
+    }
     const finalMovements: FinalReceivingMovement[] = [];
+    const finalAllocations: FinalReceivingAllocation[] = [];
     const receivingRecords: FinalReceivingRecord[] = [];
     for (const line of input.lines) {
         const acceptedLotAllocations = normalizeReceivingLotAllocations(line.acceptedQuantity, line.acceptedLotAllocations, line.storageLotId);
@@ -261,6 +319,35 @@ async function persistedResult(input: ReceivingCommitRequest, idempotentReplay: 
             });
         }
 
+        const lineAllocations = allocationRows.filter(row => relationId(row.purchase_order_receiving_id, "purchase_order_product_id") === receivingLineId);
+        if (expectedAllocationLineIds.has(line.lineId) && lineAllocations.length === 0) {
+            throw new CommitError(409, `MRP allocations for line ${line.lineId} are incomplete. Reconciliation is required.`);
+        }
+        for (const allocation of lineAllocations) {
+            const allocationId = Number(allocation.jo_materials_reservation_id || allocation.id);
+            const materialId = relationId(allocation.jo_material_id, "jo_material_id");
+            const material = materialById.get(materialId);
+            const allocationProductId = relationId(allocation.product_id, "product_id") || relationId(material?.product_id, "product_id");
+            const allocationJobOrderId = relationId(material?.job_order_id, "job_order_id");
+            const quantity = Number(allocation.reserved_quantity || 0);
+            if (!Number.isSafeInteger(allocationId) || allocationId <= 0 || !material || !Number.isSafeInteger(materialId) || materialId <= 0 || !Number.isSafeInteger(allocationJobOrderId) || allocationJobOrderId <= 0 || !Number.isSafeInteger(allocationProductId) || allocationProductId <= 0 || !Number.isFinite(quantity) || quantity <= 0) {
+                throw new CommitError(409, `MRP allocation for line ${line.lineId} is invalid. Reconciliation is required.`);
+            }
+            finalAllocations.push({
+                allocationId,
+                lineId: line.lineId,
+                receivingLineId,
+                purchaseOrderReceivingId: receivingLineId,
+                jobOrderId: allocationJobOrderId,
+                jobOrderMaterialId: materialId,
+                productId: allocationProductId,
+                quantity,
+                inventoryLotIds: [...new Set(finalMovements
+                    .filter(movement => movement.receivingLineId === receivingLineId && movement.kind === "Passed")
+                    .map(movement => movement.inventoryLotId))]
+            });
+        }
+
         receivingRecords.push({
             receivingRecordId: receivingLineId,
             lineId: line.lineId,
@@ -280,7 +367,8 @@ async function persistedResult(input: ReceivingCommitRequest, idempotentReplay: 
             inventoryLotIds: [...new Set(finalMovements
                 .filter(movement => movement.receivingLineId === receivingLineId)
                 .map(movement => movement.inventoryLotId))],
-            qaResultIds: (qaRowsByReceivingId.get(receivingLineId) || []).map(row => row.result_id)
+            qaResultIds: (qaRowsByReceivingId.get(receivingLineId) || []).map(row => row.result_id),
+            allocationIds: lineAllocations.map(row => Number(row.jo_materials_reservation_id || row.id)).filter(id => Number.isSafeInteger(id) && id > 0)
         });
     }
     return {
@@ -293,9 +381,11 @@ async function persistedResult(input: ReceivingCommitRequest, idempotentReplay: 
         workflowRevision: Number(header.workflow_revision || input.workflowRevision),
         receivingRecordIds: receivingIds,
         inventoryLotIds: [...new Set(finalMovements.map(movement => movement.inventoryLotId))],
+        allocationIds: finalAllocations.map(allocation => allocation.allocationId),
         receiptNumbers,
         receivingRecords,
-        movements: finalMovements
+        movements: finalMovements,
+        allocations: finalAllocations
     };
 }
 
@@ -357,6 +447,17 @@ export async function POST(request: Request) {
         }
 
         const requestLineById = new Map(parsed.data.lines.map(line => [line.lineId, line]));
+        const mrpAllocationDrafts = preview.lines.flatMap(result => {
+            const line = requestLineById.get(result.lineId);
+            if (!line) return [];
+            return result.routes.flatMap(route => route.allocationDrafts.map(allocation => ({
+                line_id: result.lineId,
+                product_id: line.productId,
+                job_order_id: allocation.jobOrder.id,
+                job_order_material_id: allocation.jobOrderMaterialId,
+                quantity: allocation.quantity
+            })));
+        });
         const legacyResponse = await handleQaReceivingPost(new Request(request.url, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -366,6 +467,7 @@ export async function POST(request: Request) {
                 receiptMode: parsed.data.receiptMode,
                 branchId: parsed.data.destinationBranchId,
                 branchName: preview.destinationBranch.name,
+                mrp_allocation_drafts: mrpAllocationDrafts,
                 lineItemUpdates: preview.lines.map(result => {
                     const line = requestLineById.get(result.lineId)!;
                     return {
@@ -406,7 +508,11 @@ export async function POST(request: Request) {
             throw new CommitError(legacyResponse.status, legacyBody.error || "Failed to post receiving records.");
         }
 
-        const committed = await persistedResult(parsed.data, legacyBody.idempotent === true);
+        const committed = await persistedResult(
+            parsed.data,
+            legacyBody.idempotent === true,
+            new Set(mrpAllocationDrafts.map(draft => draft.line_id))
+        );
         if (!committed) {
             throw new CommitError(500, "Receiving completed but persisted records could not be fully verified. Reconciliation is required.");
         }

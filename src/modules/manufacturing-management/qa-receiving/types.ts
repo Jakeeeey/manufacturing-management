@@ -172,9 +172,11 @@ export interface ReceivingCommitResult {
     idempotentReplay: boolean;
     receivingRecordIds: number[];
     inventoryLotIds: number[];
+    allocationIds: number[];
     receiptNumbers: string[];
     receivingRecords: FinalReceivingRecord[];
     movements: FinalReceivingMovement[];
+    allocations: FinalReceivingAllocation[];
 }
 
 export interface FinalReceivingRecord {
@@ -195,6 +197,7 @@ export interface FinalReceivingRecord {
     receivedDate: string | null;
     inventoryLotIds: number[];
     qaResultIds: number[];
+    allocationIds: number[];
 }
 
 export interface FinalReceivingMovement {
@@ -209,6 +212,18 @@ export interface FinalReceivingMovement {
     transactionTypeId: number;
     sourceDocumentNo: string;
     quantity: number;
+}
+
+export interface FinalReceivingAllocation {
+    allocationId: number;
+    lineId: number;
+    receivingLineId: number;
+    purchaseOrderReceivingId: number;
+    jobOrderId: number;
+    jobOrderMaterialId: number;
+    productId: number;
+    quantity: number;
+    inventoryLotIds: number[];
 }
 
 export interface ReceivingMrpAllocationDraft {
