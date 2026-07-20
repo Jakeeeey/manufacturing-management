@@ -215,11 +215,40 @@ async function persistedResult(
         .filter(id => Number.isSafeInteger(id) && id > 0))];
     const allocationMaterialRows = allocationMaterialIds.length > 0
         ? await directusRows(
-            `/items/manufacturing_job_order_materials?filter[jo_material_id][_in]=${allocationMaterialIds.join(",")}&fields=jo_material_id,job_order_id,product_id&limit=-1`,
+            `/items/manufacturing_job_order_materials?filter[jo_material_id][_in]=${allocationMaterialIds.join(",")}&fields=jo_material_id,job_order_id,product_id,allocated_quantity,reserved_quantity&limit=-1`,
             "Unable to verify the Job Order materials for the created MRP allocations."
         )
         : [];
     const materialById = new Map(allocationMaterialRows.map(row => [relationId(row.jo_material_id, "jo_material_id"), row]));
+    const allMaterialAllocationRows = allocationMaterialIds.length > 0
+        ? await directusRows(
+            `/items/manufacturing_job_order_materials_reservations?filter[jo_material_id][_in]=${allocationMaterialIds.join(",")}&fields=jo_material_id,reserved_quantity&limit=-1`,
+            "Unable to verify the Job Order reservation totals for the created MRP allocations."
+        )
+        : [];
+    const reservationTotalsByMaterial = new Map<number, number>();
+    for (const row of allMaterialAllocationRows) {
+        const materialId = relationId(row.jo_material_id, "jo_material_id");
+        const quantity = Number(row.reserved_quantity || 0);
+        if (Number.isSafeInteger(materialId) && materialId > 0 && Number.isFinite(quantity)) {
+            reservationTotalsByMaterial.set(materialId, (reservationTotalsByMaterial.get(materialId) || 0) + quantity);
+        }
+    }
+    for (const materialId of allocationMaterialIds) {
+        const material = materialById.get(materialId);
+        const allocatedQuantity = Number(material?.allocated_quantity || 0);
+        const reservedQuantity = Number(material?.reserved_quantity || 0);
+        const persistedReservationTotal = reservationTotalsByMaterial.get(materialId) || 0;
+        if (!material
+            || !Number.isFinite(allocatedQuantity)
+            || !Number.isFinite(reservedQuantity)
+            || !Number.isFinite(persistedReservationTotal)
+            || reservedQuantity < -1e-9
+            || reservedQuantity > allocatedQuantity + 1e-9
+            || Math.abs(reservedQuantity - persistedReservationTotal) > 1e-9) {
+            throw new CommitError(409, `Job-order material ${materialId} reservation totals are inconsistent. Reconciliation is required.`);
+        }
+    }
     const finalMovements: FinalReceivingMovement[] = [];
     const finalAllocations: FinalReceivingAllocation[] = [];
     const receivingRecords: FinalReceivingRecord[] = [];

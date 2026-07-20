@@ -145,6 +145,12 @@ async function mutate(collection: string, id: number, method: "PATCH" | "DELETE"
     });
 }
 
+async function directusFailure(response: Response): Promise<string> {
+    const body = await response.text();
+    const detail = body.trim();
+    return detail ? ` (${response.status}): ${detail.slice(0, 500)}` : ` (${response.status})`;
+}
+
 async function rollbackAllocations(changes: AllocationChange[]) {
     for (const change of [...changes].reverse()) {
         if (change.parentUpdated) {
@@ -242,7 +248,9 @@ async function persistMrpAllocations(
                 created_by: actorUserId
             })
         });
-        if (!allocationCreate.ok) throw new Error(`Failed to create MRP allocation for material ${draft.job_order_material_id}.`);
+        if (!allocationCreate.ok) {
+            throw new Error(`Failed to create MRP allocation for material ${draft.job_order_material_id}${await directusFailure(allocationCreate)}`);
+        }
         const allocationRow = (await allocationCreate.json()).data as Record<string, unknown>;
         const allocationId = Number(allocationRow.jo_materials_reservation_id || allocationRow.id);
         if (!Number.isSafeInteger(allocationId) || allocationId <= 0) throw new Error("Directus did not return the created MRP allocation ID.");
@@ -553,6 +561,7 @@ export async function handleQaReceivingPost(request: Request, options: Receiving
         let finalMovements: FinalReceivingMovement[] = [];
         let finalAllocations: FinalReceivingAllocation[] = [];
         let movementWriteAttempted = false;
+        let commitPhase: "receiving" | "inventory" | "movements" | "allocations" | "status" = "receiving";
         const inventoryChanges: Array<{ id: number; created: boolean; previous?: Record<string, unknown> }> = [];
         const lineChanges: Array<{ id: number; received: unknown }> = [];
         const productChanges = new Map<number, { cost_per_unit: unknown; estimated_unit_cost: unknown }>();
@@ -579,6 +588,7 @@ export async function handleQaReceivingPost(request: Request, options: Receiving
         };
 
         try {
+            commitPhase = "receiving";
             for (const line of prepared) {
                 const allocation = allocations.get(line.item.line_id)!;
                 const receiptRes = await fetch(`${DIRECTUS_URL}/items/purchase_order_receiving`, { method: "POST", headers, body: JSON.stringify({
@@ -600,6 +610,7 @@ export async function handleQaReceivingPost(request: Request, options: Receiving
                     results: line.item.qa_results
                 });
 
+                commitPhase = "inventory";
                 const saveInventory = async (targetBranchId: number, storageLotId: number, quantity: number, qaStatus: string, reason: string | null): Promise<number | null> => {
                     if (quantity <= 0) return null;
                     const filter = encodeURIComponent(JSON.stringify({ _and: [
@@ -710,16 +721,18 @@ export async function handleQaReceivingPost(request: Request, options: Receiving
                 if (!productUpdateRes.ok) throw new Error(`Failed to update landed cost for product ${productId}.`);
             }
 
+            commitPhase = "movements";
             movementWriteAttempted = true;
-            const movementRes = await fetch(`${DIRECTUS_URL}/items/inventory_movements?fields=movement_id,source_document_id,branch_id,transaction_type_id`, {
+            const movementRes = await fetch(`${DIRECTUS_URL}/items/inventory_movements?fields=movement_id,product_id,lot_id,branch_id,transaction_type_id,source_document_id,source_document_no,batch_no,quantity`, {
                 method: "POST",
                 headers,
                 body: JSON.stringify(pendingMovements.map(movement => movement.payload))
             });
             if (!movementRes.ok) throw new Error(`Failed to create inventory movements: ${await movementRes.text()}`);
-            const movementRows = ((await movementRes.json()).data || []) as Record<string, unknown>[];
+            const movementData = (await movementRes.json()).data;
+            const movementRows = (Array.isArray(movementData) ? movementData : movementData ? [movementData] : []) as Record<string, unknown>[];
             const createdMovements = finalizeMovements(pendingMovements, movementRows);
-            if (!createdMovements) throw new Error("Directus did not return the complete created movement IDs.");
+            if (!createdMovements) throw new Error(`Directus did not return the complete created movement IDs. Response rows: ${JSON.stringify(movementRows).slice(0, 500)}`);
             finalMovements = createdMovements;
 
             const receivingByLine = new Map<number, number>(receiptIds.map((receivingId, index) => [prepared[index].item.line_id, receivingId]));
@@ -729,6 +742,7 @@ export async function handleQaReceivingPost(request: Request, options: Receiving
                 if (!ids.includes(movement.inventoryLotId)) ids.push(movement.inventoryLotId);
                 inventoryLotIdsByLine.set(movement.lineId, ids);
             }
+            commitPhase = "allocations";
             finalAllocations = await persistMrpAllocations(
                 parsed.data.mrp_allocation_drafts as MrpAllocationDraft[],
                 receivingByLine,
@@ -743,6 +757,7 @@ export async function handleQaReceivingPost(request: Request, options: Receiving
                 return sum + Math.max(0, (previous?.received || 0) - (previous?.rejected || 0)) + (current?.accepted || 0);
             }, 0);
             const allRejected = allLinesAccounted && totalAccepted <= 1e-9;
+            commitPhase = "status";
             const statusRes = await mutate("purchase_order", shipmentId, "PATCH", {
                 inventory_status: !allLinesAccounted
                     ? INVENTORY_STATUS.PARTIALLY_RECEIVED
@@ -753,7 +768,8 @@ export async function handleQaReceivingPost(request: Request, options: Receiving
             });
             if (!statusRes.ok) throw new Error(`Failed to update purchase-order status (${statusRes.status}).`);
         } catch (error) {
-            if (movementWriteAttempted && pendingMovements.length > 0) {
+            let persistedMovementIds: number[] = finalMovements.map(movement => movement.movementId);
+            if (movementWriteAttempted && pendingMovements.length > 0 && persistedMovementIds.length !== pendingMovements.length) {
                 let persistedRows: Record<string, unknown>[];
                 try {
                     persistedRows = await loadMovementRows(receiptIds);
@@ -761,15 +777,19 @@ export async function handleQaReceivingPost(request: Request, options: Receiving
                     throw new Error(`Receiving movement persistence could not be reconciled, so receiving and inventory records were retained. Original error: ${(error as Error).message}`);
                 }
                 const recoveredMovements = finalizeMovements(pendingMovements, persistedRows);
-                if (recoveredMovements) {
-                    return NextResponse.json({ success: true, idempotent: false, movements: recoveredMovements });
-                }
-                if (persistedRows.length > 0) {
+                if (!recoveredMovements && persistedRows.length > 0) {
                     throw new Error(`Receiving movements were only partially reconciled, so receiving and inventory records were retained. Original error: ${(error as Error).message}`);
                 }
+                if (recoveredMovements) persistedMovementIds = recoveredMovements.map(movement => movement.movementId);
             }
             if (!await rollbackAllocations(allocationChanges) || !await rollback()) {
-                throw new Error(`Receiving failed and stock could not be restored. Audit records were retained for reconciliation. Original error: ${(error as Error).message}`);
+                throw new Error(`Receiving failed during ${commitPhase}; stock and audit records were retained for reconciliation. Original error: ${(error as Error).message}`);
+            }
+            for (const movementId of [...persistedMovementIds].reverse()) {
+                const movementDelete = await mutate("inventory_movements", movementId, "DELETE");
+                if (!movementDelete.ok) {
+                    throw new Error(`Receiving failed during ${commitPhase}; movement ${movementId} could not be removed after compensation. Reconciliation is required. Original error: ${(error as Error).message}`);
+                }
             }
             throw error;
         }
