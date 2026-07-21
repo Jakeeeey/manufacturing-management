@@ -393,6 +393,13 @@ export default function FinishedGoodsModule() {
         const childrenMap = new Map<string, Product[]>();
         const roots: Product[] = [];
 
+        const matchesProduct = (product: Product, query: string) => {
+            const normalizedQuery = query.toLowerCase();
+            return product.title.toLowerCase().includes(normalizedQuery)
+                || product.sku.toLowerCase().includes(normalizedQuery)
+                || product.barcode.toLowerCase().includes(normalizedQuery);
+        };
+
         products.forEach(p => {
             if (p.parent_id) {
                 const pIdStr = String(p.parent_id);
@@ -406,13 +413,13 @@ export default function FinishedGoodsModule() {
         });
 
         if (searchQuery.trim()) {
-            const query = searchQuery.toLowerCase();
+            const query = searchQuery.trim();
             const matchingRoots: Product[] = [];
 
             roots.forEach(root => {
-                const rootMatches = root.title.toLowerCase().includes(query) || root.sku.toLowerCase().includes(query);
+                const rootMatches = matchesProduct(root, query);
                 const children = childrenMap.get(root.id) || [];
-                const matchingChildren = children.filter(c => c.title.toLowerCase().includes(query) || c.sku.toLowerCase().includes(query));
+                const matchingChildren = children.filter(child => matchesProduct(child, query));
 
                 if (rootMatches || matchingChildren.length > 0) {
                     matchingRoots.push(root);
@@ -681,7 +688,7 @@ export default function FinishedGoodsModule() {
                                 treeProducts.roots.map((root) => {
                                     const children = treeProducts.childrenMap.get(root.id) || [];
                                     const displayedChildren = searchQuery.trim()
-                                        ? children.filter(c => c.title.toLowerCase().includes(searchQuery.toLowerCase()) || c.sku.toLowerCase().includes(searchQuery.toLowerCase()))
+                                        ? children.filter(c => c.title.toLowerCase().includes(searchQuery.trim().toLowerCase()) || c.sku.toLowerCase().includes(searchQuery.trim().toLowerCase()) || c.barcode.toLowerCase().includes(searchQuery.trim().toLowerCase()))
                                         : children;
 
                                     return (
@@ -986,6 +993,7 @@ export default function FinishedGoodsModule() {
                                                 setSimulationPriceOverrides={setSimulationPriceOverrides}
                                                 editedBOM={editedBOM}
                                                 selectedProduct={selectedProduct}
+                                                selectedVersionId={selectedVersionId}
                                                 simulatedNetProfit={simulatedNetProfit}
                                                 simulatedMaterialCost={simulatedTotalUnitCost}
                                                 simulatedOverheads={simulatedOverheads}
