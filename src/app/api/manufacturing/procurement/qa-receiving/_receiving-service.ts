@@ -10,7 +10,7 @@ import {
     rejectedLotAllocationError
 } from "../../qa-receiving/_lot-allocation";
 import { calculateLandedCostAllocations, fetchShipmentExpenses, normalizeAllocationMethod } from "../expenses/expenses-helper";
-import { receiptNumberForLine } from "../../qa-receiving/_commit-contract";
+import { receiptNumberForLine, type FinalReceivingAllocation } from "../../qa-receiving/_commit-contract";
 import { summarizeReceivingHistory } from "../../qa-receiving/_receiving-history";
 import { sumMovementQuantitiesByLot } from "../../qa-receiving/_movement-stock";
 import { ensureQaResults, QaResultPersistenceError } from "./_qa-results";
@@ -23,6 +23,22 @@ class ReceivingError extends Error {
 
 interface ReceivingPostOptions {
     actorUserId: number;
+}
+
+interface MrpAllocationDraft {
+    line_id: number;
+    product_id: number;
+    job_order_id: number;
+    job_order_material_id: number;
+    quantity: number;
+}
+
+interface AllocationChange {
+    allocationId: number;
+    materialId: number;
+    previousReservedQuantity: number;
+    parentUpdated: boolean;
+    created: boolean;
 }
 
 interface DirectusMovementType {
@@ -127,6 +143,146 @@ async function mutate(collection: string, id: number, method: "PATCH" | "DELETE"
         headers,
         body: body ? JSON.stringify(body) : undefined
     });
+}
+
+async function directusFailure(response: Response): Promise<string> {
+    const body = await response.text();
+    const detail = body.trim();
+    return detail ? ` (${response.status}): ${detail.slice(0, 500)}` : ` (${response.status})`;
+}
+
+async function rollbackAllocations(changes: AllocationChange[]) {
+    for (const change of [...changes].reverse()) {
+        if (change.parentUpdated) {
+            const materialRestore = await mutate("manufacturing_job_order_materials", change.materialId, "PATCH", {
+                reserved_quantity: change.previousReservedQuantity
+            });
+            if (!materialRestore.ok) return false;
+        }
+        if (change.created) {
+            const allocationDelete = await mutate(
+                "manufacturing_job_order_materials_reservations",
+                change.allocationId,
+                "DELETE"
+            );
+            if (!allocationDelete.ok) return false;
+        }
+    }
+    return true;
+}
+
+async function persistMrpAllocations(
+    drafts: MrpAllocationDraft[],
+    receivingByLine: Map<number, number>,
+    inventoryLotIdsByLine: Map<number, number[]>,
+    actorUserId: number,
+    changes: AllocationChange[]
+): Promise<FinalReceivingAllocation[]> {
+    const persisted: FinalReceivingAllocation[] = [];
+
+    for (const draft of drafts) {
+        if (draft.quantity <= 0) continue;
+        const receivingLineId = receivingByLine.get(draft.line_id);
+        if (!receivingLineId) {
+            throw new ReceivingError(`Receiving record for MRP line ${draft.line_id} could not be correlated.`, 409);
+        }
+
+        const existingParams = new URLSearchParams({
+            "filter[purchase_order_receiving_id][_eq]": String(receivingLineId),
+            "filter[jo_material_id][_eq]": String(draft.job_order_material_id),
+            fields: "jo_materials_reservation_id,product_id,jo_material_id,purchase_order_receiving_id,reserved_quantity,actual_used_quantity",
+            limit: "-1"
+        });
+        const existingResponse = await fetch(
+            `${DIRECTUS_URL}/items/manufacturing_job_order_materials_reservations?${existingParams.toString()}`,
+            { headers, cache: "no-store" }
+        );
+        if (!existingResponse.ok) throw new Error("Failed to verify existing MRP allocations.");
+        const existingRows = ((await existingResponse.json()).data || []) as Record<string, unknown>[];
+        if (existingRows.length > 1) {
+            throw new ReceivingError(`Multiple MRP allocations already exist for receiving line ${receivingLineId} and material ${draft.job_order_material_id}. Reconciliation is required.`, 409);
+        }
+
+        const existing = existingRows[0];
+        if (existing) {
+            const allocationId = Number(existing.jo_materials_reservation_id || existing.id);
+            const existingQuantity = Number(existing.reserved_quantity || 0);
+            if (!Number.isSafeInteger(allocationId) || allocationId <= 0 || Number(existing.product_id) !== draft.product_id || Math.abs(existingQuantity - draft.quantity) > 1e-9) {
+                throw new ReceivingError(`The existing MRP allocation for receiving line ${receivingLineId} does not match the preview. Reconciliation is required.`, 409);
+            }
+            persisted.push({
+                allocationId,
+                lineId: draft.line_id,
+                receivingLineId,
+                purchaseOrderReceivingId: receivingLineId,
+                jobOrderId: draft.job_order_id,
+                jobOrderMaterialId: draft.job_order_material_id,
+                productId: draft.product_id,
+                quantity: existingQuantity,
+                inventoryLotIds: inventoryLotIdsByLine.get(draft.line_id) || []
+            });
+            continue;
+        }
+
+        const materialResponse = await fetch(
+            `${DIRECTUS_URL}/items/manufacturing_job_order_materials/${draft.job_order_material_id}?fields=jo_material_id,job_order_id,product_id,allocated_quantity,reserved_quantity`,
+            { headers, cache: "no-store" }
+        );
+        if (!materialResponse.ok) throw new ReceivingError(`Job-order material ${draft.job_order_material_id} no longer exists.`, 409);
+        const material = (await materialResponse.json()).data as Record<string, unknown>;
+        const allocatedQuantity = Number(material.allocated_quantity || 0);
+        const currentReservedQuantity = Number(material.reserved_quantity || 0);
+        if (Number(material.job_order_id) !== draft.job_order_id || Number(material.product_id) !== draft.product_id || !Number.isFinite(allocatedQuantity) || !Number.isFinite(currentReservedQuantity) || currentReservedQuantity + draft.quantity > allocatedQuantity + 1e-9) {
+            throw new ReceivingError(`The MRP requirement for material ${draft.job_order_material_id} changed after preview. Generate a new preview before receiving.`, 409);
+        }
+
+        const allocationCreate = await fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_materials_reservations`, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+                product_id: draft.product_id,
+                jo_material_id: draft.job_order_material_id,
+                purchase_order_receiving_id: receivingLineId,
+                reserved_quantity: draft.quantity,
+                actual_used_quantity: 0,
+                created_by: actorUserId
+            })
+        });
+        if (!allocationCreate.ok) {
+            throw new Error(`Failed to create MRP allocation for material ${draft.job_order_material_id}${await directusFailure(allocationCreate)}`);
+        }
+        const allocationRow = (await allocationCreate.json()).data as Record<string, unknown>;
+        const allocationId = Number(allocationRow.jo_materials_reservation_id || allocationRow.id);
+        if (!Number.isSafeInteger(allocationId) || allocationId <= 0) throw new Error("Directus did not return the created MRP allocation ID.");
+
+        const change: AllocationChange = {
+            allocationId,
+            materialId: draft.job_order_material_id,
+            previousReservedQuantity: currentReservedQuantity,
+            parentUpdated: false,
+            created: true
+        };
+        changes.push(change);
+        const materialUpdate = await mutate("manufacturing_job_order_materials", draft.job_order_material_id, "PATCH", {
+            reserved_quantity: currentReservedQuantity + draft.quantity
+        });
+        if (!materialUpdate.ok) throw new Error(`Failed to update reserved quantity for material ${draft.job_order_material_id}.`);
+        change.parentUpdated = true;
+
+        persisted.push({
+            allocationId,
+            lineId: draft.line_id,
+            receivingLineId,
+            purchaseOrderReceivingId: receivingLineId,
+            jobOrderId: draft.job_order_id,
+            jobOrderMaterialId: draft.job_order_material_id,
+            productId: draft.product_id,
+            quantity: draft.quantity,
+            inventoryLotIds: inventoryLotIdsByLine.get(draft.line_id) || []
+        });
+    }
+
+    return persisted;
 }
 
 export async function handleQaReceivingPost(request: Request, options: ReceivingPostOptions) {
@@ -253,7 +409,26 @@ export async function handleQaReceivingPost(request: Request, options: Receiving
                     results: item.qa_results
                 });
             }
-            return NextResponse.json({ success: true, idempotent: true, status: shipment.inventory_status });
+            const receivingByLine = new Map<number, number>(existingReceipts.map((row: Record<string, unknown>) => [
+                lineItemUpdates.find(item => receiptNumberForLine(referenceNumber, item.line_id) === String(row.receipt_no))?.line_id || 0,
+                Number(row.purchase_order_product_id)
+            ]));
+            const allocationChanges: AllocationChange[] = [];
+            try {
+                const allocations = await persistMrpAllocations(
+                    parsed.data.mrp_allocation_drafts as MrpAllocationDraft[],
+                    receivingByLine,
+                    new Map<number, number[]>(),
+                    options.actorUserId,
+                    allocationChanges
+                );
+                return NextResponse.json({ success: true, idempotent: true, status: shipment.inventory_status, allocations });
+            } catch (error) {
+                if (!await rollbackAllocations(allocationChanges)) {
+                    throw new Error(`MRP allocation reconciliation failed and created allocation rows could not be restored. Original error: ${(error as Error).message}`);
+                }
+                throw error;
+            }
         }
         const receivableStatuses: number[] = [INVENTORY_STATUS.FOR_PICKUP];
         if (existingReceipts.length > 0) {
@@ -311,8 +486,10 @@ export async function handleQaReceivingPost(request: Request, options: Receiving
                 throw new ReceivingError(`Expiry date must be after the receipt date for product ${productId}.`, 400);
             }
 
-            const orderedQuantity = Math.max(1, Number(poLine.ordered_quantity || 1));
-            const baseUnitCost = Number(poLine.net_amount ?? poLine.total_amount ?? poLine.unit_price ?? 0) / orderedQuantity;
+            // unit_price is the stored PHP base cost. Taxes, discounts, and
+            // withholding are line totals and must not be converted back into
+            // a unit cost for receiving or landed-cost allocation.
+            const baseUnitCost = Number(poLine.unit_price || 0);
             const accepted = received - rejected;
             const acceptedLotAllocations = normalizeReceivingLotAllocations(
                 accepted,
@@ -382,8 +559,11 @@ export async function handleQaReceivingPost(request: Request, options: Receiving
 
         const receiptIds: number[] = [];
         const pendingMovements: PendingMovement[] = [];
+        const allocationChanges: AllocationChange[] = [];
         let finalMovements: FinalReceivingMovement[] = [];
+        let finalAllocations: FinalReceivingAllocation[] = [];
         let movementWriteAttempted = false;
+        let commitPhase: "receiving" | "inventory" | "movements" | "allocations" | "status" = "receiving";
         const inventoryChanges: Array<{ id: number; created: boolean; previous?: Record<string, unknown> }> = [];
         const lineChanges: Array<{ id: number; received: unknown }> = [];
         const productChanges = new Map<number, { cost_per_unit: unknown; estimated_unit_cost: unknown }>();
@@ -410,6 +590,7 @@ export async function handleQaReceivingPost(request: Request, options: Receiving
         };
 
         try {
+            commitPhase = "receiving";
             for (const line of prepared) {
                 const allocation = allocations.get(line.item.line_id)!;
                 const receiptRes = await fetch(`${DIRECTUS_URL}/items/purchase_order_receiving`, { method: "POST", headers, body: JSON.stringify({
@@ -431,6 +612,7 @@ export async function handleQaReceivingPost(request: Request, options: Receiving
                     results: line.item.qa_results
                 });
 
+                commitPhase = "inventory";
                 const saveInventory = async (targetBranchId: number, storageLotId: number, quantity: number, qaStatus: string, reason: string | null): Promise<number | null> => {
                     if (quantity <= 0) return null;
                     const filter = encodeURIComponent(JSON.stringify({ _and: [
@@ -541,12 +723,43 @@ export async function handleQaReceivingPost(request: Request, options: Receiving
                 if (!productUpdateRes.ok) throw new Error(`Failed to update landed cost for product ${productId}.`);
             }
 
+            commitPhase = "movements";
+            movementWriteAttempted = true;
+            const movementRes = await fetch(`${DIRECTUS_URL}/items/inventory_movements?fields=movement_id,product_id,lot_id,branch_id,transaction_type_id,source_document_id,source_document_no,batch_no,quantity`, {
+                method: "POST",
+                headers,
+                body: JSON.stringify(pendingMovements.map(movement => movement.payload))
+            });
+            if (!movementRes.ok) throw new Error(`Failed to create inventory movements: ${await movementRes.text()}`);
+            const movementData = (await movementRes.json()).data;
+            const movementRows = (Array.isArray(movementData) ? movementData : movementData ? [movementData] : []) as Record<string, unknown>[];
+            const createdMovements = finalizeMovements(pendingMovements, movementRows);
+            if (!createdMovements) throw new Error(`Directus did not return the complete created movement IDs. Response rows: ${JSON.stringify(movementRows).slice(0, 500)}`);
+            finalMovements = createdMovements;
+
+            const receivingByLine = new Map<number, number>(receiptIds.map((receivingId, index) => [prepared[index].item.line_id, receivingId]));
+            const inventoryLotIdsByLine = new Map<number, number[]>();
+            for (const movement of finalMovements) {
+                const ids = inventoryLotIdsByLine.get(movement.lineId) || [];
+                if (!ids.includes(movement.inventoryLotId)) ids.push(movement.inventoryLotId);
+                inventoryLotIdsByLine.set(movement.lineId, ids);
+            }
+            commitPhase = "allocations";
+            finalAllocations = await persistMrpAllocations(
+                parsed.data.mrp_allocation_drafts as MrpAllocationDraft[],
+                receivingByLine,
+                inventoryLotIdsByLine,
+                options.actorUserId,
+                allocationChanges
+            );
+
             const totalAccepted = poLines.reduce((sum, poLine) => {
                 const previous = previouslyReceivedByLine.get(Number(poLine.purchase_order_product_id));
                 const current = prepared.find(line => line.item.line_id === Number(poLine.purchase_order_product_id));
                 return sum + Math.max(0, (previous?.received || 0) - (previous?.rejected || 0)) + (current?.accepted || 0);
             }, 0);
             const allRejected = allLinesAccounted && totalAccepted <= 1e-9;
+            commitPhase = "status";
             const statusRes = await mutate("purchase_order", shipmentId, "PATCH", {
                 inventory_status: !allLinesAccounted
                     ? INVENTORY_STATUS.PARTIALLY_RECEIVED
@@ -556,20 +769,9 @@ export async function handleQaReceivingPost(request: Request, options: Receiving
                 ...(allLinesAccounted ? { date_received: todayInManila() } : {})
             });
             if (!statusRes.ok) throw new Error(`Failed to update purchase-order status (${statusRes.status}).`);
-
-            movementWriteAttempted = true;
-            const movementRes = await fetch(`${DIRECTUS_URL}/items/inventory_movements?fields=movement_id,source_document_id,branch_id,transaction_type_id`, {
-                method: "POST",
-                headers,
-                body: JSON.stringify(pendingMovements.map(movement => movement.payload))
-            });
-            if (!movementRes.ok) throw new Error(`Failed to create inventory movements: ${await movementRes.text()}`);
-            const movementRows = ((await movementRes.json()).data || []) as Record<string, unknown>[];
-            const createdMovements = finalizeMovements(pendingMovements, movementRows);
-            if (!createdMovements) throw new Error("Directus did not return the complete created movement IDs.");
-            finalMovements = createdMovements;
         } catch (error) {
-            if (movementWriteAttempted && pendingMovements.length > 0) {
+            let persistedMovementIds: number[] = finalMovements.map(movement => movement.movementId);
+            if (movementWriteAttempted && pendingMovements.length > 0 && persistedMovementIds.length !== pendingMovements.length) {
                 let persistedRows: Record<string, unknown>[];
                 try {
                     persistedRows = await loadMovementRows(receiptIds);
@@ -577,20 +779,24 @@ export async function handleQaReceivingPost(request: Request, options: Receiving
                     throw new Error(`Receiving movement persistence could not be reconciled, so receiving and inventory records were retained. Original error: ${(error as Error).message}`);
                 }
                 const recoveredMovements = finalizeMovements(pendingMovements, persistedRows);
-                if (recoveredMovements) {
-                    return NextResponse.json({ success: true, idempotent: false, movements: recoveredMovements });
-                }
-                if (persistedRows.length > 0) {
+                if (!recoveredMovements && persistedRows.length > 0) {
                     throw new Error(`Receiving movements were only partially reconciled, so receiving and inventory records were retained. Original error: ${(error as Error).message}`);
                 }
+                if (recoveredMovements) persistedMovementIds = recoveredMovements.map(movement => movement.movementId);
             }
-            if (!await rollback()) {
-                throw new Error(`Receiving failed and stock could not be restored. Audit records were retained for reconciliation. Original error: ${(error as Error).message}`);
+            if (!await rollbackAllocations(allocationChanges) || !await rollback()) {
+                throw new Error(`Receiving failed during ${commitPhase}; stock and audit records were retained for reconciliation. Original error: ${(error as Error).message}`);
+            }
+            for (const movementId of [...persistedMovementIds].reverse()) {
+                const movementDelete = await mutate("inventory_movements", movementId, "DELETE");
+                if (!movementDelete.ok) {
+                    throw new Error(`Receiving failed during ${commitPhase}; movement ${movementId} could not be removed after compensation. Reconciliation is required. Original error: ${(error as Error).message}`);
+                }
             }
             throw error;
         }
 
-        return NextResponse.json({ success: true, idempotent: false, movements: finalMovements });
+        return NextResponse.json({ success: true, idempotent: false, movements: finalMovements, allocations: finalAllocations });
     } catch (error) {
         console.error("API Error submitting QA Receiving:", error);
         return NextResponse.json({ error: (error as Error).message || "Failed to process QA receiving" }, {

@@ -24,7 +24,7 @@ export interface MoneySummary {
     netAmount: number;
 }
 
-function roundCurrency(value: number): number {
+export function roundCurrency(value: number): number {
     return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
@@ -70,6 +70,52 @@ export function calculatePurchaseOrderTotals(lines: readonly PurchaseOrderMoneyL
         withholdingPhp: sum("withholdingPhp"),
         netPhp: sum("netPhp"),
         netForeign: sum("netForeign")
+    };
+}
+
+export interface PurchaseOrderProductPayloadInput extends PurchaseOrderMoneyLine {
+    purchaseOrderId: number;
+    productId: number;
+    exchangeRate: number;
+    branchId?: number | null;
+    purchaseIntent?: PurchaseIntent;
+    jobOrderId?: number | null;
+    discountType?: number | null;
+    received?: number;
+}
+
+export function buildPurchaseOrderProductPayload(
+    input: PurchaseOrderProductPayloadInput,
+    amount: ReturnType<typeof calculatePurchaseOrderLine>
+) {
+    const quantity = Number(input.quantity);
+    const unitPricePhp = roundCurrency(input.unitPrice * input.exchangeRate);
+    const discountedSubtotalPhp = roundCurrency(amount.grossPhp - amount.discountPhp);
+
+    return {
+        purchase_order_id: input.purchaseOrderId,
+        product_id: input.productId,
+        ordered_quantity: quantity,
+        unit_price: unitPricePhp,
+        approved_price: unitPricePhp,
+        discount_type: input.discountType ?? null,
+        gross_amount: amount.grossPhp,
+        discounted_price: roundCurrency(discountedSubtotalPhp / quantity),
+        discounted_amount: amount.discountPhp,
+        vat_amount: amount.vatPhp,
+        withholding_amount: amount.withholdingPhp,
+        net_amount: amount.netPhp,
+        total_amount: amount.netPhp,
+        branch_id: input.branchId ?? null,
+        received: input.received ?? 0,
+        purchase_intent: input.purchaseIntent || "Buffer_Stock",
+        job_order_id: input.jobOrderId ?? null,
+        unit_price_foreign: roundCurrency(input.unitPrice),
+        gross_amount_foreign: amount.grossForeign,
+        net_amount_foreign: amount.netForeign,
+        discount_percent: input.discountPercent,
+        vat_percent: input.vatPercent,
+        withholding_percent: input.withholdingPercent
     };
 }
 

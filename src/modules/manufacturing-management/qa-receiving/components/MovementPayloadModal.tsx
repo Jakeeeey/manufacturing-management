@@ -181,6 +181,44 @@ export default function MovementPayloadModal({
                                 </div>
                             </section>
 
+                            <section className="space-y-2" aria-label="Committed MRP allocations">
+                                <div className="flex items-center gap-2">
+                                    <PackageCheck className="h-4 w-4 text-violet-600" />
+                                    <h3 className="text-xs font-bold">Committed MRP allocations</h3>
+                                    <span className="text-[10px] text-muted-foreground">{committedResult.allocations.length}</span>
+                                </div>
+                                <div className="overflow-x-auto border-y">
+                                    <table className="w-full min-w-[850px] text-[10px]">
+                                        <thead className="bg-muted/40 text-muted-foreground uppercase">
+                                            <tr>
+                                                <th className="px-2 py-2 text-left">Allocation ID</th>
+                                                <th className="px-2 py-2 text-left">Product</th>
+                                                <th className="px-2 py-2 text-left">Job order / material</th>
+                                                <th className="px-2 py-2 text-right">Quantity</th>
+                                                <th className="px-2 py-2 text-left">Inventory lots</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y">
+                                            {committedResult.allocations.map(allocation => {
+                                                const product = getProduct(allocation.lineId);
+                                                return (
+                                                    <tr key={allocation.allocationId}>
+                                                        <td className="px-2 py-2 font-bold tabular-nums">{allocation.allocationId}</td>
+                                                        <td className="px-2 py-2"><strong>{product?.product_name || `Product #${allocation.productId}`}</strong><br /><span className="text-muted-foreground">{product?.product_code || "N/A"}</span></td>
+                                                        <td className="px-2 py-2">JO #{allocation.jobOrderId}<br /><span className="text-muted-foreground">Material #{allocation.jobOrderMaterialId}</span></td>
+                                                        <td className="px-2 py-2 text-right font-bold tabular-nums">{allocation.quantity.toLocaleString()}</td>
+                                                        <td className="px-2 py-2">{allocation.inventoryLotIds.join(", ") || "N/A"}</td>
+                                                    </tr>
+                                                );
+                                            })}
+                                            {committedResult.allocations.length === 0 && (
+                                                <tr><td colSpan={5} className="px-2 py-3 text-muted-foreground">No MRP allocation was created for this receipt.</td></tr>
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </section>
+
                             <section className="space-y-2" aria-label="Committed inventory movements">
                                 <div className="flex items-center gap-2">
                                     <PackageCheck className="h-4 w-4 text-blue-600" />

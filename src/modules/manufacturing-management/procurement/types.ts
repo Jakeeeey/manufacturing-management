@@ -78,6 +78,7 @@ export interface ShipmentLineItem {
     quantity_ordered?: number;
     quantity_received?: number | null;
     base_unit_cost_php: number;
+    unit_price_foreign?: number | null;
     allocated_expense_php: number;
     final_landed_unit_cost: number;
     purchase_intent?: "MRP_Demand" | "Buffer_Stock";
