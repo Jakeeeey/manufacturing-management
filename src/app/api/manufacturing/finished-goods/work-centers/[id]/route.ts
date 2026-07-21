@@ -1,5 +1,12 @@
 import { NextResponse } from "next/server";
 import { DIRECTUS_URL, headers } from "@/app/api/manufacturing/directus-api";
+import {
+    assertUniqueWorkCenterName,
+    WorkCenterConflictError,
+    WorkCenterDependencyError,
+    WorkCenterValidationError,
+    validateWorkCenterPayload
+} from "../_validation";
 
 export async function PATCH(
     request: Request,
@@ -13,27 +20,25 @@ export async function PATCH(
         }
 
         const body = await request.json();
-        const { work_center_name, asset_id, department_id, overhead_cost_per_hour, capacity_per_hour, is_active } = body;
+        const payload = validateWorkCenterPayload(body, { partial: true });
+        if (payload.work_center_name !== undefined) {
+            await assertUniqueWorkCenterName(String(payload.work_center_name), workCenterId);
+        }
 
         // Generate current Manila time (UTC+8) to save in Directus
         const now = new Date();
         const manilaTime = new Date(now.getTime() + 8 * 60 * 60 * 1000);
         const manilaIsoString = manilaTime.toISOString().replace("Z", "");
 
-        const payload: Record<string, unknown> = {
+        const directusPayload: Record<string, unknown> = {
+            ...payload,
             updated_at: manilaIsoString
         };
-        if (work_center_name !== undefined) payload.work_center_name = work_center_name;
-        if (asset_id !== undefined) payload.asset_id = asset_id;
-        if (department_id !== undefined) payload.department_id = department_id;
-        if (overhead_cost_per_hour !== undefined) payload.overhead_cost_per_hour = Number(overhead_cost_per_hour);
-        if (capacity_per_hour !== undefined) payload.capacity_per_hour = Number(capacity_per_hour);
-        if (is_active !== undefined) payload.is_active = !!is_active;
 
         const res = await fetch(`${DIRECTUS_URL}/items/manufacturing_work_centers/${workCenterId}`, {
             method: "PATCH",
             headers,
-            body: JSON.stringify(payload)
+            body: JSON.stringify(directusPayload)
         });
 
         if (!res.ok) {
@@ -46,6 +51,15 @@ export async function PATCH(
         if (updatedWc && updatedWc.is_active !== undefined) updatedWc.is_active = Boolean(Number(updatedWc.is_active));
         return NextResponse.json({ success: true, workCenter: updatedWc });
     } catch (e) {
+        if (e instanceof WorkCenterValidationError) {
+            return NextResponse.json({ error: e.message, field: e.field }, { status: 400 });
+        }
+        if (e instanceof WorkCenterConflictError) {
+            return NextResponse.json({ error: e.message }, { status: 409 });
+        }
+        if (e instanceof WorkCenterDependencyError) {
+            return NextResponse.json({ error: e.message }, { status: 503 });
+        }
         console.error("API Error updating work center:", e);
         return NextResponse.json({ error: (e as { message?: string }).message || "Failed to update work center" }, { status: 500 });
     }

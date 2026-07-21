@@ -1,6 +1,13 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { DIRECTUS_URL, headers } from "@/app/api/manufacturing/directus-api";
+import {
+    assertUniqueWorkCenterName,
+    WorkCenterConflictError,
+    WorkCenterDependencyError,
+    WorkCenterValidationError,
+    validateWorkCenterPayload
+} from "./_validation";
 
 interface UserRecord {
     user_id: number;
@@ -70,11 +77,8 @@ export async function GET() {
 export async function POST(request: Request) {
     try {
         const body = await request.json();
-        const { work_center_name, asset_id, department_id, overhead_cost_per_hour, capacity_per_hour, is_active } = body;
-
-        if (!work_center_name) {
-            return NextResponse.json({ error: "Missing required field: work_center_name" }, { status: 400 });
-        }
+        const payload = validateWorkCenterPayload(body);
+        await assertUniqueWorkCenterName(String(payload.work_center_name));
 
         // Get logged in user ID from secure access token cookie
         let userId: number | null = null;
@@ -101,13 +105,8 @@ export async function POST(request: Request) {
         const manilaTime = new Date(now.getTime() + 8 * 60 * 60 * 1000);
         const manilaIsoString = manilaTime.toISOString().replace("Z", "");
 
-        const payload = {
-            work_center_name,
-            asset_id: asset_id || null,
-            department_id: department_id || null,
-            overhead_cost_per_hour: overhead_cost_per_hour !== undefined ? Number(overhead_cost_per_hour) : 0,
-            capacity_per_hour: capacity_per_hour !== undefined ? Number(capacity_per_hour) : 0,
-            is_active: is_active !== undefined ? !!is_active : true,
+        const directusPayload = {
+            ...payload,
             created_by: userId ? Number(userId) : 24, // Fallback to seed user ID 24 if no active token
             created_at: manilaIsoString,
             updated_at: manilaIsoString
@@ -116,7 +115,7 @@ export async function POST(request: Request) {
         const res = await fetch(`${DIRECTUS_URL}/items/manufacturing_work_centers`, {
             method: "POST",
             headers,
-            body: JSON.stringify(payload)
+            body: JSON.stringify(directusPayload)
         });
 
         if (!res.ok) {
@@ -129,6 +128,15 @@ export async function POST(request: Request) {
         if (newWc && newWc.is_active !== undefined) newWc.is_active = Boolean(Number(newWc.is_active));
         return NextResponse.json({ success: true, workCenter: newWc });
     } catch (e) {
+        if (e instanceof WorkCenterValidationError) {
+            return NextResponse.json({ error: e.message, field: e.field }, { status: 400 });
+        }
+        if (e instanceof WorkCenterConflictError) {
+            return NextResponse.json({ error: e.message }, { status: 409 });
+        }
+        if (e instanceof WorkCenterDependencyError) {
+            return NextResponse.json({ error: e.message }, { status: 503 });
+        }
         console.error("API Error creating work center:", e);
         return NextResponse.json({ error: (e as { message?: string }).message || "Failed to create work center" }, { status: 500 });
     }

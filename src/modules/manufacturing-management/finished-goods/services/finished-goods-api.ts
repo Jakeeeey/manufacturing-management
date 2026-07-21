@@ -300,7 +300,7 @@ export async function activateVersion(productId: number, versionId?: number, dea
 
 // ─── Work Centers API Helpers ────────────────────────────────────────────────
 export async function fetchWorkCenters(): Promise<WorkCenter[]> {
-    const res = await fetch("/api/manufacturing/finished-goods/work-centers");
+    const res = await fetch("/api/manufacturing/finished-goods/work-centers", { cache: "no-store" });
     if (!res.ok) throw new Error("Failed to fetch work centers from BFF");
     return res.json();
 }
