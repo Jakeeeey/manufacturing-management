@@ -11,13 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue
-} from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Button } from "@/components/ui/button";
 
 interface LotFormDialogProps {
@@ -45,6 +39,13 @@ export default function LotFormDialog({
     inventoryTypes,
     saving
 }: LotFormDialogProps) {
+    const typeOptions = React.useMemo(() => {
+        return inventoryTypes.map((type) => ({
+            value: String(type.inventoryTypeId),
+            label: type.typeName
+        }));
+    }, [inventoryTypes]);
+
     const handleFormSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         onSubmit();
@@ -85,25 +86,14 @@ export default function LotFormDialog({
                             <Label htmlFor="inventoryType">
                                 Inventory Type <span className="text-destructive">*</span>
                             </Label>
-                            <Select
+                            <SearchableSelect
+                                options={typeOptions}
                                 value={formData.inventoryTypeId === "" ? undefined : String(formData.inventoryTypeId)}
                                 onValueChange={(val) => onFormChange("inventoryTypeId", Number(val))}
+                                placeholder="Select type..."
                                 disabled={saving}
-                            >
-                                <SelectTrigger id="inventoryType" className="w-full">
-                                    <SelectValue placeholder="Select type..." />
-                                </SelectTrigger>
-                                <SelectContent position="popper" sideOffset={4}>
-                                    {inventoryTypes.map((type) => (
-                                        <SelectItem
-                                            key={type.inventoryTypeId}
-                                            value={String(type.inventoryTypeId)}
-                                        >
-                                            {type.typeName}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
+                                className="w-full text-left font-normal"
+                            />
                         </div>
 
                         {/* Max Batch Capacity */}
