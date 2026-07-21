@@ -17,6 +17,7 @@ import {
     SelectTrigger,
     SelectValue
 } from "@/components/ui/select";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Button } from "@/components/ui/button";
 
 const getInventoryTypeBadgeStyles = (typeName?: string) => {
@@ -71,6 +72,16 @@ export default function LotTable({
         return filteredLots.slice(startIndex, startIndex + pageSize);
     }, [filteredLots, startIndex, pageSize]);
 
+    const filterOptions = React.useMemo(() => {
+        return [
+            { value: "all", label: "All Inventory Types" },
+            ...inventoryTypes.map((type) => ({
+                value: String(type.inventoryTypeId),
+                label: type.typeName
+            }))
+        ];
+    }, [inventoryTypes]);
+
     return (
         <div className="space-y-4">
             {/* Header / Filter Bar */}
@@ -85,28 +96,16 @@ export default function LotTable({
                             className="pl-9 h-9"
                         />
                     </div>
-                    <Select
+                    <SearchableSelect
+                        options={filterOptions}
                         value={String(filterType)}
                         onValueChange={(val) => {
                             const parsed = val === "all" ? "all" : Number(val);
                             onFilterTypeChange(parsed);
                         }}
-                    >
-                        <SelectTrigger className="w-[180px] h-9 shrink-0">
-                            <SelectValue placeholder="All Inventory Types" />
-                        </SelectTrigger>
-                        <SelectContent position="popper" sideOffset={4}>
-                            <SelectItem value="all">All Inventory Types</SelectItem>
-                            {inventoryTypes.map((type) => (
-                                <SelectItem
-                                    key={type.inventoryTypeId}
-                                    value={String(type.inventoryTypeId)}
-                                >
-                                    {type.typeName}
-                                </SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
+                        placeholder="All Inventory Types"
+                        className="w-[180px] h-9 shrink-0 text-left font-normal text-xs"
+                    />
                 </div>
                 <div className="flex items-center gap-2 w-full sm:w-auto shrink-0 justify-end">
                     <Button variant="outline" size="icon" onClick={onRefresh} className="h-9 w-9">

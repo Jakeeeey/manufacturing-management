@@ -3,25 +3,31 @@ import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
+import { ItemClassification } from "../types";
+
 interface ItemClassificationFormModalProps {
     isOpen: boolean;
     onClose: () => void;
     onSave: (name: string) => Promise<boolean>;
+    itemClassification?: ItemClassification;
 }
 
 export default function ItemClassificationFormModal({
     isOpen,
     onClose,
-    onSave
+    onSave,
+    itemClassification
 }: ItemClassificationFormModalProps) {
-    const [classificationName, setClassificationName] = useState("");
+    const [classificationName, setClassificationName] = useState(itemClassification?.classification_name || "");
     const [submitting, setSubmitting] = useState(false);
+    const [error, setError] = useState(false);
 
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         const trimmed = classificationName.trim();
         if (!trimmed) {
+            setError(true);
             toast.error("Classification Name is required.");
             return;
         }
@@ -45,7 +51,9 @@ export default function ItemClassificationFormModal({
             >
                 {/* Header */}
                 <div className="flex items-center justify-between px-5 py-4 border-b shrink-0 bg-muted/10">
-                    <h3 className="text-sm font-bold text-foreground">Register New Item Classification</h3>
+                    <h3 className="text-sm font-bold text-foreground">
+                        {itemClassification ? "Edit Item Classification" : "Register New Item Classification"}
+                    </h3>
                     <button
                         type="button"
                         onClick={onClose}
@@ -57,19 +65,35 @@ export default function ItemClassificationFormModal({
                 </div>
 
                 {/* Form */}
-                <form onSubmit={handleSubmit} className="p-5 space-y-4 text-xs">
+                <form 
+                    onSubmit={handleSubmit} 
+                    onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                            e.preventDefault();
+                        }
+                    }}
+                    className="p-5 space-y-4 text-xs"
+                >
                     <div className="space-y-1">
                         <label className="text-[10px] font-bold text-muted-foreground uppercase block mb-1">
                             Classification Name <span className="text-destructive">*</span>
                         </label>
                         <input
                             type="text"
-                            required
                             placeholder="e.g. Asset & Equipment"
                             value={classificationName}
-                            onChange={(e) => setClassificationName(e.target.value)}
+                            onChange={(e) => {
+                                setClassificationName(e.target.value);
+                                if (e.target.value.trim()) {
+                                    setError(false);
+                                }
+                            }}
                             disabled={submitting}
-                            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
+                            className={`w-full rounded-lg border bg-background px-3 py-2 text-xs text-foreground outline-none focus:ring-1 transition-all ${
+                                error
+                                    ? "border-destructive focus:ring-destructive"
+                                    : "border-border focus:ring-primary"
+                            }`}
                         />
                     </div>
 
@@ -92,10 +116,10 @@ export default function ItemClassificationFormModal({
                             {submitting ? (
                                 <>
                                     <Loader2 className="h-3 w-3 animate-spin mr-1.5" />
-                                    Registering...
+                                    {itemClassification ? "Saving..." : "Registering..."}
                                 </>
                             ) : (
-                                "Register Classification"
+                                itemClassification ? "Save Changes" : "Register Classification"
                             )}
                         </Button>
                     </div>

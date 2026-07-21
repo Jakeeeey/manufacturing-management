@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
-import { Plus, Search, Edit, DollarSign, Activity, Settings, Check, LayoutGrid, Image as ImageIcon, ChevronsLeft, ChevronsRight, RefreshCw, MoreHorizontal, Eye, Info, Calendar, User } from "lucide-react";
+import { Plus, Search, Edit, DollarSign, Activity, Settings, Check, LayoutGrid, Image as ImageIcon, ChevronsLeft, ChevronsRight, RefreshCw, Info, Calendar, User, X } from "lucide-react";
 import { toast } from "sonner";
 import { WorkCenter, AssetRecord, DepartmentRecord } from "@/modules/manufacturing-management/finished-goods/types";
 import { 
@@ -19,12 +19,7 @@ import {
     SelectTrigger,
     SelectValue
 } from "@/components/ui/select";
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuTrigger
-} from "@/components/ui/dropdown-menu";
+
 import { formatNumber, formatCurrency } from "@/lib/utils";
 
 export default function WorkStationsModule() {
@@ -56,12 +51,13 @@ export default function WorkStationsModule() {
     const [selectedAssetId, setSelectedAssetId] = useState<number | null>(null);
     const [selectedDeptId, setSelectedDeptId] = useState<number | null>(null);
     const [isActive, setIsActive] = useState(true);
+    const [validationAttempted, setValidationAttempted] = useState(false);
+    const [previewImage, setPreviewImage] = useState<string | null>(null);
+    const [isTransitioning, setIsTransitioning] = useState(false);
 
     // Searchable dropdown state in modal
     const [assetSearch, setAssetSearch] = useState("");
     const [isAssetDropdownOpen, setIsAssetDropdownOpen] = useState(false);
-    const [deptSearch, setDeptSearch] = useState("");
-    const [isDeptDropdownOpen, setIsDeptDropdownOpen] = useState(false);
 
     // Formats Asset label to display in UI (hiding raw database IDs)
     const getAssetLabel = (asset: AssetRecord): string => {
@@ -159,11 +155,17 @@ export default function WorkStationsModule() {
         setSelectedDeptId(null);
         setIsActive(true);
         setAssetSearch("");
-        setDeptSearch("");
+        setValidationAttempted(false);
         setIsModalOpen(true);
     };
 
-    const handleOpenEditModal = (wc: WorkCenter) => {
+    const handleCloseAssetDropdown = () => {
+        setIsAssetDropdownOpen(false);
+        const matchedAsset = assets.find(a => a.id === selectedAssetId);
+        setAssetSearch(matchedAsset ? getAssetLabel(matchedAsset) : "");
+    };
+
+    const handleOpenEditModal = (wc: WorkCenter, isFromView = false) => {
         setEditingWorkCenter(wc);
         setWcName(wc.work_center_name);
         setOverheadCost(wc.overhead_cost_per_hour != null ? String(Number(wc.overhead_cost_per_hour)) : "0");
@@ -175,14 +177,15 @@ export default function WorkStationsModule() {
         // Prepopulate searches (without prepending raw ID)
         const matchedAsset = assets.find(a => a.id === wc.asset_id);
         setAssetSearch(matchedAsset ? getAssetLabel(matchedAsset) : "");
-        const matchedDept = departments.find(d => d.department_id === wc.department_id);
-        setDeptSearch(matchedDept ? matchedDept.department_name : "");
 
+        setValidationAttempted(false);
+        setIsTransitioning(isFromView);
         setIsModalOpen(true);
     };
 
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
+        setValidationAttempted(true);
         const trimmedName = wcName.trim();
         if (!trimmedName) {
             toast.error("Work station name is required.");
@@ -264,14 +267,7 @@ export default function WorkStationsModule() {
         });
     }, [assets, assetSearch]);
 
-    // Auto-filter dept matches
-    const filteredDepts = useMemo(() => {
-        if (!deptSearch.trim()) return departments;
-        const search = deptSearch.toLowerCase();
-        return departments.filter(d => 
-            d.department_name.toLowerCase().includes(search)
-        );
-    }, [departments, deptSearch]);
+
 
     return (
         <div className="flex flex-col gap-6 w-full">
@@ -349,7 +345,11 @@ export default function WorkStationsModule() {
                         </thead>
                         <tbody>
                             {paginatedWorkCenters.map(wc => (
-                                <tr key={wc.work_center_id} className="border-b border-muted/40 hover:bg-muted/5 transition-colors">
+                                <tr 
+                                    key={wc.work_center_id} 
+                                    onClick={() => handleOpenViewModal(wc)}
+                                    className="border-b border-muted/40 hover:bg-muted/25 dark:hover:bg-muted/15 active:bg-muted/30 transition-colors cursor-pointer"
+                                >
                                     <td className="p-4 pl-6 align-middle font-semibold text-foreground text-sm">
                                         {wc.work_center_name}
                                     </td>
@@ -374,7 +374,11 @@ export default function WorkStationsModule() {
                                                         <img 
                                                             src={wc.asset.item_image} 
                                                             alt={assetName || "Asset"} 
-                                                            className="w-10 h-10 object-cover rounded border border-border shrink-0"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setPreviewImage(wc.asset?.item_image || null);
+                                                            }}
+                                                            className="w-10 h-10 object-cover rounded border border-border shrink-0 cursor-zoom-in hover:scale-105 transition-transform"
                                                         />
                                                     ) : (
                                                         <div className="w-10 h-10 bg-muted/20 border border-dashed rounded flex items-center justify-center text-muted-foreground/30 shrink-0">
@@ -417,34 +421,16 @@ export default function WorkStationsModule() {
                                             {Boolean(wc.is_active) ? "Active" : "Inactive"}
                                         </span>
                                     </td>
-                                    <td className="p-4 align-middle text-center">
-                                        <DropdownMenu>
-                                            <DropdownMenuTrigger asChild>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="icon"
-                                                    className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-md"
-                                                >
-                                                    <MoreHorizontal className="h-4 w-4" />
-                                                </Button>
-                                            </DropdownMenuTrigger>
-                                            <DropdownMenuContent align="end" className="w-36 bg-popover border border-border text-foreground rounded-lg p-1 shadow-md animate-in fade-in slide-in-from-top-1">
-                                                <DropdownMenuItem
-                                                    onClick={() => handleOpenViewModal(wc)}
-                                                    className="flex items-center gap-2 px-2.5 py-2 text-xs font-semibold cursor-pointer hover:bg-muted rounded-md transition-colors"
-                                                >
-                                                    <Eye className="h-3.5 w-3.5 text-muted-foreground" />
-                                                    View Details
-                                                </DropdownMenuItem>
-                                                <DropdownMenuItem
-                                                    onClick={() => handleOpenEditModal(wc)}
-                                                    className="flex items-center gap-2 px-2.5 py-2 text-xs font-semibold cursor-pointer hover:bg-muted rounded-md transition-colors"
-                                                >
-                                                    <Edit className="h-3.5 w-3.5 text-muted-foreground" />
-                                                    Edit Details
-                                                </DropdownMenuItem>
-                                            </DropdownMenuContent>
-                                        </DropdownMenu>
+                                    <td className="p-4 align-middle text-center" onClick={e => e.stopPropagation()}>
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            onClick={() => handleOpenEditModal(wc)}
+                                            className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-md"
+                                            title="Edit Details"
+                                        >
+                                            <Edit className="h-4 w-4" />
+                                        </Button>
                                     </td>
                                 </tr>
                             ))}
@@ -533,7 +519,7 @@ export default function WorkStationsModule() {
 
             {/* Custom Create / Edit Modal popup */}
             {isModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md animate-in fade-in duration-200">
+                <div className={`fixed inset-0 flex items-center justify-center ${isViewModalOpen ? "z-[52]" : "z-50"} bg-black/80 backdrop-blur-md ${isTransitioning ? "" : "animate-in fade-in duration-100"}`}>
                     <div className="bg-card border border-border/85 rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
                         {/* Modal Header */}
                         <div className="flex items-center justify-between px-6 py-4 border-b shrink-0 bg-muted/20">
@@ -556,17 +542,16 @@ export default function WorkStationsModule() {
                         </div>
 
                         {/* Modal Form Body */}
-                        <form onSubmit={handleSave} className="flex-1 overflow-y-auto p-6 space-y-5 text-xs">
+                        <form onSubmit={handleSave} noValidate className="flex-1 overflow-y-auto p-6 space-y-5 text-xs">
                             {/* Work Center Name */}
                             <div className="space-y-1">
-                                <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Work Station Name <span className="text-red-500">*</span></label>
+                                <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Work Station Name <span className="text-destructive">*</span></label>
                                 <input
                                     type="text"
-                                    required
                                     placeholder="e.g. Mixing Vat Station #3"
                                     value={wcName}
                                     onChange={e => setWcName(e.target.value)}
-                                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
+                                    className={`w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 transition-all ${validationAttempted && !wcName.trim() ? "border-destructive focus:ring-destructive focus:ring-1" : "border-border focus:ring-primary"}`}
                                 />
                             </div>
 
@@ -578,7 +563,6 @@ export default function WorkStationsModule() {
                                         type="number"
                                         step="0.001"
                                         min="0"
-                                        required
                                         value={overheadCost}
                                         onChange={e => {
                                             const val = e.target.value;
@@ -611,7 +595,6 @@ export default function WorkStationsModule() {
                                         type="number"
                                         min="0"
                                         step="1"
-                                        required
                                         value={capacity}
                                         onChange={e => setCapacity(e.target.value)}
                                         onKeyDown={(e) => {
@@ -643,6 +626,25 @@ export default function WorkStationsModule() {
                                             setIsAssetDropdownOpen(true);
                                         }}
                                         onFocus={() => setIsAssetDropdownOpen(true)}
+                                        onKeyDown={e => {
+                                            if (e.key === "Enter") {
+                                                e.preventDefault();
+                                                if (filteredAssets.length > 0) {
+                                                    const firstAsset = filteredAssets[0];
+                                                    setSelectedAssetId(firstAsset.id);
+                                                    setAssetSearch(getAssetLabel(firstAsset));
+                                                    setIsAssetDropdownOpen(false);
+                                                } else {
+                                                    const matchedAsset = assets.find(a => a.id === selectedAssetId);
+                                                    setAssetSearch(matchedAsset ? getAssetLabel(matchedAsset) : "");
+                                                    setIsAssetDropdownOpen(false);
+                                                }
+                                            } else if (e.key === "Tab" || e.key === "Escape") {
+                                                const matchedAsset = assets.find(a => a.id === selectedAssetId);
+                                                setAssetSearch(matchedAsset ? getAssetLabel(matchedAsset) : "");
+                                                setIsAssetDropdownOpen(false);
+                                            }
+                                        }}
                                         className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
                                     />
                                     {selectedAssetId && (
@@ -661,7 +663,7 @@ export default function WorkStationsModule() {
 
                                 {isAssetDropdownOpen && (
                                     <>
-                                        <div className="fixed inset-0 z-10" onClick={() => setIsAssetDropdownOpen(false)} />
+                                        <div className="fixed inset-0 z-10" onClick={handleCloseAssetDropdown} />
                                         <div className="absolute left-0 right-0 mt-1 max-h-40 overflow-y-auto rounded-lg bg-card border border-border shadow-lg py-1 z-20 text-xs">
                                             {filteredAssets.length === 0 ? (
                                                 <div className="px-3 py-2 text-muted-foreground italic">No matching equipment found.</div>
@@ -704,64 +706,31 @@ export default function WorkStationsModule() {
                                 )}
                             </div>
 
-                            {/* Searchable dropdown: Department */}
-                            <div className="space-y-1 relative">
+                            {/* Owner Department */}
+                            <div className="space-y-1">
                                 <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Owner Department</label>
-                                <div className="relative">
-                                    <input
-                                        type="text"
-                                        placeholder="Search department name..."
-                                        value={deptSearch}
-                                        onChange={e => {
-                                            setDeptSearch(e.target.value);
-                                            setIsDeptDropdownOpen(true);
-                                        }}
-                                        onFocus={() => setIsDeptDropdownOpen(true)}
-                                        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
-                                    />
-                                    {selectedDeptId && (
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                setSelectedDeptId(null);
-                                                setDeptSearch("");
-                                            }}
-                                            className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground font-bold"
-                                        >
-                                            &times;
-                                        </button>
-                                    )}
-                                </div>
-
-                                {isDeptDropdownOpen && (
-                                    <>
-                                        <div className="fixed inset-0 z-10" onClick={() => setIsDeptDropdownOpen(false)} />
-                                        <div className="absolute left-0 right-0 mt-1 max-h-40 overflow-y-auto rounded-lg bg-card border border-border shadow-lg py-1 z-20 text-xs">
-                                            {filteredDepts.length === 0 ? (
-                                                <div className="px-3 py-2 text-muted-foreground italic">No matching departments found.</div>
-                                            ) : (
-                                                filteredDepts.map(dept => {
-                                                    const label = dept.department_name;
-                                                    return (
-                                                        <button
-                                                            key={dept.department_id}
-                                                            type="button"
-                                                            onClick={() => {
-                                                                setSelectedDeptId(dept.department_id);
-                                                                setDeptSearch(label);
-                                                                setIsDeptDropdownOpen(false);
-                                                            }}
-                                                            className="w-full text-left px-3 py-2 hover:bg-muted text-foreground flex items-center justify-between"
-                                                        >
-                                                            <span>{label}</span>
-                                                            {selectedDeptId === dept.department_id && <Check className="h-3.5 w-3.5 text-primary" />}
-                                                        </button>
-                                                    );
-                                                })
-                                            )}
-                                        </div>
-                                    </>
-                                )}
+                                <Select
+                                    value={selectedDeptId ? String(selectedDeptId) : "none"}
+                                    onValueChange={(val) => {
+                                        if (val === "none") {
+                                            setSelectedDeptId(null);
+                                        } else {
+                                            setSelectedDeptId(Number(val));
+                                        }
+                                    }}
+                                >
+                                    <SelectTrigger className="w-full h-[38px] rounded-lg bg-background border border-border text-foreground text-sm">
+                                        <SelectValue placeholder="Select department..." />
+                                    </SelectTrigger>
+                                    <SelectContent position="popper" sideOffset={4} className="bg-popover border border-border text-foreground">
+                                        <SelectItem value="none">None</SelectItem>
+                                        {departments.map((dept) => (
+                                            <SelectItem key={dept.department_id} value={String(dept.department_id)}>
+                                                {dept.department_name}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
                             </div>
 
                             {/* Status */}
@@ -805,7 +774,7 @@ export default function WorkStationsModule() {
 
             {/* View Details Modal popup */}
             {isViewModalOpen && viewingWorkCenter && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md animate-in fade-in duration-200">
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md animate-in fade-in duration-100">
                     <div className="bg-card border border-border/85 rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
                         {/* Modal Header */}
                         <div className="flex items-center justify-between px-6 py-4 border-b shrink-0 bg-muted/20">
@@ -883,7 +852,8 @@ export default function WorkStationsModule() {
                                                     <img 
                                                         src={viewingWorkCenter.asset.item_image} 
                                                         alt={assetName || "Asset image"} 
-                                                        className="w-full h-24 object-cover rounded-lg border border-border bg-muted/5 shrink-0"
+                                                        onClick={() => setPreviewImage(viewingWorkCenter.asset?.item_image || null)}
+                                                        className="w-full h-24 object-cover rounded-lg border border-border bg-muted/5 shrink-0 cursor-zoom-in hover:scale-102 transition-transform"
                                                     />
                                                 ) : (
                                                     <div className="w-full h-24 bg-muted/20 border border-dashed rounded-lg flex flex-col items-center justify-center text-muted-foreground/30 gap-1 shrink-0">
@@ -944,7 +914,19 @@ export default function WorkStationsModule() {
                         </div>
 
                         {/* Modal Footer */}
-                        <div className="flex justify-end p-4 border-t shrink-0 bg-muted/10">
+                        <div className="flex justify-end gap-3 p-4 border-t shrink-0 bg-muted/10">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    handleOpenEditModal(viewingWorkCenter, true);
+                                    setTimeout(() => {
+                                        setIsViewModalOpen(false);
+                                    }, 200);
+                                }}
+                                className="px-4 py-2 border border-border rounded-lg text-xs font-semibold hover:bg-muted hover:text-foreground transition-colors text-muted-foreground flex items-center gap-1.5"
+                            >
+                                <Edit className="h-3.5 w-3.5" /> Edit Details
+                            </button>
                             <button
                                 type="button"
                                 onClick={() => setIsViewModalOpen(false)}
@@ -953,6 +935,35 @@ export default function WorkStationsModule() {
                                 Close
                             </button>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {previewImage && (
+                <div 
+                    className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
+                    onClick={() => setPreviewImage(null)}
+                >
+                    <div 
+                        className="relative max-w-5xl max-h-[90vh] p-2 bg-card border border-border/40 rounded-2xl shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-200"
+                        onClick={e => e.stopPropagation()}
+                    >
+                        {/* Close Button */}
+                        <button
+                            type="button"
+                            onClick={() => setPreviewImage(null)}
+                            className="absolute top-4 right-4 z-10 bg-black/60 hover:bg-black/80 text-white rounded-full p-2 transition-colors focus:outline-none"
+                        >
+                            <X className="h-4 w-4" />
+                        </button>
+                        
+                        {/* Image */}
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                            src={previewImage}
+                            alt="Asset Preview Large"
+                            className="max-w-full max-h-[85vh] object-contain rounded-xl animate-in zoom-in-95 duration-200"
+                        />
                     </div>
                 </div>
             )}

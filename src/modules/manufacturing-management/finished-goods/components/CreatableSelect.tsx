@@ -70,7 +70,15 @@ export function CreatableSelect({
     }, [options, searchQuery]);
 
     return (
-        <Popover open={open} onOpenChange={setOpen}>
+        <Popover 
+            open={open} 
+            onOpenChange={(newOpen) => {
+                setOpen(newOpen);
+                if (!newOpen) {
+                    setSearchQuery("");
+                }
+            }}
+        >
             {variant === "inline" ? (
                 <PopoverAnchor asChild>
                     <input
@@ -88,6 +96,16 @@ export function CreatableSelect({
                         onKeyDown={(e) => {
                             if (e.key === "Escape") {
                                 setOpen(false);
+                            }
+                            if (e.key === "Enter") {
+                                if (open) {
+                                    if (filteredOptions.length > 0) {
+                                        e.preventDefault();
+                                        onValueChange(filteredOptions[0].value);
+                                        setOpen(false);
+                                        setSearchQuery("");
+                                    }
+                                }
                             }
                             if (onKeyDown) {
                                 onKeyDown(e);
