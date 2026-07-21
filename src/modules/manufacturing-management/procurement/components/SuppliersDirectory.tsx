@@ -56,6 +56,11 @@ export interface LinkedProduct {
     };
 }
 
+type SupplierStatusFilter = "active" | "inactive" | "all";
+
+const isSupplierActive = (supplier: Supplier): boolean => Number(supplier.isActive) !== 0;
+const isSupplierNonBuy = (supplier: Supplier): boolean => supplier.nonBuy === true || Number(supplier.nonBuy) === 1;
+
 const getCurrencyFromNotes = (notes: string | null | undefined): string => {
     if (!notes) return "PHP";
     const match = notes.match(/\[Currency:\s*(\w+)\]/);
@@ -81,7 +86,8 @@ export default function SuppliersDirectory({
     rawMaterials = []
 }: SuppliersDirectoryProps) {
     const [search, setSearch] = useState("");
-    const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
+    const [statusFilter, setStatusFilter] = useState<SupplierStatusFilter>("active");
+    const [selectedSupplierId, setSelectedSupplierId] = useState<number | null>(null);
 
     const [provinces, setProvinces] = useState<PSGCItem[]>([]);
     const [cities, setCities] = useState<PSGCItem[]>([]);
@@ -96,16 +102,24 @@ export default function SuppliersDirectory({
     const [loadingBarangays, setLoadingBarangays] = useState(false);
 
     const filteredSuppliers = React.useMemo(() => {
-        return suppliers.filter(s =>
-            s.supplier_name.toLowerCase().includes(search.toLowerCase()) ||
-            s.supplier_shortcut?.toLowerCase().includes(search.toLowerCase()) ||
-            s.tin_number?.includes(search)
-        );
-    }, [suppliers, search]);
+        const normalizedSearch = search.toLowerCase();
+        return suppliers.filter(s => {
+            const matchesStatus = statusFilter === "all" || (statusFilter === "active" ? isSupplierActive(s) : !isSupplierActive(s));
+            if (!matchesStatus) return false;
+
+            return s.supplier_name.toLowerCase().includes(normalizedSearch) ||
+                s.supplier_shortcut?.toLowerCase().includes(normalizedSearch) ||
+                s.tin_number?.includes(search);
+        });
+    }, [suppliers, search, statusFilter]);
 
     const activeSupplier = React.useMemo(() => {
-        return selectedSupplier || filteredSuppliers[0];
-    }, [selectedSupplier, filteredSuppliers]);
+        if (selectedSupplierId !== null) {
+            return filteredSuppliers.find(s => s.id === selectedSupplierId);
+        }
+        return filteredSuppliers[0];
+    }, [selectedSupplierId, filteredSuppliers]);
+    const activeSupplierId = activeSupplier?.id ?? null;
 
     const isPH = !supplierForm.country || supplierForm.country.toLowerCase() === "philippines" || supplierForm.country.toLowerCase() === "ph";
 
@@ -240,6 +254,7 @@ export default function SuppliersDirectory({
     const [selectedProductIdsToLink, setSelectedProductIdsToLink] = useState<string[]>([]);
     const [linkProductSearch, setLinkProductSearch] = useState("");
     const [linkingLoading, setLinkingLoading] = useState(false);
+    const [unlinkingLinkId, setUnlinkingLinkId] = useState<number | null>(null);
 
     const loadLinkedProducts = async (supplierId: number) => {
         setLoadingLinkedProducts(true);
@@ -254,28 +269,28 @@ export default function SuppliersDirectory({
     };
 
     useEffect(() => {
-        if (activeSupplier) {
-            loadLinkedProducts(activeSupplier.id);
+        if (activeSupplierId !== null) {
+            loadLinkedProducts(activeSupplierId);
         } else {
             setLinkedProducts([]);
         }
         setIsLinkingOpen(false);
         setSelectedProductIdsToLink([]);
         setLinkProductSearch("");
-    }, [activeSupplier]);
+    }, [activeSupplierId]);
 
     const handleLinkMultipleProducts = async () => {
-        if (selectedProductIdsToLink.length === 0 || !activeSupplier) return;
+        if (selectedProductIdsToLink.length === 0 || activeSupplierId === null) return;
         setLinkingLoading(true);
         try {
             await Promise.all(
-                selectedProductIdsToLink.map(id => linkProductToSupplier(activeSupplier!.id, Number(id)))
+                selectedProductIdsToLink.map(id => linkProductToSupplier(activeSupplierId, Number(id)))
             );
             toast.success(`Successfully linked ${selectedProductIdsToLink.length} products`);
             setIsLinkingOpen(false);
             setSelectedProductIdsToLink([]);
             setLinkProductSearch("");
-            loadLinkedProducts(activeSupplier.id);
+            await loadLinkedProducts(activeSupplierId);
         } catch (e) {
             console.error(e);
             toast.error("Failed to link one or more products");
@@ -285,13 +300,17 @@ export default function SuppliersDirectory({
     };
 
     const handleUnlinkProduct = async (linkId: number) => {
+        if (unlinkingLinkId !== null || activeSupplierId === null) return;
+        setUnlinkingLinkId(linkId);
         try {
             await unlinkProductFromSupplier(linkId);
             toast.success("Product unlinked successfully");
-            loadLinkedProducts(activeSupplier.id);
+            await loadLinkedProducts(activeSupplierId);
         } catch (e) {
             console.error(e);
-            toast.error("Failed to unlink product");
+            toast.error((e as Error).message || "Failed to unlink product. Please try again.");
+        } finally {
+            setUnlinkingLinkId(null);
         }
     };
 
@@ -313,6 +332,25 @@ export default function SuppliersDirectory({
                         >
                             <Plus className="h-3.5 w-3.5" /> Register
                         </button>
+                    </div>
+                    <div className="grid grid-cols-3 gap-1 rounded-lg bg-muted p-1" role="group" aria-label="Supplier status filter">
+                        {(["active", "inactive", "all"] as SupplierStatusFilter[]).map(filter => {
+                            const count = suppliers.filter(s =>
+                                filter === "all" || (filter === "active" ? isSupplierActive(s) : !isSupplierActive(s))
+                            ).length;
+                            return (
+                                <button
+                                    key={filter}
+                                    type="button"
+                                    onClick={() => setStatusFilter(filter)}
+                                    className={`rounded-md px-2 py-1.5 text-[10px] font-bold capitalize transition-colors ${
+                                        statusFilter === filter ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                                    }`}
+                                >
+                                    {filter} ({count})
+                                </button>
+                            );
+                        })}
                     </div>
                     <div className="relative">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
@@ -344,20 +382,20 @@ export default function SuppliersDirectory({
                         filteredSuppliers.map(s => (
                             <button
                                 key={s.id}
-                                onClick={() => setSelectedSupplier(s)}
+                                onClick={() => setSelectedSupplierId(s.id)}
                                 className={`w-full text-left p-4 hover:bg-muted/40 transition-all flex flex-col gap-1.5 hover:-translate-y-0.5 hover:shadow-[0_4px_12px_rgba(0,0,0,0.03)] focus:bg-primary/5 active:translate-y-0 ${
                                     activeSupplier?.id === s.id ? "bg-primary/5 border-l-2 border-primary" : ""
-                                } ${Number(s.isActive) === 0 ? "opacity-60" : ""}`}
+                                } ${!isSupplierActive(s) ? "opacity-60" : ""}`}
                             >
                                 <div className="flex items-start justify-between gap-2">
                                     <span className="font-semibold text-xs text-foreground truncate">{s.supplier_name}</span>
                                     <div className="flex items-center gap-1 shrink-0">
-                                        {(Number(s.nonBuy) === 1 || s.nonBuy === true) && (
+                                        {isSupplierNonBuy(s) && (
                                             <span className="bg-amber-500/15 text-amber-600 border border-amber-500/20 px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wide">
                                                 Non-Buy
                                             </span>
                                         )}
-                                        {Number(s.isActive) === 0 && (
+                                        {!isSupplierActive(s) && (
                                             <span className="bg-red-500/15 text-red-600 border border-red-500/20 px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wide">
                                                 Inactive
                                             </span>
@@ -393,7 +431,7 @@ export default function SuppliersDirectory({
                                 <div className="flex items-center gap-3">
                                     <div className="flex items-center gap-2">
                                         <h2 className="text-lg font-bold text-foreground leading-tight">{activeSupplier.supplier_name}</h2>
-                                        {Number(activeSupplier.isActive) === 0 ? (
+                                        {!isSupplierActive(activeSupplier) ? (
                                             <span className="bg-red-500/10 text-red-600 border border-red-500/20 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase">
                                                 Inactive
                                             </span>
@@ -402,7 +440,7 @@ export default function SuppliersDirectory({
                                                 Active
                                             </span>
                                         )}
-                                        {(Number(activeSupplier.nonBuy) === 1 || activeSupplier.nonBuy === true) && (
+                                        {isSupplierNonBuy(activeSupplier) && (
                                             <span className="bg-amber-500/10 text-amber-600 border border-amber-500/20 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase">
                                                 Non-Buy
                                             </span>
@@ -418,12 +456,12 @@ export default function SuppliersDirectory({
                                         <button
                                             onClick={() => onToggleSupplierActive?.(activeSupplier)}
                                             className={`text-[10px] font-bold border px-2 py-1 rounded transition-all cursor-pointer ${
-                                                Number(activeSupplier.isActive) === 0
+                                                !isSupplierActive(activeSupplier)
                                                     ? "text-emerald-600 border-emerald-500/20 bg-emerald-500/5 hover:bg-emerald-500/10 hover:underline"
                                                     : "text-red-600 border-red-500/20 bg-red-500/5 hover:bg-red-500/10 hover:underline"
                                             }`}
                                         >
-                                            {Number(activeSupplier.isActive) === 0 ? "Activate" : "Deactivate"}
+                                            {!isSupplierActive(activeSupplier) ? "Activate" : "Deactivate"}
                                         </button>
                                     </div>
                                 </div>
@@ -715,10 +753,11 @@ export default function SuppliersDirectory({
                                             </div>
                                             <button
                                                 onClick={() => handleUnlinkProduct(lp.id)}
+                                                disabled={unlinkingLinkId === lp.id}
                                                 className="text-muted-foreground hover:text-red-500 p-1.5 rounded-lg hover:bg-red-500/10 transition-all cursor-pointer"
                                                 title="Unlink Product"
                                             >
-                                                <Trash2 className="h-4 w-4" />
+                                                {unlinkingLinkId === lp.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
                                             </button>
                                         </div>
                                     ))}
@@ -729,7 +768,9 @@ export default function SuppliersDirectory({
                 ) : (
                     <div className="flex flex-col items-center justify-center p-20 text-center text-muted-foreground h-full">
                         <Building2 className="h-16 w-16 mb-4 text-muted-foreground/30" />
-                        No supplier selected or registered.
+                        {selectedSupplierId !== null
+                            ? "The selected supplier is hidden by the current status filter. Choose the matching filter to view it."
+                            : "No supplier selected or registered."}
                     </div>
                 )}
             </div>

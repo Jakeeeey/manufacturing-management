@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
 import { Supplier, SupplierRepresentative, IncomingShipment, ShipmentLineItem, ShipmentExpense, RawMaterial, LinkedProduct, RegisterRawMaterialPayload, PackagingVariant, ShipmentData, LineItem } from "../types";
 import type { ShipmentFormState, ManifestLineFormItem } from "../components/IncomingShipments";
@@ -17,6 +17,7 @@ import {
     updateSupplier,
     fetchLinkedProducts
 } from "../services/procurement-api";
+import type { SupplierStatusFilter } from "../services/procurement-api";
 
 export function useProcurement(defaultTab: string = "suppliers") {
     const [activeTab, setActiveTab] = useState(defaultTab);
@@ -97,18 +98,6 @@ export function useProcurement(defaultTab: string = "suppliers") {
         allocation_method: "Value",
         expenses: [{ overhead_id: "", expense_type: "", amount_php: "" }]
     });
-
-    // Load only the data required by the current procurement page. In particular,
-    // raw-materials does not need the purchase-order shipment endpoint.
-    useEffect(() => {
-        if (activeTab === "suppliers" || activeTab === "raw-materials" || activeTab === "incoming-shipments") {
-            loadSuppliers();
-            loadRawMaterials();
-        }
-        if (activeTab === "incoming-shipments" || activeTab === "shipment-expenses") {
-            loadShipments();
-        }
-    }, [activeTab]);
 
     // Auto-generate reference number when modal opens, and clean up form when modal closes
     useEffect(() => {
@@ -210,17 +199,17 @@ export function useProcurement(defaultTab: string = "suppliers") {
         }
     }, [selectedShipment]);
 
-    async function loadSuppliers() {
+    const loadSuppliers = useCallback(async (status: SupplierStatusFilter = activeTab === "suppliers" ? "all" : "active") => {
         try {
-            const data = await fetchSuppliers();
+            const data = await fetchSuppliers(status);
             setSuppliers(data);
         } catch (e) {
             console.error(e);
             toast.error("Failed to load suppliers");
         }
-    }
+    }, [activeTab]);
 
-    async function loadShipments() {
+    const loadShipments = useCallback(async () => {
         try {
             const data = await fetchShipments();
             setShipments(data);
@@ -230,9 +219,9 @@ export function useProcurement(defaultTab: string = "suppliers") {
             toast.error("Failed to load incoming shipments");
             return [];
         }
-    }
+    }, []);
 
-    async function loadRawMaterials() {
+    const loadRawMaterials = useCallback(async () => {
         setRawMaterialsLoading(true);
         try {
             const data = await fetchRawMaterials();
@@ -243,7 +232,19 @@ export function useProcurement(defaultTab: string = "suppliers") {
         } finally {
             setRawMaterialsLoading(false);
         }
-    }
+    }, []);
+
+    // Load only the data required by the current procurement page. In particular,
+    // raw-materials does not need the purchase-order shipment endpoint.
+    useEffect(() => {
+        if (activeTab === "suppliers" || activeTab === "raw-materials" || activeTab === "incoming-shipments") {
+            loadSuppliers();
+            loadRawMaterials();
+        }
+        if (activeTab === "incoming-shipments" || activeTab === "shipment-expenses") {
+            loadShipments();
+        }
+    }, [activeTab, loadSuppliers, loadRawMaterials, loadShipments]);
 
     async function loadShipmentDetails(shipmentId: number) {
         setLoading(true);
