@@ -4,10 +4,12 @@ import { RawMaterial, Supplier, RegisterRawMaterialPayload, PackagingVariant } f
 import { Search, Layers, ChevronDown, ChevronUp, MapPin, Bookmark, AlertTriangle, Plus, X, Loader2, Info, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { CreatableSelect } from "../../finished-goods/components/CreatableSelect";
+import { fetchProductInventoryDetails } from "../services/procurement-api";
 
 interface RawMaterialsMasterProps {
     rawMaterials: RawMaterial[];
     suppliers: Supplier[];
+    loadingItems: boolean;
     onRegisterRawMaterial: (productDetails: RegisterRawMaterialPayload, supplierIds: number[], packagingVariants?: PackagingVariant[]) => Promise<boolean>;
     onUpdateRawMaterial: (productId: number, productDetails: RegisterRawMaterialPayload, supplierIds: number[], packagingVariants?: PackagingVariant[]) => Promise<boolean>;
 }
@@ -26,6 +28,7 @@ interface SelectOption {
 export default function RawMaterialsMaster({
     rawMaterials,
     suppliers,
+    loadingItems,
     onRegisterRawMaterial,
     onUpdateRawMaterial
 }: RawMaterialsMasterProps) {
@@ -253,16 +256,11 @@ export default function RawMaterialsMaster({
         setExpandedProductId(productId);
         setLoadingBatches(true);
         try {
-            const res = await fetch(`/api/manufacturing/procurement/qa-receiving?productId=${productId}`);
-            if (res.ok) {
-                const data = await res.json();
-                setProductBatches(data || []);
-            } else {
-                toast.error("Failed to load inventory details");
-            }
+            const data = await fetchProductInventoryDetails(productId);
+            setProductBatches(data);
         } catch (e) {
             console.error(e);
-            toast.error("Network error loading inventory details");
+            toast.error(e instanceof Error ? e.message : "Failed to load inventory details");
         } finally {
             setLoadingBatches(false);
         }
@@ -538,7 +536,16 @@ export default function RawMaterialsMaster({
                         </tr>
                     </thead>
                     <tbody className="divide-y">
-                        {sortedFiltered.length === 0 ? (
+                        {loadingItems ? (
+                            <tr>
+                                <td colSpan={7} className="p-12 text-center text-muted-foreground">
+                                    <div className="flex items-center justify-center gap-2">
+                                        <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                                        <span>Loading items...</span>
+                                    </div>
+                                </td>
+                            </tr>
+                        ) : sortedFiltered.length === 0 ? (
                             <tr>
                                 <td colSpan={7} className="p-12 text-center text-muted-foreground">
                                     No items found.

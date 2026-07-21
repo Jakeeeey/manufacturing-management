@@ -21,6 +21,7 @@ import {
 export function useProcurement(defaultTab: string = "suppliers") {
     const [activeTab, setActiveTab] = useState(defaultTab);
     const [loading, setLoading] = useState(false);
+    const [rawMaterialsLoading, setRawMaterialsLoading] = useState(true);
     const [submittingExpenses, setSubmittingExpenses] = useState(false);
 
     // Data lists
@@ -97,12 +98,17 @@ export function useProcurement(defaultTab: string = "suppliers") {
         expenses: [{ overhead_id: "", expense_type: "", amount_php: "" }]
     });
 
-    // Initial load
+    // Load only the data required by the current procurement page. In particular,
+    // raw-materials does not need the purchase-order shipment endpoint.
     useEffect(() => {
-        loadSuppliers();
-        loadShipments();
-        loadRawMaterials();
-    }, []);
+        if (activeTab === "suppliers" || activeTab === "raw-materials" || activeTab === "incoming-shipments") {
+            loadSuppliers();
+            loadRawMaterials();
+        }
+        if (activeTab === "incoming-shipments" || activeTab === "shipment-expenses") {
+            loadShipments();
+        }
+    }, [activeTab]);
 
     // Auto-generate reference number when modal opens, and clean up form when modal closes
     useEffect(() => {
@@ -227,12 +233,15 @@ export function useProcurement(defaultTab: string = "suppliers") {
     }
 
     async function loadRawMaterials() {
+        setRawMaterialsLoading(true);
         try {
             const data = await fetchRawMaterials();
             setRawMaterials(data);
         } catch (e) {
             console.error(e);
             toast.error("Failed to load raw materials");
+        } finally {
+            setRawMaterialsLoading(false);
         }
     }
 
@@ -707,6 +716,7 @@ export function useProcurement(defaultTab: string = "suppliers") {
         activeTab,
         setActiveTab,
         loading,
+        rawMaterialsLoading,
         submittingExpenses,
         suppliers,
         shipments,
