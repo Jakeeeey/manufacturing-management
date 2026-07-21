@@ -120,6 +120,9 @@ export default function WorkStationsModule() {
 
     // Filtered Work Centers list
     const filteredWorkCenters = useMemo(() => {
+        const departmentsById = new Map(
+            departments.map(department => [Number(department.department_id), department])
+        );
         const filtered = workCenters.filter(wc => {
             const query = searchQuery.toLowerCase();
             const matchesName = wc.work_center_name.toLowerCase().includes(query);
@@ -127,13 +130,14 @@ export default function WorkStationsModule() {
             const matchesAsset = assetName.toLowerCase().includes(query) ||
                                  wc.asset?.serial?.toLowerCase().includes(query) || 
                                  wc.asset?.barcode?.toLowerCase().includes(query);
-            const matchesDept = wc.department?.department_name?.toLowerCase().includes(query);
+            const department = wc.department || departmentsById.get(Number(wc.department_id));
+            const matchesDept = department?.department_name?.toLowerCase().includes(query);
             return matchesName || matchesAsset || matchesDept;
         });
 
         // Priority the newly created data to show first (newest ID first)
         return [...filtered].sort((a, b) => b.work_center_id - a.work_center_id);
-    }, [workCenters, searchQuery]);
+    }, [departments, workCenters, searchQuery]);
 
     // Reset page to 1 when search query, filter result length, or page size changes
     useEffect(() => {
