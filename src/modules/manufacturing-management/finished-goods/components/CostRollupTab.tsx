@@ -27,6 +27,7 @@ interface CostRollupTabProps {
     setSimulationPriceOverrides: React.Dispatch<React.SetStateAction<Record<string, number>>>;
     editedBOM: BOMItem[];
     selectedProduct: Product;
+    selectedVersionId: number | null;
     simulatedNetProfit: number;
     simulatedMaterialCost: number;
     simulatedOverheads: {
@@ -52,6 +53,7 @@ export const CostRollupTab: React.FC<CostRollupTabProps> = ({
     setSimulationPriceOverrides,
     editedBOM,
     selectedProduct,
+    selectedVersionId,
     simulatedNetProfit,
     simulatedMaterialCost,
     simulatedOverheads,
@@ -100,6 +102,14 @@ export const CostRollupTab: React.FC<CostRollupTabProps> = ({
             toast.error("Quote number is required");
             return;
         }
+        if (!selectedVersionId || selectedVersionId <= 0) {
+            toast.error("Select a valid BOM version before saving a quotation");
+            return;
+        }
+        if (editedBOM.some(item => !item.productId || Number(item.productId) <= 0)) {
+            toast.error("Every BOM ingredient must have a valid product before saving a quotation");
+            return;
+        }
 
         setIsSavingQuote(true);
         try {
@@ -130,8 +140,8 @@ export const CostRollupTab: React.FC<CostRollupTabProps> = ({
             editedBOM.forEach(item => {
                 const overrideCost = simulationPriceOverrides[item.id] !== undefined ? simulationPriceOverrides[item.id] : item.landedCost;
                 snapshots.push({
-                    product_id: Number(selectedProduct.id),
-                    version_id: 1, // Placeholder / active version context
+                    product_id: Number(item.productId),
+                    version_id: selectedVersionId,
                     node_name: item.name,
                     node_type: item.type === "by_product" ? "by_product" : "ingredient",
                     quantity: item.quantity,
@@ -147,7 +157,7 @@ export const CostRollupTab: React.FC<CostRollupTabProps> = ({
             simulatedOverheads.items.forEach(o => {
                 snapshots.push({
                     product_id: Number(selectedProduct.id),
-                    version_id: 1,
+                    version_id: selectedVersionId,
                     node_name: o.overheadName,
                     node_type: "overhead",
                     quantity: 1,

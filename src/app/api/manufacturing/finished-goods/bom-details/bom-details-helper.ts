@@ -139,6 +139,7 @@ export async function syncRoutesAndBOM(versionId: number, routes: any[], userId:
                     quantity_required: Number(bItem.quantity_required || bItem.quantity || 0),
                     unit_of_measurement: uomId,
                     wastage_factor_percentage: Number(bItem.wastage_factor_percentage || bItem.wastagePercent || 0),
+                    cost_per_unit: Number(bItem.cost_per_unit ?? bItem.landedCost ?? 0),
                     created_by: userId
                 };
 
