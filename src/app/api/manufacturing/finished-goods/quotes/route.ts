@@ -23,6 +23,26 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Missing required quote header or snapshot fields" }, { status: 400 });
         }
 
+        const invalidSnapshot = snapshots.find((snapshot: Record<string, unknown>) => {
+            const productId = Number(snapshot.product_id);
+            const versionId = Number(snapshot.version_id);
+            const quantity = Number(snapshot.quantity);
+            const unitCost = Number(snapshot.frozen_unit_cost_php);
+            const totalCost = Number(snapshot.frozen_total_cost_php);
+            return !Number.isInteger(productId) || productId <= 0
+                || !Number.isInteger(versionId) || versionId <= 0
+                || !Number.isFinite(quantity) || quantity < 0
+                || !Number.isFinite(unitCost) || unitCost < 0
+                || !Number.isFinite(totalCost) || totalCost < 0
+                || typeof snapshot.node_name !== "string" || !snapshot.node_name.trim()
+                || typeof snapshot.node_type !== "string" || !snapshot.node_type.trim()
+                || typeof snapshot.uom !== "string" || !snapshot.uom.trim();
+        });
+
+        if (invalidSnapshot) {
+            return NextResponse.json({ error: "Each quotation snapshot must contain valid product, BOM version, node, quantity, UOM, and cost values" }, { status: 400 });
+        }
+
         const result = await saveQuotation(header, snapshots);
         return NextResponse.json(result);
     } catch (e) {
