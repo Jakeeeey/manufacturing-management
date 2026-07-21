@@ -1,9 +1,14 @@
 import { NextResponse } from "next/server";
 import { fetchSuppliers, createSupplier, updateSupplier } from "./suppliers-helper";
+import type { SupplierStatusFilter } from "./suppliers-helper";
 
-export async function GET() {
+export async function GET(request: Request) {
     try {
-        const suppliers = await fetchSuppliers();
+        const status = new URL(request.url).searchParams.get("status") || "active";
+        if (status !== "active" && status !== "inactive" && status !== "all") {
+            return NextResponse.json({ error: "status must be active, inactive, or all" }, { status: 400 });
+        }
+        const suppliers = await fetchSuppliers(status as SupplierStatusFilter);
         return NextResponse.json(suppliers);
     } catch (e) {
         console.error("API Error fetching suppliers:", e);
