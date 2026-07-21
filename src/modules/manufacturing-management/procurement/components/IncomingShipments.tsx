@@ -569,12 +569,18 @@ export default function IncomingShipments({
         console.debug("[EditPO] lines prop:", lines);
         console.debug("[EditPO] freshLines from API:", freshLines);
 
+        const currencyCode = (activeShipment as IncomingShipment & { currency_code?: "PHP" | "USD" }).currency_code || "PHP";
+        const exchangeRate = Number(activeShipment.exchange_rate) || 1;
         setLinesForm(freshLines.map((l: ShipmentLineItem) => ({
             product_id: String(typeof l.product_id === "object" ? l.product_id.product_id : l.product_id),
             product_name: typeof l.product_id === "object" ? l.product_id.product_name : "",
             product_code: typeof l.product_id === "object" ? l.product_id.product_code || "" : "",
             quantity_ordered: String(l.quantity_ordered || 0),
-            base_unit_cost_php: String(l.base_unit_cost_php),
+            // The form edits the transaction-currency price. The API keeps the
+            // PHP base cost separately in base_unit_cost_php.
+            base_unit_cost_php: String(l.unit_price_foreign ?? (currencyCode === "USD"
+                ? Number(l.base_unit_cost_php) / exchangeRate
+                : Number(l.base_unit_cost_php))),
             parent_product_id: "",
             selected_uom: l.product_id && typeof l.product_id === "object" && l.product_id.unit_of_measurement ? l.product_id.unit_of_measurement.unit_shortcut : "PCS",
             uom_options: []

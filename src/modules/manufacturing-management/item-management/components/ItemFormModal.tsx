@@ -1,9 +1,10 @@
 import React, { useState, useMemo } from "react";
 import { Loader2 } from "lucide-react";
-import { ItemType, ItemClassification } from "../types";
 import { Button } from "@/components/ui/button";
 import { CreatableSelect } from "../../finished-goods/components/CreatableSelect";
 import { toast } from "sonner";
+
+import { CatalogItem, ItemType, ItemClassification } from "../types";
 
 interface ItemFormModalProps {
     isOpen: boolean;
@@ -11,6 +12,7 @@ interface ItemFormModalProps {
     onSave: (name: string, typeId: number, classId: number) => Promise<boolean>;
     itemTypes: ItemType[];
     itemClassifications: ItemClassification[];
+    item?: CatalogItem;
 }
 
 export default function ItemFormModal({
@@ -18,12 +20,22 @@ export default function ItemFormModal({
     onClose,
     onSave,
     itemTypes,
-    itemClassifications
+    itemClassifications,
+    item
 }: ItemFormModalProps) {
-    const [itemName, setItemName] = useState("");
-    const [selectedTypeId, setSelectedTypeId] = useState("");
-    const [selectedClassId, setSelectedClassId] = useState("");
+    const initialItemName = item?.item_name || "";
+    const initialTypeId = item?.item_type 
+        ? (typeof item.item_type === "object" ? String(item.item_type.id) : String(item.item_type))
+        : "";
+    const initialClassId = item?.item_classification
+        ? (typeof item.item_classification === "object" ? String(item.item_classification.id) : String(item.item_classification))
+        : "";
+
+    const [itemName, setItemName] = useState(initialItemName);
+    const [selectedTypeId, setSelectedTypeId] = useState(initialTypeId);
+    const [selectedClassId, setSelectedClassId] = useState(initialClassId);
     const [submitting, setSubmitting] = useState(false);
+    const [errors, setErrors] = useState<{ itemName?: boolean; itemType?: boolean; itemClassification?: boolean }>({});
 
     const typeOptions = useMemo(() => {
         return itemTypes.map((t) => ({
@@ -43,15 +55,23 @@ export default function ItemFormModal({
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         const trimmed = itemName.trim();
-        if (!trimmed) {
+        
+        const newErrors = {
+            itemName: !trimmed,
+            itemType: !selectedTypeId,
+            itemClassification: !selectedClassId
+        };
+        setErrors(newErrors);
+
+        if (newErrors.itemName) {
             toast.error("Item Name is required.");
             return;
         }
-        if (!selectedTypeId) {
+        if (newErrors.itemType) {
             toast.error("Item Type is required.");
             return;
         }
-        if (!selectedClassId) {
+        if (newErrors.itemClassification) {
             toast.error("Item Classification is required.");
             return;
         }
@@ -75,7 +95,9 @@ export default function ItemFormModal({
             >
                 {/* Modal Header */}
                 <div className="flex items-center justify-between px-5 py-4 border-b shrink-0 bg-muted/10">
-                    <h3 className="text-sm font-bold text-foreground">Register New Catalog Item</h3>
+                    <h3 className="text-sm font-bold text-foreground">
+                        {item ? "Edit Catalog Item" : "Register New Catalog Item"}
+                    </h3>
                     <button
                         type="button"
                         onClick={onClose}
@@ -87,7 +109,15 @@ export default function ItemFormModal({
                 </div>
 
                 {/* Form */}
-                <form onSubmit={handleSubmit} className="p-5 space-y-4 text-xs">
+                <form 
+                    onSubmit={handleSubmit} 
+                    onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                            e.preventDefault();
+                        }
+                    }}
+                    className="p-5 space-y-4 text-xs"
+                >
                     {/* Item Name */}
                     <div className="space-y-1">
                         <label className="text-[10px] font-bold text-muted-foreground uppercase block mb-1">
@@ -95,12 +125,20 @@ export default function ItemFormModal({
                         </label>
                         <input
                             type="text"
-                            required
                             placeholder="e.g. Soya Press Machine Model X"
                             value={itemName}
-                            onChange={(e) => setItemName(e.target.value)}
+                            onChange={(e) => {
+                                setItemName(e.target.value);
+                                if (e.target.value.trim()) {
+                                    setErrors((prev) => ({ ...prev, itemName: false }));
+                                }
+                            }}
                             disabled={submitting}
-                            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
+                            className={`w-full rounded-lg border bg-background px-3 py-2 text-xs text-foreground outline-none focus:ring-1 transition-all ${
+                                errors.itemName
+                                    ? "border-destructive focus:ring-destructive"
+                                    : "border-border focus:ring-primary"
+                            }`}
                         />
                     </div>
 
@@ -113,10 +151,16 @@ export default function ItemFormModal({
                             variant="inline"
                             options={typeOptions}
                             value={selectedTypeId}
-                            onValueChange={setSelectedTypeId}
+                            onValueChange={(val) => {
+                                setSelectedTypeId(val);
+                                if (val) {
+                                    setErrors((prev) => ({ ...prev, itemType: false }));
+                                }
+                            }}
                             placeholder="Select Item Type..."
                             disabled={submitting}
                             popoverClassName="z-[70]"
+                            className={errors.itemType ? "border-destructive focus-visible:ring-destructive" : ""}
                         />
                     </div>
 
@@ -129,10 +173,16 @@ export default function ItemFormModal({
                             variant="inline"
                             options={classificationOptions}
                             value={selectedClassId}
-                            onValueChange={setSelectedClassId}
+                            onValueChange={(val) => {
+                                setSelectedClassId(val);
+                                if (val) {
+                                    setErrors((prev) => ({ ...prev, itemClassification: false }));
+                                }
+                            }}
                             placeholder="Select Item Classification..."
                             disabled={submitting}
                             popoverClassName="z-[70]"
+                            className={errors.itemClassification ? "border-destructive focus-visible:ring-destructive" : ""}
                         />
                     </div>
 
@@ -156,10 +206,10 @@ export default function ItemFormModal({
                             {submitting ? (
                                 <>
                                     <Loader2 className="h-3 w-3 animate-spin mr-1.5" />
-                                    Registering...
+                                    {item ? "Saving..." : "Registering..."}
                                 </>
                             ) : (
-                                "Register Item"
+                                item ? "Save Changes" : "Register Item"
                             )}
                         </Button>
                     </div>

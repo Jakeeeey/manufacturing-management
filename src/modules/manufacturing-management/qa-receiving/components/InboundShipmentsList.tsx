@@ -1,6 +1,23 @@
 import React from "react";
 import { Shipment } from "../types";
 
+function formatShipmentCreatedAt(value: string | null | undefined): string {
+    const rawValue = value?.trim();
+    if (!rawValue) return "N/A";
+
+    // Date-only values do not contain a real time and must not be rendered as midnight.
+    if (/^\d{4}-\d{2}-\d{2}$/.test(rawValue)) return rawValue;
+
+    const date = new Date(rawValue);
+    if (Number.isNaN(date.getTime())) return "N/A";
+
+    return new Intl.DateTimeFormat("en-PH", {
+        dateStyle: "medium",
+        timeStyle: "short",
+        timeZone: "Asia/Manila"
+    }).format(date);
+}
+
 interface InboundShipmentsListProps {
     loadingShipments: boolean;
     filteredShipments: Shipment[];
@@ -132,7 +149,7 @@ export default function InboundShipmentsList({
                             </div>
                             <div className="flex justify-between text-[10px] text-muted-foreground">
                                 <span>Value: ₱{Number(s.total_php_value || 0).toLocaleString()}</span>
-                                <span>Date: {s.date_received || s.created_at?.split('T')[0] || "N/A"}</span>
+                                <span>Created: {formatShipmentCreatedAt(s.created_at)}</span>
                             </div>
                         </button>
                     ))

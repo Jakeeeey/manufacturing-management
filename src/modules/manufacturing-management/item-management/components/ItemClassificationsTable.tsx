@@ -1,5 +1,5 @@
 import React from "react";
-import { ChevronsLeft, ChevronsRight, Boxes } from "lucide-react";
+import { ChevronsLeft, ChevronsRight, Boxes, Edit } from "lucide-react";
 import { ItemClassification } from "../types";
 import {
     Table,
@@ -20,9 +20,10 @@ import { Button } from "@/components/ui/button";
 
 interface ItemClassificationsTableProps {
     classifications: ItemClassification[];
+    onEdit: (classification: ItemClassification) => void;
 }
 
-export default function ItemClassificationsTable({ classifications }: ItemClassificationsTableProps) {
+export default function ItemClassificationsTable({ classifications, onEdit }: ItemClassificationsTableProps) {
     const [currentPage, setCurrentPage] = React.useState(1);
     const [pageSize, setPageSize] = React.useState(10);
 
@@ -54,6 +55,9 @@ export default function ItemClassificationsTable({ classifications }: ItemClassi
                             <TableRow>
                                 <TableHead className="w-[100px]">No.</TableHead>
                                 <TableHead>Item Classification Name</TableHead>
+                                <TableHead>Created By</TableHead>
+                                <TableHead>Updated By</TableHead>
+                                <TableHead className="w-[80px] text-right">Actions</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -64,6 +68,22 @@ export default function ItemClassificationsTable({ classifications }: ItemClassi
                                     </TableCell>
                                     <TableCell className="font-semibold text-foreground">
                                         {classification.classification_name}
+                                    </TableCell>
+                                    <TableCell className="text-muted-foreground text-xs">
+                                        {classification.created_by_name || "N/A"}
+                                    </TableCell>
+                                    <TableCell className="text-muted-foreground text-xs">
+                                        {classification.updated_by_name || "N/A"}
+                                    </TableCell>
+                                    <TableCell className="text-right">
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted"
+                                            onClick={() => onEdit(classification)}
+                                        >
+                                            <Edit className="h-4 w-4" />
+                                        </Button>
                                     </TableCell>
                                 </TableRow>
                             ))}

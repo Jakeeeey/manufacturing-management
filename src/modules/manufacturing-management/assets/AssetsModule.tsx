@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
-import { Plus, Search, Edit, Settings, Check, LayoutGrid, Image as ImageIcon, Upload, Loader2, ChevronsLeft, ChevronsRight, MoreHorizontal, Eye, Info, Calendar, User } from "lucide-react";
+import { Plus, Search, Edit, Settings, Check, LayoutGrid, Image as ImageIcon, Upload, Loader2, ChevronsLeft, ChevronsRight, Info, Calendar, User, X } from "lucide-react";
 import { toast } from "sonner";
 import { AssetRecord, DepartmentRecord } from "@/modules/manufacturing-management/finished-goods/types";
 import {
@@ -25,12 +25,7 @@ import {
     SelectTrigger,
     SelectValue
 } from "@/components/ui/select";
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuTrigger
-} from "@/components/ui/dropdown-menu";
+
 import { formatCurrency, formatDateLong } from "@/lib/utils";
 
 // Added specific types to replace `any`
@@ -87,8 +82,9 @@ export default function AssetsModule() {
     // Searchable dropdown state in modal
     const [itemSearch, setItemSearch] = useState("");
     const [isItemDropdownOpen, setIsItemDropdownOpen] = useState(false);
-    const [deptSearch, setDeptSearch] = useState("");
-    const [isDeptDropdownOpen, setIsDeptDropdownOpen] = useState(false);
+    const [validationAttempted, setValidationAttempted] = useState(false);
+    const [previewImage, setPreviewImage] = useState<string | null>(null);
+    const [isTransitioning, setIsTransitioning] = useState(false);
 
     // Sub-modal state for registering new item
     const [isNewItemModalOpen, setIsNewItemModalOpen] = useState(false);
@@ -202,7 +198,8 @@ export default function AssetsModule() {
         setDateAcquired(new Date().toISOString().substring(0, 10));
 
         setItemSearch("");
-        setDeptSearch("");
+        setValidationAttempted(false);
+        setIsTransitioning(false);
         setIsModalOpen(true);
     };
 
@@ -211,7 +208,13 @@ export default function AssetsModule() {
         setIsViewModalOpen(true);
     };
 
-    const handleOpenEditModal = (asset: AssetRecord) => {
+    const handleCloseItemDropdown = () => {
+        setIsItemDropdownOpen(false);
+        const matchedItem = items.find(i => i.id === selectedItemId);
+        setItemSearch(matchedItem ? matchedItem.item_name : "");
+    };
+
+    const handleOpenEditModal = (asset: AssetRecord, isFromView = false) => {
         setEditingAsset(asset);
         setItemImage(asset.item_image || "");
         setImageFilename("");
@@ -243,16 +246,24 @@ export default function AssetsModule() {
         const matchedItem = items.find(i => i.id === itemId);
         setItemSearch(matchedItem ? matchedItem.item_name : "");
 
-        const matchedDept = departments.find(d => d.department_id === deptId);
-        setDeptSearch(matchedDept ? matchedDept.department_name : "");
-
+        setValidationAttempted(false);
+        setIsTransitioning(isFromView);
         setIsModalOpen(true);
     };
 
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
+        setValidationAttempted(true);
         if (!selectedItemId) {
             toast.error("Please select an inventory item.");
+            return;
+        }
+        if (!quantity || Number(quantity) < 1) {
+            toast.error("Quantity must be at least 1.");
+            return;
+        }
+        if (!costPerItem || Number(costPerItem) < 0) {
+            toast.error("Cost per Item cannot be negative.");
             return;
         }
 
@@ -302,6 +313,7 @@ export default function AssetsModule() {
         setNewItemName("");
         setSelectedItemTypeId("");
         setSelectedItemClassId("");
+        setIsItemDropdownOpen(false);
         setIsNewItemModalOpen(true);
     };
 
@@ -388,14 +400,14 @@ export default function AssetsModule() {
         try {
             const formData = new FormData();
             formData.append("file", file);
-            
+
             const uploadRes = await fetch("/api/manufacturing/files", {
                 method: "POST",
                 body: formData
             });
-            
+
             if (!uploadRes.ok) throw new Error("Upload failed");
-            
+
             const fileData = await uploadRes.json();
             const fileId = fileData?.data?.id;
             if (fileId) {
@@ -430,14 +442,6 @@ export default function AssetsModule() {
         );
     }, [items, itemSearch]);
 
-    // Filter departments
-    const filteredDepts = useMemo(() => {
-        if (!deptSearch.trim()) return departments;
-        const search = deptSearch.toLowerCase();
-        return departments.filter(d =>
-            d.department_name.toLowerCase().includes(search)
-        );
-    }, [departments, deptSearch]);
 
     const typeOptions = useMemo(() => itemTypes.map(t => ({ value: String(t.id), label: t.type_name })), [itemTypes]);
     const classificationOptions = useMemo(() => itemClassifications.map(c => ({ value: String(c.id), label: c.classification_name })), [itemClassifications]);
@@ -563,14 +567,22 @@ export default function AssetsModule() {
                                 }
 
                                 return (
-                                    <tr key={asset.id} className="border-b border-muted/40 hover:bg-muted/5 transition-colors">
+                                    <tr
+                                        key={asset.id}
+                                        onClick={() => handleOpenViewModal(asset)}
+                                        className="border-b border-muted/40 hover:bg-muted/25 dark:hover:bg-muted/15 active:bg-muted/30 transition-colors cursor-pointer"
+                                    >
                                         <td className="p-4 pl-6 align-middle">
                                             {asset.item_image ? (
                                                 // eslint-disable-next-line @next/next/no-img-element
                                                 <img
                                                     src={asset.item_image}
                                                     alt={itemName}
-                                                    className="w-10 h-10 object-cover rounded-md border border-border"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setPreviewImage(asset.item_image || null);
+                                                    }}
+                                                    className="w-10 h-10 object-cover rounded-md border border-border cursor-zoom-in hover:scale-105 transition-transform"
                                                 />
                                             ) : (
                                                 <div className="w-10 h-10 bg-muted/20 border border-dashed rounded-md flex items-center justify-center text-muted-foreground/40">
@@ -624,34 +636,16 @@ export default function AssetsModule() {
                                                 {Boolean(asset.is_active) ? "Active" : "Inactive"}
                                             </span>
                                         </td>
-                                        <td className="p-4 align-middle text-center">
-                                            <DropdownMenu>
-                                                <DropdownMenuTrigger asChild>
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="icon"
-                                                        className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-md"
-                                                    >
-                                                        <MoreHorizontal className="h-4 w-4" />
-                                                    </Button>
-                                                </DropdownMenuTrigger>
-                                                <DropdownMenuContent align="end" className="w-36 bg-popover border border-border text-foreground rounded-lg p-1 shadow-md animate-in fade-in slide-in-from-top-1">
-                                                    <DropdownMenuItem
-                                                        onClick={() => handleOpenViewModal(asset)}
-                                                        className="flex items-center gap-2 px-2.5 py-2 text-xs font-semibold cursor-pointer hover:bg-muted rounded-md transition-colors text-foreground"
-                                                    >
-                                                        <Eye className="h-3.5 w-3.5 text-muted-foreground" />
-                                                        View Details
-                                                    </DropdownMenuItem>
-                                                    <DropdownMenuItem
-                                                        onClick={() => handleOpenEditModal(asset)}
-                                                        className="flex items-center gap-2 px-2.5 py-2 text-xs font-semibold cursor-pointer hover:bg-muted rounded-md transition-colors text-foreground"
-                                                    >
-                                                        <Edit className="h-3.5 w-3.5 text-muted-foreground" />
-                                                        Edit Details
-                                                    </DropdownMenuItem>
-                                                </DropdownMenuContent>
-                                            </DropdownMenu>
+                                        <td className="p-4 align-middle text-center" onClick={e => e.stopPropagation()}>
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                onClick={() => handleOpenEditModal(asset)}
+                                                className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-md"
+                                                title="Edit Details"
+                                            >
+                                                <Edit className="h-4 w-4" />
+                                            </Button>
                                         </td>
                                     </tr>
                                 );
@@ -709,7 +703,7 @@ export default function AssetsModule() {
                         >
                             Previous
                         </Button>
-                        
+
                         <div className="flex items-center gap-1 px-2 font-semibold text-xs">
                             <span>Page</span>
                             <span className="text-foreground">{currentPage}</span>
@@ -741,7 +735,7 @@ export default function AssetsModule() {
 
             {/* Custom Create / Edit Modal popup */}
             {isModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md animate-in fade-in duration-200">
+                <div className={`fixed inset-0 flex items-center justify-center ${isViewModalOpen ? "z-[52]" : "z-50"} bg-black/80 backdrop-blur-md ${isTransitioning ? "" : "animate-in fade-in duration-100"}`}>
                     <div className="bg-card border border-border/85 rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
                         {/* Modal Header */}
                         <div className="flex items-center justify-between px-6 py-4 border-b shrink-0 bg-muted/20">
@@ -768,7 +762,7 @@ export default function AssetsModule() {
                             {/* Searchable dropdown: Item Select */}
                             <div className="space-y-1 relative">
                                 <div className="flex justify-between items-center mb-1">
-                                    <label className="text-[11px] font-bold text-muted-foreground uppercase block">Catalog Item <span className="text-red-500">*</span></label>
+                                    <label className="text-[11px] font-bold text-muted-foreground uppercase block">Catalog Item <span className="text-destructive">*</span></label>
                                     <button
                                         type="button"
                                         onClick={handleOpenNewItemSubModal}
@@ -788,7 +782,26 @@ export default function AssetsModule() {
                                             setIsItemDropdownOpen(true);
                                         }}
                                         onFocus={() => setIsItemDropdownOpen(true)}
-                                        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
+                                        onKeyDown={e => {
+                                            if (e.key === "Enter") {
+                                                e.preventDefault();
+                                                if (filteredItems.length > 0) {
+                                                    const firstItem = filteredItems[0];
+                                                    setSelectedItemId(firstItem.id);
+                                                    setItemSearch(firstItem.item_name);
+                                                    setIsItemDropdownOpen(false);
+                                                }
+                                            } else if (e.key === "Tab") {
+                                                const matchedItem = items.find(i => i.id === selectedItemId);
+                                                setItemSearch(matchedItem ? matchedItem.item_name : "");
+                                                setIsItemDropdownOpen(false);
+                                            } else if (e.key === "Escape") {
+                                                const matchedItem = items.find(i => i.id === selectedItemId);
+                                                setItemSearch(matchedItem ? matchedItem.item_name : "");
+                                                setIsItemDropdownOpen(false);
+                                            }
+                                        }}
+                                        className={`w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 transition-all ${validationAttempted && !selectedItemId ? "border-destructive focus:ring-destructive focus:ring-1" : "border-border focus:ring-primary"}`}
                                     />
                                     {selectedItemId && (
                                         <button
@@ -797,7 +810,7 @@ export default function AssetsModule() {
                                                 setSelectedItemId(null);
                                                 setItemSearch("");
                                             }}
-                                            className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground font-bold"
+                                            className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground font-bold text-lg leading-none"
                                         >
                                             &times;
                                         </button>
@@ -806,7 +819,7 @@ export default function AssetsModule() {
 
                                 {isItemDropdownOpen && (
                                     <>
-                                        <div className="fixed inset-0 z-10" onClick={() => setIsItemDropdownOpen(false)} />
+                                        <div className="fixed inset-0 z-10" onClick={handleCloseItemDropdown} />
                                         <div className="absolute left-0 right-0 mt-1 max-h-40 overflow-y-auto rounded-lg bg-card border border-border shadow-lg py-1 z-20 text-xs">
                                             {filteredItems.length === 0 ? (
                                                 <div className="px-3 py-2 text-muted-foreground italic">No matching catalog items found.</div>
@@ -835,70 +848,37 @@ export default function AssetsModule() {
                                 )}
                             </div>
 
-                            {/* Searchable dropdown: Department */}
-                            <div className="space-y-1 relative">
+                            {/* Owner Department */}
+                            <div className="space-y-1">
                                 <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Owner Department</label>
-                                <div className="relative">
-                                    <input
-                                        type="text"
-                                        placeholder="Search department name..."
-                                        value={deptSearch}
-                                        onChange={e => {
-                                            setDeptSearch(e.target.value);
-                                            setIsDeptDropdownOpen(true);
-                                        }}
-                                        onFocus={() => setIsDeptDropdownOpen(true)}
-                                        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
-                                    />
-                                    {selectedDeptId && (
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                setSelectedDeptId(null);
-                                                setDeptSearch("");
-                                            }}
-                                            className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground font-bold"
-                                        >
-                                            &times;
-                                        </button>
-                                    )}
-                                </div>
-
-                                {isDeptDropdownOpen && (
-                                    <>
-                                        <div className="fixed inset-0 z-10" onClick={() => setIsDeptDropdownOpen(false)} />
-                                        <div className="absolute left-0 right-0 mt-1 max-h-40 overflow-y-auto rounded-lg bg-card border border-border shadow-lg py-1 z-20 text-xs">
-                                            {filteredDepts.length === 0 ? (
-                                                <div className="px-3 py-2 text-muted-foreground italic">No matching departments found.</div>
-                                            ) : (
-                                                filteredDepts.map(dept => {
-                                                    const label = dept.department_name;
-                                                    return (
-                                                        <button
-                                                            key={dept.department_id}
-                                                            type="button"
-                                                            onClick={() => {
-                                                                setSelectedDeptId(dept.department_id);
-                                                                setDeptSearch(label);
-                                                                setIsDeptDropdownOpen(false);
-                                                            }}
-                                                            className="w-full text-left px-3 py-2 hover:bg-muted text-foreground flex items-center justify-between"
-                                                        >
-                                                            <span>{label}</span>
-                                                            {selectedDeptId === dept.department_id && <Check className="h-3.5 w-3.5 text-primary" />}
-                                                        </button>
-                                                    );
-                                                })
-                                            )}
-                                        </div>
-                                    </>
-                                )}
+                                <Select
+                                    value={selectedDeptId ? String(selectedDeptId) : "none"}
+                                    onValueChange={(val) => {
+                                        if (val === "none") {
+                                            setSelectedDeptId(null);
+                                        } else {
+                                            setSelectedDeptId(Number(val));
+                                        }
+                                    }}
+                                >
+                                    <SelectTrigger className="w-full h-[38px] rounded-lg bg-background border border-border text-foreground text-sm">
+                                        <SelectValue placeholder="Select department..." />
+                                    </SelectTrigger>
+                                    <SelectContent position="popper" sideOffset={4} className="bg-popover border border-border text-foreground">
+                                        <SelectItem value="none">None</SelectItem>
+                                        {departments.map((dept) => (
+                                            <SelectItem key={dept.department_id} value={String(dept.department_id)}>
+                                                {dept.department_name}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
                             </div>
 
                             {/* Quantity and cost per item */}
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-1">
-                                    <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Quantity</label>
+                                    <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Quantity <span className="text-destructive">*</span></label>
                                     <input
                                         type="number"
                                         min="1"
@@ -915,11 +895,11 @@ export default function AssetsModule() {
                                                 e.preventDefault();
                                             }
                                         }}
-                                        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
+                                        className={`w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 transition-all ${validationAttempted && (!quantity || Number(quantity) < 1) ? "border-destructive focus:ring-destructive focus:ring-1" : "border-border focus:ring-primary"}`}
                                     />
                                 </div>
                                 <div className="space-y-1">
-                                    <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Cost per Item (₱)</label>
+                                    <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Cost per Item (₱) <span className="text-destructive">*</span></label>
                                     <input
                                         type="number"
                                         step="0.01"
@@ -937,7 +917,7 @@ export default function AssetsModule() {
                                                 e.preventDefault();
                                             }
                                         }}
-                                        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
+                                        className={`w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 transition-all ${validationAttempted && (!costPerItem || Number(costPerItem) < 0) ? "border-destructive focus:ring-destructive focus:ring-1" : "border-border focus:ring-primary"}`}
                                     />
                                 </div>
                             </div>
@@ -1079,6 +1059,7 @@ export default function AssetsModule() {
                                 </button>
                                 <button
                                     type="submit"
+                                    onClick={() => setValidationAttempted(true)}
                                     disabled={saving}
                                     className="px-4 py-2 bg-primary hover:bg-primary/95 text-primary-foreground font-semibold rounded-lg text-xs transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md shadow-primary/20 flex items-center gap-1.5"
                                 >
@@ -1169,7 +1150,7 @@ export default function AssetsModule() {
             )}
 
             {isViewModalOpen && viewingAsset && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md animate-in fade-in duration-200">
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md animate-in fade-in duration-100">
                     <div className="bg-card border border-border/85 rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
                         {/* Modal Header */}
                         <div className="flex items-center justify-between px-6 py-4 border-b shrink-0 bg-muted/20">
@@ -1200,11 +1181,10 @@ export default function AssetsModule() {
                                 </div>
                                 <div className="text-right space-y-1">
                                     <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Status</span>
-                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase ${
-                                        Boolean(viewingAsset.is_active) 
-                                            ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20" 
-                                            : "bg-destructive/10 text-destructive border border-destructive/20"
-                                    }`}>
+                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase ${Boolean(viewingAsset.is_active)
+                                        ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20"
+                                        : "bg-destructive/10 text-destructive border border-destructive/20"
+                                        }`}>
                                         {Boolean(viewingAsset.is_active) ? "Active" : "Inactive"}
                                     </span>
                                 </div>
@@ -1239,12 +1219,11 @@ export default function AssetsModule() {
                                 <div className="space-y-1 pt-2 border-t border-border/30">
                                     <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Physical Condition</span>
                                     <div>
-                                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                                            viewingAsset.condition === "Good" ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20" :
+                                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${viewingAsset.condition === "Good" ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20" :
                                             viewingAsset.condition === "Bad" ? "bg-destructive/10 text-destructive border border-destructive/20" :
-                                            viewingAsset.condition === "Under Maintenance" ? "bg-amber-500/10 text-amber-500 border border-amber-500/20" :
-                                            "bg-muted text-muted-foreground border"
-                                        }`}>
+                                                viewingAsset.condition === "Under Maintenance" ? "bg-amber-500/10 text-amber-500 border border-amber-500/20" :
+                                                    "bg-muted text-muted-foreground border"
+                                            }`}>
                                             {viewingAsset.condition || "Good"}
                                         </span>
                                     </div>
@@ -1252,11 +1231,10 @@ export default function AssetsModule() {
                                 <div className="space-y-1 pt-2 border-t border-border/30">
                                     <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Active Warning</span>
                                     <div>
-                                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                                            viewingAsset.is_active_warning 
-                                                ? "bg-amber-500/10 text-amber-500 border border-amber-500/20" 
-                                                : "bg-muted text-muted-foreground border"
-                                        }`}>
+                                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${viewingAsset.is_active_warning
+                                            ? "bg-amber-500/10 text-amber-500 border border-amber-500/20"
+                                            : "bg-muted text-muted-foreground border"
+                                            }`}>
                                             {viewingAsset.is_active_warning ? "Warning Enabled" : "No Warning"}
                                         </span>
                                     </div>
@@ -1287,10 +1265,11 @@ export default function AssetsModule() {
                                     <div className="w-full md:w-1/3 shrink-0">
                                         {viewingAsset.item_image ? (
                                             // eslint-disable-next-line @next/next/no-img-element
-                                            <img 
-                                                src={viewingAsset.item_image} 
-                                                alt="Asset preview" 
-                                                className="w-full h-24 object-cover rounded-lg border border-border bg-muted/5 shrink-0"
+                                            <img
+                                                src={viewingAsset.item_image}
+                                                alt="Asset preview"
+                                                onClick={() => setPreviewImage(viewingAsset.item_image || null)}
+                                                className="w-full h-24 object-cover rounded-lg border border-border bg-muted/5 shrink-0 cursor-zoom-in hover:scale-102 transition-transform"
                                             />
                                         ) : (
                                             <div className="w-full h-24 bg-muted/20 border border-dashed rounded-lg flex flex-col items-center justify-center text-muted-foreground/30 gap-1 shrink-0">
@@ -1345,7 +1324,19 @@ export default function AssetsModule() {
                         </div>
 
                         {/* Modal Footer */}
-                        <div className="flex justify-end p-4 border-t shrink-0 bg-muted/10">
+                        <div className="flex justify-end gap-3 p-4 border-t shrink-0 bg-muted/10">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    handleOpenEditModal(viewingAsset, true);
+                                    setTimeout(() => {
+                                        setIsViewModalOpen(false);
+                                    }, 200);
+                                }}
+                                className="px-4 py-2 border border-border rounded-lg text-xs font-semibold hover:bg-muted hover:text-foreground transition-colors text-muted-foreground flex items-center gap-1.5"
+                            >
+                                <Edit className="h-3.5 w-3.5" /> Edit Details
+                            </button>
                             <button
                                 type="button"
                                 onClick={() => setIsViewModalOpen(false)}
@@ -1354,6 +1345,35 @@ export default function AssetsModule() {
                                 Close
                             </button>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {previewImage && (
+                <div
+                    className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
+                    onClick={() => setPreviewImage(null)}
+                >
+                    <div
+                        className="relative max-w-5xl max-h-[90vh] p-2 bg-card border border-border/40 rounded-2xl shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-200"
+                        onClick={e => e.stopPropagation()}
+                    >
+                        {/* Close Button */}
+                        <button
+                            type="button"
+                            onClick={() => setPreviewImage(null)}
+                            className="absolute top-4 right-4 z-10 bg-black/60 hover:bg-black/80 text-white rounded-full p-2 transition-colors focus:outline-none"
+                        >
+                            <X className="h-4 w-4" />
+                        </button>
+
+                        {/* Image */}
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                            src={previewImage}
+                            alt="Asset Preview Large"
+                            className="max-w-full max-h-[85vh] object-contain rounded-xl animate-in zoom-in-95 duration-200"
+                        />
                     </div>
                 </div>
             )}

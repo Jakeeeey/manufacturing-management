@@ -6,6 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useItemManagement } from "./hooks/useItemManagement";
+import { CatalogItem, ItemType, ItemClassification } from "./types";
 import ItemsTable from "./components/ItemsTable";
 import ItemTypesTable from "./components/ItemTypesTable";
 import ItemClassificationsTable from "./components/ItemClassificationsTable";
@@ -26,13 +27,20 @@ export default function ItemManagementModule() {
         refresh,
         handleRegisterItem,
         handleRegisterItemType,
-        handleRegisterItemClassification
+        handleRegisterItemClassification,
+        handleUpdateItem,
+        handleUpdateItemType,
+        handleUpdateItemClassification
     } = useItemManagement();
 
     const [activeTab, setActiveTab] = useState("items");
     const [isItemModalOpen, setIsItemModalOpen] = useState(false);
     const [isTypeModalOpen, setIsTypeModalOpen] = useState(false);
     const [isClassificationModalOpen, setIsClassificationModalOpen] = useState(false);
+
+    const [editingItem, setEditingItem] = useState<CatalogItem | null>(null);
+    const [editingType, setEditingType] = useState<ItemType | null>(null);
+    const [editingClassification, setEditingClassification] = useState<ItemClassification | null>(null);
 
     const handleAddClick = () => {
         if (activeTab === "items") {
@@ -108,13 +116,31 @@ export default function ItemManagementModule() {
                 ) : (
                     <>
                         <TabsContent value="items" className="outline-none mt-0">
-                            <ItemsTable items={filteredItems} />
+                            <ItemsTable 
+                                items={filteredItems} 
+                                onEdit={(item) => {
+                                    setEditingItem(item);
+                                    setIsItemModalOpen(true);
+                                }}
+                            />
                         </TabsContent>
                         <TabsContent value="types" className="outline-none mt-0">
-                            <ItemTypesTable types={filteredItemTypes} />
+                            <ItemTypesTable 
+                                types={filteredItemTypes} 
+                                onEdit={(type) => {
+                                    setEditingType(type);
+                                    setIsTypeModalOpen(true);
+                                }}
+                            />
                         </TabsContent>
                         <TabsContent value="classifications" className="outline-none mt-0">
-                            <ItemClassificationsTable classifications={filteredItemClassifications} />
+                            <ItemClassificationsTable 
+                                classifications={filteredItemClassifications} 
+                                onEdit={(classification) => {
+                                    setEditingClassification(classification);
+                                    setIsClassificationModalOpen(true);
+                                }}
+                            />
                         </TabsContent>
                     </>
                 )}
@@ -124,8 +150,17 @@ export default function ItemManagementModule() {
             {isItemModalOpen && (
                 <ItemFormModal
                     isOpen={isItemModalOpen}
-                    onClose={() => setIsItemModalOpen(false)}
-                    onSave={handleRegisterItem}
+                    item={editingItem || undefined}
+                    onClose={() => {
+                        setIsItemModalOpen(false);
+                        setEditingItem(null);
+                    }}
+                    onSave={async (name, typeId, classId) => {
+                        if (editingItem) {
+                            return await handleUpdateItem(editingItem.id, name, typeId, classId);
+                        }
+                        return await handleRegisterItem(name, typeId, classId);
+                    }}
                     itemTypes={itemTypes}
                     itemClassifications={itemClassifications}
                 />
@@ -134,16 +169,34 @@ export default function ItemManagementModule() {
             {isTypeModalOpen && (
                 <ItemTypeFormModal
                     isOpen={isTypeModalOpen}
-                    onClose={() => setIsTypeModalOpen(false)}
-                    onSave={handleRegisterItemType}
+                    itemType={editingType || undefined}
+                    onClose={() => {
+                        setIsTypeModalOpen(false);
+                        setEditingType(null);
+                    }}
+                    onSave={async (name) => {
+                        if (editingType) {
+                            return await handleUpdateItemType(editingType.id, name);
+                        }
+                        return await handleRegisterItemType(name);
+                    }}
                 />
             )}
 
             {isClassificationModalOpen && (
                 <ItemClassificationFormModal
                     isOpen={isClassificationModalOpen}
-                    onClose={() => setIsClassificationModalOpen(false)}
-                    onSave={handleRegisterItemClassification}
+                    itemClassification={editingClassification || undefined}
+                    onClose={() => {
+                        setIsClassificationModalOpen(false);
+                        setEditingClassification(null);
+                    }}
+                    onSave={async (name) => {
+                        if (editingClassification) {
+                            return await handleUpdateItemClassification(editingClassification.id, name);
+                        }
+                        return await handleRegisterItemClassification(name);
+                    }}
                 />
             )}
         </div>
