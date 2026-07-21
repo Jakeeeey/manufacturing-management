@@ -44,11 +44,19 @@ interface DirectusPurchaseOrderMin {
 
 export async function GET(request: Request) {
     try {
-        await requirePurchaseOrderModuleAccess({ modulePath: PURCHASE_ORDER_MODULE_PATHS.receiving });
         const { searchParams } = new URL(request.url);
         const branchId = searchParams.get("branchId");
         const productId = searchParams.get("productId");
         const action = searchParams.get("action");
+        const parsedProductId = productId === null ? null : Number(productId);
+
+        if (productId !== null && (parsedProductId === null || !Number.isSafeInteger(parsedProductId) || parsedProductId <= 0)) {
+            return NextResponse.json({ error: "productId must be a positive integer." }, { status: 400 });
+        }
+
+        if (parsedProductId === null || action !== null) {
+            await requirePurchaseOrderModuleAccess({ modulePath: PURCHASE_ORDER_MODULE_PATHS.receiving });
+        }
 
         // Action: Fetch branches
         if (action === "branches") {
@@ -95,16 +103,16 @@ export async function GET(request: Request) {
         }
 
         // Action: Fetch FIFO Inventory for a product across all branches
-        if (productId) {
+        if (parsedProductId !== null) {
             const res = await fetch(
-                `${DIRECTUS_URL}/items/inventory_lots?filter[product_id][_eq]=${productId}&fields=*,lot_id.lot_id,lot_id.lot_name&limit=150`,
+                `${DIRECTUS_URL}/items/inventory_lots?filter[product_id][_eq]=${parsedProductId}&fields=*,lot_id.lot_id,lot_id.lot_name&limit=150`,
                 { headers }
             );
             if (!res.ok) throw new Error(`Directus error loading product receiving logs: ${res.status}`);
             const json = await res.json();
 
             const movementRes = await fetch(
-                `${DIRECTUS_URL}/items/inventory_movements?filter[product_id][_eq]=${productId}&fields=product_id,branch_id,lot_id,batch_no,quantity&limit=-1`,
+                `${DIRECTUS_URL}/items/inventory_movements?filter[product_id][_eq]=${parsedProductId}&fields=product_id,branch_id,lot_id,batch_no,quantity&limit=-1`,
                 { headers, cache: "no-store" }
             );
             if (!movementRes.ok) throw new Error(`Directus error loading product movement stock: ${movementRes.status}`);
