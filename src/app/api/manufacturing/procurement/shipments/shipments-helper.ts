@@ -1,9 +1,11 @@
 /* eslint-disable */
 import { DIRECTUS_URL, headers } from "../_directus";
-import { canonicalBatchNumber, calculatePurchaseLineAmounts, INVENTORY_STATUS, inventoryStatusToPurchaseOrderStatus, inventoryStatusToShipmentStatus, PAYMENT_STATUS, RECEIVING_QUEUE_INVENTORY_STATUS_IDS, shipmentStatusToInventoryStatus, type ShipmentStatusLabel } from "../_domain";
+import { canonicalBatchNumber, INVENTORY_STATUS, inventoryStatusToPurchaseOrderStatus, inventoryStatusToShipmentStatus, PAYMENT_STATUS, RECEIVING_QUEUE_INVENTORY_STATUS_IDS, shipmentStatusToInventoryStatus, type ShipmentStatusLabel } from "../_domain";
 import { DirectusShipment } from "@/modules/manufacturing-management/procurement/types";
 import type { PurchaseOrderListQuery } from "../../purchase-orders/_schemas";
+import { buildPurchaseOrderProductPayload, calculatePurchaseOrderLine } from "../../purchase-orders/_domain";
 import { resolvePurchaseOrderLineId, summarizeReceivingHistory } from "../../qa-receiving/_receiving-history";
+import { assertMrpProductJobOrderPairs } from "../../purchase-orders/_mrp-validation";
 
 interface DirectusPO {
     purchase_order_id: number;
@@ -137,6 +139,7 @@ export interface ExtendedShipmentLineItem {
     rejection_reason?: string;
     qa_status?: string;
     base_unit_cost_php?: number;
+    unit_price_foreign?: number;
     allocated_expense_php?: number;
     final_landed_unit_cost?: number;
     lot_number?: string;
@@ -146,6 +149,8 @@ export interface ExtendedShipmentLineItem {
     expiration_date?: string;
     discount_type?: number | null;
     discount_percent?: number;
+    vat_percent?: number;
+    withholding_percent?: number;
     purchase_intent?: "MRP_Demand" | "Buffer_Stock";
     job_order_id?: number | null;
 }
@@ -566,7 +571,10 @@ export async function fetchShipmentLineItems(shipmentId: number): Promise<Extend
                 latest_receipt: latestSnapshot,
                 rejection_reason: latestSnapshot?.rejection_reason || "",
                 qa_status: activeLot ? activeLot.qa_status || "Pending" : "Pending",
-                base_unit_cost_php: Number(pop.unit_price_foreign ?? pop.unit_price ?? 0),
+                // purchase_order_products.unit_price is the PHP base price;
+                // unit_price_foreign is the submitted transaction-currency price.
+                base_unit_cost_php: Number(pop.unit_price ?? 0),
+                unit_price_foreign: Number(pop.unit_price_foreign ?? pop.unit_price ?? 0),
                 allocated_expense_php: 0,
                 final_landed_unit_cost: activeLot ? Number(activeLot.unit_cost || 0) : Number(pop.unit_price || 0),
                 batch_no: activeLot ? canonicalBatchNumber(activeLot.batch_no, activeLot.lot_number) || "" : "",
@@ -595,6 +603,7 @@ export async function createIncomingShipment(
     let poId: number | null = null;
     const createdProductIds: number[] = [];
     try {
+        await assertMrpProductJobOrderPairs(lineItems);
         const totalPhp = Number(shipmentData.total_php_value || 0);
         const extendedData = shipmentData as ExtendedShipment;
 
@@ -640,32 +649,39 @@ export async function createIncomingShipment(
         }
         const poJson = await res.json();
         poId = poJson.data.purchase_order_id;
+        if (!poId) throw new Error("Directus did not return the created purchase-order ID.");
 
         // Sync to purchase_order_products for this PO
 
         for (const item of lineItems) {
             const qty = Number(item.quantity_ordered || 0);
             const price = Number(item.base_unit_cost_php || 0);
-            const amounts = calculatePurchaseLineAmounts(qty, price, Number(item.discount_percent || 0));
+            const amounts = calculatePurchaseOrderLine({
+                quantity: qty,
+                unitPrice: price,
+                discountPercent: Number(item.discount_percent || 0),
+                vatPercent: Number(item.vat_percent || 0),
+                withholdingPercent: Number(item.withholding_percent || 0)
+            }, 1);
 
             const popRes = await fetch(`${DIRECTUS_URL}/items/purchase_order_products`, {
                 method: "POST",
                 headers,
-                body: JSON.stringify({
-                    purchase_order_id: poId,
-                    product_id: item.product_id,
-                    ordered_quantity: qty,
-                    unit_price: price,
-                    approved_price: price,
-                    discount_type: item.discount_type || null,
-                    gross_amount: amounts.grossAmount,
-                    discounted_price: amounts.discountedPrice,
-                    discounted_amount: amounts.discountedAmount,
-                    net_amount: amounts.netAmount,
-                    total_amount: amounts.netAmount,
-                    branch_id: (shipmentData as ExtendedShipment).branch_id || 182,
+                body: JSON.stringify(buildPurchaseOrderProductPayload({
+                    purchaseOrderId: poId,
+                    productId: typeof item.product_id === "object" ? item.product_id.product_id : item.product_id,
+                    quantity: qty,
+                    unitPrice: price,
+                    discountPercent: Number(item.discount_percent || 0),
+                    vatPercent: Number(item.vat_percent || 0),
+                    withholdingPercent: Number(item.withholding_percent || 0),
+                    exchangeRate: 1,
+                    branchId: (shipmentData as ExtendedShipment).branch_id || 182,
+                    purchaseIntent: item.purchase_intent,
+                    jobOrderId: item.job_order_id,
+                    discountType: item.discount_type,
                     received: 0
-                })
+                }, amounts))
             });
 
             if (!popRes.ok) {

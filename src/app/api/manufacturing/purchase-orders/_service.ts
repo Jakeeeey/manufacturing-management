@@ -1,8 +1,14 @@
 import { INVENTORY_STATUS, PAYMENT_STATUS } from "../procurement/_domain";
 import { procurementDirectusFetch } from "../procurement/_directus";
-import { calculatePurchaseOrderTotals, selectPurchaseOrderApprovalRule, type PurchaseOrderApprovalRule } from "./_domain";
+import {
+    buildPurchaseOrderProductPayload,
+    calculatePurchaseOrderTotals,
+    selectPurchaseOrderApprovalRule,
+    type PurchaseOrderApprovalRule
+} from "./_domain";
 import type { z } from "zod";
 import type { purchaseOrderCreateSchema } from "./_schemas";
+import { assertMrpProductJobOrderPairs } from "./_mrp-validation";
 
 type PurchaseOrderDraft = z.infer<typeof purchaseOrderCreateSchema>;
 
@@ -111,6 +117,7 @@ async function validateDraft(order: PurchaseOrderDraft) {
     }
     if (products.length !== productIds.length) throw new PurchaseOrderDraftError("One or more selected products do not exist.");
     if (jobOrders.length !== jobOrderIds.length) throw new PurchaseOrderDraftError("One or more selected job orders do not exist.");
+    await assertMrpProductJobOrderPairs(order.lines);
 
     const mappedIds = new Set(mappings.map(mapping =>
         typeof mapping.product_id === "object" ? Number(mapping.product_id?.product_id) : Number(mapping.product_id)
@@ -239,28 +246,20 @@ export async function createPurchaseOrderDraft(order: PurchaseOrderDraft, actorI
             const amount = totals.lines[index];
             const response = await procurementDirectusFetch("/items/purchase_order_products", {
                 method: "POST",
-                body: JSON.stringify({
-                    purchase_order_id: header.purchase_order_id,
-                    product_id: line.productId,
-                    ordered_quantity: line.quantity,
-                    unit_price: amount.netPhp / line.quantity,
-                    approved_price: amount.netPhp / line.quantity,
-                    gross_amount: amount.grossPhp,
-                    discounted_price: (amount.grossPhp - amount.discountPhp) / line.quantity,
-                    discounted_amount: amount.discountPhp,
-                    net_amount: amount.netPhp,
-                    total_amount: amount.netPhp,
-                    branch_id: order.branchId,
-                    received: 0,
-                    purchase_intent: line.purchaseIntent,
-                    job_order_id: line.jobOrderId,
-                    unit_price_foreign: line.unitPrice,
-                    gross_amount_foreign: amount.grossForeign,
-                    net_amount_foreign: amount.netForeign,
-                    discount_percent: line.discountPercent,
-                    vat_percent: line.vatPercent,
-                    withholding_percent: line.withholdingPercent
-                })
+                body: JSON.stringify(buildPurchaseOrderProductPayload({
+                    purchaseOrderId: header.purchase_order_id,
+                    productId: line.productId,
+                    quantity: line.quantity,
+                    unitPrice: line.unitPrice,
+                    discountPercent: line.discountPercent,
+                    vatPercent: line.vatPercent,
+                    withholdingPercent: line.withholdingPercent,
+                    exchangeRate: order.exchangeRate,
+                    branchId: order.branchId,
+                    purchaseIntent: line.purchaseIntent,
+                    jobOrderId: line.jobOrderId,
+                    received: 0
+                }, amount))
             });
             if (!response.ok) throw new Error(`Line ${index + 1} could not be created (${response.status}).`);
             createdLineIds.push(Number((await response.json()).data.purchase_order_product_id));
