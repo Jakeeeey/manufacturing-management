@@ -54,12 +54,14 @@ export async function getProductInventoryAndSafetyStock(productIds: number[], br
             }
         });
 
-        // Compute onHand stock per product (summing only Passed lots)
+        // Compute onHand stock per product (summing only Passed lots using ledger quantities)
         const onHandMap: Record<number, number> = {};
         lots.forEach((lot: any) => {
             const pId = Number(lot.product_id?.product_id || lot.product_id);
-            if (pId) {
-                onHandMap[pId] = (onHandMap[pId] || 0) + Number(lot.quantity || 0);
+            const lotNum = lot.lot_number || "LOT-N/A";
+            const ledgerQty = movementStockMap.get(`${pId}:${lotNum}`) || 0;
+            if (pId && ledgerQty > 0) {
+                onHandMap[pId] = (onHandMap[pId] || 0) + ledgerQty;
             }
         });
 
@@ -123,13 +125,15 @@ export async function getProductInventoryAndSafetyStock(productIds: number[], br
                     }
                 });
             } else {
-                // If it is a sub-assembly, we can recommend its manufactured batches directly from lots!
+                // If it is a sub-assembly, we can recommend its manufactured batches directly from lots using ledger quantity!
                 lots.forEach((lot: any) => {
                     const keyPId = Number(lot.product_id?.product_id || lot.product_id);
-                    if (keyPId === pId && Number(lot.quantity || 0) > 0) {
+                    const lotNum = lot.lot_number || "LOT-N/A";
+                    const ledgerQty = movementStockMap.get(`${pId}:${lotNum}`) || 0;
+                    if (keyPId === pId && ledgerQty > 0) {
                         recommendedLots.push({
-                            lot_no: lot.lot_number,
-                            available: Number(lot.quantity || 0)
+                            lot_no: lotNum,
+                            available: ledgerQty
                         });
                     }
                 });

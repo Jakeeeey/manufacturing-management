@@ -38,13 +38,12 @@ export async function handleGET(request: Request) {
                 return NextResponse.json({ error: "Missing productId or branchId" }, { status: 400 });
             }
 
-            // Fetch Passed inventory lots with quantity > 0
+            // Fetch Passed inventory lots (which could be manufactured/seeded/procured)
             const lotFilter = encodeURIComponent(JSON.stringify({
                 _and: [
                     { product_id: { _eq: prodId } },
                     { branch_id: { _eq: branchId } },
-                    { qa_status: { _eq: "Passed" } },
-                    { quantity: { _gt: 0 } }
+                    { qa_status: { _eq: "Passed" } }
                 ]
             }));
             const lotsRes = await fetch(`${DIRECTUS_URL}/items/inventory_lots?filter=${lotFilter}&limit=-1`, { headers, cache: "no-store" });
@@ -53,8 +52,34 @@ export async function handleGET(request: Request) {
             }
             const lots = (await lotsRes.json()).data || [];
 
+            // Fetch inventory movements to calculate the true ledger stock
+            const movFilter = encodeURIComponent(JSON.stringify({
+                _and: [
+                    { product_id: { _eq: prodId } },
+                    { branch_id: { _eq: branchId } }
+                ]
+            }));
+            const movRes = await fetch(`${DIRECTUS_URL}/items/inventory_movements?filter=${movFilter}&limit=-1`, { headers, cache: "no-store" });
+            const movements = movRes.ok ? (await movRes.json()).data || [] : [];
+            const movementStockMap = new Map<string, number>();
+            movements.forEach((mov: any) => {
+                const batchNo = mov.batch_no || "LOT-N/A";
+                const qty = Number(mov.quantity || 0);
+                movementStockMap.set(batchNo, (movementStockMap.get(batchNo) || 0) + qty);
+            });
+
+            // Map lots and enrich them with correct ledger quantity
+            const lotsEnriched = lots.map((lot: any) => {
+                const lotNum = lot.lot_number || "LOT-N/A";
+                const ledgerQty = movementStockMap.get(lotNum) || 0;
+                return {
+                    ...lot,
+                    quantity: ledgerQty
+                };
+            }).filter((lot: any) => lot.quantity > 0);
+
             // Trace lot's recipe version
-            const mfgLots = lots.filter((lot: any) => lot.source_type === "manufacturing" && lot.source_reference);
+            const mfgLots = lotsEnriched.filter((lot: any) => lot.source_type === "manufacturing" && lot.source_reference);
             const joNos = Array.from(new Set(mfgLots.map((lot: any) => lot.source_reference)));
             const joMap = new Map<string, number>();
 
@@ -79,7 +104,7 @@ export async function handleGET(request: Request) {
 
             // Group lot quantities by recipe version ID
             const versionStockMap: Record<number, number> = {};
-            lots.forEach((lot: any) => {
+            lotsEnriched.forEach((lot: any) => {
                 const resolvedVersionId = lot.source_type === "manufacturing" && lot.source_reference
                     ? (joMap.get(lot.source_reference) || activeVersionId)
                     : activeVersionId;

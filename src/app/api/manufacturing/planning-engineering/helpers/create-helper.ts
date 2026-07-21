@@ -182,13 +182,30 @@ export async function createJobOrder(joData: Partial<DirectusJobOrder>, salesOrd
                         const physicalLotsRes = await fetch(`${DIRECTUS_URL}/items/inventory_lots?filter=${lotQueryFilter}&limit=-1`, { headers, cache: "no-store" });
                         const physicalLots = physicalLotsRes.ok ? (await physicalLotsRes.json()).data || [] : [];
 
+                        // Fetch inventory movements to calculate the true ledger stock
+                        const movFilter = encodeURIComponent(JSON.stringify({
+                            _and: [
+                                { product_id: { _eq: compProductId } },
+                                { branch_id: { _eq: branchId } }
+                            ]
+                        }));
+                        const movRes = await fetch(`${DIRECTUS_URL}/items/inventory_movements?filter=${movFilter}&limit=-1`, { headers, cache: "no-store" });
+                        const movements = movRes.ok ? (await movRes.json()).data || [] : [];
+                        const movementStockMap = new Map<string, number>();
+                        movements.forEach((mov: any) => {
+                            const batchNo = mov.batch_no || "LOT-N/A";
+                            const qty = Number(mov.quantity || 0);
+                            movementStockMap.set(batchNo, (movementStockMap.get(batchNo) || 0) + qty);
+                        });
+
                         let netAvailable = 0;
                         for (const rec of validReceipts) {
                             const matchedLot = physicalLots.find((l: any) => 
                                 String(l.source_reference) === String(rec.purchase_order_id) && 
                                 (l.lot_number === rec.lot_no || l.lot_number === rec.batch_no || (l.lot_number === "LOT-N/A" && !rec.lot_no && !rec.batch_no))
                             );
-                            const physicalQty = matchedLot ? Number(matchedLot.quantity || 0) : 0;
+                            const lotNo = matchedLot ? (matchedLot.lot_number || "LOT-N/A") : (rec.lot_no || rec.batch_no || "LOT-N/A");
+                            const physicalQty = movementStockMap.get(lotNo) || 0;
                             const recId = Number(rec.purchase_order_product_id);
                             const alreadyReserved = reservationsMap[recId] || 0;
                             netAvailable += Math.max(0, physicalQty - alreadyReserved);
@@ -376,7 +393,28 @@ export async function createJobOrder(joData: Partial<DirectusJobOrder>, salesOrd
                                  }));
                                  const physicalLotsRes = await fetch(`${DIRECTUS_URL}/items/inventory_lots?filter=${lotQueryFilter}&limit=-1`, { headers });
                                  const physicalLots = physicalLotsRes.ok ? (await physicalLotsRes.json()).data || [] : [];
-                                 const totalAvailableStock = physicalLots.reduce((sum: number, l: any) => sum + Number(l.quantity || 0), 0);
+
+                                 // Fetch inventory movements to calculate the true ledger stock
+                                 const movFilter = encodeURIComponent(JSON.stringify({
+                                     _and: [
+                                         { product_id: { _eq: compProductId } },
+                                         { branch_id: { _eq: branchId } }
+                                     ]
+                                 }));
+                                 const movRes = await fetch(`${DIRECTUS_URL}/items/inventory_movements?filter=${movFilter}&limit=-1`, { headers, cache: "no-store" });
+                                 const movements = movRes.ok ? (await movRes.json()).data || [] : [];
+                                 const movementStockMap = new Map<string, number>();
+                                 movements.forEach((mov: any) => {
+                                     const batchNo = mov.batch_no || "LOT-N/A";
+                                     const qty = Number(mov.quantity || 0);
+                                     movementStockMap.set(batchNo, (movementStockMap.get(batchNo) || 0) + qty);
+                                 });
+
+                                 const totalAvailableStock = physicalLots.reduce((sum: number, l: any) => {
+                                     const lotNum = l.lot_number || "LOT-N/A";
+                                     const ledgerQty = movementStockMap.get(lotNum) || 0;
+                                     return sum + ledgerQty;
+                                 }, 0);
 
                                  // Calculate active reservations by other JOs on this sub-assembly
                                  const activeReservedFilter = encodeURIComponent(JSON.stringify({
@@ -440,6 +478,22 @@ export async function createJobOrder(joData: Partial<DirectusJobOrder>, salesOrd
                                  const physicalLotsRes = await fetch(`${DIRECTUS_URL}/items/inventory_lots?filter=${lotQueryFilter}&limit=-1`, { headers, cache: 'no-store' });
                                  const physicalLots = physicalLotsRes.ok ? (await physicalLotsRes.json()).data || [] : [];
 
+                                 // Fetch inventory movements to calculate the true ledger stock
+                                 const movFilter = encodeURIComponent(JSON.stringify({
+                                     _and: [
+                                         { product_id: { _eq: compProductId } },
+                                         { branch_id: { _eq: branchId } }
+                                     ]
+                                 }));
+                                 const movRes = await fetch(`${DIRECTUS_URL}/items/inventory_movements?filter=${movFilter}&limit=-1`, { headers, cache: "no-store" });
+                                 const movements = movRes.ok ? (await movRes.json()).data || [] : [];
+                                 const movementStockMap = new Map<string, number>();
+                                 movements.forEach((mov: any) => {
+                                     const batchNo = mov.batch_no || "LOT-N/A";
+                                     const qty = Number(mov.quantity || 0);
+                                     movementStockMap.set(batchNo, (movementStockMap.get(batchNo) || 0) + qty);
+                                 });
+
                                  for (const rec of validReceipts) {
                                      if (allocatedQty >= quantityRequired) break;
 
@@ -447,7 +501,8 @@ export async function createJobOrder(joData: Partial<DirectusJobOrder>, salesOrd
                                          String(l.source_reference) === String(rec.purchase_order_id) && 
                                          (l.lot_number === rec.lot_no || l.lot_number === rec.batch_no || (l.lot_number === "LOT-N/A" && !rec.lot_no && !rec.batch_no))
                                      );
-                                     const physicalQty = matchedLot ? Number(matchedLot.quantity || 0) : 0;
+                                     const lotNo = matchedLot ? (matchedLot.lot_number || "LOT-N/A") : (rec.lot_no || rec.batch_no || "LOT-N/A");
+                                     const physicalQty = movementStockMap.get(lotNo) || 0;
                                      const recId = Number(rec.purchase_order_product_id);
                                      const alreadyReserved = reservationsMap[recId] || 0;
                                      const netAvailable = Math.max(0, physicalQty - alreadyReserved);

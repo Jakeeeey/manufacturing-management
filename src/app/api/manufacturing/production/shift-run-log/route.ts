@@ -98,13 +98,39 @@ export async function POST(request: Request) {
 
                 if (consumedQty <= 0) continue;
 
-                const lotsUrl = `${DIRECTUS_URL}/items/inventory_lots?filter[product_id][_eq]=${rawProductId}&filter[quantity][_gt]=0&filter[qa_status][_eq]=Passed&filter[branch_id][_eq]=${branchId}&sort=id&limit=-1`;
+                const lotsUrl = `${DIRECTUS_URL}/items/inventory_lots?filter[product_id][_eq]=${rawProductId}&filter[qa_status][_eq]=Passed&filter[branch_id][_eq]=${branchId}&sort=id&limit=-1`;
                 const lotsRes = await fetch(lotsUrl, { headers, cache: "no-store" });
                 const lots = lotsRes.ok ? (await lotsRes.json()).data || [] : [];
                 
-                lotsCache[rawProductId] = lots;
+                // Fetch inventory movements to calculate the true ledger stock
+                const movFilter = encodeURIComponent(JSON.stringify({
+                    _and: [
+                        { product_id: { _eq: rawProductId } },
+                        { branch_id: { _eq: branchId } }
+                    ]
+                }));
+                const movRes = await fetch(`${DIRECTUS_URL}/items/inventory_movements?filter=${movFilter}&limit=-1`, { headers, cache: "no-store" });
+                const movements = movRes.ok ? (await movRes.json()).data || [] : [];
+                const movementStockMap = new Map<string, number>();
+                movements.forEach((mov: any) => {
+                    const batchNo = mov.batch_no || "LOT-N/A";
+                    const qty = Number(mov.quantity || 0);
+                    movementStockMap.set(batchNo, (movementStockMap.get(batchNo) || 0) + qty);
+                });
 
-                const totalAvailable = lots.reduce((sum: number, l: any) => sum + Number(l.quantity || 0), 0);
+                // Map lots and enrich them with correct ledger quantity
+                const lotsEnriched = lots.map((lot: any) => {
+                    const lotNum = lot.lot_number || "LOT-N/A";
+                    const ledgerQty = movementStockMap.get(lotNum) || 0;
+                    return {
+                        ...lot,
+                        quantity: ledgerQty
+                    };
+                }).filter((lot: any) => lot.quantity > 0);
+
+                lotsCache[rawProductId] = lotsEnriched;
+
+                const totalAvailable = lotsEnriched.reduce((sum: number, l: any) => sum + Number(l.quantity || 0), 0);
                 if (totalAvailable < consumedQty) {
                     let prodName = `Product #${rawProductId}`;
                     let unitName = "units";
@@ -338,20 +364,13 @@ export async function POST(request: Request) {
                                             }));
                                             
                                             const lRes = await fetch(`${DIRECTUS_URL}/items/inventory_lots?filter=${lotQuery}&limit=1`, { headers, cache: "no-store" });
-                                            if (lRes.ok) {
-                                                const lotList = (await lRes.json()).data || [];
-                                                if (lotList.length > 0) {
-                                                     const lot = lotList[0];
-                                                     const currentQty = Number(lot.quantity || 0);
-                                                     const newQty = Math.max(0, currentQty - portion);
-                                                     await fetch(`${DIRECTUS_URL}/items/inventory_lots/${lot.id}`, {
-                                                         method: "PATCH",
-                                                         headers,
-                                                         body: JSON.stringify({ quantity: newQty })
-                                                     });
-                                                     await logConsumageAndMovement(portion, lot);
-                                                }
-                                            }
+                                             if (lRes.ok) {
+                                                 const lotList = (await lRes.json()).data || [];
+                                                 if (lotList.length > 0) {
+                                                      const lot = lotList[0];
+                                                      await logConsumageAndMovement(portion, lot);
+                                                 }
+                                             }
                                         }
                                     }
                                 } catch (porErr) {
@@ -408,20 +427,10 @@ export async function POST(request: Request) {
                                 { quantity: { _gt: 0 } }
                             ]
                         }));
-                        const fbRes = await fetch(`${DIRECTUS_URL}/items/inventory_lots?filter=${fallbackQuery}&sort=id&limit=1`, { headers, cache: "no-store" });
-                        if (fbRes.ok) {
-                            const fbList = (await fbRes.json()).data || [];
-                            if (fbList.length > 0) {
-                                const fbLot = fbList[0];
-                                const currentQty = Number(fbLot.quantity || 0);
-                                const newQty = Math.max(0, currentQty - remainingToConsume);
-                                await fetch(`${DIRECTUS_URL}/items/inventory_lots/${fbLot.id}`, {
-                                    method: "PATCH",
-                                    headers,
-                                    body: JSON.stringify({ quantity: newQty })
-                                });
-                                await logConsumageAndMovement(remainingToConsume, fbLot);
-                            }
+                        const activeLots = lotsCache[rawProductId] || [];
+                        if (activeLots.length > 0) {
+                            const fbLot = activeLots[0];
+                            await logConsumageAndMovement(remainingToConsume, fbLot);
                         }
                     } catch (err) {
                         console.error("Failed to deduct fallback lot for shortfall:", err);
@@ -435,7 +444,7 @@ export async function POST(request: Request) {
         const newLotPayload = {
             product_id: producedProductId,
             branch_id: branchId,
-            quantity: Number(yieldQty),
+            quantity: 0,
             qa_status: qaStatus || "Pending",
             source_type: "yield_ledger",
             source_reference: String(ledgerId),

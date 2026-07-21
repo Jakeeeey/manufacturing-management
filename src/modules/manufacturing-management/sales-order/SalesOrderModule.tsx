@@ -45,7 +45,7 @@ export default function SalesOrderModule() {
     return (
         <div className="space-y-6">
             {/* Header info */}
-            <div className="relative overflow-hidden bg-gradient-to-r from-slate-900 to-slate-800 text-white rounded-2xl p-6 shadow-md border border-slate-800">
+            <div className="relative overflow-hidden bg-gradient-to-r from-slate-900 to-slate-800 text-white rounded-2xl p-6 shadow-md border border-slate-800 dark:border-slate-700">
                 <div className="relative z-10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                     <div className="space-y-1">
                         <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-400">Order Operations</span>
