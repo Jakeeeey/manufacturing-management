@@ -11,7 +11,10 @@ import {
     fetchItemClassifications,
     createItem as apiCreateItem,
     createItemType as apiCreateItemType,
-    createItemClassification as apiCreateItemClassification
+    createItemClassification as apiCreateItemClassification,
+    updateItem as apiUpdateItem,
+    updateItemType as apiUpdateItemType,
+    updateItemClassification as apiUpdateItemClassification
 } from "../services/item-management-api";
 
 export function useItemManagement() {
@@ -170,12 +173,126 @@ export function useItemManagement() {
         }
     };
 
-    // Filtered Lists (Sorted descending: latest first, with stable display numbering)
+    const handleUpdateItem = async (id: number, name: string, typeId: number, classId: number): Promise<boolean> => {
+        const trimmed = name.trim();
+        if (!trimmed) {
+            toast.error("Item name is required.");
+            return false;
+        }
+        if (!typeId) {
+            toast.error("Item type is required.");
+            return false;
+        }
+        if (!classId) {
+            toast.error("Item classification is required.");
+            return false;
+        }
+
+        const isDuplicate = items.some(
+            (item) => item.id !== id && item.item_name?.trim().toLowerCase() === trimmed.toLowerCase()
+        );
+        if (isDuplicate) {
+            toast.error("Item name already exists. Please choose a unique name.");
+            return false;
+        }
+
+        setSaving(true);
+        try {
+            const res = await apiUpdateItem(id, {
+                item_name: trimmed,
+                item_type: typeId,
+                item_classification: classId
+            });
+            if (res.success && res.item) {
+                toast.success(`Successfully updated item "${trimmed}"!`);
+                await loadAllData();
+                return true;
+            }
+            return false;
+        } catch (err) {
+            console.error("Failed to update item:", err);
+            const message = err instanceof Error ? err.message : "Failed to update item";
+            toast.error(message);
+            return false;
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleUpdateItemType = async (id: number, name: string): Promise<boolean> => {
+        const trimmed = name.trim();
+        if (!trimmed) {
+            toast.error("Item type name is required.");
+            return false;
+        }
+
+        const isDuplicate = itemTypes.some(
+            (t) => t.id !== id && t.type_name?.trim().toLowerCase() === trimmed.toLowerCase()
+        );
+        if (isDuplicate) {
+            toast.error("Item type name already exists. Please choose a unique name.");
+            return false;
+        }
+
+        setSaving(true);
+        try {
+            const res = await apiUpdateItemType(id, { name: trimmed });
+            if (res.success && res.type) {
+                toast.success(`Successfully updated item type "${trimmed}"!`);
+                await loadAllData();
+                return true;
+            }
+            return false;
+        } catch (err) {
+            console.error("Failed to update item type:", err);
+            const message = err instanceof Error ? err.message : "Failed to update item type";
+            toast.error(message);
+            return false;
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleUpdateItemClassification = async (id: number, name: string): Promise<boolean> => {
+        const trimmed = name.trim();
+        if (!trimmed) {
+            toast.error("Item classification name is required.");
+            return false;
+        }
+
+        const isDuplicate = itemClassifications.some(
+            (c) => c.id !== id && c.classification_name?.trim().toLowerCase() === trimmed.toLowerCase()
+        );
+        if (isDuplicate) {
+            toast.error("Item classification name already exists. Please choose a unique name.");
+            return false;
+        }
+
+        setSaving(true);
+        try {
+            const res = await apiUpdateItemClassification(id, { name: trimmed });
+            if (res.success && res.classification) {
+                toast.success(`Successfully updated item classification "${trimmed}"!`);
+                await loadAllData();
+                return true;
+            }
+            return false;
+        } catch (err) {
+            console.error("Failed to update item classification:", err);
+            const message = err instanceof Error ? err.message : "Failed to update item classification";
+            toast.error(message);
+            return false;
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    // Filtered Lists (Sorted ascending: oldest first, with stable display numbering starting at one)
     const filteredItems = useMemo(() => {
         const query = searchQuery.toLowerCase().trim();
         return items
             .filter((item) => item.item_name?.toLowerCase().includes(query))
-            .sort((a, b) => b.id - a.id)
+            .sort((a, b) => a.id - b.id)
             .map((item) => {
                 const originalIndex = items.findIndex((i) => i.id === item.id);
                 // 1 being oldest (index 0), highest being latest (index length - 1)
@@ -188,7 +305,7 @@ export function useItemManagement() {
         const query = searchQuery.toLowerCase().trim();
         return itemTypes
             .filter((t) => t.type_name?.toLowerCase().includes(query))
-            .sort((a, b) => b.id - a.id)
+            .sort((a, b) => a.id - b.id)
             .map((t) => {
                 const originalIndex = itemTypes.findIndex((i) => i.id === t.id);
                 const displayNumber = originalIndex !== -1 ? originalIndex + 1 : 0;
@@ -200,7 +317,7 @@ export function useItemManagement() {
         const query = searchQuery.toLowerCase().trim();
         return itemClassifications
             .filter((c) => c.classification_name?.toLowerCase().includes(query))
-            .sort((a, b) => b.id - a.id)
+            .sort((a, b) => a.id - b.id)
             .map((c) => {
                 const originalIndex = itemClassifications.findIndex((i) => i.id === c.id);
                 const displayNumber = originalIndex !== -1 ? originalIndex + 1 : 0;
@@ -222,6 +339,9 @@ export function useItemManagement() {
         refresh: loadAllData,
         handleRegisterItem,
         handleRegisterItemType,
-        handleRegisterItemClassification
+        handleRegisterItemClassification,
+        handleUpdateItem,
+        handleUpdateItemType,
+        handleUpdateItemClassification
     };
 }

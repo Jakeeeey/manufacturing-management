@@ -1,5 +1,5 @@
 import React from "react";
-import { ChevronsLeft, ChevronsRight, Boxes } from "lucide-react";
+import { ChevronsLeft, ChevronsRight, Boxes, Edit } from "lucide-react";
 import { ItemType } from "../types";
 import {
     Table,
@@ -20,9 +20,10 @@ import { Button } from "@/components/ui/button";
 
 interface ItemTypesTableProps {
     types: ItemType[];
+    onEdit: (type: ItemType) => void;
 }
 
-export default function ItemTypesTable({ types }: ItemTypesTableProps) {
+export default function ItemTypesTable({ types, onEdit }: ItemTypesTableProps) {
     const [currentPage, setCurrentPage] = React.useState(1);
     const [pageSize, setPageSize] = React.useState(10);
 
@@ -54,6 +55,9 @@ export default function ItemTypesTable({ types }: ItemTypesTableProps) {
                             <TableRow>
                                 <TableHead className="w-[100px]">No.</TableHead>
                                 <TableHead>Item Type Name</TableHead>
+                                <TableHead>Created By</TableHead>
+                                <TableHead>Updated By</TableHead>
+                                <TableHead className="w-[80px] text-right">Actions</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -64,6 +68,22 @@ export default function ItemTypesTable({ types }: ItemTypesTableProps) {
                                     </TableCell>
                                     <TableCell className="font-semibold text-foreground">
                                         {type.type_name}
+                                    </TableCell>
+                                    <TableCell className="text-muted-foreground text-xs">
+                                        {type.created_by_name || "N/A"}
+                                    </TableCell>
+                                    <TableCell className="text-muted-foreground text-xs">
+                                        {type.updated_by_name || "N/A"}
+                                    </TableCell>
+                                    <TableCell className="text-right">
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted"
+                                            onClick={() => onEdit(type)}
+                                        >
+                                            <Edit className="h-4 w-4" />
+                                        </Button>
                                     </TableCell>
                                 </TableRow>
                             ))}
