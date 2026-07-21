@@ -1,11 +1,65 @@
 import { Supplier, IncomingShipment, ShipmentLineItem, ShipmentExpense, RawMaterial, LinkedProduct, PSGCItem, RegisterRawMaterialPayload, PackagingVariant, BFFCatalogProduct } from "../types";
 
+let refreshPromise: Promise<boolean> | null = null;
+let sessionRedirecting = false;
+
+export class SessionExpiredError extends Error {
+    constructor() {
+        super("Your session has expired. Please sign in again.");
+        this.name = "SessionExpiredError";
+    }
+}
+
+async function refreshAccessToken(): Promise<boolean> {
+    if (!refreshPromise) {
+        refreshPromise = fetch("/api/auth/refresh", {
+            method: "POST",
+            cache: "no-store"
+        })
+            .then(response => response.ok)
+            .catch(() => false)
+            .finally(() => {
+                refreshPromise = null;
+            });
+    }
+
+    return refreshPromise;
+}
+
+function redirectToLogin(): void {
+    if (typeof window === "undefined" || sessionRedirecting || window.location.pathname === "/login") return;
+
+    sessionRedirecting = true;
+    const next = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    window.location.assign(`/login?next=${encodeURIComponent(next)}`);
+}
+
+async function fetchWithSessionRetry(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+    const response = await fetch(input, init);
+    if (response.status !== 401) return response;
+
+    const refreshed = await refreshAccessToken();
+    if (!refreshed) {
+        redirectToLogin();
+        throw new SessionExpiredError();
+    }
+
+    const retriedResponse = await fetch(input, init);
+    if (retriedResponse.status === 401) {
+        redirectToLogin();
+        throw new SessionExpiredError();
+    }
+
+    return retriedResponse;
+}
+
 async function handleResponse(res: Response, fallbackMessage: string) {
     if (!res.ok) {
         let errMsg = fallbackMessage;
         try {
             const data = await res.json();
-            if (data && data.error) errMsg = data.error;
+            if (typeof data?.error === "string") errMsg = data.error;
+            else if (typeof data?.message === "string") errMsg = data.message;
         } catch { }
         throw new Error(errMsg);
     }
@@ -13,12 +67,12 @@ async function handleResponse(res: Response, fallbackMessage: string) {
 }
 
 export async function fetchSuppliers(): Promise<Supplier[]> {
-    const res = await fetch("/api/manufacturing/procurement/suppliers");
+    const res = await fetchWithSessionRetry("/api/manufacturing/procurement/suppliers");
     return handleResponse(res, "Failed to fetch suppliers");
 }
 
 export async function createSupplier(supplierData: Partial<Supplier>): Promise<unknown> {
-    const res = await fetch("/api/manufacturing/procurement/suppliers", {
+    const res = await fetchWithSessionRetry("/api/manufacturing/procurement/suppliers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(supplierData)
@@ -27,17 +81,17 @@ export async function createSupplier(supplierData: Partial<Supplier>): Promise<u
 }
 
 export async function fetchShipments(): Promise<IncomingShipment[]> {
-    const res = await fetch("/api/manufacturing/procurement/shipments");
+    const res = await fetchWithSessionRetry("/api/manufacturing/procurement/shipments");
     return handleResponse(res, "Failed to fetch shipments");
 }
 
 export async function fetchShipmentLineItems(shipmentId: number): Promise<ShipmentLineItem[]> {
-    const res = await fetch(`/api/manufacturing/procurement/shipments?shipmentId=${shipmentId}`);
+    const res = await fetchWithSessionRetry(`/api/manufacturing/procurement/shipments?shipmentId=${shipmentId}`);
     return handleResponse(res, "Failed to fetch shipment line items");
 }
 
 export async function createShipment(shipmentData: Partial<IncomingShipment>, lineItems: unknown[]): Promise<unknown> {
-    const res = await fetch("/api/manufacturing/procurement/shipments", {
+    const res = await fetchWithSessionRetry("/api/manufacturing/procurement/shipments", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ shipmentData, lineItems })
@@ -46,7 +100,7 @@ export async function createShipment(shipmentData: Partial<IncomingShipment>, li
 }
 
 export async function fetchShipmentExpenses(shipmentId: number): Promise<ShipmentExpense[]> {
-    const res = await fetch(`/api/manufacturing/procurement/expenses?shipmentId=${shipmentId}`);
+    const res = await fetchWithSessionRetry(`/api/manufacturing/procurement/expenses?shipmentId=${shipmentId}`);
     return handleResponse(res, "Failed to fetch shipment expenses");
 }
 
@@ -57,7 +111,7 @@ export async function saveAndAllocateExpenses(
     allocationMethod: string,
     lineItemUpdates?: unknown[]
 ): Promise<unknown> {
-    const res = await fetch("/api/manufacturing/procurement/expenses", {
+    const res = await fetchWithSessionRetry("/api/manufacturing/procurement/expenses", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ shipmentId, status, expenses, allocationMethod, lineItemUpdates })
@@ -66,9 +120,8 @@ export async function saveAndAllocateExpenses(
 }
 
 export async function fetchRawMaterials(): Promise<RawMaterial[]> {
-    const res = await fetch("/api/manufacturing/finished-goods/products?limit=250");
-    if (!res.ok) throw new Error("Failed to fetch raw materials");
-    const products: BFFCatalogProduct[] = await res.json();
+    const res = await fetchWithSessionRetry("/api/manufacturing/finished-goods/products?limit=250");
+    const products: BFFCatalogProduct[] = await handleResponse(res, "Failed to fetch raw materials");
 
     // Filter to exclude finished goods (include only raw materials and packaging items)
     const rawItems = products.filter((p: BFFCatalogProduct) => Number(p.product_type) === 389 || Number(p.product_type) === 390);
@@ -102,12 +155,18 @@ export async function fetchRawMaterials(): Promise<RawMaterial[]> {
     });
 }
 
+export async function fetchProductInventoryDetails(productId: number): Promise<Record<string, unknown>[]> {
+    const res = await fetch(`/api/manufacturing/procurement/qa-receiving?productId=${encodeURIComponent(productId)}`);
+    const data = await handleResponse(res, "Failed to load inventory details");
+    return Array.isArray(data) ? data as Record<string, unknown>[] : [];
+}
+
 export async function registerRawMaterial(
     productDetails: RegisterRawMaterialPayload,
     supplierIds?: number[],
     packagingVariants?: PackagingVariant[]
 ): Promise<{ success: boolean; productId: number }> {
-    const res = await fetch("/api/manufacturing/procurement/raw-materials", {
+    const res = await fetchWithSessionRetry("/api/manufacturing/procurement/raw-materials", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ productDetails, supplierIds, packagingVariants })
@@ -121,7 +180,7 @@ export async function updateRawMaterial(
     supplierIds?: number[],
     packagingVariants?: PackagingVariant[]
 ): Promise<{ success: boolean }> {
-    const res = await fetch("/api/manufacturing/procurement/raw-materials", {
+    const res = await fetchWithSessionRetry("/api/manufacturing/procurement/raw-materials", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ productId, productDetails, supplierIds, packagingVariants })
@@ -130,7 +189,7 @@ export async function updateRawMaterial(
 }
 
 export async function updateShipmentStatus(shipmentId: number, status: string): Promise<unknown> {
-    const res = await fetch("/api/manufacturing/procurement/shipments", {
+    const res = await fetchWithSessionRetry("/api/manufacturing/procurement/shipments", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ shipmentId, status })
@@ -139,7 +198,7 @@ export async function updateShipmentStatus(shipmentId: number, status: string): 
 }
 
 export async function updateSupplier(supplierId: number, supplierData: Partial<Supplier>): Promise<unknown> {
-    const res = await fetch("/api/manufacturing/procurement/suppliers", {
+    const res = await fetchWithSessionRetry("/api/manufacturing/procurement/suppliers", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: supplierId, ...supplierData })
@@ -148,12 +207,12 @@ export async function updateSupplier(supplierId: number, supplierData: Partial<S
 }
 
 export async function fetchLinkedProducts(supplierId: number): Promise<LinkedProduct[]> {
-    const res = await fetch(`/api/manufacturing/procurement/suppliers/products?supplierId=${supplierId}`);
+    const res = await fetchWithSessionRetry(`/api/manufacturing/procurement/suppliers/products?supplierId=${supplierId}`);
     return handleResponse(res, "Failed to fetch linked products");
 }
 
 export async function linkProductToSupplier(supplierId: number, productId: number): Promise<unknown> {
-    const res = await fetch("/api/manufacturing/procurement/suppliers/products", {
+    const res = await fetchWithSessionRetry("/api/manufacturing/procurement/suppliers/products", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ supplierId, productId })
@@ -162,7 +221,7 @@ export async function linkProductToSupplier(supplierId: number, productId: numbe
 }
 
 export async function unlinkProductFromSupplier(linkId: number): Promise<unknown> {
-    const res = await fetch(`/api/manufacturing/procurement/suppliers/products?linkId=${linkId}`, {
+    const res = await fetchWithSessionRetry(`/api/manufacturing/procurement/suppliers/products?linkId=${linkId}`, {
         method: "DELETE"
     });
     return handleResponse(res, "Failed to unlink product from supplier");

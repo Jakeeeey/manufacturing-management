@@ -21,6 +21,7 @@ export default function ProcurementModule({ initialTab = "suppliers" }: Procurem
     const {
         activeTab,
         loading,
+        rawMaterialsLoading,
         submittingExpenses,
         suppliers,
         shipments,
@@ -163,6 +164,7 @@ export default function ProcurementModule({ initialTab = "suppliers" }: Procurem
                     <RawMaterialsMaster
                         rawMaterials={rawMaterials}
                         suppliers={suppliers}
+                        loadingItems={rawMaterialsLoading}
                         onRegisterRawMaterial={handleRegisterRawMaterial}
                         onUpdateRawMaterial={handleUpdateRawMaterial}
                     />
