@@ -11,6 +11,7 @@ import {
     headers
 } from "@/app/api/manufacturing/directus-api";
 import { getBOMDetailsForVersion, getActiveVersionForProduct } from "../../finished-goods/versions/versions-helper";
+import { movementStockKey, sumMovementQuantitiesByStock, uniqueRowsByMovementStockKey } from "../../qa-receiving/_movement-stock";
 
 export async function handleGET(request: Request) {
     try {
@@ -140,10 +141,10 @@ export async function handleGET(request: Request) {
                 }
             }
 
-            // Fetch inventory lots to resolve QA status metadata
-            const lotStatusMap = new Map<string, string>(); // "product_id:lot_number" -> qa_status
-            const lotExpiryMap = new Map<string, string>(); // "product_id:lot_number" -> expiry_date
-            const lotCreatedMap = new Map<string, string>(); // "product_id:lot_number" -> created_on
+            // Fetch inventory lots to resolve QA status metadata by canonical stock key.
+            const lotStatusMap = new Map<string, string>();
+            const lotExpiryMap = new Map<string, string>();
+            const lotCreatedMap = new Map<string, string>();
 
             if (pIds.length > 0) {
                 const lotFilter = encodeURIComponent(JSON.stringify({
@@ -154,11 +155,9 @@ export async function handleGET(request: Request) {
                 }));
                 const lotsRes = await fetch(`${DIRECTUS_URL}/items/inventory_lots?filter=${lotFilter}&limit=-1`, { headers, cache: "no-store" });
                 if (lotsRes.ok) {
-                    const lots = (await lotsRes.json()).data || [];
+                    const lots = uniqueRowsByMovementStockKey((await lotsRes.json()).data || []);
                     lots.forEach((lot: any) => {
-                        const prodId = Number(lot.product_id?.product_id || lot.product_id);
-                        const lotNum = lot.lot_number || "LOT-N/A";
-                        const key = `${prodId}:${lotNum}`;
+                        const key = movementStockKey(lot);
                         lotStatusMap.set(key, lot.qa_status || "Pending");
                         if (lot.expiry_date) lotExpiryMap.set(key, lot.expiry_date);
                         if (lot.created_on) lotCreatedMap.set(key, lot.created_on);
@@ -170,7 +169,9 @@ export async function handleGET(request: Request) {
             const stockMap = new Map<number, number>(); // product_id -> sum of passed stock
             const pendingQaMap = new Map<number, number>(); // product_id -> sum of pending QA stock
             const qaHoldMap = new Map<number, number>(); // product_id -> sum of QA hold stock
-            const movementStockMap = new Map<string, number>(); // "product_id:batch_no" -> sum of quantity
+            const unclassifiedMap = new Map<number, number>();
+            let movementStockMap = new Map<string, number>();
+            const movementBatchStockMap = new Map<string, number>();
 
             if (pIds.length > 0) {
                 const movFilter = encodeURIComponent(JSON.stringify({
@@ -182,13 +183,12 @@ export async function handleGET(request: Request) {
                 const movRes = await fetch(`${DIRECTUS_URL}/items/inventory_movements?filter=${movFilter}&limit=-1`, { headers, cache: "no-store" });
                 if (movRes.ok) {
                     const movements = (await movRes.json()).data || [];
-                    movements.forEach((mov: any) => {
-                        const prodId = Number(mov.product_id?.product_id || mov.product_id);
-                        const batchNo = mov.batch_no || "LOT-N/A";
-                        const qty = Number(mov.quantity || 0);
-
-                        const key = `${prodId}:${batchNo}`;
-                        movementStockMap.set(key, (movementStockMap.get(key) || 0) + qty);
+                    movementStockMap = sumMovementQuantitiesByStock(movements);
+                    movements.forEach((movement: any) => {
+                        const productId = Number(movement.product_id?.product_id || movement.product_id);
+                        const batchNumber = movement.batch_no || "LOT-N/A";
+                        const key = `${productId}:${batchNumber}`;
+                        movementBatchStockMap.set(key, (movementBatchStockMap.get(key) || 0) + Number(movement.quantity || 0));
                     });
 
                     // Aggregate stock maps based on QA Status
@@ -196,14 +196,16 @@ export async function handleGET(request: Request) {
                         if (qty > 0) {
                             const [prodIdStr] = key.split(":");
                             const prodId = Number(prodIdStr);
-                            const status = lotStatusMap.get(key) || "Pending";
+                            const status = lotStatusMap.get(key);
 
-                            if (status === "Passed") {
+                            if (status === "Passed" || status === "Partially Accepted") {
                                 stockMap.set(prodId, (stockMap.get(prodId) || 0) + qty);
                             } else if (status === "Pending") {
                                 pendingQaMap.set(prodId, (pendingQaMap.get(prodId) || 0) + qty);
                             } else if (status === "QA Hold") {
                                 qaHoldMap.set(prodId, (qaHoldMap.get(prodId) || 0) + qty);
+                            } else {
+                                unclassifiedMap.set(prodId, (unclassifiedMap.get(prodId) || 0) + qty);
                             }
                         }
                     });
@@ -308,9 +310,8 @@ export async function handleGET(request: Request) {
                     let remainingReserved = totalReservedByOthers;
 
                     // Enrich subLots with true physical quantity from inventory_movements ledger
-                    const subLotsEnriched = subLots.map((lot: any) => {
-                        const lotNum = lot.lot_number || "LOT-N/A";
-                        const ledgerQty = movementStockMap.get(`${compProductId}:${lotNum}`) || 0;
+                    const subLotsEnriched = uniqueRowsByMovementStockKey(subLots).map((lot: any) => {
+                        const ledgerQty = movementStockMap.get(movementStockKey(lot)) || 0;
                         return {
                             ...lot,
                             quantity: ledgerQty
@@ -344,7 +345,7 @@ export async function handleGET(request: Request) {
                     }
                 } else {
                     // Fetch candidate lots from purchase_order_receiving
-                    const receiptsUrl = `${DIRECTUS_URL}/items/purchase_order_receiving?filter[product_id][_eq]=${compProductId}&filter[qa_status][_eq]=Passed&filter[is_reverted][_eq]=0&filter[received_quantity][_gt]=0&filter[branch_id][_eq]=${branchId}&sort=expiry_date`;
+                    const receiptsUrl = `${DIRECTUS_URL}/items/purchase_order_receiving?filter[product_id][_eq]=${compProductId}&filter[qa_status][_in]=Passed,Partially Accepted&filter[is_reverted][_eq]=0&filter[received_quantity][_gt]=0&filter[branch_id][_eq]=${branchId}&sort=expiry_date`;
                     const receiptsRes = await fetch(receiptsUrl, { headers });
                     const validReceipts = receiptsRes.ok ? (await receiptsRes.json()).data || [] : [];
 
@@ -355,7 +356,7 @@ export async function handleGET(request: Request) {
                             const resFilter = encodeURIComponent(JSON.stringify({
                                 _and: [
                                     { purchase_order_receiving_id: { _in: receiptIds } },
-                                    { jo_material_id: { job_order_id: { status: { _in: ["Proceed", "Ongoing", "On Hold"] } } } }
+                                    { jo_material_id: { job_order_id: { status: { _in: ["Planned", "Draft", "Released", "In Progress", "Ongoing", "Proceed", "On Hold"] } } } }
                                 ]
                             }));
                             const resRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_materials_reservations?filter=${resFilter}&fields=purchase_order_receiving_id,reserved_quantity&limit=-1`, { headers });
@@ -375,7 +376,7 @@ export async function handleGET(request: Request) {
 
                     candidateLots = validReceipts.map((rec: any) => {
                         const lotNum = rec.lot_no || rec.batch_no || "LOT-N/A";
-                        const physicalQty = movementStockMap.get(`${compProductId}:${lotNum}`) || 0;
+                        const physicalQty = movementBatchStockMap.get(`${compProductId}:${lotNum}`) || 0;
                         const recId = Number(rec.purchase_order_product_id);
                         const alreadyReserved = lotReservationsMap[recId] || 0;
                         const netAvailable = Math.max(0, physicalQty - alreadyReserved);
@@ -422,6 +423,7 @@ export async function handleGET(request: Request) {
                     available_stock: availableStock,
                     pending_qa_stock: pendingQaMap.get(Number(d.product_id)) || 0,
                     qa_hold_stock: qaHoldMap.get(Number(d.product_id)) || 0,
+                    unclassified_stock: unclassifiedMap.get(Number(d.product_id)) || 0,
                     lot_no: lotNo,
                     receipt_no: receiptNo,
                     candidate_lots: candidateLots,

@@ -1,6 +1,7 @@
 /* eslint-disable */
 export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
+import { movementStockKey, sumMovementQuantitiesByStock, uniqueRowsByMovementStockKey } from "../../qa-receiving/_movement-stock";
 
 const DIRECTUS_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://vtc:8074";
 const DIRECTUS_STATIC_TOKEN = process.env.DIRECTUS_STATIC_TOKEN || "test";
@@ -98,7 +99,7 @@ export async function POST(request: Request) {
 
                 if (consumedQty <= 0) continue;
 
-                const lotsUrl = `${DIRECTUS_URL}/items/inventory_lots?filter[product_id][_eq]=${rawProductId}&filter[qa_status][_eq]=Passed&filter[branch_id][_eq]=${branchId}&sort=id&limit=-1`;
+                const lotsUrl = `${DIRECTUS_URL}/items/inventory_lots?filter[product_id][_eq]=${rawProductId}&filter[qa_status][_in]=Passed,Partially Accepted&filter[branch_id][_eq]=${branchId}&sort=-id&limit=-1`;
                 const lotsRes = await fetch(lotsUrl, { headers, cache: "no-store" });
                 const lots = lotsRes.ok ? (await lotsRes.json()).data || [] : [];
                 
@@ -111,17 +112,11 @@ export async function POST(request: Request) {
                 }));
                 const movRes = await fetch(`${DIRECTUS_URL}/items/inventory_movements?filter=${movFilter}&limit=-1`, { headers, cache: "no-store" });
                 const movements = movRes.ok ? (await movRes.json()).data || [] : [];
-                const movementStockMap = new Map<string, number>();
-                movements.forEach((mov: any) => {
-                    const batchNo = mov.batch_no || "LOT-N/A";
-                    const qty = Number(mov.quantity || 0);
-                    movementStockMap.set(batchNo, (movementStockMap.get(batchNo) || 0) + qty);
-                });
+                const movementStockMap = sumMovementQuantitiesByStock(movements);
 
                 // Map lots and enrich them with correct ledger quantity
-                const lotsEnriched = lots.map((lot: any) => {
-                    const lotNum = lot.lot_number || "LOT-N/A";
-                    const ledgerQty = movementStockMap.get(lotNum) || 0;
+                const lotsEnriched = uniqueRowsByMovementStockKey(lots).map((lot: any) => {
+                    const ledgerQty = movementStockMap.get(movementStockKey(lot)) || 0;
                     return {
                         ...lot,
                         quantity: ledgerQty
@@ -286,7 +281,11 @@ export async function POST(request: Request) {
                         }
                     }
 
-                    const consumedLotId = await resolveMasterLotId(lot.lot_number || "LOT-N/A", 1);
+                    const batchNumber = lot.batch_no || lot.lot_number || "LOT-N/A";
+                    const relatedLotId = typeof lot.lot_id === "object"
+                        ? Number(lot.lot_id?.lot_id || 0)
+                        : Number(lot.lot_id || 0);
+                    const consumedLotId = relatedLotId || await resolveMasterLotId(batchNumber, 1);
                     const mPayload = {
                         product_id: rawProductId,
                         lot_id: consumedLotId,
@@ -294,12 +293,12 @@ export async function POST(request: Request) {
                         transaction_type_id: 1, // Job Order Consumage
                         source_document_id: consumageId,
                         source_document_no: String(ledgerId),
-                        batch_no: lot.lot_number || "LOT-N/A",
+                        batch_no: batchNumber,
                         expiry_date: lot.expiry_date || null,
                         manufacturing_date: lot.created_on ? lot.created_on.split("T")[0] : null,
                         quantity: -qty, // OUT direction
                         created_by: inspectorId ? Number(inspectorId) : 24,
-                        remarks: `Consumed from lot ${lot.lot_number || "N/A"} for JO yield`
+                        remarks: `Consumed from lot ${batchNumber} for JO yield`
                     };
                     await fetch(`${DIRECTUS_URL}/items/inventory_movements`, {
                         method: "POST",
@@ -359,7 +358,10 @@ export async function POST(request: Request) {
                                                     { branch_id: { _eq: branchId } },
                                                     { source_type: { _eq: "procurement" } },
                                                     { source_reference: { _eq: String(poId) } },
-                                                    { lot_number: { _eq: lotNo } }
+                                                    { _or: [
+                                                        { lot_number: { _eq: lotNo } },
+                                                        { batch_no: { _eq: lotNo } }
+                                                    ] }
                                                 ]
                                             }));
                                             

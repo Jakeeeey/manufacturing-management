@@ -137,7 +137,7 @@ export async function createJobOrder(joData: Partial<DirectusJobOrder>, salesOrd
                     if (!isSubAssembly) {
                         // This is a raw material! Verify its available stock in purchase_order_receiving
                         const branchFilter = joData.branch_id ? `&filter[branch_id][_eq]=${Number(joData.branch_id)}` : "";
-                        const receiptsUrl = `${DIRECTUS_URL}/items/purchase_order_receiving?filter[product_id][_eq]=${compProductId}&filter[qa_status][_eq]=Passed&filter[is_reverted][_eq]=0&filter[received_quantity][_gt]=0${branchFilter}&sort=expiry_date`;
+                        const receiptsUrl = `${DIRECTUS_URL}/items/purchase_order_receiving?filter[product_id][_eq]=${compProductId}&filter[qa_status][_in]=Passed,Partially Accepted&filter[is_reverted][_eq]=0&filter[received_quantity][_gt]=0${branchFilter}&sort=expiry_date`;
                         
                         const receiptsRes = await fetch(receiptsUrl, { headers, cache: "no-store" });
                         const validReceipts = receiptsRes.ok ? (await receiptsRes.json()).data || [] : [];
@@ -149,7 +149,7 @@ export async function createJobOrder(joData: Partial<DirectusJobOrder>, salesOrd
                                 const resFilter = encodeURIComponent(JSON.stringify({
                                     _and: [
                                         { purchase_order_receiving_id: { _in: receiptIds } },
-                                        { jo_material_id: { job_order_id: { status: { _in: ["Proceed", "Ongoing", "On Hold"] } } } }
+                                        { jo_material_id: { job_order_id: { status: { _in: ["Planned", "Draft", "Released", "In Progress", "Ongoing", "Proceed", "On Hold"] } } } }
                                     ]
                                 }));
                                 const resRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_materials_reservations?filter=${resFilter}&fields=purchase_order_receiving_id,reserved_quantity&limit=-1`, { headers, cache: "no-store" });
@@ -432,7 +432,7 @@ export async function createJobOrder(joData: Partial<DirectusJobOrder>, salesOrd
                              } else {
                                  // FIFO/FEFO Allocation directly from purchase_order_receiving
                                  const branchFilter = joData.branch_id ? `&filter[branch_id][_eq]=${Number(joData.branch_id)}` : "";
-                                 const receiptsUrl = `${DIRECTUS_URL}/items/purchase_order_receiving?filter[product_id][_eq]=${compProductId}&filter[qa_status][_eq]=Passed&filter[is_reverted][_eq]=0&filter[received_quantity][_gt]=0${branchFilter}&sort=expiry_date`;
+                                  const receiptsUrl = `${DIRECTUS_URL}/items/purchase_order_receiving?filter[product_id][_eq]=${compProductId}&filter[qa_status][_in]=Passed,Partially Accepted&filter[is_reverted][_eq]=0&filter[received_quantity][_gt]=0${branchFilter}&sort=expiry_date`;
                                  
                                  const receiptsRes = await fetch(receiptsUrl, { headers, cache: 'no-store' });
                                  const validReceipts = receiptsRes.ok ? (await receiptsRes.json()).data || [] : [];
@@ -445,7 +445,7 @@ export async function createJobOrder(joData: Partial<DirectusJobOrder>, salesOrd
                                          const resFilter = encodeURIComponent(JSON.stringify({
                                              _and: [
                                                  { purchase_order_receiving_id: { _in: receiptIds } },
-                                                 { jo_material_id: { job_order_id: { status: { _in: ["Proceed", "Ongoing", "On Hold"] } } } }
+                                                 { jo_material_id: { job_order_id: { status: { _in: ["Planned", "Draft", "Released", "In Progress", "Ongoing", "Proceed", "On Hold"] } } } }
                                              ]
                                          }));
                                          const resRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_materials_reservations?filter=${resFilter}&fields=purchase_order_receiving_id,reserved_quantity&limit=-1`, { headers, cache: 'no-store' });

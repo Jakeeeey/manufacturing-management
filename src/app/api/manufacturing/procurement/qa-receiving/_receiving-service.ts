@@ -691,7 +691,7 @@ export async function handleQaReceivingPost(request: Request, options: Receiving
                     });
                 };
                 for (const acceptedAllocation of line.acceptedLotAllocations) {
-                    const inventoryLotId = await saveInventory(branchId, acceptedAllocation.storageLotId, acceptedAllocation.quantity, line.item.qa_status, null);
+                    const inventoryLotId = await saveInventory(branchId, acceptedAllocation.storageLotId, acceptedAllocation.quantity, "Passed", null);
                     addPendingMovement("Passed", inventoryLotId, branchId, acceptedAllocation.storageLotId, passedMovementTypeId, acceptedAllocation.quantity, line.item.rejection_reason);
                 }
                 if (rejectedMovementTypeId) {

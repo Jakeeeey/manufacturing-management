@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { DIRECTUS_URL, headers } from "../_directus";
 import { canonicalBatchNumber } from "../_domain";
 import { handleQaReceivingPost } from "./_receiving-service";
-import { movementStockKey, sumMovementQuantitiesByLot, sumMovementQuantitiesByStock } from "../../qa-receiving/_movement-stock";
+import { movementStockKey, sumMovementQuantitiesByLot, sumMovementQuantitiesByStock, uniqueRowsByMovementStockKey } from "../../qa-receiving/_movement-stock";
 import {
     PURCHASE_ORDER_MODULE_PATHS,
     PurchaseOrderAuthorizationError,
@@ -117,7 +117,9 @@ export async function GET(request: Request) {
             );
             if (!movementRes.ok) throw new Error(`Directus error loading product movement stock: ${movementRes.status}`);
             const movementStock = sumMovementQuantitiesByStock(((await movementRes.json()).data || []) as Array<Record<string, unknown>>);
-            const rawLogs = ((json.data || []) as DirectusLotLog[])
+            const rawLogs = uniqueRowsByMovementStockKey(
+                (json.data || []) as Array<DirectusLotLog & Record<string, unknown>>
+            )
                 .map(log => ({ ...log, quantity: movementStock.get(movementStockKey(log as unknown as Record<string, unknown>)) || 0 }))
                 .filter(log => log.quantity > 0);
             const productIds = rawLogs.map((r) => typeof r.product_id === "object" && r.product_id ? r.product_id.product_id : r.product_id).filter(Boolean);
