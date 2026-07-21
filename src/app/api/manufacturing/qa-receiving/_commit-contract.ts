@@ -83,6 +83,18 @@ export interface FinalReceivingMovement {
     quantity: number;
 }
 
+export interface FinalReceivingAllocation {
+    allocationId: number;
+    lineId: number;
+    receivingLineId: number;
+    purchaseOrderReceivingId: number;
+    jobOrderId: number;
+    jobOrderMaterialId: number;
+    productId: number;
+    quantity: number;
+    inventoryLotIds: number[];
+}
+
 export interface FinalReceivingRecord {
     receivingRecordId: number;
     lineId: number;
@@ -101,6 +113,7 @@ export interface FinalReceivingRecord {
     receivedDate: string | null;
     inventoryLotIds: number[];
     qaResultIds: number[];
+    allocationIds: number[];
 }
 
 export interface ReceivingCommitResult {
@@ -113,9 +126,11 @@ export interface ReceivingCommitResult {
     workflowRevision: number;
     receivingRecordIds: number[];
     inventoryLotIds: number[];
+    allocationIds: number[];
     receiptNumbers: string[];
     receivingRecords: FinalReceivingRecord[];
     movements: FinalReceivingMovement[];
+    allocations: FinalReceivingAllocation[];
 }
 
 export type ReceivingCommitRequest = z.infer<typeof receivingCommitRequestSchema>;

@@ -65,6 +65,26 @@ const ORDER_FIELDS = [
     "workflow_revision", "approval_rule_id", "approval_requires_finance", "approval_allow_self_approval", "remark"
 ].join(",");
 
+const approvalLocks = new Map<number, Promise<void>>();
+
+async function withApprovalLock<T>(purchaseOrderId: number, operation: () => Promise<T>): Promise<T> {
+    const previous = approvalLocks.get(purchaseOrderId) || Promise.resolve();
+    let release!: () => void;
+    const current = new Promise<void>(resolve => {
+        release = resolve;
+    });
+    const queued = previous.then(() => current);
+    approvalLocks.set(purchaseOrderId, queued);
+
+    await previous;
+    try {
+        return await operation();
+    } finally {
+        release();
+        if (approvalLocks.get(purchaseOrderId) === queued) approvalLocks.delete(purchaseOrderId);
+    }
+}
+
 async function directusData<T>(path: string, message: string): Promise<T> {
     const response = await procurementDirectusFetch(path);
     if (!response.ok) throw new PurchaseOrderApprovalError(message, response.status >= 500 ? 503 : response.status);
@@ -221,7 +241,7 @@ function rollbackPayload(order: ApprovalOrder) {
     };
 }
 
-export async function submitPurchaseOrderApproval(
+async function submitPurchaseOrderApprovalUnlocked(
     id: number,
     command: ApprovalCommand,
     actor: AuthorizedPurchaseOrderUser,
@@ -365,4 +385,13 @@ export async function submitPurchaseOrderApproval(
                         : "Requested",
         workflowRevision: nextRevision
     };
+}
+
+export async function submitPurchaseOrderApproval(
+    id: number,
+    command: ApprovalCommand,
+    actor: AuthorizedPurchaseOrderUser,
+    requestedStage: ApprovalStage
+) {
+    return withApprovalLock(id, () => submitPurchaseOrderApprovalUnlocked(id, command, actor, requestedStage));
 }
