@@ -17,6 +17,7 @@ import {
     updateSupplier,
     fetchLinkedProducts
 } from "../services/procurement-api";
+import type { SupplierStatusFilter } from "../services/procurement-api";
 
 export function useProcurement(defaultTab: string = "suppliers") {
     const [activeTab, setActiveTab] = useState(defaultTab);
@@ -210,9 +211,9 @@ export function useProcurement(defaultTab: string = "suppliers") {
         }
     }, [selectedShipment]);
 
-    async function loadSuppliers() {
+    async function loadSuppliers(status: SupplierStatusFilter = activeTab === "suppliers" ? "all" : "active") {
         try {
-            const data = await fetchSuppliers();
+            const data = await fetchSuppliers(status);
             setSuppliers(data);
         } catch (e) {
             console.error(e);

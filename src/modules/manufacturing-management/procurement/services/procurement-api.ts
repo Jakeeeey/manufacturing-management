@@ -1,5 +1,7 @@
 import { Supplier, IncomingShipment, ShipmentLineItem, ShipmentExpense, RawMaterial, LinkedProduct, PSGCItem, RegisterRawMaterialPayload, PackagingVariant, BFFCatalogProduct } from "../types";
 
+export type SupplierStatusFilter = "active" | "inactive" | "all";
+
 let refreshPromise: Promise<boolean> | null = null;
 let sessionRedirecting = false;
 
@@ -66,8 +68,8 @@ async function handleResponse(res: Response, fallbackMessage: string) {
     return res.json();
 }
 
-export async function fetchSuppliers(): Promise<Supplier[]> {
-    const res = await fetchWithSessionRetry("/api/manufacturing/procurement/suppliers");
+export async function fetchSuppliers(status: SupplierStatusFilter = "active"): Promise<Supplier[]> {
+    const res = await fetchWithSessionRetry(`/api/manufacturing/procurement/suppliers?status=${status}`);
     return handleResponse(res, "Failed to fetch suppliers");
 }
 
