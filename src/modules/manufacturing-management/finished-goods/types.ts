@@ -173,11 +173,13 @@ export interface ProductVersion {
     base_quantity: number;
     uom_id?: number | null;
     expected_yield_percentage: number;
+    custom_overhead?: number | null;
     status: 'For Approval' | 'Active' | 'Inactive';
     valid_from?: string | null;
     valid_to?: string | null;
     is_active?: boolean; // legacy/compatibility
     routes?: RouteStep[];
+    overheads?: ProductOverhead[];
 }
 
 export interface RouteStep {

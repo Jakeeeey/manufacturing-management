@@ -142,7 +142,10 @@ export async function POST(request: Request) {
         if (checkCodeRes.ok) {
             const checkData = await checkCodeRes.json();
             if (checkData.data && checkData.data.length > 0) {
-                return NextResponse.json({ error: "A product with this SKU already exists. Please choose a unique SKU." }, { status: 400 });
+                return NextResponse.json({
+                    error: "A product with this SKU already exists. Please choose a unique SKU.",
+                    code: "PRODUCT_SKU_CONFLICT"
+                }, { status: 400 });
             }
         }
 
@@ -210,7 +213,23 @@ export async function POST(request: Request) {
         if (!prodRes.ok) {
             const errText = await prodRes.text();
             if (prodRes.status === 409 || /duplicate|unique constraint|unique key/i.test(errText)) {
-                return NextResponse.json({ error: "A product with this parent product and unit of measurement already exists." }, { status: 409 });
+                const skuCheckRes = await fetch(
+                    `${DIRECTUS_URL}/items/products?filter[product_code][_eq]=${encodeURIComponent(productDetails.product_code)}&limit=1`,
+                    { headers, cache: "no-store" }
+                );
+                if (skuCheckRes.ok) {
+                    const skuCheckData = await skuCheckRes.json();
+                    if (skuCheckData.data && skuCheckData.data.length > 0) {
+                        return NextResponse.json({
+                            error: "A product with this SKU already exists. Please choose a unique SKU.",
+                            code: "PRODUCT_SKU_CONFLICT"
+                        }, { status: 400 });
+                    }
+                }
+                return NextResponse.json({
+                    error: "A product with this parent product and unit of measurement already exists.",
+                    code: "PRODUCT_PARENT_UOM_CONFLICT"
+                }, { status: 409 });
             }
             throw new Error(`Directus failed to create product: ${prodRes.status} - ${errText}`);
         }
@@ -263,7 +282,7 @@ export async function POST(request: Request) {
     } catch (e) {
         console.error("API Error registering product:", e);
         if (e instanceof ProductIdentityError) {
-            return NextResponse.json({ error: e.message }, { status: e.status });
+            return NextResponse.json({ error: e.message, code: e.code }, { status: e.status });
         }
         return NextResponse.json({ error: (e as { message?: string }).message || "Failed to register product" }, { status: 500 });
     }
