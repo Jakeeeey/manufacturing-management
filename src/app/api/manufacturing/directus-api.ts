@@ -25,6 +25,7 @@ export interface DirectusProduct {
     product_name: string;
     product_code: string;
     description: string;
+    short_description?: string | null;
     unit_of_measurement: { unit_id: number; unit_name: string; unit_shortcut: string } | null;
     cost_per_unit: number;
     price_per_unit: number;

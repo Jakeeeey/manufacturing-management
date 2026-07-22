@@ -233,7 +233,8 @@ export function useFinishedGoods(initialTab: string = "details") {
                 id: String(p.product_id),
                 sku: p.product_code || `SKU-${p.product_id}`,
                 title: p.product_name,
-                description: p.description || "",
+                description: p.short_description || p.description || "",
+                identityKey: p.description || null,
                 barcode: p.barcode || "",
                 baseUom: p.unit_of_measurement?.unit_shortcut || "PCS",
                 expectedYieldPercent: 100,
@@ -530,7 +531,11 @@ export function useFinishedGoods(initialTab: string = "details") {
 
         try {
             const matchedUnit = units.find(u => u.unit_shortcut === registerForm.baseUom);
-            const unitId = matchedUnit ? matchedUnit.unit_id : (units[0]?.unit_id || 1);
+            if (!matchedUnit) {
+                toast.error("Base UOM is invalid. Please select a valid unit of measurement.");
+                return;
+            }
+            const unitId = matchedUnit.unit_id;
 
             const brandVal = registerForm.brandId ? Number(registerForm.brandId) : undefined;
             const categoryVal = registerForm.categoryId ? Number(registerForm.categoryId) : undefined;
@@ -545,7 +550,7 @@ export function useFinishedGoods(initialTab: string = "details") {
                 {
                     product_name: registerForm.title.trim(),
                     product_code: registerForm.sku.trim(),
-                    description: registerForm.description.trim(),
+                    short_description: registerForm.description.trim(),
                     barcode: registerForm.barcode.trim(),
                     price_per_unit: Number(registerForm.targetSellingPrice) || 0,
                     cost_per_unit: costPerUnitVal,
@@ -564,7 +569,7 @@ export function useFinishedGoods(initialTab: string = "details") {
                 },
                 registerForm.versionName.trim(),
                 registerForm.supplierIds.map(Number),
-                Number(registerForm.expectedYield) || 100,
+                Number(registerForm.expectedYield),
                 1,
                 unitId
             );
@@ -616,7 +621,8 @@ export function useFinishedGoods(initialTab: string = "details") {
                         id: String(p.product_id),
                         sku: p.product_code || `SKU-${p.product_id}`,
                         title: p.product_name,
-                        description: p.description || "",
+                        description: p.short_description || p.description || "",
+                        identityKey: p.description || null,
                         barcode: p.barcode || "",
                         baseUom: p.unit_of_measurement?.unit_shortcut || "PCS",
                         expectedYieldPercent: 100,
@@ -784,7 +790,7 @@ export function useFinishedGoods(initialTab: string = "details") {
                 densityFactor: editedDetails.densityFactor || 1.0,
                 productBrand: editedDetails.product_brand,
                 productCategory: editedDetails.product_category,
-                description: editedDetails.description || "",
+                shortDescription: editedDetails.description || "",
                 costPerUnit: editedDetails.cost_per_unit || 0,
                 unitOfMeasurementCount: editedDetails.unit_of_measurement_count || 0,
                 productClass: editedDetails.product_class,
@@ -813,11 +819,15 @@ export function useFinishedGoods(initialTab: string = "details") {
                 setProducts(prev => prev.map(p => {
                     if (p.id === selectedProductId) {
                         const updatedParentId = editedDetails.parent_id !== undefined ? (editedDetails.parent_id ? Number(editedDetails.parent_id) : null) : p.parent_id;
+                        const identityParent = updatedParentId ? products.find(parent => parent.id === String(updatedParentId)) : null;
+                        const identityName = identityParent?.title || editedDetails.title || p.title;
+                        const identityUom = matchedUnit?.unit_shortcut || editedDetails.baseUom || p.baseUom;
                         return {
                             ...p,
                             sku: editedDetails.sku || p.sku,
                             title: editedDetails.title || p.title,
                             description: editedDetails.description || p.description,
+                            identityKey: `${identityName} - ${identityUom.trim().toUpperCase()}`,
                             barcode: editedDetails.barcode || p.barcode,
                             baseUom: editedDetails.baseUom || p.baseUom,
                             targetSellingPrice: editedDetails.targetSellingPrice || p.targetSellingPrice,
@@ -852,6 +862,7 @@ export function useFinishedGoods(initialTab: string = "details") {
                             product_code: editedDetails.sku || p.product_code,
                             product_name: editedDetails.title || p.product_name,
                             description: editedDetails.description || p.description,
+                            short_description: editedDetails.description || p.short_description,
                             barcode: editedDetails.barcode || p.barcode,
                             price_per_unit: editedDetails.targetSellingPrice || p.price_per_unit,
                             density_factor: editedDetails.densityFactor || p.density_factor,

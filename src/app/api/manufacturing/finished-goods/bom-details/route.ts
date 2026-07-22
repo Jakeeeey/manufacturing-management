@@ -10,6 +10,11 @@ import {
     calculateRollupCost,
     updateProductStandardCost
 } from "../products/products-helper";
+import {
+    ProductIdentityError,
+    ensureProductIdentityAvailable,
+    resolveProductIdentity
+} from "../products/product-identity";
 
 export async function GET(request: Request) {
     try {
@@ -49,16 +54,29 @@ export async function POST(request: Request) {
         const numericProductId = parseInt(productId);
         const numericVersionId = parseInt(versionId);
 
+        const identity = await resolveProductIdentity({
+            productId: numericProductId,
+            productName: details.title,
+            parentId: details.parent_id,
+            unitId: details.unit_of_measurement
+        });
+        await ensureProductIdentityAvailable(identity.descriptionKey, numericProductId);
+
         // 1. Update Product Details
         const prodOk = await updateProductDetails(numericProductId, {
-            product_name: details.title,
+            product_name: identity.productName,
             product_code: details.sku,
             barcode: details.barcode,
             price_per_unit: details.targetSellingPrice,
             density_factor: details.densityFactor,
             product_brand: details.productBrand,
             product_category: details.productCategory,
-            description: details.description,
+            description: identity.descriptionKey,
+            short_description: typeof details.shortDescription === "string"
+                ? details.shortDescription.trim() || null
+                : typeof details.description === "string"
+                    ? details.description.trim() || null
+                    : null,
             cost_per_unit: details.costPerUnit,
             unit_of_measurement_count: details.unitOfMeasurementCount,
             product_class: details.productClass,
@@ -67,7 +85,8 @@ export async function POST(request: Request) {
             product_shelf_life: details.productShelfLife,
             product_image: details.productImage,
             production_capacity_per_hour: details.productionCapacityPerHour,
-            unit_of_measurement: details.unit_of_measurement
+            unit_of_measurement: identity.unitId,
+            parent_id: identity.parentId
         });
         if (!prodOk) throw new Error("Failed to update product details in Directus");
 
@@ -115,6 +134,9 @@ export async function POST(request: Request) {
         });
     } catch (e) {
         console.error("API Error saving BOM details:", e);
+        if (e instanceof ProductIdentityError) {
+            return NextResponse.json({ error: e.message }, { status: e.status });
+        }
         const error = e instanceof Error ? e : new Error(String(e));
         return NextResponse.json({ error: (error as { message?: string }).message || "Failed to save BOM details" }, { status: 500 });
     }

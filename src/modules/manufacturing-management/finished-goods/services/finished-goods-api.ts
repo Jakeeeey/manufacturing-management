@@ -42,7 +42,8 @@ export async function fetchProducts(search?: string, limit: number = 100): Promi
             id: String(p.product_id),
             sku: p.product_code || `SKU-${p.product_id}`,
             title: p.product_name,
-            description: p.description || "",
+            description: p.short_description || p.description || "",
+            identityKey: p.description || null,
             barcode: p.barcode || "",
             baseUom: p.unit_of_measurement?.unit_shortcut || "PCS",
             expectedYieldPercent: 100,
@@ -141,7 +142,7 @@ export async function saveBOMDetails(
         densityFactor?: number;
         productBrand?: number;
         productCategory?: number;
-        description?: string;
+        shortDescription?: string;
         costPerUnit?: number;
         unitOfMeasurementCount?: number;
         productClass?: number;
@@ -175,7 +176,7 @@ export async function registerProduct(
     productDetails: {
         product_name: string;
         product_code: string;
-        description?: string;
+        short_description?: string;
         barcode?: string;
         price_per_unit?: number;
         cost_per_unit?: number;
