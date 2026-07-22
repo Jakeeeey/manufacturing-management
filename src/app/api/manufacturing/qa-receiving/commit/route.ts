@@ -95,7 +95,7 @@ async function movementRowsForCommit(
 ) {
     if (expectedMovementCount === 0) return [];
 
-    const movementFields = "movement_id,product_id,lot_id,branch_id,transaction_type_id,source_document_id,source_document_no,batch_no,quantity";
+    const movementFields = "movement_id,product_id,lot_id,branch_id,transaction_type_id,source_document_id,source_document_no,batch_no,quantity,version_id";
     const sourceIdParams = new URLSearchParams({
         "filter[source_document_id][_in]": receivingIds.join(","),
         fields: movementFields,
@@ -292,6 +292,9 @@ async function persistedResult(
                 throw new CommitError(409, `${route.kind} movement for line ${line.lineId} could not be correlated uniquely.`);
             }
             const movement = matches[0];
+            if (movement.version_id !== null) {
+                throw new CommitError(409, `${route.kind} movement for line ${line.lineId} has an unexpected BOM version. Reconciliation is required.`);
+            }
             const branchId = relationId(movement.branch_id, "id");
             const productId = relationId(movement.product_id, "product_id");
             const storageLotId = relationId(movement.lot_id, "lot_id");
