@@ -11,6 +11,9 @@ import {
 import {
     fetchInventoryData,
     fetchLotsList,
+    fetchInventoryMovements,
+    fetchVersionsForProducts,
+    buildBatchesFromMovements,
     RawProduct,
     RawBranch,
     RawBatch
@@ -43,6 +46,7 @@ export function useInventoryReports() {
     const [products, setProducts] = useState<ProductLookup[]>([]);
     const [branches, setBranches] = useState<BranchLookup[]>([]);
     const [lotsList, setLotsList] = useState<LotLookup[]>([]);
+    const [versionMapState, setVersionMapState] = useState<Map<number, string>>(new Map());
 
     // Raw products state from BFF (includes UOM shortcut details)
     const [rawProducts, setRawProducts] = useState<RawProduct[]>([]);
@@ -50,14 +54,30 @@ export function useInventoryReports() {
     const loadData = useCallback(async () => {
         setLoading(true);
         try {
-            const [lotsData, invData] = await Promise.all([
+            const [lotsData, invData, movementsData] = await Promise.all([
                 fetchLotsList().catch(() => []),
-                fetchInventoryData().catch(() => ({ products: [], batches: [], branches: [] }))
+                fetchInventoryData().catch(() => ({ products: [], batches: [], branches: [] })),
+                fetchInventoryMovements().catch(() => [])
             ]);
 
             setLotsList(lotsData);
             setRawProducts(invData.products || []);
-            setBatches(invData.batches || []);
+
+            // Extract Finished Goods product IDs to fetch recipe version names
+            const fgProductIds = (invData.products || []).filter((p) => {
+                const typeVal = p.product_type;
+                const productTypeId = typeVal && typeof typeVal === "object"
+                    ? Number(typeVal.id)
+                    : (typeVal !== undefined && typeVal !== null ? Number(typeVal) : undefined);
+                return productTypeId === 388;
+            }).map(p => p.product_id);
+
+            const vMap = await fetchVersionsForProducts(fgProductIds);
+            setVersionMapState(vMap);
+
+            // Aggregate batch items strictly from inventory_movements ledger
+            const aggregatedBatches = buildBatchesFromMovements(movementsData, invData.batches || [], vMap);
+            setBatches(aggregatedBatches);
 
             // Map products for dropdown lookup options
             const mappedProducts: ProductLookup[] = (invData.products || []).map((p: RawProduct) => {
@@ -118,7 +138,9 @@ export function useInventoryReports() {
         }));
     };
 
-    // Client-side Grouping and Hierarchical Tree aggregation (Product -> Lots breakdown)
+    // Client-side Grouping and Hierarchical Tree aggregation
+    // For Finished Goods (388): 4-Level Tree (Product ➔ Version ➔ Lots ➔ Batch)
+    // For Raw Materials (389) / Packaging (390): 2-Level Tree (Product ➔ Lots / Batches)
     const groupedData = useMemo<ProductReportNode[]>(() => {
         if (rawProducts.length === 0 && batches.length === 0) return [];
 
@@ -203,7 +225,7 @@ export function useInventoryReports() {
             return true;
         });
 
-        // 2. Group filtered batches by Product ID
+        // 2. Group filtered batches into tree structures
         const productNodesMap = new Map<number, ProductReportNode>();
 
         filteredBatches.forEach((b) => {
@@ -216,7 +238,8 @@ export function useInventoryReports() {
                     productCode: matchedProduct?.product_code || `SKU-${b.product_id}`,
                     uomShortcut: productUOMMap.get(b.product_id) || "units",
                     totalAvailable: 0,
-                    lots: []
+                    versions: activeProductType === 388 ? [] : undefined,
+                    lots: activeProductType !== 388 ? [] : undefined
                 };
                 productNodesMap.set(b.product_id, node);
             }
@@ -230,13 +253,20 @@ export function useInventoryReports() {
             // Look up branch name
             const branchName = branchMap.get(b.branch_id) || `Branch #${b.branch_id}`;
 
+            const versionId = b.version_id ? Number(b.version_id) : null;
+            const versionName = b.version_name || (versionId !== null ? (versionMapState.get(versionId) || `Version #${versionId}`) : "Default Version");
+
+            const lotName = b.lot_name || lotInfo?.lotName || (lotId !== null ? `Lot #${lotId}` : "Unassigned");
+
             const lotEntry: BatchReportEntry = {
                 lineId: b.line_id,
                 productId: b.product_id,
+                versionId,
+                versionName,
                 branchId: b.branch_id,
                 branchName,
                 lotId,
-                lotName: b.lot_name || "Unassigned",
+                lotName,
                 maxBatchCapacity: maxCapacity,
                 sourceDocumentNo: b.source_reference || "N/A",
                 transactionType: b.transaction_type || (b.source_type ? String(b.source_type).replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()) : "Legacy Stock"),
@@ -249,33 +279,109 @@ export function useInventoryReports() {
                 createdOn: b.created_on || null
             };
 
-            node.lots.push(lotEntry);
+            if (activeProductType === 388) {
+                // 4-Level Grouping for Finished Goods: Product ➔ Version ➔ Lot ➔ Batch
+                if (!node.versions) node.versions = [];
+
+                let versionNode = node.versions.find(v => v.versionId === versionId || (v.versionId === null && versionId === null));
+                if (!versionNode) {
+                    versionNode = {
+                        versionId,
+                        versionName,
+                        subtotalQuantity: 0,
+                        lots: []
+                    };
+                    node.versions.push(versionNode);
+                }
+
+                let lotNode = versionNode.lots.find(l => l.lotId === lotId && l.branchId === b.branch_id);
+                if (!lotNode) {
+                    lotNode = {
+                        lotId,
+                        lotName,
+                        branchId: b.branch_id,
+                        branchName,
+                        maxBatchCapacity: maxCapacity,
+                        subtotalQuantity: 0,
+                        batches: []
+                    };
+                    versionNode.lots.push(lotNode);
+                }
+
+                lotNode.batches.push(lotEntry);
+            } else {
+                // 3-Level Grouping for Raw Materials & Packaging Items: Product ➔ Lot ➔ Batch
+                if (!node.lots) node.lots = [];
+
+                let lotNode = node.lots.find(l => l.lotId === lotId && l.branchId === b.branch_id);
+                if (!lotNode) {
+                    lotNode = {
+                        lotId,
+                        lotName,
+                        branchId: b.branch_id,
+                        branchName,
+                        maxBatchCapacity: maxCapacity,
+                        subtotalQuantity: 0,
+                        batches: []
+                    };
+                    node.lots.push(lotNode);
+                }
+
+                lotNode.batches.push(lotEntry);
+            }
         });
 
-        // 3. Finalize total available quantities per product and sort
+        // 3. Finalize totals and sort nodes recursively
         const result: ProductReportNode[] = [];
         productNodesMap.forEach((node) => {
-            // Compute Level 1 Total Stock
-            node.totalAvailable = node.lots.reduce((acc, lot) => acc + lot.quantity, 0);
+            if (activeProductType === 388 && node.versions) {
+                // 4-Level Finished Goods Subtotal Summing & Sorting
+                node.versions.forEach((ver) => {
+                    ver.lots.forEach((lot) => {
+                        lot.subtotalQuantity = lot.batches.reduce((sum, item) => sum + item.quantity, 0);
+                        // Sort batches by batch number
+                        lot.batches.sort((a, b) => a.batchNo.localeCompare(b.batchNo));
+                    });
+                    // Sort lots by branch name ➔ lot name
+                    ver.lots.sort((a, b) => {
+                        const bComp = a.branchName.localeCompare(b.branchName);
+                        if (bComp !== 0) return bComp;
+                        return a.lotName.localeCompare(b.lotName);
+                    });
+                    ver.subtotalQuantity = ver.lots.reduce((sum, l) => sum + l.subtotalQuantity, 0);
+                });
 
-            // Sort nested lots: Branch name ➔ Lot name ➔ Batch number
-            node.lots.sort((a, b) => {
-                const branchCompare = a.branchName.localeCompare(b.branchName);
-                if (branchCompare !== 0) return branchCompare;
-                const lotCompare = a.lotName.localeCompare(b.lotName);
-                if (lotCompare !== 0) return lotCompare;
-                return a.batchNo.localeCompare(b.batchNo);
-            });
+                // Sort versions by version name
+                node.versions.sort((a, b) => a.versionName.localeCompare(b.versionName));
+                node.totalAvailable = node.versions.reduce((sum, v) => sum + v.subtotalQuantity, 0);
 
-            // Filter out products with no active lots (matches the "Search method" requirement)
-            if (node.lots.length > 0) {
-                result.push(node);
+                if (node.versions.length > 0) {
+                    result.push(node);
+                }
+            } else if (node.lots) {
+                // 3-Level Raw Materials & Packaging Items Subtotal Summing & Sorting
+                node.lots.forEach((lot) => {
+                    lot.subtotalQuantity = lot.batches.reduce((sum, item) => sum + item.quantity, 0);
+                    // Sort batches by batch number
+                    lot.batches.sort((a, b) => a.batchNo.localeCompare(b.batchNo));
+                });
+                // Sort lots by branch name ➔ lot name
+                node.lots.sort((a, b) => {
+                    const bComp = a.branchName.localeCompare(b.branchName);
+                    if (bComp !== 0) return bComp;
+                    return a.lotName.localeCompare(b.lotName);
+                });
+                node.totalAvailable = node.lots.reduce((sum, l) => sum + l.subtotalQuantity, 0);
+
+                if (node.lots.length > 0) {
+                    result.push(node);
+                }
             }
         });
 
         // Sort products alphabetically by product name
         return result.sort((a, b) => a.productName.localeCompare(b.productName));
-    }, [batches, rawProducts, branches, lotsList, filters, searchQuery, activeProductType]);
+    }, [batches, rawProducts, branches, lotsList, filters, searchQuery, activeProductType, versionMapState]);
 
     return {
         filters,
