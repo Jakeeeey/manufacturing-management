@@ -1,5 +1,42 @@
 import { DIRECTUS_URL, headers } from "@/app/api/manufacturing/directus-api";
-import { ProductVersion, RouteStep, RouteBOMItem } from "@/modules/manufacturing-management/finished-goods/types";
+import { ProductVersion, RouteStep, RouteBOMItem, ProductOverhead } from "@/modules/manufacturing-management/finished-goods/types";
+
+type DirectusOverheadRelation = {
+    id?: number | string;
+    overhead_id?: number | string;
+    overhead_name?: string | null;
+};
+
+type DirectusProductOverhead = {
+    id: number | string;
+    amount?: number | string | null;
+    overhead_id?: number | string | DirectusOverheadRelation | null;
+};
+
+type VersionSelectionCandidate = {
+    version_name?: unknown;
+    status?: unknown;
+};
+
+export function isStandardBOMVersion(version: VersionSelectionCandidate) {
+    const normalizedName = String(version.version_name ?? "")
+        .trim()
+        .toLowerCase()
+        .replace(/[._-]+/g, " ")
+        .replace(/\s+/g, " ");
+
+    return normalizedName === "v1"
+        || normalizedName === "v1 0"
+        || normalizedName === "version 1"
+        || normalizedName === "version 1 0"
+        || normalizedName === "standard bom version 1"
+        || normalizedName === "standard bom version 1 0";
+}
+
+export function selectPreferredActiveVersion<T extends VersionSelectionCandidate>(versions: T[]) {
+    const activeVersions = versions.filter(version => String(version.status ?? "").toLowerCase() === "active");
+    return activeVersions.find(isStandardBOMVersion) || activeVersions[0] || null;
+}
 
 export async function getBOMDetailsForVersion(productId: number, versionId: number): Promise<{
     version: ProductVersion | null;
@@ -61,6 +98,37 @@ export async function getBOMDetailsForVersion(productId: number, versionId: numb
 
             return { version: null, routes: [] };
         }
+
+        version.custom_overhead = Number(version.custom_overhead ?? 0);
+
+        const overheadFilter = encodeURIComponent(JSON.stringify({
+            _and: [
+                { product_id: { _eq: productId } },
+                { version_id: { _eq: version.version_id } }
+            ]
+        }));
+        const overheadRes = await fetch(
+            `${DIRECTUS_URL}/items/product_overheads?filter=${overheadFilter}&fields=*,overhead_id.*&limit=-1`,
+            { headers, cache: "no-store" }
+        );
+        const overheadData = overheadRes.ok ? (await overheadRes.json()).data || [] : [];
+        version.overheads = overheadData
+            .map((item: DirectusProductOverhead): ProductOverhead | null => {
+                const relation = item.overhead_id;
+                const overheadId = typeof relation === "object" && relation !== null
+                    ? Number(relation.id ?? relation.overhead_id ?? 0)
+                    : Number(relation ?? 0);
+                if (!Number.isFinite(overheadId) || overheadId <= 0) return null;
+                return {
+                    id: String(item.id),
+                    overheadId,
+                    overheadName: typeof relation === "object" && relation !== null
+                        ? String(relation.overhead_name ?? "")
+                        : "",
+                    amount: Number(item.amount ?? 0)
+                };
+            })
+            .filter((item: ProductOverhead | null): item is ProductOverhead => item !== null);
 
         const routesFilter = encodeURIComponent(JSON.stringify({ version_id: { _eq: version.version_id } }));
         const resRoutes = await fetch(`${DIRECTUS_URL}/items/manufacturing_routes?filter=${routesFilter}&sort=sequence_order&limit=-1`, { headers, cache: "no-store" });
@@ -126,10 +194,10 @@ export async function getActiveVersionForProduct(productId: number, customerId?:
                 product_id: { _eq: productId },
                 status: { _eq: "Active" }
             }));
-            const resVer = await fetch(`${DIRECTUS_URL}/items/product_manufacturing_version?filter=${filter}&limit=1`, { headers, cache: "no-store" });
+            const resVer = await fetch(`${DIRECTUS_URL}/items/product_manufacturing_version?filter=${filter}&limit=-1`, { headers, cache: "no-store" });
             if (resVer.ok) {
                 const verJson = await resVer.json();
-                version = verJson.data?.[0] || null;
+                version = selectPreferredActiveVersion<ProductVersion>(verJson.data || []);
             }
         }
 

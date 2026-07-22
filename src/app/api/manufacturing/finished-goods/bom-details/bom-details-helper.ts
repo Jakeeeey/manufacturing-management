@@ -18,7 +18,12 @@ export async function updateProductVersionOverhead(versionId: number, customOver
     }
 }
 
-export async function saveActiveBOMDetails(versionId: number, expectedYield: number, baseQuantity: number = 1): Promise<boolean> {
+export async function saveActiveBOMDetails(
+    versionId: number,
+    expectedYield: number,
+    baseQuantity: number = 1,
+    customOverhead: number = 0
+): Promise<{ ok: boolean; error?: string }> {
     try {
         const url = `${DIRECTUS_URL}/items/product_manufacturing_version/${versionId}`;
         const res = await fetch(url, {
@@ -26,13 +31,37 @@ export async function saveActiveBOMDetails(versionId: number, expectedYield: num
             headers,
             body: JSON.stringify({
                 expected_yield_percentage: expectedYield,
-                base_quantity: baseQuantity
+                base_quantity: baseQuantity,
+                custom_overhead: customOverhead
             })
         });
-        return res.ok;
+        if (!res.ok) {
+            return { ok: false, error: `Directus version update failed (${res.status})` };
+        }
+
+        const verifyRes = await fetch(url, { headers, cache: "no-store" });
+        if (!verifyRes.ok) {
+            return { ok: false, error: "Directus version update could not be verified" };
+        }
+
+        const saved = (await verifyRes.json()).data || {};
+        const valuesMatch = [
+            ["expected yield", expectedYield, Number(saved.expected_yield_percentage)],
+            ["base quantity", baseQuantity, Number(saved.base_quantity)],
+            ["custom overhead", customOverhead, Number(saved.custom_overhead)]
+        ].every(([, expected, actual]) => Number.isFinite(actual) && Math.abs(Number(expected) - Number(actual)) < 0.000001);
+
+        if (!valuesMatch) {
+            return {
+                ok: false,
+                error: "Directus did not persist the expected yield, base quantity, or custom overhead values"
+            };
+        }
+
+        return { ok: true };
     } catch (e) {
         console.error("[Manufacturing Directus API] Failed saving version details:", e);
-        return false;
+        return { ok: false, error: "Failed to save version metadata in Directus" };
     }
 }
 

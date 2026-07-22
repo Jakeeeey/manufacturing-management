@@ -24,9 +24,9 @@ export async function GET(request: Request) {
             id: v.version_id, // compatibility
             product_id: productId,
             version_name: v.version_name || `Version #${v.version_id}`,
-            base_quantity: v.base_quantity || 1,
-            uom_id: v.uom_id || null,
-            expected_yield_percentage: v.expected_yield_percentage || 100,
+            base_quantity: v.base_quantity ?? 1,
+            uom_id: v.uom_id ?? null,
+            expected_yield_percentage: v.expected_yield_percentage ?? 100,
             status: v.status || "For Approval",
             valid_from: v.valid_from || null,
             valid_to: v.valid_to || null,
@@ -50,8 +50,14 @@ export async function POST(request: Request) {
         }
 
         const numericProductId = parseInt(productId);
-        const yieldPercent = Number(expectedYield) || 100;
-        const bQty = Number(baseQuantity) || 1;
+        const yieldPercent = expectedYield === undefined || expectedYield === null ? 100 : Number(expectedYield);
+        const bQty = baseQuantity === undefined || baseQuantity === null ? 1 : Number(baseQuantity);
+        if (!Number.isFinite(yieldPercent) || yieldPercent <= 0 || yieldPercent > 100) {
+            return NextResponse.json({ error: "Expected yield must be between 1 and 100." }, { status: 400 });
+        }
+        if (!Number.isFinite(bQty) || bQty <= 0) {
+            return NextResponse.json({ error: "Base quantity must be greater than 0." }, { status: 400 });
+        }
         const uId = uomId ? Number(uomId) : null;
         const today = new Date().toISOString().split("T")[0];
 

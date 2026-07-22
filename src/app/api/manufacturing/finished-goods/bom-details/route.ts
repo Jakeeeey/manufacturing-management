@@ -8,7 +8,8 @@ import {
 import {
     updateProductDetails,
     calculateRollupCost,
-    updateProductStandardCost
+    updateProductStandardCost,
+    syncProductOverheads
 } from "../products/products-helper";
 import {
     ProductIdentityError,
@@ -45,7 +46,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
     try {
         const body = await request.json();
-        const { productId, versionId, details, routes } = body;
+        const { productId, versionId, details, routes = [], overheads } = body;
 
         if (!productId || !versionId) {
             return NextResponse.json({ error: "Missing productId or versionId" }, { status: 400 });
@@ -53,6 +54,20 @@ export async function POST(request: Request) {
 
         const numericProductId = parseInt(productId);
         const numericVersionId = parseInt(versionId);
+
+        const expectedYield = Number(details.expected_yield_percentage ?? details.expectedYieldPercent);
+        const baseQuantity = Number(details.base_quantity ?? 1);
+        const customOverhead = Number(details.custom_overhead ?? details.customOverhead ?? 0);
+
+        if (!Number.isFinite(expectedYield) || expectedYield <= 0 || expectedYield > 100) {
+            return NextResponse.json({ error: "Expected yield must be between 1 and 100." }, { status: 400 });
+        }
+        if (!Number.isFinite(baseQuantity) || baseQuantity <= 0) {
+            return NextResponse.json({ error: "Base quantity must be greater than 0." }, { status: 400 });
+        }
+        if (!Number.isFinite(customOverhead) || customOverhead < 0) {
+            return NextResponse.json({ error: "Custom overhead must be 0 or greater." }, { status: 400 });
+        }
 
         const identity = await resolveProductIdentity({
             productId: numericProductId,
@@ -91,12 +106,15 @@ export async function POST(request: Request) {
         if (!prodOk) throw new Error("Failed to update product details in Directus");
 
         // 2. Save version metadata (expected yield and base quantity)
-        const versionOk = await saveActiveBOMDetails(
+        const versionResult = await saveActiveBOMDetails(
             numericVersionId,
-            details.expected_yield_percentage || details.expectedYieldPercent || 100,
-            details.base_quantity || 1
+            expectedYield,
+            baseQuantity,
+            customOverhead
         );
-        if (!versionOk) throw new Error("Failed to update version metadata in Directus");
+        if (!versionResult.ok) {
+            throw new Error(versionResult.error || "Failed to update version metadata in Directus");
+        }
 
         // Get logged in user ID from secure access token cookie
         let userId: number | null = null;
@@ -121,6 +139,11 @@ export async function POST(request: Request) {
         // 3. Sync routes and their route-level BOM items
         const syncOk = await syncRoutesAndBOM(numericVersionId, routes, userId ? Number(userId) : null);
         if (!syncOk) throw new Error("Failed to sync routes and route-level BOM items in Directus");
+
+        if (Array.isArray(overheads)) {
+            const overheadOk = await syncProductOverheads(numericProductId, numericVersionId, overheads);
+            if (!overheadOk) throw new Error("Failed to sync product overheads in Directus");
+        }
 
         // 4. Run standard rollup costing recalculation and save to product standard cost field
         const rollupResult = await calculateRollupCost(numericProductId);

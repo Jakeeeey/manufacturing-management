@@ -13,6 +13,7 @@ import {
     salesOrderPostSchema,
     validationIssues
 } from "./_validation";
+import { selectPreferredActiveVersion } from "../finished-goods/versions/versions-helper";
 
 const DIRECTUS_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://vtc:8074";
 const DIRECTUS_STATIC_TOKEN = process.env.DIRECTUS_STATIC_TOKEN || "";
@@ -58,6 +59,57 @@ class ApiError extends Error {
     constructor(public status: number, message: string, public details?: Record<string, unknown>) {
         super(message);
     }
+}
+
+async function resolveCustomerProductVersions(customerId: number, productIds: number[]) {
+    const uniqueProductIds = [...new Set(productIds)];
+    const overrideParams = new URLSearchParams({
+        "filter[customer_id][_eq]": String(customerId),
+        "filter[product_id][_in]": uniqueProductIds.join(","),
+        fields: "product_id,version_id",
+        limit: "-1"
+    });
+    const overrideRes = await fetch(`${DIRECTUS_URL}/items/customer_product_version?${overrideParams.toString()}`, { headers, cache: "no-store" });
+    if (!overrideRes.ok) throw new ApiError(503, "Unable to check customer product versions.");
+    const overrides = (await overrideRes.json()).data || [];
+    const overrideByProduct = new Map<number, number>(
+        overrides.map((override: any) => [Number(override.product_id), Number(override.version_id)])
+    );
+    const overrideVersionIds = [...new Set(
+        overrides.map((override: any) => Number(override.version_id)).filter((id: number) => Number.isSafeInteger(id) && id > 0)
+    )];
+
+    const versionParams = new URLSearchParams({
+        fields: "version_id,product_id,version_name,status",
+        limit: "-1"
+    });
+    if (overrideVersionIds.length > 0) {
+        versionParams.set("filter[_or][0][version_id][_in]", overrideVersionIds.join(","));
+        versionParams.set("filter[_or][1][product_id][_in]", uniqueProductIds.join(","));
+    } else {
+        versionParams.set("filter[product_id][_in]", uniqueProductIds.join(","));
+    }
+    const versionRes = await fetch(`${DIRECTUS_URL}/items/product_manufacturing_version?${versionParams.toString()}`, { headers, cache: "no-store" });
+    if (!versionRes.ok) throw new ApiError(503, "Unable to resolve product BOM versions.");
+    const versions = (await versionRes.json()).data || [];
+    const versionsById = new Map<number, any>(versions.map((version: any) => [Number(version.version_id), version]));
+    const versionsByProduct = new Map<number, any[]>();
+    for (const version of versions) {
+        const productId = Number(version.product_id);
+        const productVersions = versionsByProduct.get(productId) || [];
+        productVersions.push(version);
+        versionsByProduct.set(productId, productVersions);
+    }
+
+    const resolved = new Map<number, number>();
+    for (const productId of uniqueProductIds) {
+        const overrideId = overrideByProduct.get(productId);
+        const overrideVersion = overrideId ? versionsById.get(overrideId) : null;
+        const preferredVersion = selectPreferredActiveVersion(versionsByProduct.get(productId) || []);
+        const version = overrideVersion || preferredVersion;
+        if (version) resolved.set(productId, Number(version.version_id));
+    }
+    return resolved;
 }
 
 interface AuthenticatedUser {
@@ -718,18 +770,9 @@ export async function POST(request: Request) {
                 throw new ApiError(400, `Unknown or non-finished-good product IDs: ${invalidProductIds.join(", ")}`);
             }
 
-            // Customer product version check
+            // Resolve an explicit customer override, then Standard BOM Version 1, then a legacy active version.
             const actualCustomerId = Number(cust.id);
-            const versionParams = new URLSearchParams({
-                "filter[customer_id][_eq]": String(actualCustomerId),
-                "filter[product_id][_in]": productIds.join(","),
-                fields: "product_id,version_id",
-                limit: "-1"
-            });
-            const versionRes = await fetch(`${DIRECTUS_URL}/items/customer_product_version?${versionParams.toString()}`, { headers, cache: "no-store" });
-            if (!versionRes.ok) throw new ApiError(503, "Unable to check customer product versions.");
-            const versionsData = (await versionRes.json()).data || [];
-            const versionMap = new Map(versionsData.map((v: any) => [Number(v.product_id), Number(v.version_id)]));
+            const versionMap = await resolveCustomerProductVersions(actualCustomerId, productIds);
 
             const missingVersionProductNames: string[] = [];
             for (const productId of productIds) {
@@ -739,7 +782,7 @@ export async function POST(request: Request) {
                 }
             }
             if (missingVersionProductNames.length > 0) {
-                throw new ApiError(400, `Customer product version is not set up for: ${missingVersionProductNames.join(", ")}. Please configure them before ordering.`);
+                throw new ApiError(400, `No active BOM version is available for: ${missingVersionProductNames.join(", ")}. Configure Standard BOM Version 1 or another active version before ordering.`);
             }
 
             // 2. Reserve a collision-safe number using the allocator's auto-increment key.
@@ -854,7 +897,7 @@ export async function POST(request: Request) {
             actualQuoteCustomerId = Number(cust.id);
         }
 
-        // Customer product version check for quotation items
+        // Resolve an explicit customer override, then Standard BOM Version 1, then a legacy active version.
         const quoteProductIds = quoteItems.map((item: any) => Number(item.product_id));
         const quoteProductParams = new URLSearchParams({
             "filter[product_id][_in]": quoteProductIds.join(","),
@@ -865,16 +908,7 @@ export async function POST(request: Request) {
         const quoteProductsData = quoteProductRes.ok ? (await quoteProductRes.json()).data || [] : [];
         const quoteProductMap = new Map<number, any>(quoteProductsData.map((p: any) => [Number(p.product_id), p]));
 
-        const quoteVersionParams = new URLSearchParams({
-            "filter[customer_id][_eq]": String(actualQuoteCustomerId),
-            "filter[product_id][_in]": quoteProductIds.join(","),
-            fields: "product_id,version_id",
-            limit: "-1"
-        });
-        const quoteVersionRes = await fetch(`${DIRECTUS_URL}/items/customer_product_version?${quoteVersionParams.toString()}`, { headers, cache: "no-store" });
-        if (!quoteVersionRes.ok) throw new ApiError(503, "Unable to check customer product versions.");
-        const quoteVersionsData = (await quoteVersionRes.json()).data || [];
-        const quoteVersionMap = new Map(quoteVersionsData.map((v: any) => [Number(v.product_id), Number(v.version_id)]));
+        const quoteVersionMap = await resolveCustomerProductVersions(actualQuoteCustomerId, quoteProductIds);
 
         const missingQuoteVersionProductNames: string[] = [];
         for (const productId of quoteProductIds) {
@@ -884,7 +918,7 @@ export async function POST(request: Request) {
             }
         }
         if (missingQuoteVersionProductNames.length > 0) {
-            throw new ApiError(400, `Customer product version is not set up for: ${missingQuoteVersionProductNames.join(", ")}. Please configure them before ordering.`);
+            throw new ApiError(400, `No active BOM version is available for: ${missingQuoteVersionProductNames.join(", ")}. Configure Standard BOM Version 1 or another active version before ordering.`);
         }
 
         // 4. Create Sales Order
