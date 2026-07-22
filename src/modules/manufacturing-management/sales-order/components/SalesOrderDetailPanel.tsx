@@ -93,17 +93,17 @@ export function SalesOrderDetailPanel({
     const isEditable = selectedOrder.order_status === "Draft" || selectedOrder.order_status === "Pending";
 
     return (
-        <div className="border border-slate-200/80 rounded-2xl bg-card p-6 shadow-sm space-y-6 border-t-2 border-t-indigo-600">
+        <div className="border border-border/80 rounded-2xl bg-card p-6 shadow-sm space-y-6 border-t-2 border-t-indigo-600">
             {/* Header info */}
-            <div className="flex justify-between items-start border-b border-slate-100 pb-4">
+            <div className="flex justify-between items-start border-b border-border pb-4">
                 <div>
                     <div className="flex items-center gap-2.5">
-                        <h4 className="text-sm font-black text-slate-900 uppercase tracking-wider">
+                        <h4 className="text-sm font-black text-foreground uppercase tracking-wider">
                             {selectedOrder.order_no}
                         </h4>
                         <span className={`inline-flex px-2 py-0.5 rounded-full text-[8.5px] font-black uppercase tracking-wider ${
                             selectedOrder.order_status === "Draft"
-                                ? "bg-slate-100 text-slate-700 border border-slate-200"
+                                ? "bg-muted text-foreground border border-border"
                                 : selectedOrder.order_status === "Pending"
                                 ? "bg-sky-50 text-sky-700 border border-sky-200/60"
                                 : selectedOrder.order_status === "For Approval"
@@ -117,22 +117,22 @@ export function SalesOrderDetailPanel({
                 </div>
                 <button
                     onClick={() => setSelectedOrder(null)}
-                    className="text-slate-400 hover:text-slate-600 text-xs font-bold px-2.5 py-1.5 rounded-lg hover:bg-slate-100 transition-all cursor-pointer border-none bg-transparent"
+                    className="text-muted-foreground hover:text-muted-foreground text-xs font-bold px-2.5 py-1.5 rounded-lg hover:bg-muted transition-all cursor-pointer border-none bg-transparent"
                 >
                     Close
                 </button>
             </div>
 
             {/* Metadata Grid */}
-            <div className="grid grid-cols-2 gap-3.5 bg-slate-50/50 p-4.5 rounded-xl border border-slate-200/60 text-xs">
+            <div className="grid grid-cols-2 gap-3.5 bg-muted/50 p-4.5 rounded-xl border border-border/60 text-xs">
                 <div className="space-y-1 col-span-2">
-                    <span className="text-slate-400 block text-[9.5px] font-bold uppercase tracking-wider">Customer</span>
-                    <span className="font-extrabold text-slate-800 flex items-center gap-2">
+                    <span className="text-muted-foreground block text-[9.5px] font-bold uppercase tracking-wider">Customer</span>
+                    <span className="font-extrabold text-foreground flex items-center gap-2">
                         <Building2 className="h-4 w-4 text-indigo-500" />
                         {selectedOrder.customer_name ? (
                             <span>
                                 {selectedOrder.customer_name}{" "}
-                                <span className="text-[9.5px] font-mono text-slate-400 font-normal">({selectedOrder.customer_code})</span>
+                                <span className="text-[9.5px] font-mono text-muted-foreground font-normal">({selectedOrder.customer_code})</span>
                             </span>
                         ) : (
                             selectedOrder.customer_code
@@ -141,22 +141,22 @@ export function SalesOrderDetailPanel({
                 </div>
                 
                 <div className="space-y-1">
-                    <span className="text-slate-400 block text-[9.5px] font-bold uppercase tracking-wider">PO Number</span>
-                    <span className="font-bold text-slate-800 flex items-center gap-2">
-                        <FileText className="h-4 w-4 text-slate-400" />
-                        {selectedOrder.po_no || <span className="text-slate-400 italic font-normal">N/A</span>}
+                    <span className="text-muted-foreground block text-[9.5px] font-bold uppercase tracking-wider">PO Number</span>
+                    <span className="font-bold text-foreground flex items-center gap-2">
+                        <FileText className="h-4 w-4 text-muted-foreground" />
+                        {selectedOrder.po_no || <span className="text-muted-foreground italic font-normal">N/A</span>}
                     </span>
                 </div>
 
                 <div className="space-y-1">
-                    <span className="text-slate-400 block text-[9.5px] font-bold uppercase tracking-wider">Payment Terms</span>
-                    <span className="font-bold text-slate-800 flex items-center gap-2">
-                        <CreditCard className="h-4 w-4 text-slate-400" />
+                    <span className="text-muted-foreground block text-[9.5px] font-bold uppercase tracking-wider">Payment Terms</span>
+                    <span className="font-bold text-foreground flex items-center gap-2">
+                        <CreditCard className="h-4 w-4 text-muted-foreground" />
                         {selectedOrder.payment_term_name ? (
                             <span className="truncate">
                                 {selectedOrder.payment_term_name}
                                 {selectedOrder.payment_term_days !== undefined && selectedOrder.payment_term_days !== null && (
-                                    <span className="text-[9.5px] text-slate-400 font-normal">
+                                    <span className="text-[9.5px] text-muted-foreground font-normal">
                                         {" "}({selectedOrder.payment_term_days}d)
                                     </span>
                                 )}
@@ -168,25 +168,25 @@ export function SalesOrderDetailPanel({
                 </div>
 
                 <div className="space-y-1">
-                    <span className="text-slate-400 block text-[9.5px] font-bold uppercase tracking-wider">Order Date</span>
-                    <span className="font-bold text-slate-800 flex items-center gap-2">
-                        <Calendar className="h-4 w-4 text-slate-400" />
+                    <span className="text-muted-foreground block text-[9.5px] font-bold uppercase tracking-wider">Order Date</span>
+                    <span className="font-bold text-foreground flex items-center gap-2">
+                        <Calendar className="h-4 w-4 text-muted-foreground" />
                         {selectedOrder.order_date ? new Date(selectedOrder.order_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "N/A"}
                     </span>
                 </div>
 
                 <div className="space-y-1">
-                    <span className="text-slate-400 block text-[9.5px] font-bold uppercase tracking-wider">Delivery Date</span>
-                    <span className="font-bold text-slate-800 flex items-center gap-2">
-                        <Calendar className="h-4 w-4 text-slate-400" />
-                        {selectedOrder.delivery_date ? new Date(selectedOrder.delivery_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : <span className="text-slate-400 italic font-normal">N/A</span>}
+                    <span className="text-muted-foreground block text-[9.5px] font-bold uppercase tracking-wider">Delivery Date</span>
+                    <span className="font-bold text-foreground flex items-center gap-2">
+                        <Calendar className="h-4 w-4 text-muted-foreground" />
+                        {selectedOrder.delivery_date ? new Date(selectedOrder.delivery_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : <span className="text-muted-foreground italic font-normal">N/A</span>}
                     </span>
                 </div>
 
                 {selectedOrder.remarks && (
-                    <div className="space-y-1 col-span-2 pt-3 border-t border-slate-200/60 border-dashed mt-1.5">
-                        <span className="text-slate-400 block text-[9.5px] font-bold uppercase tracking-wider">Remarks / Notes</span>
-                        <p className="text-[11px] text-slate-500 leading-relaxed italic">
+                    <div className="space-y-1 col-span-2 pt-3 border-t border-border/60 border-dashed mt-1.5">
+                        <span className="text-muted-foreground block text-[9.5px] font-bold uppercase tracking-wider">Remarks / Notes</span>
+                        <p className="text-[11px] text-muted-foreground leading-relaxed italic">
                             &ldquo;{selectedOrder.remarks}&rdquo;
                         </p>
                     </div>
@@ -196,7 +196,7 @@ export function SalesOrderDetailPanel({
             {/* Line items section */}
             <div className="space-y-3.5">
                 <div className="flex items-center justify-between">
-                    <h5 className="text-[9.5px] font-extrabold uppercase text-slate-400 tracking-wider">
+                    <h5 className="text-[9.5px] font-extrabold uppercase text-muted-foreground tracking-wider">
                         Agreement Line Items
                     </h5>
                     {hasChanges && (
@@ -207,12 +207,12 @@ export function SalesOrderDetailPanel({
                 </div>
 
                 {loadingDetails ? (
-                    <div className="flex flex-col items-center justify-center p-12 gap-2 border border-dashed rounded-xl bg-slate-50/50">
+                    <div className="flex flex-col items-center justify-center p-12 gap-2 border border-dashed rounded-xl bg-muted/50">
                         <Loader2 className="h-5 w-5 animate-spin text-indigo-600" />
                         <span className="text-[10px] text-muted-foreground font-semibold">Fetching agreement items...</span>
                     </div>
                 ) : orderDetails.length === 0 ? (
-                    <div className="text-center p-8 border border-dashed rounded-xl bg-slate-50/50 text-xs text-muted-foreground italic">
+                    <div className="text-center p-8 border border-dashed rounded-xl bg-muted/50 text-xs text-muted-foreground italic">
                         No items logged in detail.
                     </div>
                 ) : (
@@ -236,17 +236,17 @@ export function SalesOrderDetailPanel({
                             return (
                                 <div 
                                     key={item.detail_id} 
-                                    className={`border rounded-xl p-4 bg-white flex flex-col justify-between gap-3 transition-all duration-200 ${
+                                    className={`border rounded-xl p-4 bg-background flex flex-col justify-between gap-3 transition-all duration-200 ${
                                         isChanged 
                                             ? "border-l-4 border-l-amber-500 border-y-amber-200 border-r-amber-200 bg-amber-500/[0.01] shadow-xs" 
-                                            : "border-slate-200/80 hover:border-slate-300 hover:shadow-xs"
+                                            : "border-border/80 hover:border-border hover:shadow-xs"
                                     }`}
                                 >
                                     <div className="flex items-start justify-between gap-2.5">
                                         <div className="space-y-1.5">
-                                            <div className="text-xs font-bold text-slate-800 leading-snug">{name}</div>
+                                            <div className="text-xs font-bold text-foreground leading-snug">{name}</div>
                                             <div className="flex flex-wrap items-center gap-1.5">
-                                                <span className="text-[9px] font-mono bg-slate-100 border border-slate-200 px-1.5 py-0.2 rounded text-slate-600 uppercase font-semibold">
+                                                <span className="text-[9px] font-mono bg-muted border border-border px-1.5 py-0.2 rounded text-muted-foreground uppercase font-semibold">
                                                     {code}
                                                 </span>
                                                 {hasBomVersion ? (
@@ -254,7 +254,7 @@ export function SalesOrderDetailPanel({
                                                         {bomVersionName}
                                                     </span>
                                                 ) : (
-                                                    <span className="text-[9px] bg-slate-100 text-slate-500 border border-slate-200 px-1.5 py-0.2 rounded font-medium italic">
+                                                    <span className="text-[9px] bg-muted text-muted-foreground border border-border px-1.5 py-0.2 rounded font-medium italic">
                                                         No Version
                                                     </span>
                                                 )}
@@ -264,14 +264,14 @@ export function SalesOrderDetailPanel({
                                                     </span>
                                                 )}
                                                 {category !== "N/A" && (
-                                                    <span className="text-[9px] bg-slate-100 px-1.5 py-0.2 rounded text-slate-500 font-semibold">
+                                                    <span className="text-[9px] bg-muted px-1.5 py-0.2 rounded text-muted-foreground font-semibold">
                                                         {category}
                                                     </span>
                                                 )}
                                             </div>
                                         </div>
                                         <div className="text-right shrink-0">
-                                            <div className="text-xs font-black text-slate-900 font-mono">
+                                            <div className="text-xs font-black text-foreground font-mono">
                                                 ₱{totalCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                             </div>
                                             <div className="text-[9px] text-muted-foreground font-semibold mt-0.5">
@@ -280,8 +280,8 @@ export function SalesOrderDetailPanel({
                                         </div>
                                     </div>
 
-                                    <div className="flex items-center justify-between pt-2.5 border-t border-slate-100 border-dashed">
-                                        <span className="text-[9.5px] text-slate-400 font-bold uppercase tracking-wider">
+                                    <div className="flex items-center justify-between pt-2.5 border-t border-border border-dashed">
+                                        <span className="text-[9.5px] text-muted-foreground font-bold uppercase tracking-wider">
                                             Quantity
                                         </span>
                                         <div className="flex items-center gap-2.5">
@@ -295,7 +295,7 @@ export function SalesOrderDetailPanel({
                                                     <button
                                                         type="button"
                                                         onClick={() => decrementQty(item.detail_id, currentQty)}
-                                                        className="h-7 w-7 rounded-l-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 flex items-center justify-center transition-all font-bold cursor-pointer"
+                                                        className="h-7 w-7 rounded-l-lg border border-border bg-background hover:bg-muted text-muted-foreground flex items-center justify-center transition-all font-bold cursor-pointer"
                                                     >
                                                         <Minus className="h-3.5 w-3.5" />
                                                     </button>
@@ -319,19 +319,19 @@ export function SalesOrderDetailPanel({
                                                                  }));
                                                             }
                                                         }}
-                                                        className="w-12 h-7 text-center border-y border-slate-200 bg-white text-slate-800 text-xs font-mono font-bold focus:ring-0 focus:outline-none"
+                                                        className="w-12 h-7 text-center border-y border-border bg-background text-foreground text-xs font-mono font-bold focus:ring-0 focus:outline-none"
                                                     />
                                                     <button
                                                         type="button"
                                                         onClick={() => incrementQty(item.detail_id, currentQty)}
-                                                        className="h-7 w-7 rounded-r-lg border border-slate-200 border-l-0 bg-white hover:bg-slate-50 text-slate-600 flex items-center justify-center transition-all font-bold cursor-pointer"
+                                                        className="h-7 w-7 rounded-r-lg border border-border border-l-0 bg-background hover:bg-muted text-muted-foreground flex items-center justify-center transition-all font-bold cursor-pointer"
                                                     >
                                                         <Plus className="h-3.5 w-3.5" />
                                                     </button>
                                                 </div>
                                             ) : (
-                                                <span className="text-xs font-extrabold text-slate-850 font-mono">
-                                                    {item.ordered_quantity} <span className="text-[10px] text-slate-400 font-normal">{uom}</span>
+                                                <span className="text-xs font-extrabold text-foreground font-mono">
+                                                    {item.ordered_quantity} <span className="text-[10px] text-muted-foreground font-normal">{uom}</span>
                                                 </span>
                                             )}
                                         </div>
@@ -344,9 +344,9 @@ export function SalesOrderDetailPanel({
             </div>
 
             {/* Financial Breakdown card */}
-            <div className="bg-slate-900 text-slate-100 rounded-xl p-4.5 space-y-3 shadow-md relative overflow-hidden">
+            <div className="bg-slate-900 dark:bg-slate-800/80 text-slate-100 dark:text-slate-200 border dark:border-slate-700/50 rounded-xl p-4.5 space-y-3 shadow-md relative overflow-hidden">
                 <div className="flex justify-between items-center text-xs">
-                    <span className="text-slate-400 font-medium">Subtotal Gross</span>
+                    <span className="text-muted-foreground font-medium">Subtotal Gross</span>
                     <span className="font-bold font-mono">
                         ₱{grossSum.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                     </span>
@@ -359,7 +359,7 @@ export function SalesOrderDetailPanel({
                         </span>
                     </div>
                 ) : null}
-                <div className="border-t border-slate-800 my-2 pt-3 flex justify-between items-center">
+                <div className="border-t border-slate-800 dark:border-slate-700 my-2 pt-3 flex justify-between items-center">
                     <span className="text-xs font-extrabold uppercase tracking-wider text-slate-300">
                         Net Amount Locked
                     </span>
@@ -394,7 +394,7 @@ export function SalesOrderDetailPanel({
                             className={`w-full inline-flex items-center justify-center gap-2 rounded-xl py-3 text-xs font-bold shadow-sm transition-all cursor-pointer ${
                                 hasChanges 
                                     ? "bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-600 active:scale-[0.98] shadow-md shadow-emerald-500/10 hover:shadow-emerald-500/25"
-                                    : "border border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed opacity-75"
+                                    : "border border-border bg-muted text-muted-foreground cursor-not-allowed opacity-75"
                             }`}
                             title={hasChanges ? "Save changes and update status" : "No quantity changes to save"}
                         >
@@ -426,7 +426,7 @@ export function SalesOrderDetailPanel({
                     <button
                         type="button"
                         onClick={() => setIsAllocationModalOpen(true)}
-                        className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-600/40 text-emerald-600 bg-emerald-50 hover:bg-emerald-100/50 py-3 text-xs font-bold transition-all cursor-pointer active:scale-[0.98] shadow-sm shadow-emerald-500/5"
+                        className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-600/40 dark:border-emerald-800/60 text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 hover:bg-emerald-100/50 dark:hover:bg-emerald-900/40 py-3 text-xs font-bold transition-all cursor-pointer active:scale-[0.98] shadow-sm shadow-emerald-500/5"
                     >
                         <ShieldCheck className="h-4 w-4" />
                         Check FIFO Lot Allocation

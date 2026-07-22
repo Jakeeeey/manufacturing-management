@@ -1,6 +1,7 @@
 /* eslint-disable */
 import { DIRECTUS_URL, headers } from "./shared";
 import { getActiveVersionForProduct } from "../../finished-goods/versions/versions-helper";
+import { movementStockKey, sumMovementQuantitiesByStock, uniqueRowsByMovementStockKey } from "../../qa-receiving/_movement-stock";
 
 export async function getProductInventoryAndSafetyStock(productIds: number[], branchId: number) {
     if (!branchId) {
@@ -17,20 +18,11 @@ export async function getProductInventoryAndSafetyStock(productIds: number[], br
             _and: [
                 ...(productIds.length > 0 ? [{ product_id: { _in: productIds } }] : []),
                 { branch_id: { _eq: bId } },
-                { qa_status: { _eq: "Passed" } }
+                { qa_status: { _in: ["Passed", "Partially Accepted"] } }
             ]
         }));
         const lotsRes = await fetch(`${DIRECTUS_URL}/items/inventory_lots?filter=${lotFilter}&limit=-1`, { headers, cache: "no-store" });
         const lots = lotsRes.ok ? (await lotsRes.json()).data || [] : [];
-
-        const passedLotsSet = new Set<string>(); // "product_id:lot_number"
-        lots.forEach((lot: any) => {
-            const pId = Number(lot.product_id?.product_id || lot.product_id);
-            const lotNum = lot.lot_number || "LOT-N/A";
-            if (pId) {
-                passedLotsSet.add(`${pId}:${lotNum}`);
-            }
-        });
 
         // 2. Fetch inventory movements to calculate the true ledger stock
         const movFilter = encodeURIComponent(JSON.stringify({
@@ -41,6 +33,7 @@ export async function getProductInventoryAndSafetyStock(productIds: number[], br
         }));
         const movRes = await fetch(`${DIRECTUS_URL}/items/inventory_movements?filter=${movFilter}&limit=-1`, { headers, cache: "no-store" });
         const movements = movRes.ok ? (await movRes.json()).data || [] : [];
+        const movementStock = sumMovementQuantitiesByStock(movements);
 
         const movementStockMap = new Map<string, number>(); // "product_id:batch_no" -> sum of quantity
         movements.forEach((mov: any) => {
@@ -54,12 +47,13 @@ export async function getProductInventoryAndSafetyStock(productIds: number[], br
             }
         });
 
-        // Compute onHand stock per product (summing only Passed lots)
+        // Compute onHand stock per product (summing only Passed lots using ledger quantities)
         const onHandMap: Record<number, number> = {};
-        lots.forEach((lot: any) => {
+        uniqueRowsByMovementStockKey(lots).forEach((lot: any) => {
             const pId = Number(lot.product_id?.product_id || lot.product_id);
-            if (pId) {
-                onHandMap[pId] = (onHandMap[pId] || 0) + Number(lot.quantity || 0);
+            const ledgerQty = movementStock.get(movementStockKey(lot)) || 0;
+            if (pId && ledgerQty > 0) {
+                onHandMap[pId] = (onHandMap[pId] || 0) + ledgerQty;
             }
         });
 
@@ -77,7 +71,7 @@ export async function getProductInventoryAndSafetyStock(productIds: number[], br
             let recommendedLots: any[] = [];
             if (!isSubAssembly) {
                 const branchFilter = branchId ? `&filter[branch_id][_eq]=${branchId}` : "";
-                const receiptsUrl = `${DIRECTUS_URL}/items/purchase_order_receiving?filter[product_id][_eq]=${pId}&filter[qa_status][_eq]=Passed&filter[is_reverted][_eq]=0&filter[received_quantity][_gt]=0${branchFilter}&sort=expiry_date`;
+                const receiptsUrl = `${DIRECTUS_URL}/items/purchase_order_receiving?filter[product_id][_eq]=${pId}&filter[qa_status][_in]=Passed,Partially Accepted&filter[is_reverted][_eq]=0&filter[received_quantity][_gt]=0${branchFilter}&sort=expiry_date`;
                 
                 const receiptsRes = await fetch(receiptsUrl, { headers, cache: "no-store" });
                 const validReceipts = receiptsRes.ok ? (await receiptsRes.json()).data || [] : [];
@@ -123,23 +117,29 @@ export async function getProductInventoryAndSafetyStock(productIds: number[], br
                     }
                 });
             } else {
-                // If it is a sub-assembly, we can recommend its manufactured batches directly from lots!
+                // If it is a sub-assembly, we can recommend its manufactured batches directly from lots using ledger quantity!
                 lots.forEach((lot: any) => {
                     const keyPId = Number(lot.product_id?.product_id || lot.product_id);
-                    if (keyPId === pId && Number(lot.quantity || 0) > 0) {
+                    const lotNum = lot.lot_number || "LOT-N/A";
+                    const ledgerQty = movementStockMap.get(`${pId}:${lotNum}`) || 0;
+                    if (keyPId === pId && ledgerQty > 0) {
                         recommendedLots.push({
-                            lot_no: lot.lot_number,
-                            available: Number(lot.quantity || 0)
+                            lot_no: lotNum,
+                            available: ledgerQty
                         });
                     }
                 });
             }
 
+            const availableOnHand = isSubAssembly
+                ? onHand
+                : recommendedLots.reduce((sum, lot) => sum + Number(lot.available || 0), 0);
+
             enrichedProducts.push({
                 product_id: pId,
                 product_name: p.product_name,
                 product_code: p.product_code,
-                on_hand: onHand,
+                on_hand: availableOnHand,
                 safety_stock: safetyStock,
                 recommended_lots: recommendedLots
             });

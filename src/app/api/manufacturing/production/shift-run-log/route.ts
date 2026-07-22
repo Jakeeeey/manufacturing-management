@@ -1,6 +1,7 @@
 /* eslint-disable */
 export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
+import { movementStockKey, sumMovementQuantitiesByStock, uniqueRowsByMovementStockKey } from "../../qa-receiving/_movement-stock";
 
 const DIRECTUS_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://vtc:8074";
 const DIRECTUS_STATIC_TOKEN = process.env.DIRECTUS_STATIC_TOKEN || "test";
@@ -98,13 +99,33 @@ export async function POST(request: Request) {
 
                 if (consumedQty <= 0) continue;
 
-                const lotsUrl = `${DIRECTUS_URL}/items/inventory_lots?filter[product_id][_eq]=${rawProductId}&filter[quantity][_gt]=0&filter[qa_status][_eq]=Passed&filter[branch_id][_eq]=${branchId}&sort=id&limit=-1`;
+                const lotsUrl = `${DIRECTUS_URL}/items/inventory_lots?filter[product_id][_eq]=${rawProductId}&filter[qa_status][_in]=Passed,Partially Accepted&filter[branch_id][_eq]=${branchId}&sort=-id&limit=-1`;
                 const lotsRes = await fetch(lotsUrl, { headers, cache: "no-store" });
                 const lots = lotsRes.ok ? (await lotsRes.json()).data || [] : [];
                 
-                lotsCache[rawProductId] = lots;
+                // Fetch inventory movements to calculate the true ledger stock
+                const movFilter = encodeURIComponent(JSON.stringify({
+                    _and: [
+                        { product_id: { _eq: rawProductId } },
+                        { branch_id: { _eq: branchId } }
+                    ]
+                }));
+                const movRes = await fetch(`${DIRECTUS_URL}/items/inventory_movements?filter=${movFilter}&limit=-1`, { headers, cache: "no-store" });
+                const movements = movRes.ok ? (await movRes.json()).data || [] : [];
+                const movementStockMap = sumMovementQuantitiesByStock(movements);
 
-                const totalAvailable = lots.reduce((sum: number, l: any) => sum + Number(l.quantity || 0), 0);
+                // Map lots and enrich them with correct ledger quantity
+                const lotsEnriched = uniqueRowsByMovementStockKey(lots).map((lot: any) => {
+                    const ledgerQty = movementStockMap.get(movementStockKey(lot)) || 0;
+                    return {
+                        ...lot,
+                        quantity: ledgerQty
+                    };
+                }).filter((lot: any) => lot.quantity > 0);
+
+                lotsCache[rawProductId] = lotsEnriched;
+
+                const totalAvailable = lotsEnriched.reduce((sum: number, l: any) => sum + Number(l.quantity || 0), 0);
                 if (totalAvailable < consumedQty) {
                     let prodName = `Product #${rawProductId}`;
                     let unitName = "units";
@@ -260,7 +281,11 @@ export async function POST(request: Request) {
                         }
                     }
 
-                    const consumedLotId = await resolveMasterLotId(lot.lot_number || "LOT-N/A", 1);
+                    const batchNumber = lot.batch_no || lot.lot_number || "LOT-N/A";
+                    const relatedLotId = typeof lot.lot_id === "object"
+                        ? Number(lot.lot_id?.lot_id || 0)
+                        : Number(lot.lot_id || 0);
+                    const consumedLotId = relatedLotId || await resolveMasterLotId(batchNumber, 1);
                     const mPayload = {
                         product_id: rawProductId,
                         lot_id: consumedLotId,
@@ -268,12 +293,12 @@ export async function POST(request: Request) {
                         transaction_type_id: 1, // Job Order Consumage
                         source_document_id: consumageId,
                         source_document_no: String(ledgerId),
-                        batch_no: lot.lot_number || "LOT-N/A",
+                        batch_no: batchNumber,
                         expiry_date: lot.expiry_date || null,
                         manufacturing_date: lot.created_on ? lot.created_on.split("T")[0] : null,
                         quantity: -qty, // OUT direction
                         created_by: inspectorId ? Number(inspectorId) : 24,
-                        remarks: `Consumed from lot ${lot.lot_number || "N/A"} for JO yield`
+                        remarks: `Consumed from lot ${batchNumber} for JO yield`
                     };
                     await fetch(`${DIRECTUS_URL}/items/inventory_movements`, {
                         method: "POST",
@@ -333,25 +358,21 @@ export async function POST(request: Request) {
                                                     { branch_id: { _eq: branchId } },
                                                     { source_type: { _eq: "procurement" } },
                                                     { source_reference: { _eq: String(poId) } },
-                                                    { lot_number: { _eq: lotNo } }
+                                                    { _or: [
+                                                        { lot_number: { _eq: lotNo } },
+                                                        { batch_no: { _eq: lotNo } }
+                                                    ] }
                                                 ]
                                             }));
                                             
                                             const lRes = await fetch(`${DIRECTUS_URL}/items/inventory_lots?filter=${lotQuery}&limit=1`, { headers, cache: "no-store" });
-                                            if (lRes.ok) {
-                                                const lotList = (await lRes.json()).data || [];
-                                                if (lotList.length > 0) {
-                                                     const lot = lotList[0];
-                                                     const currentQty = Number(lot.quantity || 0);
-                                                     const newQty = Math.max(0, currentQty - portion);
-                                                     await fetch(`${DIRECTUS_URL}/items/inventory_lots/${lot.id}`, {
-                                                         method: "PATCH",
-                                                         headers,
-                                                         body: JSON.stringify({ quantity: newQty })
-                                                     });
-                                                     await logConsumageAndMovement(portion, lot);
-                                                }
-                                            }
+                                             if (lRes.ok) {
+                                                 const lotList = (await lRes.json()).data || [];
+                                                 if (lotList.length > 0) {
+                                                      const lot = lotList[0];
+                                                      await logConsumageAndMovement(portion, lot);
+                                                 }
+                                             }
                                         }
                                     }
                                 } catch (porErr) {
@@ -408,20 +429,10 @@ export async function POST(request: Request) {
                                 { quantity: { _gt: 0 } }
                             ]
                         }));
-                        const fbRes = await fetch(`${DIRECTUS_URL}/items/inventory_lots?filter=${fallbackQuery}&sort=id&limit=1`, { headers, cache: "no-store" });
-                        if (fbRes.ok) {
-                            const fbList = (await fbRes.json()).data || [];
-                            if (fbList.length > 0) {
-                                const fbLot = fbList[0];
-                                const currentQty = Number(fbLot.quantity || 0);
-                                const newQty = Math.max(0, currentQty - remainingToConsume);
-                                await fetch(`${DIRECTUS_URL}/items/inventory_lots/${fbLot.id}`, {
-                                    method: "PATCH",
-                                    headers,
-                                    body: JSON.stringify({ quantity: newQty })
-                                });
-                                await logConsumageAndMovement(remainingToConsume, fbLot);
-                            }
+                        const activeLots = lotsCache[rawProductId] || [];
+                        if (activeLots.length > 0) {
+                            const fbLot = activeLots[0];
+                            await logConsumageAndMovement(remainingToConsume, fbLot);
                         }
                     } catch (err) {
                         console.error("Failed to deduct fallback lot for shortfall:", err);
@@ -435,7 +446,7 @@ export async function POST(request: Request) {
         const newLotPayload = {
             product_id: producedProductId,
             branch_id: branchId,
-            quantity: Number(yieldQty),
+            quantity: 0,
             qa_status: qaStatus || "Pending",
             source_type: "yield_ledger",
             source_reference: String(ledgerId),

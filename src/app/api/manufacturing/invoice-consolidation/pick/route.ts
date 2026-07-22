@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { DIRECTUS_URL, headers as directusHeaders } from "../../directus-api";
 import {
     fetchSourceMovements,
+    type InventoryMovementQuantityRow,
     netMovementsZeroForSource,
     postMovements,
     type PostMovementPayload,
@@ -312,16 +313,22 @@ export async function POST(req: NextRequest) {
             const currentLotQuantities = new Map<number, number>();
             if (consumedByInventoryLot.size > 0) {
                 const consumedLotIds = [...consumedByInventoryLot.keys()];
-                const currentLotsRes = await fetch(
-                    `${DIRECTUS_URL}/items/inventory_lots?filter[id][_in]=${consumedLotIds.join(",")}&fields=id,quantity&limit=-1`,
+                const movFilter = encodeURIComponent(JSON.stringify({
+                    lot_id: { _in: consumedLotIds }
+                }));
+                const currentMovementsRes = await fetch(
+                    `${DIRECTUS_URL}/items/inventory_movements?filter=${movFilter}&limit=-1`,
                     { headers: directusHeaders, cache: "no-store" }
                 );
-                if (!currentLotsRes.ok) {
+                if (!currentMovementsRes.ok) {
                     return NextResponse.json({ message: "Failed to revalidate reserved inventory lots" }, { status: 502 });
                 }
-                for (const lot of (await currentLotsRes.json()).data || []) {
-                    currentLotQuantities.set(Number(lot.id), Number(lot.quantity || 0));
-                }
+                const movements = (await currentMovementsRes.json()).data as InventoryMovementQuantityRow[] || [];
+                movements.forEach((mov) => {
+                    const lotId = Number(mov.lot_id);
+                    const qty = Number(mov.quantity || 0);
+                    currentLotQuantities.set(lotId, (currentLotQuantities.get(lotId) || 0) + qty);
+                });
             }
 
             for (const [inventoryLotId, consumed] of consumedByInventoryLot) {
@@ -351,17 +358,8 @@ export async function POST(req: NextRequest) {
                 }
             }
 
-            for (const [inventoryLotId, consumed] of consumedByInventoryLot) {
-                const currentQuantity = currentLotQuantities.get(inventoryLotId) || 0;
-                const lotPatchRes = await fetch(`${DIRECTUS_URL}/items/inventory_lots/${inventoryLotId}`, {
-                    method: "PATCH",
-                    headers: directusHeaders,
-                    body: JSON.stringify({ quantity: currentQuantity - consumed }),
-                });
-                if (!lotPatchRes.ok) {
-                    return NextResponse.json({ message: `Movements posted but inventory lot ${inventoryLotId} was not updated` }, { status: 502 });
-                }
-            }
+            // We do NOT patch the metadata table inventory_lots.quantity.
+            // Stock is fully tracked in the ledger which was synchronized above.
 
             const reservationNow = new Date().toISOString();
             for (const reservation of reservations) {
