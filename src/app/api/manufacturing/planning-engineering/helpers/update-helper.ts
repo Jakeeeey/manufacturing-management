@@ -59,7 +59,7 @@ export async function modifyJobOrder(joId: string, patchData: Record<string, any
                             const lotNo = `MFG-${joId}`;
                             const expDate = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
                             
-                            // 1. Create inventory_lots record
+                            // 1. Create inventory_lots record with snapshot qty at 0
                             const lotRes = await fetch(`${DIRECTUS_URL}/items/inventory_lots`, {
                                 method: "POST",
                                 headers,
@@ -68,20 +68,41 @@ export async function modifyJobOrder(joId: string, patchData: Record<string, any
                                     branch_id: bId,
                                     lot_number: lotNo,
                                     expiry_date: expDate,
-                                    quantity: qty,
+                                    quantity: 0,
                                     unit_cost: 0,
                                     qa_status: "Passed",
                                     source_type: "manufacturing",
                                     source_reference: joId,
                                     created_on: new Date().toISOString()
                                 })
-                            });
+                             });
 
                             if (!lotRes.ok) {
                                 console.error("[Manufacturing Directus API] Failed to create inventory lot record:", await lotRes.text());
+                            } else {
+                                const lotObj = await lotRes.json();
+                                const lotId = lotObj.data?.id || lotObj.data?.lot_id || 0;
+
+                                // 2. Create a positive entry in inventory_movements (ledger)
+                                await fetch(`${DIRECTUS_URL}/items/inventory_movements`, {
+                                    method: "POST",
+                                    headers,
+                                    body: JSON.stringify({
+                                        product_id: joData.product_id,
+                                        lot_id: lotId,
+                                        branch_id: bId,
+                                        transaction_type_id: 2, // Finished Goods Yield Receive
+                                        source_document_no: joId,
+                                        batch_no: lotNo,
+                                        expiry_date: expDate,
+                                        quantity: qty,
+                                        created_by: 24,
+                                        remarks: `Auto-pass yield for JO: ${joId}`
+                                    })
+                                }).catch(err => console.error("[Manufacturing Directus API] Failed to log positive movement:", err));
                             }
                             
-                            // 2. Create a product_ledger entry
+                            // 3. Create a product_ledger entry
                             await fetch(`${DIRECTUS_URL}/items/product_ledger`, {
                                 method: "POST",
                                 headers,

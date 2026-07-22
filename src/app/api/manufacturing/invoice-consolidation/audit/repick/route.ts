@@ -127,38 +127,8 @@ export async function POST(req: NextRequest) {
                     inventory_lot_id: { id: number; quantity: number } | number;
                     quantity: number;
                 }[] = (await reservationRes.json()).data || [];
-                const restoredByLot = new Map<number, { current: number; restore: number }>();
-                for (const reservation of consumedReservations) {
-                    const lot = typeof reservation.inventory_lot_id === "object" ? reservation.inventory_lot_id : null;
-                    const lotId = Number(lot?.id || reservation.inventory_lot_id || 0);
-                    if (!lotId) continue;
-                    const entry = restoredByLot.get(lotId) || { current: Number(lot?.quantity || 0), restore: 0 };
-                    entry.restore += Number(reservation.quantity || 0);
-                    restoredByLot.set(lotId, entry);
-                }
-
-                for (const [lotId, balance] of restoredByLot) {
-                    // Reload current lot quantity for retry safety — a previous
-                    // partial re-pick may have already restored some lots.
-                    const lotGetRes = await fetch(
-                        `${DIRECTUS_URL}/items/inventory_lots/${lotId}?fields=quantity`,
-                        { headers: directusHeaders, cache: "no-store" }
-                    );
-                    const lotCurrent = lotGetRes.ok
-                        ? Number(((await lotGetRes.json()).data || {}).quantity || 0)
-                        : Number(balance.current);
-                    const neededTotal = Number(balance.current) + Number(balance.restore);
-                    if (Number(lotCurrent) >= neededTotal) continue; // already restored
-
-                    const lotPatchRes = await fetch(`${DIRECTUS_URL}/items/inventory_lots/${lotId}`, {
-                        method: "PATCH",
-                        headers: directusHeaders,
-                        body: JSON.stringify({ quantity: neededTotal }),
-                    });
-                    if (!lotPatchRes.ok) {
-                        return NextResponse.json({ message: `Failed to restore inventory lot ${lotId}` }, { status: 502 });
-                    }
-                }
+                // We do NOT patch the metadata table inventory_lots.quantity.
+                // Stock is fully restored in the ledger which was synchronised above.
 
                 const reservationNow = new Date().toISOString();
                 for (const reservation of consumedReservations) {

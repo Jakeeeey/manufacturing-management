@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { DIRECTUS_URL, headers } from "@/app/api/manufacturing/directus-api";
 import { canonicalBatchNumber } from "@/app/api/manufacturing/procurement/_domain";
-import { movementStockKey, sumMovementQuantitiesByStock } from "@/app/api/manufacturing/qa-receiving/_movement-stock";
+import { movementStockKey, sumMovementQuantitiesByStock, uniqueRowsByMovementStockKey } from "@/app/api/manufacturing/qa-receiving/_movement-stock";
 
 interface InventoryLot {
     id: number;
@@ -112,8 +112,14 @@ export async function GET() {
             };
         });
 
+        // Multiple receipts can point at the same physical stock key. Movements
+        // already aggregate that key, so expose it once instead of double-counting it.
+        const uniqueBatches = uniqueRowsByMovementStockKey(
+            porData as Array<InventoryLot & Record<string, unknown>>
+        );
+
         // Map inventory lots to the Batch format expected by the frontend
-        const batches = porData.map((b: InventoryLot) => {
+        const batches = uniqueBatches.map((b: InventoryLot) => {
             const batchNo = canonicalBatchNumber(b.batch_no, b.lot_number);
             const lotId = typeof b.lot_id === "object" ? b.lot_id?.lot_id || null : b.lot_id || null;
             const lotName = typeof b.lot_id === "object" ? b.lot_id?.lot_name || null : null;
