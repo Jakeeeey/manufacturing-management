@@ -58,6 +58,20 @@ interface VersionState {
     label?: string;
 }
 
+function isStandardBOMVersion(version: any) {
+    const normalizedName = String(version?.version_name ?? "")
+        .trim()
+        .toLowerCase()
+        .replace(/[._-]+/g, " ")
+        .replace(/\s+/g, " ");
+    return normalizedName === "v1"
+        || normalizedName === "v1 0"
+        || normalizedName === "version 1"
+        || normalizedName === "version 1 0"
+        || normalizedName === "standard bom version 1"
+        || normalizedName === "standard bom version 1 0";
+}
+
 function singularUnitName(name: string) {
     const normalized = name.trim().toLowerCase();
     if (normalized === "pieces") return "piece";
@@ -201,10 +215,14 @@ export function CreateSalesOrderModal({
                 const overrideVersion = overrideVersionId
                     ? versions.find((version: any) => Number(version.version_id) === overrideVersionId)
                     : null;
+                const standardVersion = versions.find((version: any) => (
+                    (version.status === "Active" || version.is_active) && isStandardBOMVersion(version)
+                ));
                 const matchedVersion = overrideVersion
+                    || standardVersion
                     || versions.find((version: any) => version.status === "Active" || version.is_active);
                 if (!matchedVersion) return [productId, { status: "unavailable" }] as const;
-                const suffix = overrideVersion ? "Override" : "Active";
+                const suffix = overrideVersion ? "Override" : standardVersion === matchedVersion ? "Standard" : "Active fallback";
                 return [productId, {
                     status: "resolved",
                     label: `${matchedVersion.version_name} (${suffix})`
@@ -418,10 +436,9 @@ export function CreateSalesOrderModal({
             if (item.product_id && seenProductIds.has(item.product_id)) lineErrors.uom = "This product and UOM are already selected.";
             if (item.product_id) {
                 seenProductIds.add(item.product_id);
-                // Enforce version setup check
-                if (!customerOverrides[item.product_id]) {
-                    lineErrors.product = "Customer product version is not set up yet.";
-                }
+                const versionState = versionStates[item.product_id];
+                if (!versionState || versionState.status === "loading") lineErrors.product = "BOM version is still loading.";
+                if (versionState?.status === "unavailable") lineErrors.product = "No active BOM version is available.";
             }
             if (!Number.isFinite(item.quantity) || item.quantity <= 0) lineErrors.quantity = "Quantity must be greater than zero.";
             if (!Number.isFinite(item.unit_price) || item.unit_price < 0) lineErrors.unit_price = "Unit price cannot be negative.";

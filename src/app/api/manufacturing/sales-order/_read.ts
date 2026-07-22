@@ -1,4 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { selectPreferredActiveVersion } from "../finished-goods/versions/versions-helper";
+
 type Row = Record<string, any>;
 
 export const SALES_ORDER_FIELDS = [
@@ -132,19 +134,22 @@ async function resolveVersions(
     const versionParams = new URLSearchParams({ fields: "version_id,product_id,version_name,status", limit: "-1" });
     if (overrideVersionIds.length > 0) {
         versionParams.set("filter[_or][0][version_id][_in]", overrideVersionIds.join(","));
-        versionParams.set("filter[_or][1][_and][0][product_id][_in]", productIds.join(","));
-        versionParams.set("filter[_or][1][_and][1][status][_eq]", "Active");
+        versionParams.set("filter[_or][1][product_id][_in]", productIds.join(","));
     } else {
         versionParams.set("filter[product_id][_in]", productIds.join(","));
-        versionParams.set("filter[status][_eq]", "Active");
     }
     const versions = productIds.length > 0 ? (await read("product_manufacturing_version", versionParams)).data : [];
     const versionById = new Map(versions.map((version) => [Number(version.version_id), version]));
     const activeByProduct = new Map<number, Row>();
+    const versionsByProduct = new Map<number, Row[]>();
     for (const version of versions) {
-        if (version.status === "Active" && !activeByProduct.has(Number(version.product_id))) {
-            activeByProduct.set(Number(version.product_id), version);
-        }
+        const productVersions = versionsByProduct.get(Number(version.product_id)) || [];
+        productVersions.push(version);
+        versionsByProduct.set(Number(version.product_id), productVersions);
+    }
+    for (const [productId, productVersions] of versionsByProduct) {
+        const preferredVersion = selectPreferredActiveVersion(productVersions);
+        if (preferredVersion) activeByProduct.set(productId, preferredVersion);
     }
 
     const childrenByParent = new Map<number, number[]>();

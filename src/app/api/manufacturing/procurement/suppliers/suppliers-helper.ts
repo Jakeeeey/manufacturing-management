@@ -9,6 +9,9 @@ interface DirectusRepresentative {
 }
 interface DirectusSup {
     id: number;
+    isActive?: unknown;
+    nonBuy?: unknown;
+    [key: string]: unknown;
 }
 interface InputRepresentative {
     id?: number | string | null;
@@ -20,10 +23,40 @@ interface InputRepresentative {
     contact_number?: string | null;
 }
 
-export async function fetchSuppliers(): Promise<unknown[]> {
+export type SupplierStatusFilter = "active" | "inactive" | "all";
+
+function toBoolean(value: unknown): boolean {
+    if (typeof value === "boolean") return value;
+    if (typeof value === "number") return value !== 0;
+    if (typeof value === "string") {
+        return value === "1" || value.toLowerCase() === "true";
+    }
+
+    if (value && typeof value === "object") {
+        const bufferValue = value as { data?: unknown };
+        if (Array.isArray(bufferValue.data) && bufferValue.data.length > 0) {
+            return Number(bufferValue.data[0]) !== 0;
+        }
+    }
+
+    return false;
+}
+
+export function normalizeSupplier(supplier: DirectusSup): Record<string, unknown> {
+    return {
+        ...supplier,
+        isActive: toBoolean(supplier.isActive),
+        nonBuy: toBoolean(supplier.nonBuy)
+    };
+}
+
+export async function fetchSuppliers(status: SupplierStatusFilter = "active"): Promise<unknown[]> {
     try {
+        const statusFilter = status === "all"
+            ? ""
+            : `&filter[isActive][_eq]=${status === "active" ? "true" : "false"}`;
         const [supRes, repRes] = await Promise.all([
-            fetch(`${DIRECTUS_URL}/items/suppliers?filter[isActive][_eq]=true&sort=supplier_name&limit=-1`, { headers, cache: "no-store" }),
+            fetch(`${DIRECTUS_URL}/items/suppliers?sort=supplier_name&limit=-1${statusFilter}`, { headers, cache: "no-store" }),
             fetch(`${DIRECTUS_URL}/items/suppliers_representative?limit=-1`, { headers, cache: "no-store" })
         ]);
         if (!supRes.ok) throw new Error("Failed to fetch suppliers");
@@ -35,7 +68,7 @@ export async function fetchSuppliers(): Promise<unknown[]> {
         const reps = (repJson.data || []) as DirectusRepresentative[];
         
         return suppliers.map((s) => ({
-            ...s,
+            ...normalizeSupplier(s),
             representatives: reps.filter((r) => Number(r.supplier_id) === Number(s.id))
         }));
     } catch (e) {
@@ -121,7 +154,7 @@ export async function updateSupplier(supplierId: number, supplierData: Record<st
             } catch {}
             throw new Error(errorMsg);
         }
-        const updatedSupplier = (await res.json()).data;
+        const updatedSupplier = normalizeSupplier((await res.json()).data as DirectusSup);
 
         // Sync representatives
         if (representatives && Array.isArray(representatives)) {
