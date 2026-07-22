@@ -2,10 +2,10 @@
 
 import React, { useState } from "react";
 import { 
-    Search, RefreshCw, FileDown, Boxes, ChevronDown, ChevronRight, Loader2, Calendar, Layers, Package
+    Search, RefreshCw, FileDown, Boxes, ChevronDown, ChevronRight, Loader2, Calendar, Layers, Package, ScrollText, MapPin
 } from "lucide-react";
 import { 
-    ProductReportNode, MovementFilters, ProductLookup, BranchLookup, LotLookup, BatchReportEntry 
+    ProductReportNode, MovementFilters, ProductLookup, BranchLookup, LotLookup 
 } from "../types";
 import { Card, CardContent } from "@/components/ui/card";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -66,8 +66,10 @@ export default function InventoryMovementReport({
     activeProductType,
     setActiveProductType
 }: InventoryMovementReportProps) {
-    // Expansion states
+    // Multi-level Expansion States for Excel Spreadsheet Grid
     const [expandedProducts, setExpandedProducts] = useState<Record<number, boolean>>({});
+    const [expandedVersions, setExpandedVersions] = useState<Record<string, boolean>>({});
+    const [expandedLots, setExpandedLots] = useState<Record<string, boolean>>({});
 
     // PDF Export Modal State
     const [isExportModalOpen, setIsExportModalOpen] = useState(false);
@@ -84,10 +86,15 @@ export default function InventoryMovementReport({
         return products.filter((p) => Number(p.productType) === activeProductType);
     }, [products, activeProductType]);
 
-    // Active products shown inside PDF Export dialog checklist
+    // Product IDs that actually have inventory movement data
+    const movementProductIds = React.useMemo(() => {
+        return new Set(batches.map(b => b.product_id));
+    }, [batches]);
+
+    // Active products shown inside PDF Export dialog checklist (only products with movement data)
     const activeProducts = React.useMemo(() => {
-        return products.filter((p) => Number(p.productType) === pdfProductType);
-    }, [products, pdfProductType]);
+        return products.filter((p) => Number(p.productType) === pdfProductType && movementProductIds.has(p.productId));
+    }, [products, pdfProductType, movementProductIds]);
 
     // Filtered branches based on selected products in the modal
     const pdfActiveBranchIds = React.useMemo(() => {
@@ -109,17 +116,22 @@ export default function InventoryMovementReport({
             pdfSelectedProductIds.includes(b.product_id) &&
             (pdfBranchId === null || b.branch_id === pdfBranchId)
         );
+        const lotLookupMap = new Map<number, string>();
+        lotsList.forEach(l => lotLookupMap.set(l.lotId, l.lotName));
+
         const uniqueLots = new Map<number, string>();
         filtered.forEach(b => {
             if (b.lot_id) {
-                uniqueLots.set(Number(b.lot_id), b.lot_name || "Unassigned");
+                const lotIdNum = Number(b.lot_id);
+                const lotName = b.lot_name || lotLookupMap.get(lotIdNum) || `Lot #${lotIdNum}`;
+                uniqueLots.set(lotIdNum, lotName);
             }
         });
         return Array.from(uniqueLots.entries()).map(([id, name]) => ({
             lotId: id,
             lotName: name
         }));
-    }, [batches, pdfSelectedProductIds, pdfBranchId]);
+    }, [batches, pdfSelectedProductIds, pdfBranchId, lotsList]);
 
     // Reset Branch / Lot selection if they are no longer in the active lists
     React.useEffect(() => {
@@ -144,7 +156,7 @@ export default function InventoryMovementReport({
         setPdfExpiryDate(filters.endDate || "");
 
         const ids = products
-            .filter((p) => Number(p.productType) === activeProductType)
+            .filter((p) => Number(p.productType) === activeProductType && movementProductIds.has(p.productId))
             .map((p) => p.productId);
 
         setPdfSelectedProductIds(ids);
@@ -158,7 +170,7 @@ export default function InventoryMovementReport({
         setPdfLotId(null);
 
         const ids = products
-            .filter((p) => Number(p.productType) === typeVal)
+            .filter((p) => Number(p.productType) === typeVal && movementProductIds.has(p.productId))
             .map((p) => p.productId);
 
         setPdfSelectedProductIds(ids);
@@ -166,6 +178,16 @@ export default function InventoryMovementReport({
 
     const toggleProductRow = (productId: number) => {
         setExpandedProducts(prev => ({ ...prev, [productId]: !prev[productId] }));
+    };
+
+    const toggleVersionRow = (productId: number, versionId: number | null) => {
+        const key = `${productId}-${versionId ?? "null"}`;
+        setExpandedVersions(prev => ({ ...prev, [key]: !prev[key] }));
+    };
+
+    const toggleLotRow = (productId: number, versionId: number | null, lotId: number | null, branchId: number) => {
+        const key = `${productId}-${versionId ?? "null"}-${lotId ?? "null"}-${branchId}`;
+        setExpandedLots(prev => ({ ...prev, [key]: !prev[key] }));
     };
 
     const renderCapacityBar = (utilPercent: number) => {
@@ -177,13 +199,13 @@ export default function InventoryMovementReport({
 
         return (
             <div className="flex items-center gap-1.5 justify-end">
-                <div className="bg-muted rounded-full h-1.5 w-12 overflow-hidden relative">
+                <div className="bg-muted rounded-full h-1.5 w-12 overflow-hidden relative border border-border">
                     <div
                         className="h-full rounded-full transition-all duration-300"
                         style={{ width: `${clamped}%`, backgroundColor: barColor }}
                     />
                 </div>
-                <span className="text-[10px] font-semibold text-muted-foreground w-8 text-left">{clamped.toFixed(1)}%</span>
+                <span className="text-[10px] font-semibold font-mono text-muted-foreground w-9 text-right">{clamped.toFixed(1)}%</span>
             </div>
         );
     };
@@ -194,13 +216,11 @@ export default function InventoryMovementReport({
             return;
         }
 
-        // 1. Filter raw batches based on modal-specific criteria
         const filteredBatches = batches.filter((b) => {
             if (!pdfSelectedProductIds.includes(b.product_id)) return false;
             if (pdfBranchId !== null && b.branch_id !== pdfBranchId) return false;
             if (pdfLotId !== null && b.lot_id !== pdfLotId) return false;
 
-            // Product type filter matching selected product type
             const matchedProduct = rawProducts.find((p) => p.product_id === b.product_id);
             if (!matchedProduct || Number(matchedProduct.product_type) !== pdfProductType) return false;
 
@@ -220,99 +240,20 @@ export default function InventoryMovementReport({
             return;
         }
 
-        // 2. Group filtered batches by Product ID
-        const productNodesMap = new Map<number, ProductReportNode>();
-
-        // Lookup maps
-        const branchMap = new Map<number, string>();
-        branches.forEach((b) => branchMap.set(b.branchId, b.branchName));
-
-        const lotMap = new Map<number, LotLookup>();
-        lotsList.forEach((l) => lotMap.set(l.lotId, l));
-
-        const productUOMMap = new Map<number, string>();
-        rawProducts.forEach((p) => {
-            const uom = p.unit_of_measurement?.unit_shortcut || "units";
-            productUOMMap.set(p.product_id, uom);
-        });
-
-        filteredBatches.forEach((b) => {
-            let node = productNodesMap.get(b.product_id);
-            if (!node) {
-                const matchedProduct = rawProducts.find((p) => p.product_id === b.product_id);
-                node = {
-                    productId: b.product_id,
-                    productName: matchedProduct?.product_name || `Product #${b.product_id}`,
-                    productCode: matchedProduct?.product_code || `SKU-${b.product_id}`,
-                    uomShortcut: productUOMMap.get(b.product_id) || "units",
-                    totalAvailable: 0,
-                    lots: []
-                };
-                productNodesMap.set(b.product_id, node);
-            }
-
-            const lotId = b.lot_id ? Number(b.lot_id) : null;
-            const lotInfo = lotId !== null ? lotMap.get(lotId) : null;
-            const maxCapacity = lotInfo?.maxBatchCapacity || 10;
-            const quantity = Number(b.quantity_received || 0);
-            const branchName = branchMap.get(b.branch_id) || `Branch #${b.branch_id}`;
-
-            const lotEntry: BatchReportEntry = {
-                lineId: b.line_id,
-                productId: b.product_id,
-                branchId: b.branch_id,
-                branchName,
-                lotId,
-                lotName: b.lot_name || "Unassigned",
-                maxBatchCapacity: maxCapacity,
-                sourceDocumentNo: b.source_reference || "N/A",
-                transactionType: b.transaction_type || (b.source_type ? String(b.source_type).replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()) : "Legacy Stock"),
-                batchNo: b.batch_no || b.lot_number || "LOT-N/A",
-                quantity,
-                unitCost: Number(b.final_landed_unit_cost || b.base_unit_cost_php || 0),
-                qaStatus: b.qa_status || "Passed",
-                remarks: b.remarks || b.rejection_reason || null,
-                expiryDate: b.expiration_date || null,
-                createdOn: b.created_on || null
-            };
-
-            node.lots.push(lotEntry);
-        });
-
-        const pdfGroupedData: ProductReportNode[] = [];
-        productNodesMap.forEach((node) => {
-            node.totalAvailable = node.lots.reduce((acc, lot) => acc + lot.quantity, 0);
-            node.lots.sort((a, b) => {
-                const branchCompare = a.branchName.localeCompare(b.branchName);
-                if (branchCompare !== 0) return branchCompare;
-                const lotCompare = a.lotName.localeCompare(b.lotName);
-                if (lotCompare !== 0) return lotCompare;
-                return a.batchNo.localeCompare(b.batchNo);
-            });
-            if (node.lots.length > 0) {
-                pdfGroupedData.push(node);
-            }
-        });
-
-        pdfGroupedData.sort((a, b) => a.productName.localeCompare(b.productName));
-
         const activeBranch = branches.find(b => b.branchId === pdfBranchId)?.branchName || "All Branches";
         toast.info("Generating report PDF...");
 
         try {
-            // Instantiate Landscape Letter jsPDF directly to avoid modifying any files outside of this module
             const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "letter" });
             const pageW = doc.internal.pageSize.getWidth();
             const pageH = doc.internal.pageSize.getHeight();
             let currentY = 15;
 
-            // Document Title
             doc.setFontSize(11);
             doc.setFont("helvetica", "bold");
             doc.text("PRODUCT INVENTORY MOVEMENT BREAKDOWN REPORT", 10, currentY, { baseline: "top" });
             currentY += 6;
 
-            // Meta Information Block
             doc.setFontSize(7.5);
             doc.setFont("helvetica", "normal");
             doc.setTextColor(100, 116, 139);
@@ -330,76 +271,329 @@ export default function InventoryMovementReport({
             doc.text(`${mfgFilterText} | ${expFilterText}`, 10, currentY);
             currentY += 8;
 
-            // Render tables sequentially for each Product
-            pdfGroupedData.forEach((prod) => {
-                // Check page overflow before drawing product title (each product table header + title takes roughly 20mm)
-                if (currentY > pageH - 30) {
-                    doc.addPage();
-                    currentY = 15; // Reset to page top margin
-                }
+            const printableW = pageW - 20;
+            const colWidth = (parts: number) => (parts / 268) * printableW;
 
-                doc.setFontSize(8.5);
-                doc.setFont("helvetica", "bold");
-                doc.setTextColor(15, 23, 42);
-                doc.text(`Product: ${prod.productCode} - ${prod.productName} | Total Stock: ${prod.totalAvailable.toLocaleString("en-PH", { minimumFractionDigits: 2 })} ${prod.uomShortcut}`, 10, currentY, { baseline: "top" });
-                currentY += 5;
+            // Generate report content based on Product Type hierarchy
+            if (pdfProductType === 388) {
+                // 4-Level Finished Goods PDF rendering
+                const productNodesMap = new Map<number, ProductReportNode>();
+                const branchMap = new Map<number, string>();
+                branches.forEach((b) => branchMap.set(b.branchId, b.branchName));
 
-                const tableRows: string[][] = [];
-                prod.lots.forEach((lot) => {
-                    const spaceUtil = lot.maxBatchCapacity > 0 ? `${((lot.quantity / lot.maxBatchCapacity) * 100).toFixed(1)}%` : "0.0%";
-                    const cost = `PHP ${lot.unitCost.toFixed(2)}`;
-                    const qty = lot.quantity.toLocaleString("en-PH", { minimumFractionDigits: 2 });
-                    const mfgDate = lot.createdOn ? lot.createdOn.split("T")[0] : "—";
-                    const expDate = lot.expiryDate || "—";
-                    
-                    tableRows.push([
-                      lot.branchName,
-                      lot.lotName,
-                      spaceUtil,
-                      lot.sourceDocumentNo,
-                      lot.transactionType,
-                      lot.batchNo,
-                      qty,
-                      cost,
-                      lot.qaStatus,
-                      mfgDate,
-                      expDate
-                    ]);
-                });
+                const lotMap = new Map<number, LotLookup>();
+                lotsList.forEach((l) => lotMap.set(l.lotId, l));
 
-                const printableW = pageW - 20; // 10mm margin on left and right
-                // Total parts width = 238mm (excluding column 1 auto)
-                // We allocate columns proportionally to fit landscape page widths perfectly
-                const colWidth = (parts: number) => (parts / 268) * printableW;
+                const productUOMMap = new Map<number, string>();
+                rawProducts.forEach((p) => productUOMMap.set(p.product_id, p.unit_of_measurement?.unit_shortcut || "units"));
 
-                autoTable(doc, {
-                    startY: currentY,
-                    margin: { left: 10, right: 10 },
-                    head: [["Branch", "Lot Location", "Space Util", "Source Doc", "Txn Type", "Batch No", "Qty", "Unit Cost", "QA Status", "Mfg Date", "Expiry Date"]],
-                    body: tableRows,
-                    theme: "grid",
-                    headStyles: { fillColor: [255, 255, 255], textColor: [15, 23, 42], fontSize: 5, lineColor: [226, 232, 240], lineWidth: 0.1 },
-                    bodyStyles: { fontSize: 4.5 },
-                    columnStyles: {
-                        0: { cellWidth: colWidth(28) },
-                        1: { cellWidth: "auto" },
-                        2: { cellWidth: colWidth(18), halign: "right" },
-                        3: { cellWidth: colWidth(28) },
-                        4: { cellWidth: colWidth(32) },
-                        5: { cellWidth: colWidth(28) },
-                        6: { cellWidth: colWidth(18), halign: "right" },
-                        7: { cellWidth: colWidth(24), halign: "right" },
-                        8: { cellWidth: colWidth(20), halign: "center" },
-                        9: { cellWidth: colWidth(22), halign: "center" },
-                        10: { cellWidth: colWidth(22), halign: "center" }
+                filteredBatches.forEach((b) => {
+                    let node = productNodesMap.get(b.product_id);
+                    if (!node) {
+                        const matchedProduct = rawProducts.find((p) => p.product_id === b.product_id);
+                        node = {
+                            productId: b.product_id,
+                            productName: matchedProduct?.product_name || `Product #${b.product_id}`,
+                            productCode: matchedProduct?.product_code || `SKU-${b.product_id}`,
+                            uomShortcut: productUOMMap.get(b.product_id) || "units",
+                            totalAvailable: 0,
+                            versions: [],
+                            lots: []
+                        };
+                        productNodesMap.set(b.product_id, node);
                     }
+
+                    const versionId = b.version_id ? Number(b.version_id) : null;
+                    const versionName = b.version_name || (versionId !== null ? `Version #${versionId}` : "Default Version");
+
+                    let verNode = node.versions!.find(v => v.versionId === versionId || (v.versionId === null && versionId === null));
+                    if (!verNode) {
+                        verNode = { versionId, versionName, subtotalQuantity: 0, lots: [] };
+                        node.versions!.push(verNode);
+                    }
+
+                    const lotId = b.lot_id ? Number(b.lot_id) : null;
+                    const lotInfo = lotId !== null ? lotMap.get(lotId) : null;
+                    const maxCapacity = lotInfo?.maxBatchCapacity || 10;
+                    const branchName = branchMap.get(b.branch_id) || `Branch #${b.branch_id}`;
+                    const lotName = b.lot_name || lotInfo?.lotName || (lotId !== null ? `Lot #${lotId}` : "Unassigned");
+
+                    let lotNode = verNode.lots.find(l => l.lotId === lotId && l.branchId === b.branch_id);
+                    if (!lotNode) {
+                        lotNode = {
+                            lotId,
+                            lotName,
+                            branchId: b.branch_id,
+                            branchName,
+                            maxBatchCapacity: maxCapacity,
+                            subtotalQuantity: 0,
+                            batches: []
+                        };
+                        verNode.lots.push(lotNode);
+                    }
+
+                    lotNode.batches.push({
+                        lineId: b.line_id,
+                        productId: b.product_id,
+                        versionId,
+                        versionName,
+                        branchId: b.branch_id,
+                        branchName,
+                        lotId,
+                        lotName,
+                        maxBatchCapacity: maxCapacity,
+                        sourceDocumentNo: b.source_reference || "N/A",
+                        transactionType: b.transaction_type || (b.source_type ? String(b.source_type).replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()) : "Legacy Stock"),
+                        batchNo: b.batch_no || b.lot_number || "LOT-N/A",
+                        quantity: Number(b.quantity_received || 0),
+                        unitCost: Number(b.final_landed_unit_cost || b.base_unit_cost_php || 0),
+                        qaStatus: b.qa_status || "Passed",
+                        remarks: b.remarks || b.rejection_reason || null,
+                        expiryDate: b.expiration_date || null,
+                        createdOn: b.created_on || null
+                    });
                 });
 
-                const lastAutoTable = (doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable;
-                currentY = (lastAutoTable?.finalY ?? currentY) + 12;
-            });
+                const pdfDataArr = Array.from(productNodesMap.values());
+                pdfDataArr.forEach(prod => {
+                    prod.versions?.forEach(ver => {
+                        ver.lots.forEach(lot => {
+                            lot.subtotalQuantity = lot.batches.reduce((sum, item) => sum + item.quantity, 0);
+                        });
+                        ver.subtotalQuantity = ver.lots.reduce((sum, l) => sum + l.subtotalQuantity, 0);
+                    });
+                    prod.totalAvailable = prod.versions?.reduce((sum, v) => sum + v.subtotalQuantity, 0) || 0;
+                });
 
-            // Draw page numbers over all pages
+                pdfDataArr.forEach((prod) => {
+                    if (currentY > pageH - 30) {
+                        doc.addPage();
+                        currentY = 15;
+                    }
+
+                    doc.setFontSize(8.5);
+                    doc.setFont("helvetica", "bold");
+                    doc.setTextColor(15, 23, 42);
+                    doc.text(`Product: ${prod.productCode} - ${prod.productName} | Total Stock: ${prod.totalAvailable.toLocaleString("en-PH", { minimumFractionDigits: 2 })} ${prod.uomShortcut}`, 10, currentY, { baseline: "top" });
+                    currentY += 5;
+
+                    prod.versions?.forEach((ver) => {
+                        if (currentY > pageH - 25) {
+                            doc.addPage();
+                            currentY = 15;
+                        }
+                        doc.setFontSize(7.5);
+                        doc.setFont("helvetica", "bold");
+                        doc.setTextColor(71, 85, 105);
+                        doc.text(`  Recipe Version: ${ver.versionName} | Subtotal: ${ver.subtotalQuantity.toLocaleString("en-PH", { minimumFractionDigits: 2 })} ${prod.uomShortcut}`, 12, currentY);
+                        currentY += 4;
+
+                        ver.lots.forEach((lot) => {
+                            if (currentY > pageH - 25) {
+                                doc.addPage();
+                                currentY = 15;
+                            }
+                            const lotSubtotal = lot.batches.reduce((sum, item) => sum + item.quantity, 0);
+                            const spaceUtil = lot.maxBatchCapacity > 0 ? `${((lotSubtotal / lot.maxBatchCapacity) * 100).toFixed(1)}%` : "0.0%";
+
+                            doc.setFontSize(7);
+                            doc.setFont("helvetica", "bold");
+                            doc.setTextColor(30, 41, 59);
+                            doc.text(`    Storage Lot Location: ${lot.lotName} (${lot.branchName}) | Space Util: ${spaceUtil} | Subtotal: ${lotSubtotal.toLocaleString("en-PH", { minimumFractionDigits: 2 })} ${prod.uomShortcut}`, 14, currentY);
+                            currentY += 4;
+
+                            const tableRows: string[][] = [];
+                            lot.batches.forEach((b) => {
+                                const cost = `PHP ${b.unitCost.toFixed(2)}`;
+                                const qty = b.quantity.toLocaleString("en-PH", { minimumFractionDigits: 2 });
+                                const mfgDate = b.createdOn ? b.createdOn.split("T")[0] : "—";
+                                const expDate = b.expiryDate || "—";
+
+                                tableRows.push([
+                                    b.batchNo,
+                                    b.sourceDocumentNo,
+                                    b.transactionType,
+                                    qty,
+                                    cost,
+                                    b.qaStatus,
+                                    mfgDate,
+                                    expDate,
+                                    b.remarks || "—"
+                                ]);
+                            });
+
+                            autoTable(doc, {
+                                startY: currentY,
+                                margin: { left: 16, right: 10 },
+                                head: [["Batch No", "Source Doc No", "Txn Type", "Qty", "Unit Cost", "QA Status", "Mfg Date", "Expiry Date", "Remarks"]],
+                                body: tableRows,
+                                theme: "grid",
+                                headStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42], fontSize: 5, lineColor: [203, 213, 225], lineWidth: 0.1 },
+                                bodyStyles: { fontSize: 4.5 },
+                                columnStyles: {
+                                    0: { cellWidth: colWidth(30) },
+                                    1: { cellWidth: colWidth(34) },
+                                    2: { cellWidth: colWidth(28) },
+                                    3: { cellWidth: colWidth(20), halign: "right" },
+                                    4: { cellWidth: colWidth(24), halign: "right" },
+                                    5: { cellWidth: colWidth(20), halign: "center" },
+                                    6: { cellWidth: colWidth(22), halign: "center" },
+                                    7: { cellWidth: colWidth(22), halign: "center" },
+                                    8: { cellWidth: "auto" }
+                                }
+                            });
+
+                            const lastAutoTable = (doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable;
+                            currentY = (lastAutoTable?.finalY ?? currentY) + 6;
+                        });
+                    });
+                    currentY += 4;
+                });
+            } else {
+                // 3-Level Raw Materials & Packaging Items PDF rendering
+                const productNodesMap = new Map<number, ProductReportNode>();
+                const branchMap = new Map<number, string>();
+                branches.forEach((b) => branchMap.set(b.branchId, b.branchName));
+
+                const lotMap = new Map<number, LotLookup>();
+                lotsList.forEach((l) => lotMap.set(l.lotId, l));
+
+                const productUOMMap = new Map<number, string>();
+                rawProducts.forEach((p) => productUOMMap.set(p.product_id, p.unit_of_measurement?.unit_shortcut || "units"));
+
+                filteredBatches.forEach((b) => {
+                    let node = productNodesMap.get(b.product_id);
+                    if (!node) {
+                        const matchedProduct = rawProducts.find((p) => p.product_id === b.product_id);
+                        node = {
+                            productId: b.product_id,
+                            productName: matchedProduct?.product_name || `Product #${b.product_id}`,
+                            productCode: matchedProduct?.product_code || `SKU-${b.product_id}`,
+                            uomShortcut: productUOMMap.get(b.product_id) || "units",
+                            totalAvailable: 0,
+                            lots: []
+                        };
+                        productNodesMap.set(b.product_id, node);
+                    }
+
+                    const lotId = b.lot_id ? Number(b.lot_id) : null;
+                    const lotInfo = lotId !== null ? lotMap.get(lotId) : null;
+                    const maxCapacity = lotInfo?.maxBatchCapacity || 10;
+                    const branchName = branchMap.get(b.branch_id) || `Branch #${b.branch_id}`;
+                    const lotName = b.lot_name || lotInfo?.lotName || (lotId !== null ? `Lot #${lotId}` : "Unassigned");
+
+                    if (!node.lots) node.lots = [];
+                    let lotNode = node.lots.find(l => l.lotId === lotId && l.branchId === b.branch_id);
+                    if (!lotNode) {
+                        lotNode = {
+                            lotId,
+                            lotName,
+                            branchId: b.branch_id,
+                            branchName,
+                            maxBatchCapacity: maxCapacity,
+                            subtotalQuantity: 0,
+                            batches: []
+                        };
+                        node.lots.push(lotNode);
+                    }
+
+                    lotNode.batches.push({
+                        lineId: b.line_id,
+                        productId: b.product_id,
+                        branchId: b.branch_id,
+                        branchName,
+                        lotId,
+                        lotName,
+                        maxBatchCapacity: maxCapacity,
+                        sourceDocumentNo: b.source_reference || "N/A",
+                        transactionType: b.transaction_type || (b.source_type ? String(b.source_type).replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()) : "Legacy Stock"),
+                        batchNo: b.batch_no || b.lot_number || "LOT-N/A",
+                        quantity: Number(b.quantity_received || 0),
+                        unitCost: Number(b.final_landed_unit_cost || b.base_unit_cost_php || 0),
+                        qaStatus: b.qa_status || "Passed",
+                        remarks: b.remarks || b.rejection_reason || null,
+                        expiryDate: b.expiration_date || null,
+                        createdOn: b.created_on || null
+                    });
+                });
+
+                const pdfDataArr = Array.from(productNodesMap.values());
+                pdfDataArr.forEach((prod) => {
+                    prod.totalAvailable = prod.lots ? prod.lots.reduce((acc, lot) => acc + lot.batches.reduce((bSum, item) => bSum + item.quantity, 0), 0) : 0;
+
+                    if (currentY > pageH - 30) {
+                        doc.addPage();
+                        currentY = 15;
+                    }
+
+                    doc.setFontSize(8.5);
+                    doc.setFont("helvetica", "bold");
+                    doc.setTextColor(15, 23, 42);
+                    doc.text(`Product: ${prod.productCode} - ${prod.productName} | Total Stock: ${prod.totalAvailable.toLocaleString("en-PH", { minimumFractionDigits: 2 })} ${prod.uomShortcut}`, 10, currentY, { baseline: "top" });
+                    currentY += 5;
+
+                    prod.lots?.forEach((lot) => {
+                        if (currentY > pageH - 25) {
+                            doc.addPage();
+                            currentY = 15;
+                        }
+                        const lotSubtotal = lot.batches.reduce((sum, item) => sum + item.quantity, 0);
+                        const spaceUtil = lot.maxBatchCapacity > 0 ? `${((lotSubtotal / lot.maxBatchCapacity) * 100).toFixed(1)}%` : "0.0%";
+
+                        doc.setFontSize(7.5);
+                        doc.setFont("helvetica", "bold");
+                        doc.setTextColor(30, 41, 59);
+                        doc.text(`  Storage Lot Location: ${lot.lotName} (${lot.branchName}) | Space Util: ${spaceUtil} | Subtotal: ${lotSubtotal.toLocaleString("en-PH", { minimumFractionDigits: 2 })} ${prod.uomShortcut}`, 12, currentY);
+                        currentY += 4;
+
+                        const tableRows: string[][] = [];
+                        lot.batches.forEach((b) => {
+                            const cost = `PHP ${b.unitCost.toFixed(2)}`;
+                            const qty = b.quantity.toLocaleString("en-PH", { minimumFractionDigits: 2 });
+                            const mfgDate = b.createdOn ? b.createdOn.split("T")[0] : "—";
+                            const expDate = b.expiryDate || "—";
+
+                            tableRows.push([
+                                b.batchNo,
+                                b.sourceDocumentNo,
+                                b.transactionType,
+                                qty,
+                                cost,
+                                b.qaStatus,
+                                mfgDate,
+                                expDate,
+                                b.remarks || "—"
+                            ]);
+                        });
+
+                        autoTable(doc, {
+                            startY: currentY,
+                            margin: { left: 14, right: 10 },
+                            head: [["Batch No", "Source Doc No", "Txn Type", "Qty", "Unit Cost", "QA Status", "Mfg Date", "Expiry Date", "Remarks"]],
+                            body: tableRows,
+                            theme: "grid",
+                            headStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42], fontSize: 5, lineColor: [203, 213, 225], lineWidth: 0.1 },
+                            bodyStyles: { fontSize: 4.5 },
+                            columnStyles: {
+                                0: { cellWidth: colWidth(30) },
+                                1: { cellWidth: colWidth(34) },
+                                2: { cellWidth: colWidth(28) },
+                                3: { cellWidth: colWidth(20), halign: "right" },
+                                4: { cellWidth: colWidth(24), halign: "right" },
+                                5: { cellWidth: colWidth(20), halign: "center" },
+                                6: { cellWidth: colWidth(22), halign: "center" },
+                                7: { cellWidth: colWidth(22), halign: "center" },
+                                8: { cellWidth: "auto" }
+                            }
+                        });
+
+                        const lastAutoTable = (doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable;
+                        currentY = (lastAutoTable?.finalY ?? currentY) + 6;
+                    });
+                    currentY += 4;
+                });
+            }
+
             const pageCount = doc.getNumberOfPages();
             for (let i = 1; i <= pageCount; i++) {
                 doc.setPage(i);
@@ -426,7 +620,7 @@ export default function InventoryMovementReport({
     return (
         <div className="space-y-4">
             {/* Filter Panel */}
-            <Card className="border border-border bg-card shadow-sm">
+            <Card className="border border-border/80 bg-card shadow-sm">
                 <CardContent className="p-4 flex flex-col gap-4">
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
                         {/* Branch Selector */}
@@ -509,7 +703,7 @@ export default function InventoryMovementReport({
                     </div>
 
                     <div className="flex items-center justify-between border-t border-border/50 pt-3 flex-wrap gap-2">
-                        {/* Search Input for tree filtering */}
+                        {/* Search Input */}
                         <div className="relative w-full sm:max-w-xs">
                             <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground/60" />
                             <Input
@@ -546,8 +740,8 @@ export default function InventoryMovementReport({
                 </CardContent>
             </Card>
 
-            {/* Tabs Filter */}
-            <div className="flex bg-muted/50 border border-border p-0.5 rounded-lg w-fit">
+            {/* Excel Sheet-Style Tab Switcher */}
+            <div className="flex bg-muted/60 border border-border p-1 rounded-lg w-fit shadow-xs">
                 <button
                     type="button"
                     onClick={() => setActiveProductType(388)}
@@ -571,17 +765,21 @@ export default function InventoryMovementReport({
                 </button>
             </div>
 
-            {/* Tree Grid Layout */}
-            <Card className="border border-border bg-card shadow-sm overflow-hidden">
+            {/* High-Density Excel-Type Spreadsheet UI Data Grid Container */}
+            <Card className="border border-border bg-card shadow-sm overflow-hidden rounded-lg">
                 <div className="overflow-x-auto">
-                    <Table>
-                        <TableHeader className="bg-muted/40 border-b border-border">
-                            <TableRow>
-                                <TableHead className="w-[70%] pl-4">Product SKU / Storage Location & Batch</TableHead>
-                                <TableHead className="w-[30%] pr-4 text-right">On-Hand Qty</TableHead>
+                    <Table className="border-collapse w-full">
+                        <TableHeader className="bg-muted/80 backdrop-blur border-b border-border">
+                            <TableRow className="border-b border-border hover:bg-transparent">
+                                <TableHead className="w-[65%] pl-4 text-xs font-bold uppercase tracking-wider text-foreground border-r border-border">
+                                    Product SKU / Recipe Version / Storage Bin & Batch Code
+                                </TableHead>
+                                <TableHead className="w-[35%] pr-4 text-right text-xs font-bold uppercase tracking-wider text-foreground">
+                                    On-Hand Available Stock Qty
+                                </TableHead>
                             </TableRow>
                         </TableHeader>
-                        <TableBody>
+                        <TableBody className="divide-y divide-border">
                             {loading ? (
                                 <TableRow>
                                     <TableCell colSpan={2} className="h-64 text-center">
@@ -598,7 +796,7 @@ export default function InventoryMovementReport({
                                             <Boxes className="h-12 w-12 text-muted-foreground/30 mb-2" />
                                             <span className="text-sm font-semibold">No inventory records found</span>
                                             <p className="text-xs max-w-xs mt-1">
-                                                No lots match the selected filter criteria. Adjust filters or choose another branch.
+                                                No stock records match the selected filter criteria. Try choosing another branch or resetting filters.
                                             </p>
                                         </div>
                                     </TableCell>
@@ -606,95 +804,266 @@ export default function InventoryMovementReport({
                             ) : (
                                 groupedData.map((prod) => {
                                     const isProdExpanded = !!expandedProducts[prod.productId];
+
                                     return (
                                         <React.Fragment key={prod.productId}>
-                                            {/* LEVEL 1: Product Row */}
+                                            {/* LEVEL 1: PRODUCT ROW (Dark Shading) */}
                                             <TableRow 
-                                                className="group/prod cursor-pointer hover:bg-muted/30 transition-colors border-b border-border"
+                                                className="group/prod cursor-pointer bg-muted/60 dark:bg-muted/40 hover:bg-muted/80 transition-colors border-b border-border select-none"
                                                 onClick={() => toggleProductRow(prod.productId)}
                                             >
-                                                <TableCell className="font-semibold text-foreground py-3 pl-4">
+                                                <TableCell className="font-bold text-foreground py-2 pl-3 border-r border-border">
                                                     <div className="flex items-center gap-2">
-                                                        <span className="text-muted-foreground/80 hover:text-foreground">
+                                                        <span className="text-muted-foreground group-hover/prod:text-foreground transition-colors">
                                                             {isProdExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                                                         </span>
-                                                        <Boxes className="h-4 w-4 text-primary/70 group-hover/prod:text-primary transition-colors" />
-                                                        <span className="text-xs font-mono font-bold text-muted-foreground bg-muted px-1.5 py-0.5 rounded border border-border">
+                                                        <Boxes className="h-4 w-4 text-primary shrink-0" />
+                                                        <span className="text-xs font-mono font-bold bg-background text-foreground px-2 py-0.5 rounded border border-border shadow-xs">
                                                             {prod.productCode}
                                                         </span>
-                                                        <span className="text-sm">{prod.productName}</span>
+                                                        <span className="text-xs sm:text-sm font-bold text-foreground">{prod.productName}</span>
+                                                        {activeProductType === 388 && prod.versions && (
+                                                            <span className="text-[10px] font-semibold text-muted-foreground bg-background px-1.5 py-0.5 rounded border border-border ml-2">
+                                                                {prod.versions.length} {prod.versions.length === 1 ? "Version" : "Versions"}
+                                                            </span>
+                                                        )}
+                                                        {activeProductType !== 388 && prod.lots && (
+                                                            <span className="text-[10px] font-semibold text-muted-foreground bg-background px-1.5 py-0.5 rounded border border-border ml-2">
+                                                                {prod.lots.length} {prod.lots.length === 1 ? "Lot Location" : "Lot Locations"}
+                                                            </span>
+                                                        )}
                                                     </div>
                                                 </TableCell>
-                                                <TableCell className="font-black text-right pr-4 text-sm">
+                                                <TableCell className="font-black font-mono text-right pr-4 text-xs sm:text-sm text-foreground">
                                                     {prod.totalAvailable.toLocaleString("en-PH", { minimumFractionDigits: 2 })} {prod.uomShortcut}
                                                 </TableCell>
                                             </TableRow>
 
-                                            {/* LEVEL 2: Physical Lot Breakdown */}
+                                            {/* LEVEL 2 & DEEPER BREAKDOWN */}
                                             {isProdExpanded && (
-                                                <TableRow className="bg-muted/10 border-b border-border/20">
-                                                    <TableCell colSpan={2} className="p-0 pl-10 pr-4">
-                                                        <div className="py-3 overflow-hidden">
-                                                            <div className="border border-border/60 rounded-lg bg-background overflow-hidden shadow-inner">
-                                                                <Table>
-                                                                    <TableHeader className="bg-muted/30 border-b border-border/40">
-                                                                        <TableRow>
-                                                                            <TableHead className="text-[10px] font-bold h-7 py-1 uppercase tracking-wider pl-3">Branch</TableHead>
-                                                                            <TableHead className="text-[10px] font-bold h-7 py-1 uppercase tracking-wider">Lot Location</TableHead>
-                                                                            <TableHead className="text-[10px] font-bold h-7 py-1 uppercase tracking-wider text-right pr-4">Space Util %</TableHead>
-                                                                            <TableHead className="text-[10px] font-bold h-7 py-1 uppercase tracking-wider pl-3">Source Doc No</TableHead>
-                                                                            <TableHead className="text-[10px] font-bold h-7 py-1 uppercase tracking-wider">Txn Type</TableHead>
-                                                                            <TableHead className="text-[10px] font-bold h-7 py-1 uppercase tracking-wider">Batch No</TableHead>
-                                                                            <TableHead className="text-[10px] font-bold h-7 py-1 uppercase tracking-wider text-right">Qty</TableHead>
-                                                                            <TableHead className="text-[10px] font-bold h-7 py-1 uppercase tracking-wider text-right">Unit Cost</TableHead>
-                                                                            <TableHead className="text-[10px] font-bold h-7 py-1 uppercase tracking-wider text-center">QA Status</TableHead>
-                                                                            <TableHead className="text-[10px] font-bold h-7 py-1 uppercase tracking-wider text-center">Mfg Date</TableHead>
-                                                                            <TableHead className="text-[10px] font-bold h-7 py-1 uppercase tracking-wider text-center">Expiry Date</TableHead>
-                                                                        </TableRow>
-                                                                    </TableHeader>
-                                                                    <TableBody className="divide-y divide-border/20">
-                                                                        {prod.lots.map((lot) => {
-                                                                            const spaceUtil = lot.maxBatchCapacity > 0
-                                                                                ? (lot.quantity / lot.maxBatchCapacity) * 100
-                                                                                : 0;
-                                                                            const cost = lot.unitCost;
+                                                activeProductType === 388 ? (
+                                                    // 4-LEVEL FINISHED GOODS BREAKDOWN: Product ➔ Version ➔ Lot ➔ Batch
+                                                    prod.versions?.map((ver) => {
+                                                        const verKey = `${prod.productId}-${ver.versionId ?? "null"}`;
+                                                        const isVerExpanded = !!expandedVersions[verKey];
 
-                                                                            return (
-                                                                                <TableRow key={lot.lineId} className="hover:bg-muted/10 transition-colors">
-                                                                                    <TableCell className="text-xs py-2 pl-3 font-semibold text-muted-foreground">{lot.branchName}</TableCell>
-                                                                                    <TableCell className="text-xs py-2 font-medium text-foreground">{lot.lotName}</TableCell>
-                                                                                    <TableCell className="text-xs py-2 text-right font-bold text-muted-foreground pr-4">
-                                                                                        {renderCapacityBar(spaceUtil)}
-                                                                                    </TableCell>
-                                                                                    <TableCell className="text-xs py-2 pl-3 font-mono font-semibold text-foreground">{lot.sourceDocumentNo}</TableCell>
-                                                                                    <TableCell className="text-xs py-2 text-muted-foreground font-medium">{lot.transactionType}</TableCell>
-                                                                                    <TableCell className="text-xs py-2 font-mono text-muted-foreground">{lot.batchNo}</TableCell>
-                                                                                    <TableCell className="text-xs py-2 text-right font-black text-foreground">
-                                                                                        {lot.quantity.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
-                                                                                    </TableCell>
-                                                                                    <TableCell className="text-xs py-2 text-right font-bold text-muted-foreground">
-                                                                                        ₱{cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                                                                    </TableCell>
-                                                                                    <TableCell className="text-xs py-2 text-center">
-                                                                                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold border ${getQAStatusBadgeStyles(lot.qaStatus)}`}>
-                                                                                            {lot.qaStatus.toUpperCase()}
+                                                        return (
+                                                            <React.Fragment key={verKey}>
+                                                                {/* LEVEL 2: RECIPE VERSION ROW */}
+                                                                <TableRow 
+                                                                    className="group/ver cursor-pointer bg-muted/30 dark:bg-muted/20 hover:bg-muted/50 transition-colors border-b border-border pl-6 select-none"
+                                                                    onClick={() => toggleVersionRow(prod.productId, ver.versionId)}
+                                                                >
+                                                                    <TableCell className="py-2 pl-8 border-r border-border">
+                                                                        <div className="flex items-center gap-2">
+                                                                            <span className="text-muted-foreground group-hover/ver:text-foreground">
+                                                                                {isVerExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                                                                            </span>
+                                                                            <ScrollText className="h-3.5 w-3.5 text-muted-foreground" />
+                                                                            <span className="text-xs font-semibold text-foreground">
+                                                                                {ver.versionName}
+                                                                            </span>
+                                                                            <span className="text-[10px] text-muted-foreground bg-background/80 px-1.5 py-0.2 rounded border border-border font-mono">
+                                                                                {ver.lots.length} {ver.lots.length === 1 ? "Lot Location" : "Lot Locations"}
+                                                                            </span>
+                                                                        </div>
+                                                                    </TableCell>
+                                                                    <TableCell className="font-bold font-mono text-right pr-4 text-xs text-foreground/90">
+                                                                        {ver.subtotalQuantity.toLocaleString("en-PH", { minimumFractionDigits: 2 })} {prod.uomShortcut}
+                                                                    </TableCell>
+                                                                </TableRow>
+
+                                                                {/* LEVEL 3: LOT STORAGE LOCATION ROW */}
+                                                                {isVerExpanded && ver.lots.map((lot) => {
+                                                                    const lotKey = `${prod.productId}-${ver.versionId ?? "null"}-${lot.lotId ?? "null"}-${lot.branchId}`;
+                                                                    const isLotExpanded = !!expandedLots[lotKey];
+
+                                                                    const spaceUtil = lot.maxBatchCapacity > 0
+                                                                        ? (lot.subtotalQuantity / lot.maxBatchCapacity) * 100
+                                                                        : 0;
+
+                                                                    return (
+                                                                        <React.Fragment key={lotKey}>
+                                                                            <TableRow 
+                                                                                className="group/lot cursor-pointer bg-muted/10 dark:bg-muted/5 hover:bg-muted/30 transition-colors border-b border-border select-none"
+                                                                                onClick={() => toggleLotRow(prod.productId, ver.versionId, lot.lotId, lot.branchId)}
+                                                                            >
+                                                                                <TableCell className="py-1.5 pl-14 border-r border-border">
+                                                                                    <div className="flex items-center gap-2">
+                                                                                        <span className="text-muted-foreground group-hover/lot:text-foreground">
+                                                                                            {isLotExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                                                                                         </span>
-                                                                                    </TableCell>
-                                                                                    <TableCell className="text-xs py-2 text-center font-medium text-muted-foreground">
-                                                                                        {lot.createdOn ? lot.createdOn.split("T")[0] : "—"}
-                                                                                    </TableCell>
-                                                                                    <TableCell className="text-xs py-2 text-center font-medium text-muted-foreground">
-                                                                                        {lot.expiryDate || <span className="italic text-[10px] text-muted-foreground/60">No Expiry</span>}
+                                                                                        <MapPin className="h-3.5 w-3.5 text-muted-foreground/70" />
+                                                                                        <span className="text-xs font-semibold text-foreground">{lot.lotName}</span>
+                                                                                        <span className="text-[10px] text-foreground font-semibold">({lot.branchName})</span>
+                                                                                        <span className="text-[10px] text-muted-foreground bg-background px-1.5 py-0.2 rounded border border-border font-mono ml-auto mr-4">
+                                                                                            {lot.batches.length} {lot.batches.length === 1 ? "Batch" : "Batches"}
+                                                                                        </span>
+                                                                                    </div>
+                                                                                </TableCell>
+                                                                                <TableCell className="font-semibold font-mono text-right pr-4 text-xs text-foreground/80">
+                                                                                    <div className="flex items-center justify-end gap-3">
+                                                                                        {renderCapacityBar(spaceUtil)}
+                                                                                        <span>{lot.subtotalQuantity.toLocaleString("en-PH", { minimumFractionDigits: 2 })} {prod.uomShortcut}</span>
+                                                                                    </div>
+                                                                                </TableCell>
+                                                                            </TableRow>
+
+                                                                            {/* LEVEL 4: BATCH DATA TABLE (Embedded Grid Sub-Table) */}
+                                                                            {isLotExpanded && (
+                                                                                <TableRow className="bg-background border-b border-border">
+                                                                                    <TableCell colSpan={2} className="p-0 pl-16 pr-2 py-1">
+                                                                                        <div className="border border-border rounded-md overflow-hidden bg-background shadow-2xs my-1">
+                                                                                            <Table className="border-collapse w-full">
+                                                                                                <TableHeader className="bg-muted/40 border-b border-border">
+                                                                                                    <TableRow className="h-7 hover:bg-transparent">
+                                                                                                        <TableHead className="text-[10px] font-bold py-1 uppercase tracking-wider pl-2.5 text-muted-foreground border-r border-border">Batch No</TableHead>
+                                                                                                        <TableHead className="text-[10px] font-bold py-1 uppercase tracking-wider text-muted-foreground border-r border-border">Source Doc No</TableHead>
+                                                                                                        <TableHead className="text-[10px] font-bold py-1 uppercase tracking-wider text-muted-foreground border-r border-border">Txn Type</TableHead>
+                                                                                                        <TableHead className="text-[10px] font-bold py-1 uppercase tracking-wider text-right pr-2 text-muted-foreground border-r border-border">Qty</TableHead>
+                                                                                                        <TableHead className="text-[10px] font-bold py-1 uppercase tracking-wider text-right pr-2 text-muted-foreground border-r border-border">Unit Cost</TableHead>
+                                                                                                        <TableHead className="text-[10px] font-bold py-1 uppercase tracking-wider text-center text-muted-foreground border-r border-border">QA Status</TableHead>
+                                                                                                        <TableHead className="text-[10px] font-bold py-1 uppercase tracking-wider text-center text-muted-foreground border-r border-border">Mfg Date</TableHead>
+                                                                                                        <TableHead className="text-[10px] font-bold py-1 uppercase tracking-wider text-center text-muted-foreground border-r border-border">Expiry Date</TableHead>
+                                                                                                        <TableHead className="text-[10px] font-bold py-1 uppercase tracking-wider pl-2 text-muted-foreground">Remarks</TableHead>
+                                                                                                    </TableRow>
+                                                                                                </TableHeader>
+                                                                                                <TableBody className="divide-y divide-border">
+                                                                                                    {lot.batches.map((batch) => (
+                                                                                                        <TableRow key={batch.lineId} className="h-7 hover:bg-muted/20 transition-colors font-mono text-[11px]">
+                                                                                                            <TableCell className="py-1 pl-2.5 font-bold text-foreground border-r border-border">{batch.batchNo}</TableCell>
+                                                                                                            <TableCell className="py-1 text-foreground font-semibold border-r border-border">{batch.sourceDocumentNo}</TableCell>
+                                                                                                            <TableCell className="py-1 text-muted-foreground font-sans font-medium border-r border-border">{batch.transactionType}</TableCell>
+                                                                                                            <TableCell className="py-1 text-right font-black text-foreground pr-2 border-r border-border">
+                                                                                                                {batch.quantity.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                                                                                                            </TableCell>
+                                                                                                            <TableCell className="py-1 text-right font-semibold text-muted-foreground pr-2 border-r border-border">
+                                                                                                                ₱{batch.unitCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                                                                            </TableCell>
+                                                                                                            <TableCell className="py-1 text-center font-sans border-r border-border">
+                                                                                                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold border ${getQAStatusBadgeStyles(batch.qaStatus)}`}>
+                                                                                                                    {batch.qaStatus.toUpperCase()}
+                                                                                                                </span>
+                                                                                                            </TableCell>
+                                                                                                            <TableCell className="py-1 text-center text-muted-foreground border-r border-border">
+                                                                                                                {batch.createdOn ? batch.createdOn.split("T")[0] : "—"}
+                                                                                                            </TableCell>
+                                                                                                            <TableCell className="py-1 text-center text-muted-foreground border-r border-border">
+                                                                                                                {batch.expiryDate || <span className="italic text-[10px] text-muted-foreground/60">No Expiry</span>}
+                                                                                                            </TableCell>
+                                                                                                            <TableCell className="py-1 pl-2 text-muted-foreground/80 font-sans truncate max-w-[160px]">
+                                                                                                                {batch.remarks || "—"}
+                                                                                                            </TableCell>
+                                                                                                        </TableRow>
+                                                                                                    ))}
+                                                                                                </TableBody>
+                                                                                            </Table>
+                                                                                        </div>
                                                                                     </TableCell>
                                                                                 </TableRow>
-                                                                            );
-                                                                        })}
-                                                                    </TableBody>
-                                                                </Table>
-                                                            </div>
-                                                        </div>
-                                                    </TableCell>
-                                                </TableRow>
+                                                                            )}
+                                                                        </React.Fragment>
+                                                                    );
+                                                                })}
+                                                            </React.Fragment>
+                                                        );
+                                                    })
+                                                ) : (
+                                                    // 2-LEVEL RAW MATERIALS & PACKAGING ITEMS BREAKDOWN: Product ➔ Lot/Batch Grid
+                                                    // 3-LEVEL RAW MATERIALS & PACKAGING ITEMS BREAKDOWN: Product ➔ Lot ➔ Batch Grid
+                                                    prod.lots?.map((lot) => {
+                                                        const lotKey = `${prod.productId}-null-${lot.lotId ?? "null"}-${lot.branchId}`;
+                                                        const isLotExpanded = !!expandedLots[lotKey];
+
+                                                        const spaceUtil = lot.maxBatchCapacity > 0
+                                                            ? (lot.subtotalQuantity / lot.maxBatchCapacity) * 100
+                                                            : 0;
+
+                                                        return (
+                                                            <React.Fragment key={lotKey}>
+                                                                {/* LEVEL 2: STORAGE LOT LOCATION ROW */}
+                                                                <TableRow 
+                                                                    className="group/lot cursor-pointer bg-muted/20 dark:bg-muted/10 hover:bg-muted/40 transition-colors border-b border-border select-none"
+                                                                    onClick={() => toggleLotRow(prod.productId, null, lot.lotId, lot.branchId)}
+                                                                >
+                                                                    <TableCell className="py-1.5 pl-8 border-r border-border">
+                                                                        <div className="flex items-center gap-2">
+                                                                            <span className="text-muted-foreground group-hover/lot:text-foreground">
+                                                                                {isLotExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                                                                            </span>
+                                                                            <MapPin className="h-3.5 w-3.5 text-muted-foreground/70" />
+                                                                            <span className="text-xs font-semibold text-foreground">{lot.lotName}</span>
+                                                                            <span className="text-[10px] text-foreground font-semibold">({lot.branchName})</span>
+                                                                            <span className="text-[10px] text-muted-foreground bg-background px-1.5 py-0.2 rounded border border-border font-mono ml-auto mr-4">
+                                                                                {lot.batches.length} {lot.batches.length === 1 ? "Batch" : "Batches"}
+                                                                            </span>
+                                                                        </div>
+                                                                    </TableCell>
+                                                                    <TableCell className="font-semibold font-mono text-right pr-4 text-xs text-foreground/80">
+                                                                        <div className="flex items-center justify-end gap-3">
+                                                                            {renderCapacityBar(spaceUtil)}
+                                                                            <span>{lot.subtotalQuantity.toLocaleString("en-PH", { minimumFractionDigits: 2 })} {prod.uomShortcut}</span>
+                                                                        </div>
+                                                                    </TableCell>
+                                                                </TableRow>
+
+                                                                {/* LEVEL 3: BATCH DATA TABLE (Embedded Grid Sub-Table) */}
+                                                                {isLotExpanded && (
+                                                                    <TableRow className="bg-background border-b border-border">
+                                                                        <TableCell colSpan={2} className="p-0 pl-12 pr-2 py-1">
+                                                                            <div className="border border-border rounded-md overflow-hidden bg-background shadow-2xs my-1">
+                                                                                <Table className="border-collapse w-full">
+                                                                                    <TableHeader className="bg-muted/40 border-b border-border">
+                                                                                        <TableRow className="h-7 hover:bg-transparent">
+                                                                                            <TableHead className="text-[10px] font-bold py-1 uppercase tracking-wider pl-2.5 text-muted-foreground border-r border-border">Batch No</TableHead>
+                                                                                            <TableHead className="text-[10px] font-bold py-1 uppercase tracking-wider text-muted-foreground border-r border-border">Source Doc No</TableHead>
+                                                                                            <TableHead className="text-[10px] font-bold py-1 uppercase tracking-wider text-muted-foreground border-r border-border">Txn Type</TableHead>
+                                                                                            <TableHead className="text-[10px] font-bold py-1 uppercase tracking-wider text-right pr-2 text-muted-foreground border-r border-border">Qty</TableHead>
+                                                                                            <TableHead className="text-[10px] font-bold py-1 uppercase tracking-wider text-right pr-2 text-muted-foreground border-r border-border">Unit Cost</TableHead>
+                                                                                            <TableHead className="text-[10px] font-bold py-1 uppercase tracking-wider text-center text-muted-foreground border-r border-border">QA Status</TableHead>
+                                                                                            <TableHead className="text-[10px] font-bold py-1 uppercase tracking-wider text-center text-muted-foreground border-r border-border">Mfg Date</TableHead>
+                                                                                            <TableHead className="text-[10px] font-bold py-1 uppercase tracking-wider text-center text-muted-foreground border-r border-border">Expiry Date</TableHead>
+                                                                                            <TableHead className="text-[10px] font-bold py-1 uppercase tracking-wider pl-2 text-muted-foreground">Remarks</TableHead>
+                                                                                        </TableRow>
+                                                                                    </TableHeader>
+                                                                                    <TableBody className="divide-y divide-border">
+                                                                                        {lot.batches.map((batch) => (
+                                                                                            <TableRow key={batch.lineId} className="h-7 hover:bg-muted/20 transition-colors font-mono text-[11px]">
+                                                                                                <TableCell className="py-1 pl-2.5 font-bold text-foreground border-r border-border">{batch.batchNo}</TableCell>
+                                                                                                <TableCell className="py-1 text-foreground font-semibold border-r border-border">{batch.sourceDocumentNo}</TableCell>
+                                                                                                <TableCell className="py-1 text-muted-foreground font-sans font-medium border-r border-border">{batch.transactionType}</TableCell>
+                                                                                                <TableCell className="py-1 text-right font-black text-foreground pr-2 border-r border-border">
+                                                                                                    {batch.quantity.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                                                                                                </TableCell>
+                                                                                                <TableCell className="py-1 text-right font-semibold text-muted-foreground pr-2 border-r border-border">
+                                                                                                    ₱{batch.unitCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                                                                </TableCell>
+                                                                                                <TableCell className="py-1 text-center font-sans border-r border-border">
+                                                                                                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold border ${getQAStatusBadgeStyles(batch.qaStatus)}`}>
+                                                                                                        {batch.qaStatus.toUpperCase()}
+                                                                                                    </span>
+                                                                                                </TableCell>
+                                                                                                <TableCell className="py-1 text-center text-muted-foreground border-r border-border">
+                                                                                                    {batch.createdOn ? batch.createdOn.split("T")[0] : "—"}
+                                                                                                </TableCell>
+                                                                                                <TableCell className="py-1 text-center text-muted-foreground border-r border-border">
+                                                                                                    {batch.expiryDate || <span className="italic text-[10px] text-muted-foreground/60">No Expiry</span>}
+                                                                                                </TableCell>
+                                                                                                <TableCell className="py-1 pl-2 text-muted-foreground/80 font-sans truncate max-w-[160px]">
+                                                                                                    {batch.remarks || "—"}
+                                                                                                </TableCell>
+                                                                                            </TableRow>
+                                                                                        ))}
+                                                                                    </TableBody>
+                                                                                </Table>
+                                                                            </div>
+                                                                        </TableCell>
+                                                                    </TableRow>
+                                                                )}
+                                                            </React.Fragment>
+                                                        );
+                                                    })
+                                                )
                                             )}
                                         </React.Fragment>
                                     );
@@ -705,6 +1074,7 @@ export default function InventoryMovementReport({
                 </div>
             </Card>
 
+            {/* Export PDF Options Dialog */}
             <Dialog open={isExportModalOpen} onOpenChange={setIsExportModalOpen}>
                 <DialogContent 
                     className="sm:max-w-[500px] border border-border bg-card p-5 shadow-lg rounded-lg"

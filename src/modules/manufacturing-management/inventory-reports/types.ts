@@ -1,17 +1,10 @@
 // ─── Grouped Tree Node Types ──────────────────────────────────────────
 
-export interface ProductReportNode {
-    productId: number;
-    productName: string;
-    productCode: string;
-    uomShortcut: string;
-    totalAvailable: number;
-    lots: BatchReportEntry[];
-}
-
 export interface BatchReportEntry {
     lineId: number;
     productId: number;
+    versionId?: number | null;
+    versionName?: string | null;
     branchId: number;
     branchName: string;
     lotId: number | null;
@@ -28,11 +21,42 @@ export interface BatchReportEntry {
     createdOn: string | null;
 }
 
+// Level 3 Node for Finished Goods: Storage Lot Location under a Recipe Version
+export interface LotReportNode {
+    lotId: number | null;
+    lotName: string;
+    branchId: number;
+    branchName: string;
+    maxBatchCapacity: number;
+    subtotalQuantity: number;
+    batches: BatchReportEntry[];
+}
+
+// Level 2 Node for Finished Goods: Product Manufacturing Version
+export interface VersionReportNode {
+    versionId: number | null;
+    versionName: string;
+    subtotalQuantity: number;
+    lots: LotReportNode[];
+}
+
+// Level 1 Node: Product Master
+export interface ProductReportNode {
+    productId: number;
+    productName: string;
+    productCode: string;
+    uomShortcut: string;
+    totalAvailable: number;
+    versions?: VersionReportNode[]; // For Finished Goods (4-level hierarchy: Product ➔ Version ➔ Lot ➔ Batch)
+    lots?: LotReportNode[];        // For Raw Materials & Packaging Items (3-level hierarchy: Product ➔ Lot ➔ Batch)
+}
+
 // ─── Raw Movement Entry (Matches BFF Response) ──────────────────────────
 
 export interface MovementReportEntry {
     movement_id: number;
     product_id: number;
+    version_id?: number;
     lot_id: number;
     branch_id: number;
     transaction_type_id: number;
