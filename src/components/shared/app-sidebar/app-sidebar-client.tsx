@@ -94,8 +94,8 @@ export function AppSidebarClient({
             return items
                 .map((item) => {
                     const titleMatch = forceIncludeAll || item.title.toLowerCase().includes(lowerTerm);
-                    const filteredChildren = item.items
-                        ? filterTree(item.items, titleMatch)
+                    const filteredChildren = item.items 
+                        ? filterTree(item.items, titleMatch) 
                         : undefined;
                     const hasChildMatch = !!filteredChildren?.length;
 
