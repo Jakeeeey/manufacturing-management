@@ -353,13 +353,18 @@ export const ProductDetailsTab: React.FC<ProductDetailsTabProps> = ({
                         </div>
 
                         <div className="space-y-1">
-                            <label className="text-[11px] font-bold text-muted-foreground uppercase">Product Description</label>
+                            <label className="text-[11px] font-bold text-muted-foreground uppercase">Short Description</label>
                             <textarea 
                                 rows={2}
                                 value={editedDetails.description || ""} 
                                 onChange={e => handleDetailChange("description", e.target.value)}
                                 className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary resize-none transition-all"
                             />
+                            {selectedProduct.identityKey && (
+                                <p className="text-[10px] text-muted-foreground">
+                                    System identity: {selectedProduct.identityKey}
+                                </p>
+                            )}
                         </div>
                     </div>
                 </div>

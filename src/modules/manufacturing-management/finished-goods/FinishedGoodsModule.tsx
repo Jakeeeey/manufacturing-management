@@ -607,18 +607,18 @@ export default function FinishedGoodsModule() {
                                                 setIsMenuOpen(false);
                                                 setRegisterForm({
                                                     title: selectedProduct.title,
-                                                    sku: selectedProduct.sku,
-                                                    baseUom: "PCS",
+                                                    sku: "",
+                                                    baseUom: "",
                                                     targetSellingPrice: "",
                                                     barcode: "",
                                                     densityFactor: String(selectedProduct.densityFactor || "1.0"),
-                                                    expectedYield: "100",
+                                                    expectedYield: "",
                                                     versionName: "v1.0",
                                                     brandId: selectedProduct.product_brand ? String(selectedProduct.product_brand) : "",
                                                     categoryId: selectedProduct.product_category ? String(selectedProduct.product_category) : "",
                                                     description: selectedProduct.description || "",
                                                     costPerUnit: "",
-                                                    uomCount: "0",
+                                                    uomCount: "",
                                                     classId: selectedProduct.product_class ? String(selectedProduct.product_class) : "",
                                                     segmentId: selectedProduct.product_segment ? String(selectedProduct.product_segment) : "",
                                                     sectionId: selectedProduct.product_section ? String(selectedProduct.product_section) : "",
@@ -1250,9 +1250,9 @@ export default function FinishedGoodsModule() {
                                         />
                                     </div>
                                     <div className="col-span-2">
-                                        <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Description</label>
+                                        <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Short Description</label>
                                         <textarea
-                                            placeholder="Detailed description of the product..."
+                                            placeholder="Optional human-readable product description..."
                                             value={registerForm.description}
                                             onChange={e => setRegisterForm(prev => ({ ...prev, description: e.target.value }))}
                                             rows={2}
@@ -1320,7 +1320,10 @@ export default function FinishedGoodsModule() {
                                                             ...prev,
                                                             parentId: selectedId,
                                                             title: parentProd.title,
-                                                            sku: parentProd.sku,
+                                                            sku: "",
+                                                            baseUom: "",
+                                                            uomCount: "",
+                                                            expectedYield: "",
                                                             description: parentProd.description || prev.description,
                                                             brandId: parentProd.product_brand ? String(parentProd.product_brand) : prev.brandId,
                                                             categoryId: parentProd.product_category ? String(parentProd.product_category) : prev.categoryId,
@@ -1331,7 +1334,14 @@ export default function FinishedGoodsModule() {
                                                             densityFactor: String(parentProd.densityFactor || "1.0")
                                                         };
                                                     }
-                                                    return { ...prev, parentId: selectedId };
+                                                    return {
+                                                        ...prev,
+                                                        parentId: selectedId,
+                                                        sku: "",
+                                                        baseUom: "",
+                                                        uomCount: "",
+                                                        expectedYield: ""
+                                                    };
                                                 });
                                             }}
                                             placeholder="Select parent product..."
