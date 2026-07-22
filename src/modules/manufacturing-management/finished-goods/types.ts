@@ -32,6 +32,7 @@ export interface Product {
     sku: string;
     title: string;
     description: string;
+    identityKey?: string | null;
     barcode: string;
     baseUom: string;
     expectedYieldPercent: number;
@@ -172,11 +173,13 @@ export interface ProductVersion {
     base_quantity: number;
     uom_id?: number | null;
     expected_yield_percentage: number;
+    custom_overhead?: number | null;
     status: 'For Approval' | 'Active' | 'Inactive';
     valid_from?: string | null;
     valid_to?: string | null;
     is_active?: boolean; // legacy/compatibility
     routes?: RouteStep[];
+    overheads?: ProductOverhead[];
 }
 
 export interface RouteStep {
@@ -222,6 +225,7 @@ export interface BFFCatalogProduct {
     product_name: string;
     product_code?: string | null;
     description?: string | null;
+    short_description?: string | null;
     barcode?: string | null;
     unit_of_measurement?: {
         unit_id: number;
@@ -269,6 +273,7 @@ export interface DirectusProduct {
     product_name: string;
     product_code: string;
     description: string;
+    short_description?: string | null;
     unit_of_measurement: { unit_id: number; unit_name: string; unit_shortcut: string } | null;
     cost_per_unit: number;
     price_per_unit: number;

@@ -14,6 +14,7 @@ import {
     QAParameter,
     RouteStep,
     RouteBOMItem,
+    ProductOverhead,
     AssetRecord,
     DepartmentRecord
 } from "../types";
@@ -42,7 +43,8 @@ export async function fetchProducts(search?: string, limit: number = 100): Promi
             id: String(p.product_id),
             sku: p.product_code || `SKU-${p.product_id}`,
             title: p.product_name,
-            description: p.description || "",
+            description: p.short_description || p.description || "",
+            identityKey: p.description || null,
             barcode: p.barcode || "",
             baseUom: p.unit_of_measurement?.unit_shortcut || "PCS",
             expectedYieldPercent: 100,
@@ -130,6 +132,7 @@ export async function saveBOMDetails(
         base_quantity: number;
         uom_id?: number | null;
         expected_yield_percentage: number;
+        custom_overhead?: number;
         status: 'For Approval' | 'Active' | 'Inactive';
         valid_from?: string | null;
         valid_to?: string | null;
@@ -141,7 +144,7 @@ export async function saveBOMDetails(
         densityFactor?: number;
         productBrand?: number;
         productCategory?: number;
-        description?: string;
+        shortDescription?: string;
         costPerUnit?: number;
         unitOfMeasurementCount?: number;
         productClass?: number;
@@ -153,12 +156,13 @@ export async function saveBOMDetails(
         productionCapacityPerHour?: number;
         unit_of_measurement?: number | null;
     },
-    routes: RouteStep[]
+    routes: RouteStep[],
+    overheads: ProductOverhead[] = []
 ): Promise<{ success: boolean; rollup?: unknown }> {
     const res = await fetch("/api/manufacturing/finished-goods/bom-details", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productId, versionId, details, routes })
+        body: JSON.stringify({ productId, versionId, details, routes, overheads })
     });
     if (!res.ok) {
         let msg = "Failed to save BOM details via BFF";
@@ -175,7 +179,7 @@ export async function registerProduct(
     productDetails: {
         product_name: string;
         product_code: string;
-        description?: string;
+        short_description?: string;
         barcode?: string;
         price_per_unit?: number;
         cost_per_unit?: number;
@@ -205,11 +209,16 @@ export async function registerProduct(
     });
     if (!res.ok) {
         let msg = "Failed to register product via BFF";
+        let code: string | undefined;
         try {
             const errJson = await res.json();
             if (errJson && errJson.error) msg = errJson.error;
+            if (errJson && errJson.code) code = errJson.code;
         } catch { }
-        throw new Error(msg);
+        const error = new Error(msg) as Error & { status?: number; code?: string };
+        error.status = res.status;
+        error.code = code;
+        throw error;
     }
     return res.json();
 }

@@ -311,7 +311,7 @@ export default function ClientFormModal({
                                                         }}
                                                         className="rounded-lg border bg-background text-foreground text-xs font-bold px-3 py-2 outline-none focus:ring-1 focus:ring-primary focus:border-primary cursor-pointer transition-all hover:bg-muted/30"
                                                     >
-                                                        <option value="">Default (Global Active Version)</option>
+                                                        <option value="">Default (Standard BOM Version 1)</option>
                                                          {productVersions.map((v) => (
                                                              <option key={(v as any).version_id ?? (v as any).id} value={(v as any).version_id ?? (v as any).id}>
                                                                  {v.version_name} ({v.status})

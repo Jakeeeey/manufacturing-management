@@ -8,8 +8,14 @@ import {
 import {
     updateProductDetails,
     calculateRollupCost,
-    updateProductStandardCost
+    updateProductStandardCost,
+    syncProductOverheads
 } from "../products/products-helper";
+import {
+    ProductIdentityError,
+    ensureProductIdentityAvailable,
+    resolveProductIdentity
+} from "../products/product-identity";
 
 export async function GET(request: Request) {
     try {
@@ -40,7 +46,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
     try {
         const body = await request.json();
-        const { productId, versionId, details, routes } = body;
+        const { productId, versionId, details, routes = [], overheads } = body;
 
         if (!productId || !versionId) {
             return NextResponse.json({ error: "Missing productId or versionId" }, { status: 400 });
@@ -49,16 +55,43 @@ export async function POST(request: Request) {
         const numericProductId = parseInt(productId);
         const numericVersionId = parseInt(versionId);
 
+        const expectedYield = Number(details.expected_yield_percentage ?? details.expectedYieldPercent);
+        const baseQuantity = Number(details.base_quantity ?? 1);
+        const customOverhead = Number(details.custom_overhead ?? details.customOverhead ?? 0);
+
+        if (!Number.isFinite(expectedYield) || expectedYield <= 0 || expectedYield > 100) {
+            return NextResponse.json({ error: "Expected yield must be between 1 and 100." }, { status: 400 });
+        }
+        if (!Number.isFinite(baseQuantity) || baseQuantity <= 0) {
+            return NextResponse.json({ error: "Base quantity must be greater than 0." }, { status: 400 });
+        }
+        if (!Number.isFinite(customOverhead) || customOverhead < 0) {
+            return NextResponse.json({ error: "Custom overhead must be 0 or greater." }, { status: 400 });
+        }
+
+        const identity = await resolveProductIdentity({
+            productId: numericProductId,
+            productName: details.title,
+            parentId: details.parent_id,
+            unitId: details.unit_of_measurement
+        });
+        await ensureProductIdentityAvailable(identity.descriptionKey, numericProductId);
+
         // 1. Update Product Details
         const prodOk = await updateProductDetails(numericProductId, {
-            product_name: details.title,
+            product_name: identity.productName,
             product_code: details.sku,
             barcode: details.barcode,
             price_per_unit: details.targetSellingPrice,
             density_factor: details.densityFactor,
             product_brand: details.productBrand,
             product_category: details.productCategory,
-            description: details.description,
+            description: identity.descriptionKey,
+            short_description: typeof details.shortDescription === "string"
+                ? details.shortDescription.trim() || null
+                : typeof details.description === "string"
+                    ? details.description.trim() || null
+                    : null,
             cost_per_unit: details.costPerUnit,
             unit_of_measurement_count: details.unitOfMeasurementCount,
             product_class: details.productClass,
@@ -67,17 +100,21 @@ export async function POST(request: Request) {
             product_shelf_life: details.productShelfLife,
             product_image: details.productImage,
             production_capacity_per_hour: details.productionCapacityPerHour,
-            unit_of_measurement: details.unit_of_measurement
+            unit_of_measurement: identity.unitId,
+            parent_id: identity.parentId
         });
         if (!prodOk) throw new Error("Failed to update product details in Directus");
 
         // 2. Save version metadata (expected yield and base quantity)
-        const versionOk = await saveActiveBOMDetails(
+        const versionResult = await saveActiveBOMDetails(
             numericVersionId,
-            details.expected_yield_percentage || details.expectedYieldPercent || 100,
-            details.base_quantity || 1
+            expectedYield,
+            baseQuantity,
+            customOverhead
         );
-        if (!versionOk) throw new Error("Failed to update version metadata in Directus");
+        if (!versionResult.ok) {
+            throw new Error(versionResult.error || "Failed to update version metadata in Directus");
+        }
 
         // Get logged in user ID from secure access token cookie
         let userId: number | null = null;
@@ -103,6 +140,11 @@ export async function POST(request: Request) {
         const syncOk = await syncRoutesAndBOM(numericVersionId, routes, userId ? Number(userId) : null);
         if (!syncOk) throw new Error("Failed to sync routes and route-level BOM items in Directus");
 
+        if (Array.isArray(overheads)) {
+            const overheadOk = await syncProductOverheads(numericProductId, numericVersionId, overheads);
+            if (!overheadOk) throw new Error("Failed to sync product overheads in Directus");
+        }
+
         // 4. Run standard rollup costing recalculation and save to product standard cost field
         const rollupResult = await calculateRollupCost(numericProductId);
         if (rollupResult.bomId) {
@@ -115,6 +157,9 @@ export async function POST(request: Request) {
         });
     } catch (e) {
         console.error("API Error saving BOM details:", e);
+        if (e instanceof ProductIdentityError) {
+            return NextResponse.json({ error: e.message }, { status: e.status });
+        }
         const error = e instanceof Error ? e : new Error(String(e));
         return NextResponse.json({ error: (error as { message?: string }).message || "Failed to save BOM details" }, { status: 500 });
     }
