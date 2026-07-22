@@ -99,7 +99,7 @@ async function loadMovementRows(receivingLineIds: number[]) {
     if (receivingLineIds.length === 0) return [];
     const params = new URLSearchParams({
         "filter[source_document_id][_in]": receivingLineIds.join(","),
-        fields: "movement_id,source_document_id,branch_id,transaction_type_id,lot_id,quantity",
+        fields: "movement_id,source_document_id,branch_id,transaction_type_id,lot_id,quantity,version_id",
         limit: "-1"
     });
     const response = await fetch(`${DIRECTUS_URL}/items/inventory_movements?${params.toString()}`, {
@@ -114,6 +114,7 @@ function finalizeMovements(pending: PendingMovement[], rows: Record<string, unkn
     if (rows.length !== pending.length) return null;
     const movementByKey = new Map<string, number>();
     for (const row of rows) {
+        if (row.version_id !== null) return null;
         const movementId = Number(row.movement_id);
         const key = movementKey({
             receivingLineId: relationId(row.source_document_id, "purchase_order_product_id"),
@@ -684,6 +685,7 @@ export async function handleQaReceivingPost(request: Request, options: Receiving
                             batch_no: line.item.batch_no,
                             expiry_date: line.item.expiration_date,
                             manufacturing_date: line.item.manufacturing_date || null,
+                            version_id: null,
                             quantity,
                             created_by: options.actorUserId,
                             remarks
@@ -725,7 +727,7 @@ export async function handleQaReceivingPost(request: Request, options: Receiving
 
             commitPhase = "movements";
             movementWriteAttempted = true;
-            const movementRes = await fetch(`${DIRECTUS_URL}/items/inventory_movements?fields=movement_id,product_id,lot_id,branch_id,transaction_type_id,source_document_id,source_document_no,batch_no,quantity`, {
+            const movementRes = await fetch(`${DIRECTUS_URL}/items/inventory_movements?fields=movement_id,product_id,lot_id,branch_id,transaction_type_id,source_document_id,source_document_no,batch_no,quantity,version_id`, {
                 method: "POST",
                 headers,
                 body: JSON.stringify(pendingMovements.map(movement => movement.payload))
