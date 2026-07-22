@@ -94,8 +94,8 @@ export function AppSidebarClient({
             return items
                 .map((item) => {
                     const titleMatch = forceIncludeAll || item.title.toLowerCase().includes(lowerTerm);
-                    const filteredChildren = item.items 
-                        ? filterTree(item.items, titleMatch) 
+                    const filteredChildren = item.items
+                        ? filterTree(item.items, titleMatch)
                         : undefined;
                     const hasChildMatch = !!filteredChildren?.length;
 
@@ -129,7 +129,7 @@ export function AppSidebarClient({
                                         alt="VOS Logo"
                                         width={40}
                                         height={40}
-                                        className="h-10 w-10 object-contain"
+                                        className="h-9 w-10 object-contain"
                                         priority
                                     />
                                 </div>
