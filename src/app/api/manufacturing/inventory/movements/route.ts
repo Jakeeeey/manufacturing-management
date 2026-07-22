@@ -6,6 +6,7 @@ import { z } from "zod";
 // Zod schema for individual movement line validation
 const movementItemSchema = z.object({
     product_id: z.number().int().positive("product_id must be a positive integer"),
+    version_id: z.number().int().positive("version_id must be a positive integer").nullable().optional(),
     lot_id: z.number().int().positive("lot_id must be a positive integer"),
     branch_id: z.number().int().positive("branch_id must be a positive integer"),
     transaction_type_id: z.number().int().positive("transaction_type_id must be a positive integer"),
@@ -139,6 +140,7 @@ export async function POST(request: Request) {
         // Standardize parameters and inject auditor logs
         const payload = movements.map((m) => ({
             product_id: m.product_id,
+            version_id: m.version_id !== undefined ? m.version_id : null,
             lot_id: m.lot_id,
             branch_id: m.branch_id,
             transaction_type_id: m.transaction_type_id,
