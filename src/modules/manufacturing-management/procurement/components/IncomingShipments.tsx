@@ -26,6 +26,25 @@ function formatAmount(value: number | string | null | undefined) {
         maximumFractionDigits: 2
     }).format(Number.isFinite(amount) ? amount : 0);
 }
+
+function MaterialTypeBadge({ typeId, short = false }: { typeId?: number | string | null; short?: boolean }) {
+    const normalizedTypeId = Number(typeId);
+    const type = normalizedTypeId === 389
+        ? { label: "Raw Material", shortLabel: "RM", className: "bg-blue-500/10 text-blue-600 border-blue-500/20" }
+        : normalizedTypeId === 390
+            ? { label: "Packaging Item", shortLabel: "PKG", className: "bg-amber-500/10 text-amber-600 border-amber-500/20" }
+            : { label: "Unclassified", shortLabel: "N/A", className: "bg-muted text-muted-foreground border-border" };
+
+    return (
+        <span
+            aria-label={`Material Type: ${type.label}`}
+            title={`Material Type: ${type.label}`}
+            className={`inline-flex w-fit items-center rounded border px-1.5 py-0.5 text-[8px] font-extrabold uppercase tracking-wider ${type.className}`}
+        >
+            {short ? type.shortLabel : type.label}
+        </span>
+    );
+}
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { Search, Plus, Calendar, ShieldCheck, Truck, Layers, Anchor, AlertCircle, Info, Landmark, Edit, RefreshCw, Loader2, Trash2, CheckCircle2, CheckSquare, X } from "lucide-react";
 import { toast } from "sonner";
@@ -127,27 +146,6 @@ function RawProductSelector({
     productName,
     onSelect
 }: RawProductSelectorProps) {
-    const getTypeBadge = (typeId?: number | null, isShort = false) => {
-        if (typeId === 389) {
-            return (
-                <span className="bg-blue-500/10 text-blue-600 border border-blue-500/20 px-1 py-0.5 rounded text-[8px] font-extrabold uppercase tracking-wider">
-                    {isShort ? "RM" : "Raw Material"}
-                </span>
-            );
-        }
-        if (typeId === 390) {
-            return (
-                <span className="bg-amber-500/10 text-amber-600 border border-amber-500/20 px-1 py-0.5 rounded text-[8px] font-extrabold uppercase tracking-wider">
-                    {isShort ? "PKG" : "Packaging"}
-                </span>
-            );
-        }
-        return (
-            <span className="bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 px-1 py-0.5 rounded text-[8px] font-extrabold uppercase tracking-wider">
-                {isShort ? "FG" : "Finished Good"}
-            </span>
-        );
-    };
     const [isOpen, setIsOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
     const [highlightedIndex, setHighlightedIndex] = useState(0);
@@ -406,7 +404,7 @@ function RawProductSelector({
                                     <div>
                                         <div className="flex items-center gap-1">
                                             <div className="font-extrabold text-foreground">{group.parent.product_name}</div>
-                                            {getTypeBadge(group.parent.product_type)}
+                                            <MaterialTypeBadge typeId={group.parent.product_type} />
                                         </div>
                                         <div className="text-[9px] text-muted-foreground font-mono mt-0.5">Base SKU: {group.parent.product_code || `ID-${group.parent.product_id}`}</div>
                                     </div>
@@ -446,7 +444,7 @@ function RawProductSelector({
                                                     }`}
                                                 >
                                                     <span>{opt.unit_of_measurement?.unit_shortcut || "PCS"}</span>
-                                                    {getTypeBadge(opt.product_type, true)}
+                                                    <MaterialTypeBadge typeId={opt.product_type} short />
                                                     <span className="opacity-50">|</span>
                                                     <span>{formatMoney(cost)}</span>
                                                 </button>
@@ -1660,9 +1658,27 @@ export default function IncomingShipments({
                                          <div className="space-y-3">
                                           {linesForm.map((line, idx) => {
                                              const lineErrors = getLineErrors(line);
+                                             const selectedMaterial = rawMaterials.find(material =>
+                                                 String(material.product_id) === String(line.product_id)
+                                             ) || rawMaterials.find(material =>
+                                                 String(material.product_id) === String(line.parent_product_id)
+                                             );
                                              return (
                                               <React.Fragment key={idx}>
-                                              <div className={`grid grid-cols-1 gap-3 bg-muted/10 border p-3 pr-10 rounded-lg relative sm:grid-cols-2 lg:grid-cols-4 ${hasSubmitted && lineErrors.length > 0 ? "border-red-500/50 bg-red-500/5" : ""}`}>
+                                              <div className={`grid grid-cols-1 gap-3 bg-muted/10 border p-3 pr-10 rounded-lg relative sm:grid-cols-2 lg:grid-cols-5 ${hasSubmitted && lineErrors.length > 0 ? "border-red-500/50 bg-red-500/5" : ""}`}>
+                                                <div className="w-full min-w-0 space-y-1.5 flex flex-col">
+                                                    <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Material Type</label>
+                                                    <div
+                                                        className="flex h-9 items-center rounded-lg border bg-muted/40 px-2.5"
+                                                        aria-live="polite"
+                                                    >
+                                                        {line.product_id ? (
+                                                            <MaterialTypeBadge typeId={selectedMaterial?.product_type} />
+                                                        ) : (
+                                                            <span className="text-[10px] font-semibold text-muted-foreground">Select a material</span>
+                                                        )}
+                                                    </div>
+                                                </div>
                                                 <div className="w-full min-w-0 space-y-1.5 flex flex-col relative">
                                                     <label className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider block">Raw Product Name <span className="text-red-500">*</span></label>
                                                     <RawProductSelector

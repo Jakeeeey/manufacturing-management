@@ -227,7 +227,37 @@ export default function FinishedGoodsModule() {
     const handleDetailChange = (field: keyof Product, value: unknown) => {
         setHasUnsavedChanges(true);
         setEditedDetails(prev => ({ ...prev, [field]: value }));
+
+        if (field === "expectedYieldPercent") {
+            setEditedVersionDetails(prev => ({
+                ...prev,
+                expected_yield_percentage: Number(value)
+            }));
+        }
+        if (field === "customOverhead") {
+            setEditedVersionDetails(prev => ({
+                ...prev,
+                custom_overhead: Number(value)
+            }));
+        }
     };
+
+
+    useEffect(() => {
+        const expectedYield = editedVersionDetails.expected_yield_percentage;
+        if (expectedYield !== undefined) {
+            setEditedDetails(current => current.expectedYieldPercent === expectedYield
+                ? current
+                : { ...current, expectedYieldPercent: expectedYield });
+        }
+
+        const customOverhead = editedVersionDetails.custom_overhead;
+        if (customOverhead !== undefined) {
+            setEditedDetails(current => current.customOverhead === customOverhead
+                ? current
+                : { ...current, customOverhead: customOverhead ?? 0 });
+        }
+    }, [editedVersionDetails.expected_yield_percentage, editedVersionDetails.custom_overhead]);
 
     // Importation Derived Calculations
     const importForeignPeso = importNetWeight * importPriceUsd * importFxRate;
@@ -1045,26 +1075,6 @@ export default function FinishedGoodsModule() {
                                         )}
                                     </>
                                 )}
-                                {savingBOM && (
-                                    <div className="absolute inset-0 bg-background/55 backdrop-blur-xs flex items-center justify-center z-50 animate-in fade-in duration-150">
-                                        <div className="bg-card border rounded-xl shadow-lg p-6 flex flex-col gap-4 w-80 text-center border-primary/20">
-                                            <div className="flex flex-col items-center gap-1">
-                                                <h4 className="text-xs font-bold text-foreground uppercase tracking-wider">Processing Request</h4>
-                                                <p className="text-[10px] text-muted-foreground font-mono">{saveStatus}</p>
-                                            </div>
-                                            <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden relative">
-                                                <div 
-                                                    className="bg-primary h-full rounded-full transition-all duration-300 ease-out"
-                                                    style={{ width: `${saveProgress}%` }}
-                                                />
-                                            </div>
-                                            <div className="flex justify-between items-center text-[10px] font-mono font-bold text-muted-foreground">
-                                                <span>PROGRESS</span>
-                                                <span className="text-primary">{saveProgress}%</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
                                 {loadingBOM && (
                                     <div className="absolute inset-0 bg-background/55 backdrop-blur-xs flex items-center justify-center z-50 animate-in fade-in duration-150">
                                         <div className="bg-card border rounded-xl shadow-lg p-5 flex flex-col items-center gap-2 max-w-xs text-center border-primary/20">
@@ -1084,6 +1094,32 @@ export default function FinishedGoodsModule() {
                     </div>
                 </div>
             </div>
+
+            {savingBOM && (
+                <div
+                    className="fixed inset-0 z-[100] flex items-center justify-center bg-background/55 backdrop-blur-sm animate-in fade-in duration-150"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="finished-goods-saving-title"
+                >
+                    <div className="bg-card border rounded-xl shadow-lg p-6 flex flex-col gap-4 w-80 text-center border-primary/20" tabIndex={-1}>
+                        <div className="flex flex-col items-center gap-1">
+                            <h4 id="finished-goods-saving-title" className="text-xs font-bold text-foreground uppercase tracking-wider">Processing Request</h4>
+                            <p className="text-[10px] text-muted-foreground font-mono">{saveStatus}</p>
+                        </div>
+                        <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden relative">
+                            <div
+                                className="bg-primary h-full rounded-full transition-all duration-300 ease-out"
+                                style={{ width: `${saveProgress}%` }}
+                            />
+                        </div>
+                        <div className="flex justify-between items-center text-[10px] font-mono font-bold text-muted-foreground">
+                            <span>PROGRESS</span>
+                            <span className="text-primary">{saveProgress}%</span>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Version Registration Modal */}
             {isVersionModalOpen && (

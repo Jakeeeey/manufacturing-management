@@ -14,6 +14,7 @@ import {
     QAParameter,
     RouteStep,
     RouteBOMItem,
+    ProductOverhead,
     AssetRecord,
     DepartmentRecord
 } from "../types";
@@ -131,6 +132,7 @@ export async function saveBOMDetails(
         base_quantity: number;
         uom_id?: number | null;
         expected_yield_percentage: number;
+        custom_overhead?: number;
         status: 'For Approval' | 'Active' | 'Inactive';
         valid_from?: string | null;
         valid_to?: string | null;
@@ -154,12 +156,13 @@ export async function saveBOMDetails(
         productionCapacityPerHour?: number;
         unit_of_measurement?: number | null;
     },
-    routes: RouteStep[]
+    routes: RouteStep[],
+    overheads: ProductOverhead[] = []
 ): Promise<{ success: boolean; rollup?: unknown }> {
     const res = await fetch("/api/manufacturing/finished-goods/bom-details", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productId, versionId, details, routes })
+        body: JSON.stringify({ productId, versionId, details, routes, overheads })
     });
     if (!res.ok) {
         let msg = "Failed to save BOM details via BFF";

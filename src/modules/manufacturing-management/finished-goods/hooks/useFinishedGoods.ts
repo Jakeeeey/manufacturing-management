@@ -384,6 +384,7 @@ export function useFinishedGoods(initialTab: string = "details") {
                         version_name: versionObj.version_name,
                         base_quantity: versionObj.base_quantity,
                         expected_yield_percentage: versionObj.expected_yield_percentage,
+                        custom_overhead: versionObj.custom_overhead ?? 0,
                         status: versionObj.status,
                         uom_id: versionObj.uom_id,
                         valid_from: versionObj.valid_from,
@@ -396,7 +397,7 @@ export function useFinishedGoods(initialTab: string = "details") {
                     setEditedDetails({
                         ...baseDetails,
                         expectedYieldPercent: versionObj.expected_yield_percentage,
-                        customOverhead: (versionObj as any).custom_overhead || 0
+                        customOverhead: versionObj.custom_overhead ?? 0
                     });
 
                     // Format routes as ingredients and routings for older tabs
@@ -436,7 +437,7 @@ export function useFinishedGoods(initialTab: string = "details") {
                     }
                     setEditedBOM(ingredients);
                     setEditedRoutings(routings);
-                    setEditedOverheads([]);
+                    setEditedOverheads(versionObj.overheads ?? []);
                     setHasUnsavedChanges(false);
                 } else {
                     setSelectedVersion(null);
@@ -775,9 +776,10 @@ export function useFinishedGoods(initialTab: string = "details") {
 
             const detailsPayload = {
                 version_name: editedVersionDetails.version_name || "",
-                base_quantity: Number(editedVersionDetails.base_quantity || 1),
+                base_quantity: Number(editedVersionDetails.base_quantity ?? 1),
                 uom_id: editedVersionDetails.uom_id || null,
-                expected_yield_percentage: Number(editedVersionDetails.expected_yield_percentage || 100),
+                expected_yield_percentage: Number(editedVersionDetails.expected_yield_percentage ?? editedDetails.expectedYieldPercent ?? 100),
+                custom_overhead: Number(editedDetails.customOverhead ?? editedVersionDetails.custom_overhead ?? 0),
                 status: editedVersionDetails.status || "For Approval",
                 valid_from: editedVersionDetails.valid_from || null,
                 valid_to: editedVersionDetails.valid_to || null,
@@ -791,7 +793,7 @@ export function useFinishedGoods(initialTab: string = "details") {
                 productBrand: editedDetails.product_brand,
                 productCategory: editedDetails.product_category,
                 shortDescription: editedDetails.description || "",
-                costPerUnit: editedDetails.cost_per_unit || 0,
+                costPerUnit: editedDetails.cost_per_unit ?? 0,
                 unitOfMeasurementCount: editedDetails.unit_of_measurement_count || 0,
                 productClass: editedDetails.product_class,
                 productSegment: editedDetails.product_segment,
@@ -807,7 +809,8 @@ export function useFinishedGoods(initialTab: string = "details") {
                 numericProductId,
                 activeBOMId,
                 detailsPayload,
-                editedRoutes
+                editedRoutes,
+                editedOverheads
             );
 
             if (res.success) {

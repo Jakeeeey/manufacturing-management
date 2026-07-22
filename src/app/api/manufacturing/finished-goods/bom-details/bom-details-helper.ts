@@ -18,7 +18,12 @@ export async function updateProductVersionOverhead(versionId: number, customOver
     }
 }
 
-export async function saveActiveBOMDetails(versionId: number, expectedYield: number, baseQuantity: number = 1): Promise<boolean> {
+export async function saveActiveBOMDetails(
+    versionId: number,
+    expectedYield: number,
+    baseQuantity: number = 1,
+    customOverhead: number = 0
+): Promise<boolean> {
     try {
         const url = `${DIRECTUS_URL}/items/product_manufacturing_version/${versionId}`;
         const res = await fetch(url, {
@@ -26,7 +31,8 @@ export async function saveActiveBOMDetails(versionId: number, expectedYield: num
             headers,
             body: JSON.stringify({
                 expected_yield_percentage: expectedYield,
-                base_quantity: baseQuantity
+                base_quantity: baseQuantity,
+                custom_overhead: customOverhead
             })
         });
         return res.ok;
