@@ -494,9 +494,22 @@ export default function PlanningEngineeringModule() {
                     {/* Body */}
                     <div className="flex-1 overflow-y-auto p-6 space-y-6 min-h-0 bg-muted/5">
                         <div className="bg-card border rounded-xl p-4 space-y-2 text-sm">
-                            <div className="grid grid-cols-2 gap-4">
-                                <div><span className="text-muted-foreground">Planning Remarks:</span> <span className="font-medium">{selectedUnreleasedJo?.remarks || "None"}</span></div>
-                                <div><span className="text-muted-foreground">Shift Option:</span> <span className="font-medium">{selectedUnreleasedJo?.shiftOption || "8"} hours</span></div>
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                <div><span className="text-muted-foreground">Planning Remarks:</span> <span className="font-medium ml-1">{selectedUnreleasedJo?.remarks || "None"}</span></div>
+                                <div><span className="text-muted-foreground">Shift Option:</span> <span className="font-medium ml-1">{selectedUnreleasedJo?.shiftOption || "8"} hours</span></div>
+                                <div>
+                                    <span className="text-muted-foreground">Estimated Duration:</span> 
+                                    <span className="font-medium ml-1">
+                                        {(() => {
+                                            const setup = selectedUnreleasedJo?.routing_tasks?.reduce((sum: number, t: any) => sum + Number(t.planned_setup_hours || 0), 0) || 0;
+                                            const run = selectedUnreleasedJo?.routing_tasks?.reduce((sum: number, t: any) => sum + Number(t.planned_run_hours || 0), 0) || 0;
+                                            const total = setup + run;
+                                            if (total === 0) return "Not estimated";
+                                            const days = (total / Number(selectedUnreleasedJo?.shiftOption || 8)).toFixed(1);
+                                            return `${total.toFixed(1)} hrs (~${days} Days)`;
+                                        })()}
+                                    </span>
+                                </div>
                             </div>
                         </div>
 

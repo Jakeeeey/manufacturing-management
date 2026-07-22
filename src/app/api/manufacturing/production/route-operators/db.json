@@ -274,5 +274,29 @@
     "actual_hours": 0,
     "hourly_rate": 150,
     "labor_cost": 0
+  },
+  {
+    "id": 26,
+    "jo_id": "JO-247705",
+    "routing_id": 0,
+    "task_id": 190,
+    "user_id": 168,
+    "started_at": "2026-07-20T10:41:52.011Z",
+    "stopped_at": null,
+    "actual_hours": 0,
+    "hourly_rate": 150,
+    "labor_cost": 0
+  },
+  {
+    "id": 27,
+    "jo_id": "JO-896206",
+    "routing_id": 0,
+    "task_id": 192,
+    "user_id": 169,
+    "started_at": "2026-07-20T10:43:49.058Z",
+    "stopped_at": null,
+    "actual_hours": 0,
+    "hourly_rate": 150,
+    "labor_cost": 0
   }
 ]

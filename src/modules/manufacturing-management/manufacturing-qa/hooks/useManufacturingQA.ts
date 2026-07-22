@@ -43,62 +43,73 @@ export const printYieldClosingReceipt = (data: PrintReceiptData) => {
 
     printWindow.document.write(`
         <html>
-        <head>
-            <title>FG Receipt - ${data.jo_no}</title>
             <style>
-                @page { size: portrait; margin: 10mm; }
+                @page { size: 58mm auto; margin: 0; }
+                * {
+                    box-sizing: border-box;
+                }
                 body {
                     font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-                    font-size: 11px;
+                    font-size: 8px;
                     color: #0f172a;
                     margin: 0;
-                    padding: 10px;
-                    line-height: 1.5;
+                    padding: 2px;
+                    line-height: 1.3;
                     background-color: #ffffff;
                 }
                 .receipt {
                     border: 1px solid #e2e8f0;
-                    border-radius: 12px;
-                    padding: 20px;
-                    max-width: 380px;
+                    border-radius: 6px;
+                    padding: 6px;
+                    max-width: 48mm;
                     margin: 0 auto;
-                    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+                    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.01);
                 }
                 .header {
                     text-align: center;
-                    border-bottom: 2px solid #0f172a;
-                    padding-bottom: 12px;
-                    margin-bottom: 15px;
+                    border-bottom: 1px dashed #0f172a;
+                    padding-bottom: 4px;
+                    margin-bottom: 6px;
                 }
                 .header h1 {
-                    font-size: 16px;
+                    font-size: 11px;
                     font-weight: 800;
-                    margin: 0 0 4px 0;
+                    margin: 0 0 2px 0;
                     text-transform: uppercase;
-                    letter-spacing: 0.5px;
+                    letter-spacing: 0.3px;
                     color: #0f172a;
                 }
                 .header p {
                     margin: 0;
-                    font-size: 9px;
+                    font-size: 7.5px;
                     color: #64748b;
                     font-weight: 600;
                     text-transform: uppercase;
                 }
                 .section-title {
-                    font-size: 9px;
+                    font-size: 7.5px;
                     font-weight: 800;
                     text-transform: uppercase;
                     color: #64748b;
-                    margin-top: 15px;
-                    margin-bottom: 6px;
-                    letter-spacing: 0.5px;
+                    margin-top: 6px;
+                    margin-bottom: 2px;
+                    letter-spacing: 0.3px;
                 }
                 .row {
                     display: flex;
                     justify-content: space-between;
                     align-items: flex-start;
-                    margin-bottom: 5px;
+                    margin-bottom: 2px;
+                }
+                .row.multiline {
+                    flex-direction: column;
+                    align-items: flex-start;
+                    margin-bottom: 4px;
+                }
+                .row.multiline .value {
+                    text-align: left;
+                    width: 100%;
+                    margin-top: 1px;
                 }
                 .label {
                     color: #64748b;
@@ -112,51 +123,51 @@ export const printYieldClosingReceipt = (data: PrintReceiptData) => {
                 .highlight-box {
                     background-color: #f8fafc;
                     border: 1px solid #e2e8f0;
-                    border-radius: 8px;
-                    padding: 10px 12px;
-                    margin: 15px 0;
+                    border-radius: 4px;
+                    padding: 4px 6px;
+                    margin: 6px 0;
                 }
                 .highlight-box .row.total {
-                    font-size: 13px;
+                    font-size: 9px;
                     font-weight: 800;
                     color: #0f172a;
                     border-top: 1px dashed #cbd5e1;
-                    padding-top: 6px;
-                    margin-top: 6px;
+                    padding-top: 3px;
+                    margin-top: 3px;
                 }
                 .highlight-box .row.total .value {
                     color: #0f172a;
                     font-weight: 800;
                 }
                 .sig-box {
-                    margin-top: 25px;
+                    margin-top: 12px;
                     display: flex;
-                    justify-content: space-between;
-                    gap: 15px;
+                    flex-direction: column;
+                    gap: 12px;
                 }
                 .sig {
                     border-top: 1px dashed #94a3b8;
-                    width: 48%;
+                    width: 100%;
                     text-align: center;
-                    padding-top: 6px;
-                    font-size: 8px;
+                    padding-top: 3px;
+                    font-size: 7px;
                     color: #64748b;
                     font-weight: 600;
                     text-transform: uppercase;
-                    margin-top: 15px;
+                    margin-top: 2px;
                 }
                 .footer {
-                    margin-top: 25px;
+                    margin-top: 10px;
                     text-align: center;
-                    font-size: 8px;
+                    font-size: 7.5px;
                     color: #94a3b8;
                     font-weight: 500;
-                    border-top: 1px dashed #e2e8f0;
-                    padding-top: 10px;
+                    border-top: 1px dashed #cbd5e1;
+                    padding-top: 4px;
                 }
                 @media print {
-                    body { padding: 0; background: none; }
-                    .receipt { border: none; box-shadow: none; padding: 0; max-width: 100%; }
+                    body { padding: 0; margin: 0; background: none; }
+                    .receipt { border: none; box-shadow: none; padding: 2px; width: 46mm; margin: 0; }
                     * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
                 }
             </style>
@@ -184,9 +195,9 @@ export const printYieldClosingReceipt = (data: PrintReceiptData) => {
                     <span class="label">Product Code:</span>
                     <span class="value">${data.product_code}</span>
                 </div>
-                <div class="row">
+                <div class="row multiline">
                     <span class="label">Product Name:</span>
-                    <span class="value" style="max-width: 220px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${data.product_name}">${data.product_name}</span>
+                    <span class="value" style="font-weight: bold; white-space: normal;">${data.product_name}</span>
                 </div>
                 <div class="row">
                     <span class="label">Recipe Version:</span>
@@ -234,8 +245,10 @@ export const printYieldClosingReceipt = (data: PrintReceiptData) => {
             </div>
             <script>
                 window.onload = function() {
-                    window.print();
-                    window.close();
+                    setTimeout(function() {
+                        window.print();
+                        window.close();
+                    }, 300);
                 };
             </script>
         </body>

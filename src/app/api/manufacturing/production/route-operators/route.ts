@@ -102,9 +102,39 @@ export async function GET(request: Request) {
         const { searchParams } = new URL(request.url);
         const taskId = searchParams.get("taskId");
         const joId = searchParams.get("joId");
+        const activeOnly = searchParams.get("activeOnly") === "true";
 
         let records: RouteOperatorRecord[] = [];
         let usingFallback = false;
+
+        // If we only care about active timers, skip the Directus fetch completely
+        if (activeOnly) {
+            const localRecords = readLocalDb();
+            records = localRecords.filter(r => r.started_at !== null && r.stopped_at === null);
+            
+            // Enrich records with user metadata
+            const usersMap = await fetchUsersMap();
+            const enrichedRecords = records.map(r => {
+                const uId = Number(r.user_id);
+                const userMeta = usersMap.get(uId) || { name: `Operator #${uId}`, position: "Operator", rate: r.hourly_rate || 150 };
+                
+                const rate = r.hourly_rate || userMeta.rate;
+                const laborCost = r.labor_cost || (r.actual_hours * rate);
+
+                return {
+                    ...r,
+                    user_name: userMeta.name,
+                    user_position: userMeta.position,
+                    hourly_rate: rate,
+                    labor_cost: Math.round(laborCost * 100) / 100
+                };
+            });
+
+            return NextResponse.json({
+                data: enrichedRecords,
+                summary: { total_hours: 0, total_labor_cost: 0 }
+            });
+        }
 
         try {
             let directusUrl = `${DIRECTUS_URL}/items/manufacturing_job_order_route_operators?limit=-1`;

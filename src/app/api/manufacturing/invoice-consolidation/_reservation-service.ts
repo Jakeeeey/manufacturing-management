@@ -1,5 +1,6 @@
 import { DIRECTUS_URL, headers as directusHeaders } from "../directus-api";
 import { resolveVersions } from "./version-resolver";
+import type { InventoryMovementQuantityRow } from "./inventory-movements-client";
 
 type ReservationStatus = "Pending" | "Reserved" | "Consumed" | "Released";
 
@@ -233,12 +234,20 @@ export async function getInvoiceReservationSummaries(branchId: number, search?: 
 async function reconcileInventoryLots(inventoryLotIds: number[], userId: number) {
     if (inventoryLotIds.length === 0) return;
 
-    const lotsJson = await directusJson(
-        `${DIRECTUS_URL}/items/inventory_lots?filter[id][_in]=${inventoryLotIds.join(",")}&fields=id,quantity&limit=-1`
+    // Fetch inventory movements to calculate the true ledger stock
+    const movFilter = encodeURIComponent(JSON.stringify({
+        lot_id: { _in: inventoryLotIds }
+    }));
+    const movJson = await directusJson(
+        `${DIRECTUS_URL}/items/inventory_movements?filter=${movFilter}&limit=-1`
     );
-    const capacityMap = new Map<number, number>(
-        (lotsJson.data || []).map((lot: { id: number; quantity: number }) => [Number(lot.id), Number(lot.quantity || 0)])
-    );
+    const movements = (movJson.data || []) as InventoryMovementQuantityRow[];
+    const capacityMap = new Map<number, number>();
+    movements.forEach((mov) => {
+        const lotId = Number(mov.lot_id);
+        const qty = Number(mov.quantity || 0);
+        capacityMap.set(lotId, (capacityMap.get(lotId) || 0) + qty);
+    });
 
     const filter = encodeURIComponent(JSON.stringify({
         _and: [
@@ -326,14 +335,40 @@ export async function allocateInvoice(invoiceId: number, userId: number) {
             { product_id: { _in: productIds } },
             { branch_id: { _eq: Number(invoice.branch_id) } },
             { qa_status: { _eq: "Passed" } },
-            { quantity: { _gt: 0 } },
             { source_type: { _in: ["manufacturing", "yield_ledger"] } },
         ],
     }));
     const lotsJson = await directusJson(
         `${DIRECTUS_URL}/items/inventory_lots?filter=${lotFilter}&fields=id,product_id,branch_id,lot_id,lot_number,batch_no,expiry_date,created_on,quantity,qa_status,source_type,source_reference&limit=-1`
     );
-    const lots: InventoryLotRow[] = (lotsJson.data || []).filter((lot: InventoryLotRow) => numericId(lot.lot_id, ["lot_id"]) !== null);
+    const unfilteredLots: InventoryLotRow[] = (lotsJson.data || []).filter((lot: InventoryLotRow) => numericId(lot.lot_id, ["lot_id"]) !== null);
+
+    // Fetch inventory movements to calculate the true ledger stock
+    const branchId = Number(invoice.branch_id);
+    const movFilter = encodeURIComponent(JSON.stringify({
+        _and: [
+            { product_id: { _in: productIds } },
+            { branch_id: { _eq: branchId } }
+        ]
+    }));
+    const movJson = await directusJson(
+        `${DIRECTUS_URL}/items/inventory_movements?filter=${movFilter}&limit=-1`
+    );
+    const movements = (movJson.data || []) as InventoryMovementQuantityRow[];
+    const movementStockMap = new Map<number, number>();
+    movements.forEach((mov) => {
+        const lotId = Number(mov.lot_id);
+        const qty = Number(mov.quantity || 0);
+        movementStockMap.set(lotId, (movementStockMap.get(lotId) || 0) + qty);
+    });
+
+    const lots = unfilteredLots.map((lot: InventoryLotRow) => {
+        const ledgerQty = movementStockMap.get(lot.id) || 0;
+        return {
+            ...lot,
+            quantity: ledgerQty
+        };
+    }).filter((lot: InventoryLotRow) => lot.quantity > 0);
 
     const jobOrderNumbers = [...new Set(lots.map((lot) => lot.source_reference).filter(Boolean))] as string[];
     const jobVersionMap = new Map<string, number>();
@@ -562,14 +597,39 @@ export async function previewConsolidationAllocations(branchId: number, invoiceI
             { product_id: { _in: productIds } },
             { branch_id: { _eq: branchId } },
             { qa_status: { _eq: "Passed" } },
-            { quantity: { _gt: 0 } },
             { source_type: { _in: ["manufacturing", "yield_ledger"] } },
         ],
     }));
     const lotsJson = await directusJson(
         `${DIRECTUS_URL}/items/inventory_lots?filter=${lotFilter}&fields=id,product_id,branch_id,lot_id.lot_id,lot_id.lot_name,lot_number,batch_no,expiry_date,created_on,quantity,qa_status,source_type,source_reference&limit=-1`
     );
-    const lots: InventoryLotRow[] = lotsJson.data || [];
+    const unfilteredLots: InventoryLotRow[] = lotsJson.data || [];
+
+    // Fetch inventory movements to calculate the true ledger stock
+    const movFilter = encodeURIComponent(JSON.stringify({
+        _and: [
+            { product_id: { _in: productIds } },
+            { branch_id: { _eq: branchId } }
+        ]
+    }));
+    const movJson = await directusJson(
+        `${DIRECTUS_URL}/items/inventory_movements?filter=${movFilter}&limit=-1`
+    );
+    const movements = (movJson.data || []) as InventoryMovementQuantityRow[];
+    const movementStockMap = new Map<number, number>();
+    movements.forEach((mov) => {
+        const lotId = Number(mov.lot_id);
+        const qty = Number(mov.quantity || 0);
+        movementStockMap.set(lotId, (movementStockMap.get(lotId) || 0) + qty);
+    });
+
+    const lots = unfilteredLots.map((lot: InventoryLotRow) => {
+        const ledgerQty = movementStockMap.get(lot.id) || 0;
+        return {
+            ...lot,
+            quantity: ledgerQty
+        };
+    }).filter((lot: InventoryLotRow) => lot.quantity > 0);
 
     const jobOrderNumbers = [...new Set(lots.map((lot) => lot.source_reference).filter(Boolean))] as string[];
     const jobVersionMap = new Map<string, number>();

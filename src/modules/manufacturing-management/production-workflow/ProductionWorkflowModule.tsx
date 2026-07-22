@@ -74,11 +74,12 @@ export default function ProductionWorkflowModule() {
 
     const fetchClockedIn = React.useCallback(async () => {
         try {
-            const res = await fetch("/api/manufacturing/production/route-operators");
+            const res = await fetch("/api/manufacturing/production/route-operators?activeOnly=true");
             if (res.ok && isMountedRef.current) {
                 const json = await res.json();
                 const active = (json.data || []).filter((r: any) => r.started_at !== null && r.stopped_at === null);
-                setClockedInCount(active.length);
+                const uniqueUsers = new Set(active.map((r: any) => r.user_id));
+                setClockedInCount(uniqueUsers.size);
             }
         } catch (err) {
             console.error("Error loading active operators count:", err);

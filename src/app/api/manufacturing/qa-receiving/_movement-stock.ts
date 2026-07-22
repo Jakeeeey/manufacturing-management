@@ -42,3 +42,13 @@ export function sumMovementQuantitiesByStock(rows: Record<string, unknown>[]): M
     }
     return quantities;
 }
+
+export function uniqueRowsByMovementStockKey<T extends Record<string, unknown>>(rows: T[]): T[] {
+    const seen = new Set<string>();
+    return rows.filter(row => {
+        const key = movementStockKey(row);
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+}
