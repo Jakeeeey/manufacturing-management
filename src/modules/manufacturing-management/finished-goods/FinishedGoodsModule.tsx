@@ -27,7 +27,7 @@ import { QATemplatesTab } from "./components/QATemplatesTab";
 import { WorkCentersTab } from "./components/WorkCentersTab";
 import { CostRollupTab } from "./components/CostRollupTab";
 import { ImportationTab } from "./components/ImportationTab";
-import { useFinishedGoods } from "./hooks/useFinishedGoods";
+import { useFinishedGoods, type RegisterFormField } from "./hooks/useFinishedGoods";
 import { Product, BOMItem, RoutingStep } from "./types";
 import { CreatableSelect } from "./components/CreatableSelect";
 
@@ -81,6 +81,9 @@ export default function FinishedGoodsModule() {
         setIsRegisterModalOpen,
         registerForm,
         setRegisterForm,
+        registerFormErrors,
+        clearRegisterFormError,
+        resetRegisterFormErrors,
         editedDetails,
         setEditedDetails,
         editedBOM,
@@ -104,6 +107,7 @@ export default function FinishedGoodsModule() {
         handleSaveQATemplate,
         editedVersionDetails,
         setEditedVersionDetails,
+        handleCustomOverheadChange,
         allCatalogProducts
     } = useFinishedGoods(searchParams.get("tab") || "details");
 
@@ -234,12 +238,6 @@ export default function FinishedGoodsModule() {
                 expected_yield_percentage: Number(value)
             }));
         }
-        if (field === "customOverhead") {
-            setEditedVersionDetails(prev => ({
-                ...prev,
-                custom_overhead: Number(value)
-            }));
-        }
     };
 
 
@@ -251,13 +249,7 @@ export default function FinishedGoodsModule() {
                 : { ...current, expectedYieldPercent: expectedYield });
         }
 
-        const customOverhead = editedVersionDetails.custom_overhead;
-        if (customOverhead !== undefined) {
-            setEditedDetails(current => current.customOverhead === customOverhead
-                ? current
-                : { ...current, customOverhead: customOverhead ?? 0 });
-        }
-    }, [editedVersionDetails.expected_yield_percentage, editedVersionDetails.custom_overhead]);
+    }, [editedVersionDetails.expected_yield_percentage]);
 
     // Importation Derived Calculations
     const importForeignPeso = importNetWeight * importPriceUsd * importFxRate;
@@ -529,6 +521,26 @@ export default function FinishedGoodsModule() {
         }));
     }, [units]);
 
+    const updateRegisterField = (field: RegisterFormField, value: string) => {
+        setRegisterForm(prev => ({ ...prev, [field]: value }));
+        clearRegisterFormError(field);
+        if (field === "baseUom") clearRegisterFormError("parentId");
+    };
+
+    const registerError = (field: RegisterFormField) => registerFormErrors[field];
+    const registerInputClass = (field: RegisterFormField) =>
+        `w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all ${
+            registerError(field) ? "border-red-500 focus:ring-red-500" : "border-border"
+        }`;
+    const registerErrorMessage = (field: RegisterFormField) => {
+        const message = registerError(field);
+        return message ? (
+            <p id={`register-${field}-error`} className="mt-1 text-[11px] font-medium text-red-600" role="alert">
+                {message}
+            </p>
+        ) : null;
+    };
+
     return (
         <div className="flex h-full min-h-[calc(100vh-120px)] flex-1 flex-col overflow-hidden bg-background">
             {/* Topbar */}
@@ -573,6 +585,7 @@ export default function FinishedGoodsModule() {
                                     productionCapacityPerHour: "",
                                     supplierIds: [] as string[]
                                 });
+                                resetRegisterFormErrors();
                                 setIsRegisterModalOpen(true);
                             }}
                             className="inline-flex items-center gap-1.5 rounded-l-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary/95 transition-all cursor-pointer border-r border-primary-foreground/10"
@@ -623,6 +636,7 @@ export default function FinishedGoodsModule() {
                                                 productionCapacityPerHour: "",
                                                 supplierIds: [] as string[]
                                             });
+                                            resetRegisterFormErrors();
                                             setIsRegisterModalOpen(true);
                                         }}
                                         className="w-full text-left px-3 py-2 hover:bg-muted text-foreground flex items-center gap-2"
@@ -658,6 +672,7 @@ export default function FinishedGoodsModule() {
                                                     productionCapacityPerHour: String(selectedProduct.production_capacity_per_hour || ""),
                                                     supplierIds: [] as string[]
                                                 });
+                                                resetRegisterFormErrors();
                                                 setIsRegisterModalOpen(true);
                                             }}
                                             className="w-full text-left px-3 py-2 hover:bg-muted text-foreground flex items-center gap-2"
@@ -944,6 +959,8 @@ export default function FinishedGoodsModule() {
                                     <ProductDetailsTab
                                         editedDetails={editedDetails}
                                         handleDetailChange={handleDetailChange}
+                                        customOverhead={editedVersionDetails.custom_overhead ?? 0}
+                                        handleCustomOverheadChange={handleCustomOverheadChange}
                                         selectedProduct={selectedProduct}
                                         units={units}
                                         brands={brands}
@@ -1267,7 +1284,7 @@ export default function FinishedGoodsModule() {
                         </div>
 
                         {/* Form */}
-                        <form onSubmit={handleRegisterProduct} className="flex-1 overflow-y-auto p-6 space-y-6">
+                        <form noValidate onSubmit={handleRegisterProduct} className="flex-1 overflow-y-auto p-6 space-y-6">
                             {/* Group 1: General Info */}
                             <div className="bg-muted/10 border border-border/40 rounded-xl p-4 space-y-4">
                                 <h4 className="text-xs font-bold uppercase tracking-wider text-primary flex items-center gap-1.5">
@@ -1277,13 +1294,17 @@ export default function FinishedGoodsModule() {
                                     <div className="col-span-2">
                                         <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Product Name <span className="text-red-500">*</span></label>
                                         <input
+                                            id="register-title"
                                             type="text"
                                             required
                                             placeholder="e.g. Mama Pina's Soya Oil 2L x 6"
                                             value={registerForm.title}
-                                            onChange={e => setRegisterForm(prev => ({ ...prev, title: e.target.value }))}
-                                            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
+                                            onChange={e => updateRegisterField("title", e.target.value)}
+                                            aria-invalid={!!registerError("title")}
+                                            aria-describedby={registerError("title") ? "register-title-error" : undefined}
+                                            className={registerInputClass("title")}
                                         />
+                                        {registerErrorMessage("title")}
                                     </div>
                                     <div className="col-span-2">
                                         <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Short Description</label>
@@ -1298,13 +1319,17 @@ export default function FinishedGoodsModule() {
                                     <div>
                                         <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">SKU / Code <span className="text-red-500">*</span></label>
                                         <input
+                                            id="register-sku"
                                             type="text"
                                             required
                                             placeholder="e.g. FG-SOYA-2L"
                                             value={registerForm.sku}
-                                            onChange={e => setRegisterForm(prev => ({ ...prev, sku: e.target.value }))}
-                                            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
+                                            onChange={e => updateRegisterField("sku", e.target.value)}
+                                            aria-invalid={!!registerError("sku")}
+                                            aria-describedby={registerError("sku") ? "register-sku-error" : undefined}
+                                            className={registerInputClass("sku")}
                                         />
+                                        {registerErrorMessage("sku")}
                                     </div>
                                     <div>
                                         <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Barcode (Optional)</label>
@@ -1319,36 +1344,49 @@ export default function FinishedGoodsModule() {
                                     <div>
                                         <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Brand <span className="text-red-500">*</span></label>
                                         <CreatableSelect
+                                            id="register-brand"
                                             options={brandOptions}
                                             value={registerForm.brandId}
-                                            onValueChange={(val) => setRegisterForm(prev => ({ ...prev, brandId: val }))}
+                                            onValueChange={(val) => updateRegisterField("brandId", val)}
                                             placeholder="Select brand..."
+                                            aria-invalid={!!registerError("brandId")}
+                                            aria-describedby={registerError("brandId") ? "register-brandId-error" : undefined}
+                                            className={registerError("brandId") ? "border-red-500 focus:ring-red-500" : undefined}
                                             onCreateOption={async (name) => {
                                                 const newId = await handleCreateBrand(name);
-                                                if (newId) setRegisterForm(prev => ({ ...prev, brandId: String(newId) }));
+                                                if (newId) updateRegisterField("brandId", String(newId));
                                             }}
                                         />
+                                        {registerErrorMessage("brandId")}
                                     </div>
                                     <div>
                                         <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Category <span className="text-red-500">*</span></label>
                                         <CreatableSelect
+                                            id="register-category"
                                             options={categoryOptions}
                                             value={registerForm.categoryId}
-                                            onValueChange={(val) => setRegisterForm(prev => ({ ...prev, categoryId: val }))}
+                                            onValueChange={(val) => updateRegisterField("categoryId", val)}
                                             placeholder="Select category..."
+                                            aria-invalid={!!registerError("categoryId")}
+                                            aria-describedby={registerError("categoryId") ? "register-categoryId-error" : undefined}
+                                            className={registerError("categoryId") ? "border-red-500 focus:ring-red-500" : undefined}
                                             onCreateOption={async (name) => {
                                                 const newId = await handleCreateCategory(name);
-                                                if (newId) setRegisterForm(prev => ({ ...prev, categoryId: String(newId) }));
+                                                if (newId) updateRegisterField("categoryId", String(newId));
                                             }}
                                         />
+                                        {registerErrorMessage("categoryId")}
                                     </div>
                                     <div className="col-span-2">
                                         <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Parent Product (Optional)</label>
                                         <CreatableSelect
+                                            id="register-parent"
                                             options={parentOptions}
                                             value={registerForm.parentId}
                                             onValueChange={(val) => {
                                                 const selectedId = val;
+                                                clearRegisterFormError("parentId");
+                                                clearRegisterFormError("baseUom");
                                                 const parentProd = products.find(p => p.id === selectedId);
                                                 setRegisterForm(prev => {
                                                     if (parentProd) {
@@ -1381,7 +1419,11 @@ export default function FinishedGoodsModule() {
                                                 });
                                             }}
                                             placeholder="Select parent product..."
+                                            aria-invalid={!!registerError("parentId")}
+                                            aria-describedby={registerError("parentId") ? "register-parentId-error" : undefined}
+                                            className={registerError("parentId") ? "border-red-500 focus:ring-red-500" : undefined}
                                         />
+                                        {registerErrorMessage("parentId")}
                                     </div>
                                 </div>
                             </div>
@@ -1395,20 +1437,27 @@ export default function FinishedGoodsModule() {
                                     <div>
                                         <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Base UOM <span className="text-red-500">*</span></label>
                                         <CreatableSelect
+                                            id="register-base-uom"
                                             options={uomOptions}
                                             value={registerForm.baseUom}
-                                            onValueChange={(val) => setRegisterForm(prev => ({ ...prev, baseUom: val }))}
+                                            onValueChange={(val) => updateRegisterField("baseUom", val)}
                                             placeholder="Select Base UOM..."
+                                            aria-invalid={!!registerError("baseUom")}
+                                            aria-describedby={registerError("baseUom") ? "register-baseUom-error" : undefined}
+                                            className={registerError("baseUom") ? "border-red-500 focus:ring-red-500" : undefined}
                                         />
+                                        {registerErrorMessage("baseUom")}
                                     </div>
                                     <div>
                                         <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">UOM Count (Pack Mult) <span className="text-red-500">*</span></label>
                                         <input
+                                            id="register-uomCount"
                                             type="number"
                                             placeholder="e.g. 1"
                                             value={registerForm.uomCount}
                                             onChange={e => {
                                                 const val = e.target.value;
+                                                clearRegisterFormError("uomCount");
                                                 const count = Number(val) || 0;
                                                 setRegisterForm(prev => {
                                                     const parent = products.find(p => p.id === prev.parentId);
@@ -1425,40 +1474,55 @@ export default function FinishedGoodsModule() {
                                                     return { ...prev, uomCount: val };
                                                 });
                                             }}
-                                            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
+                                            aria-invalid={!!registerError("uomCount")}
+                                            aria-describedby={registerError("uomCount") ? "register-uomCount-error" : undefined}
+                                            className={registerInputClass("uomCount")}
                                         />
+                                        {registerErrorMessage("uomCount")}
                                     </div>
                                     <div>
                                         <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Density conversion factor <span className="text-red-500">*</span></label>
                                         <input
+                                            id="register-densityFactor"
                                             type="number"
                                             step="0.001"
                                             placeholder="1.0"
                                             value={registerForm.densityFactor}
-                                            onChange={e => setRegisterForm(prev => ({ ...prev, densityFactor: e.target.value }))}
-                                            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
+                                            onChange={e => updateRegisterField("densityFactor", e.target.value)}
+                                            aria-invalid={!!registerError("densityFactor")}
+                                            aria-describedby={registerError("densityFactor") ? "register-densityFactor-error" : undefined}
+                                            className={registerInputClass("densityFactor")}
                                         />
+                                        {registerErrorMessage("densityFactor")}
                                     </div>
                                     <div>
                                         <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Expected Yield (%) <span className="text-red-500">*</span></label>
                                         <input
+                                            id="register-expectedYield"
                                             type="number"
                                             required
                                             placeholder="e.g. 100"
                                             value={registerForm.expectedYield}
-                                            onChange={e => setRegisterForm(prev => ({ ...prev, expectedYield: e.target.value }))}
-                                            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
+                                            onChange={e => updateRegisterField("expectedYield", e.target.value)}
+                                            aria-invalid={!!registerError("expectedYield")}
+                                            aria-describedby={registerError("expectedYield") ? "register-expectedYield-error" : undefined}
+                                            className={registerInputClass("expectedYield")}
                                         />
+                                        {registerErrorMessage("expectedYield")}
                                     </div>
                                     <div>
                                         <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Shelf Life (Days) <span className="text-red-500">*</span></label>
                                         <input
+                                            id="register-shelfLife"
                                             type="number"
                                             placeholder="e.g. 365"
                                             value={registerForm.shelfLife}
-                                            onChange={e => setRegisterForm(prev => ({ ...prev, shelfLife: e.target.value }))}
-                                            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
+                                            onChange={e => updateRegisterField("shelfLife", e.target.value)}
+                                            aria-invalid={!!registerError("shelfLife")}
+                                            aria-describedby={registerError("shelfLife") ? "register-shelfLife-error" : undefined}
+                                            className={registerInputClass("shelfLife")}
                                         />
+                                        {registerErrorMessage("shelfLife")}
                                     </div>
                                     <div>
                                         <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Segment (Optional)</label>
@@ -1502,12 +1566,16 @@ export default function FinishedGoodsModule() {
                                     <div>
                                         <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Capacity (Qty/Hr) <span className="text-red-500">*</span></label>
                                         <input
+                                            id="register-capacity"
                                             type="number"
                                             placeholder="e.g. 100"
                                             value={registerForm.productionCapacityPerHour}
-                                            onChange={e => setRegisterForm(prev => ({ ...prev, productionCapacityPerHour: e.target.value }))}
-                                            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
+                                            onChange={e => updateRegisterField("productionCapacityPerHour", e.target.value)}
+                                            aria-invalid={!!registerError("productionCapacityPerHour")}
+                                            aria-describedby={registerError("productionCapacityPerHour") ? "register-productionCapacityPerHour-error" : undefined}
+                                            className={registerInputClass("productionCapacityPerHour")}
                                         />
+                                        {registerErrorMessage("productionCapacityPerHour")}
                                     </div>
                                     <div className="col-span-2">
                                         <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Product Image</label>
@@ -1680,13 +1748,17 @@ export default function FinishedGoodsModule() {
                                 <div className="space-y-1">
                                     <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Initial Version Name <span className="text-red-500">*</span></label>
                                     <input
+                                        id="register-versionName"
                                         type="text"
                                         required
                                         placeholder="e.g. OIL 1ST VERSION"
                                         value={registerForm.versionName}
-                                        onChange={e => setRegisterForm(prev => ({ ...prev, versionName: e.target.value }))}
-                                        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
+                                        onChange={e => updateRegisterField("versionName", e.target.value)}
+                                        aria-invalid={!!registerError("versionName")}
+                                        aria-describedby={registerError("versionName") ? "register-versionName-error" : undefined}
+                                        className={registerInputClass("versionName")}
                                     />
+                                    {registerErrorMessage("versionName")}
                                 </div>
                             </div>
 

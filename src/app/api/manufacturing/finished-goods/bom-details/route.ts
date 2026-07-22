@@ -106,13 +106,15 @@ export async function POST(request: Request) {
         if (!prodOk) throw new Error("Failed to update product details in Directus");
 
         // 2. Save version metadata (expected yield and base quantity)
-        const versionOk = await saveActiveBOMDetails(
+        const versionResult = await saveActiveBOMDetails(
             numericVersionId,
             expectedYield,
             baseQuantity,
             customOverhead
         );
-        if (!versionOk) throw new Error("Failed to update version metadata in Directus");
+        if (!versionResult.ok) {
+            throw new Error(versionResult.error || "Failed to update version metadata in Directus");
+        }
 
         // Get logged in user ID from secure access token cookie
         let userId: number | null = null;

@@ -48,6 +48,22 @@ import {
     saveQATemplate
 } from "../services/finished-goods-api";
 
+export type RegisterFormField =
+    | "title"
+    | "sku"
+    | "brandId"
+    | "categoryId"
+    | "parentId"
+    | "baseUom"
+    | "uomCount"
+    | "densityFactor"
+    | "expectedYield"
+    | "shelfLife"
+    | "productionCapacityPerHour"
+    | "versionName";
+
+export type RegisterFormErrors = Partial<Record<RegisterFormField, string>>;
+
 export function useFinishedGoods(initialTab: string = "details") {
     // UI Layout & Tab States
     const [activeTab, setActiveTab] = useState(initialTab);
@@ -130,6 +146,7 @@ export function useFinishedGoods(initialTab: string = "details") {
         productionCapacityPerHour: "",
         supplierIds: [] as string[]
     });
+    const [registerFormErrors, setRegisterFormErrors] = useState<RegisterFormErrors>({});
 
     // Form Edits (Legacy compatibility states)
     const [editedDetails, setEditedDetails] = useState<Partial<Product>>({});
@@ -356,7 +373,6 @@ export function useFinishedGoods(initialTab: string = "details") {
             unit_of_measurement_count: selectedProduct.unit_of_measurement_count,
             product_image: selectedProduct.product_image,
             parent_id: selectedProduct.parent_id,
-            customOverhead: selectedProduct.customOverhead || 0,
             production_capacity_per_hour: selectedProduct.production_capacity_per_hour || 0
         };
 
@@ -397,7 +413,6 @@ export function useFinishedGoods(initialTab: string = "details") {
                     setEditedDetails({
                         ...baseDetails,
                         expectedYieldPercent: versionObj.expected_yield_percentage,
-                        customOverhead: versionObj.custom_overhead ?? 0
                     });
 
                     // Format routes as ingredients and routings for older tabs
@@ -460,54 +475,79 @@ export function useFinishedGoods(initialTab: string = "details") {
     }, [selectedVersionId, selectedProductId, selectedProduct, simulatedForexRate, debouncedForexRate, versions, units, allCatalogProducts]);
 
     // Handlers
+    const handleCustomOverheadChange = (value: number) => {
+        setHasUnsavedChanges(true);
+        setEditedVersionDetails(prev => ({
+            ...prev,
+            custom_overhead: Number.isFinite(value) && value >= 0 ? value : 0
+        }));
+    };
+
+    const clearRegisterFormError = (field: RegisterFormField) => {
+        setRegisterFormErrors(current => {
+            if (!current[field]) return current;
+            const next = { ...current };
+            delete next[field];
+            return next;
+        });
+    };
+
+    const resetRegisterFormErrors = () => setRegisterFormErrors({});
+
     const handleRegisterProduct = async (e: React.FormEvent) => {
         e.preventDefault();
 
-        // Validate required fields
+        const errors: RegisterFormErrors = {};
         if (!registerForm.title.trim()) {
-            toast.error("Product Name is required.");
-            return;
+            errors.title = "Product Name is required.";
         }
         if (!registerForm.sku.trim()) {
-            toast.error("SKU / Code is required.");
-            return;
+            errors.sku = "SKU / Code is required.";
         }
         if (!registerForm.brandId.trim()) {
-            toast.error("Brand is required.");
-            return;
+            errors.brandId = "Brand is required.";
         }
         if (!registerForm.categoryId.trim()) {
-            toast.error("Category is required.");
-            return;
+            errors.categoryId = "Category is required.";
         }
         if (!registerForm.baseUom.trim()) {
-            toast.error("Base UOM is required.");
-            return;
+            errors.baseUom = "Base UOM is required.";
         }
         if (!registerForm.uomCount.trim() || Number(registerForm.uomCount) <= 0) {
-            toast.error("UOM Count (Pack Mult) must be greater than 0.");
-            return;
+            errors.uomCount = "UOM Count (Pack Mult) must be greater than 0.";
         }
         if (!registerForm.densityFactor.trim() || Number(registerForm.densityFactor) <= 0) {
-            toast.error("Density conversion factor must be greater than 0.");
-            return;
+            errors.densityFactor = "Density conversion factor must be greater than 0.";
         }
         if (!registerForm.expectedYield.trim() || Number(registerForm.expectedYield) <= 0) {
-            toast.error("Expected Yield (%) must be greater than 0.");
-            return;
+            errors.expectedYield = "Expected Yield (%) must be greater than 0.";
         }
         if (!registerForm.shelfLife.trim() || Number(registerForm.shelfLife) <= 0) {
-            toast.error("Shelf Life is required and must be greater than 0.");
-            return;
+            errors.shelfLife = "Shelf Life is required and must be greater than 0.";
         }
         if (!registerForm.productionCapacityPerHour.trim() || Number(registerForm.productionCapacityPerHour) <= 0) {
-            toast.error("Capacity is required and must be greater than 0.");
-            return;
+            errors.productionCapacityPerHour = "Capacity is required and must be greater than 0.";
         }
         if (!registerForm.versionName.trim()) {
-            toast.error("Version Name is required.");
+            errors.versionName = "Version Name is required.";
+        }
+
+        const matchedUnit = units.find(u => u.unit_shortcut === registerForm.baseUom);
+        if (registerForm.baseUom.trim() && !matchedUnit) {
+            errors.baseUom = "Base UOM is invalid. Please select a valid unit of measurement.";
+        }
+
+        if (Object.keys(errors).length > 0) {
+            setRegisterFormErrors(errors);
+            const firstInvalidField = Object.keys(errors)[0];
+            window.requestAnimationFrame(() => {
+                document.getElementById(`register-${firstInvalidField}`)?.focus();
+            });
+            toast.error("Please complete the highlighted fields.");
             return;
         }
+
+        setRegisterFormErrors({});
 
         setSavingBOM(true);
         setSaveProgress(10);
@@ -531,11 +571,7 @@ export function useFinishedGoods(initialTab: string = "details") {
         }, 150);
 
         try {
-            const matchedUnit = units.find(u => u.unit_shortcut === registerForm.baseUom);
-            if (!matchedUnit) {
-                toast.error("Base UOM is invalid. Please select a valid unit of measurement.");
-                return;
-            }
+            if (!matchedUnit) throw new Error("Base UOM is invalid. Please select a valid unit of measurement.");
             const unitId = matchedUnit.unit_id;
 
             const brandVal = registerForm.brandId ? Number(registerForm.brandId) : undefined;
@@ -664,8 +700,23 @@ export function useFinishedGoods(initialTab: string = "details") {
             clearInterval(interval);
             setSaveProgress(0);
             setSaveStatus("");
-            console.error("Product registration error:", err);
             const error = err instanceof Error ? err : new Error(String(err));
+            const apiError = error as Error & { status?: number; code?: string };
+            if (apiError.code === "PRODUCT_SKU_CONFLICT") {
+                const message = "A product with this SKU already exists. Please choose a unique SKU.";
+                setRegisterFormErrors({ sku: message });
+                document.getElementById("register-sku")?.focus();
+                toast.error(message);
+                return;
+            }
+            if (apiError.code === "PRODUCT_PARENT_UOM_CONFLICT" || apiError.status === 409) {
+                const message = "This parent product already has a variant using this UOM. Choose another UOM.";
+                setRegisterFormErrors({ parentId: message, baseUom: message });
+                document.getElementById("register-base-uom")?.focus();
+                toast.error(message);
+                return;
+            }
+            console.error("Product registration error:", err);
             toast.error(error.message || "Failed to register product");
         } finally {
             clearInterval(interval);
@@ -779,7 +830,7 @@ export function useFinishedGoods(initialTab: string = "details") {
                 base_quantity: Number(editedVersionDetails.base_quantity ?? 1),
                 uom_id: editedVersionDetails.uom_id || null,
                 expected_yield_percentage: Number(editedVersionDetails.expected_yield_percentage ?? editedDetails.expectedYieldPercent ?? 100),
-                custom_overhead: Number(editedDetails.customOverhead ?? editedVersionDetails.custom_overhead ?? 0),
+                custom_overhead: Number(editedVersionDetails.custom_overhead ?? 0),
                 status: editedVersionDetails.status || "For Approval",
                 valid_from: editedVersionDetails.valid_from || null,
                 valid_to: editedVersionDetails.valid_to || null,
@@ -1133,6 +1184,9 @@ export function useFinishedGoods(initialTab: string = "details") {
         setIsRegisterModalOpen,
         registerForm,
         setRegisterForm,
+        registerFormErrors,
+        clearRegisterFormError,
+        resetRegisterFormErrors,
         editedDetails,
         setEditedDetails,
         editedBOM,
@@ -1150,6 +1204,7 @@ export function useFinishedGoods(initialTab: string = "details") {
         simulatedForexRate,
         setSimulatedForexRate,
         handleRegisterProduct,
+        handleCustomOverheadChange,
         handleRegisterNewVersion,
         handleSave,
         handleActivateVersion,

@@ -209,11 +209,16 @@ export async function registerProduct(
     });
     if (!res.ok) {
         let msg = "Failed to register product via BFF";
+        let code: string | undefined;
         try {
             const errJson = await res.json();
             if (errJson && errJson.error) msg = errJson.error;
+            if (errJson && errJson.code) code = errJson.code;
         } catch { }
-        throw new Error(msg);
+        const error = new Error(msg) as Error & { status?: number; code?: string };
+        error.status = res.status;
+        error.code = code;
+        throw error;
     }
     return res.json();
 }

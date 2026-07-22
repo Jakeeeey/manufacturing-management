@@ -16,7 +16,8 @@ type DirectusIdentityUnit = {
 export class ProductIdentityError extends Error {
     constructor(
         message: string,
-        public readonly status: 400 | 404 | 409 | 503 = 400
+        public readonly status: 400 | 404 | 409 | 503 = 400,
+        public readonly code?: string
     ) {
         super(message);
         this.name = "ProductIdentityError";
@@ -170,7 +171,8 @@ export async function ensureProductIdentityAvailable(
     if (conflict) {
         throw new ProductIdentityError(
             "A product with this parent product and unit of measurement already exists.",
-            409
+            409,
+            "PRODUCT_PARENT_UOM_CONFLICT"
         );
     }
 }
