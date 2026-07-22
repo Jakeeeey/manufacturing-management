@@ -1,5 +1,6 @@
 import { DIRECTUS_URL, headers as directusHeaders } from "../directus-api";
 import { resolveVersions } from "./version-resolver";
+import type { InventoryMovementQuantityRow } from "./inventory-movements-client";
 
 type ReservationStatus = "Pending" | "Reserved" | "Consumed" | "Released";
 
@@ -240,9 +241,9 @@ async function reconcileInventoryLots(inventoryLotIds: number[], userId: number)
     const movJson = await directusJson(
         `${DIRECTUS_URL}/items/inventory_movements?filter=${movFilter}&limit=-1`
     );
-    const movements = movJson.data || [];
+    const movements = (movJson.data || []) as InventoryMovementQuantityRow[];
     const capacityMap = new Map<number, number>();
-    movements.forEach((mov: any) => {
+    movements.forEach((mov) => {
         const lotId = Number(mov.lot_id);
         const qty = Number(mov.quantity || 0);
         capacityMap.set(lotId, (capacityMap.get(lotId) || 0) + qty);
@@ -353,9 +354,9 @@ export async function allocateInvoice(invoiceId: number, userId: number) {
     const movJson = await directusJson(
         `${DIRECTUS_URL}/items/inventory_movements?filter=${movFilter}&limit=-1`
     );
-    const movements = movJson.data || [];
+    const movements = (movJson.data || []) as InventoryMovementQuantityRow[];
     const movementStockMap = new Map<number, number>();
-    movements.forEach((mov: any) => {
+    movements.forEach((mov) => {
         const lotId = Number(mov.lot_id);
         const qty = Number(mov.quantity || 0);
         movementStockMap.set(lotId, (movementStockMap.get(lotId) || 0) + qty);
@@ -614,9 +615,9 @@ export async function previewConsolidationAllocations(branchId: number, invoiceI
     const movJson = await directusJson(
         `${DIRECTUS_URL}/items/inventory_movements?filter=${movFilter}&limit=-1`
     );
-    const movements = movJson.data || [];
+    const movements = (movJson.data || []) as InventoryMovementQuantityRow[];
     const movementStockMap = new Map<number, number>();
-    movements.forEach((mov: any) => {
+    movements.forEach((mov) => {
         const lotId = Number(mov.lot_id);
         const qty = Number(mov.quantity || 0);
         movementStockMap.set(lotId, (movementStockMap.get(lotId) || 0) + qty);

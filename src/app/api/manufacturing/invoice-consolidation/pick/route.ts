@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { DIRECTUS_URL, headers as directusHeaders } from "../../directus-api";
 import {
     fetchSourceMovements,
+    type InventoryMovementQuantityRow,
     netMovementsZeroForSource,
     postMovements,
     type PostMovementPayload,
@@ -322,8 +323,8 @@ export async function POST(req: NextRequest) {
                 if (!currentMovementsRes.ok) {
                     return NextResponse.json({ message: "Failed to revalidate reserved inventory lots" }, { status: 502 });
                 }
-                const movements = (await currentMovementsRes.json()).data || [];
-                movements.forEach((mov: any) => {
+                const movements = (await currentMovementsRes.json()).data as InventoryMovementQuantityRow[] || [];
+                movements.forEach((mov) => {
                     const lotId = Number(mov.lot_id);
                     const qty = Number(mov.quantity || 0);
                     currentLotQuantities.set(lotId, (currentLotQuantities.get(lotId) || 0) + qty);
