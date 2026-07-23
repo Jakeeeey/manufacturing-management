@@ -217,8 +217,12 @@ export const CostRollupTab: React.FC<CostRollupTabProps> = ({
                             <span className="text-foreground text-sm font-bold">₱{standardPrice.toFixed(2)}</span>
                         </div>
                         <div className="flex justify-between items-center text-xs font-semibold text-muted-foreground border-b pb-2">
-                            <span>Cost of Goods Sold (COGS)</span>
+                            <span>Cost of Goods Sold (COGS / unit)</span>
                             <span className="text-foreground text-sm font-bold">₱{standardCogs.toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-xs border-b pb-2">
+                            <span>Batch COGS</span>
+                            <span className="text-foreground text-sm font-bold">₱{standardBreakdown.totalBaseCost.toFixed(2)}</span>
                         </div>
                         <div className="flex justify-between items-center text-xs font-bold pt-1">
                             <span className="text-primary">Gross Margin (on sales)</span>
@@ -230,28 +234,40 @@ export const CostRollupTab: React.FC<CostRollupTabProps> = ({
 
                     <div className="grid grid-cols-2 gap-2 text-xs rounded-lg border bg-card p-3">
                         <div className="flex justify-between gap-2">
-                            <span className="text-muted-foreground">Materials (pre-yield)</span>
+                            <span className="text-muted-foreground">Materials (pre-yield, per unit)</span>
                             <span className="font-medium">₱{standardBreakdown.materialsCost.toFixed(2)}</span>
                         </div>
                         <div className="flex justify-between gap-2">
-                            <span className="text-muted-foreground">Direct labor</span>
+                            <span className="text-muted-foreground">Direct labor (per unit)</span>
                             <span className="font-medium">₱{standardBreakdown.laborCost.toFixed(2)}</span>
                         </div>
                         <div className="flex justify-between gap-2">
-                            <span className="text-muted-foreground">Machine overhead</span>
+                            <span className="text-muted-foreground">Machine overhead (per unit)</span>
                             <span className="font-medium">₱{standardBreakdown.machineOverheadCost.toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between gap-2">
+                            <span className="text-muted-foreground">Workstation duration</span>
+                            <span className="font-medium">{standardBreakdown.machineHours.toFixed(4)} hrs</span>
+                        </div>
+                        <div className="flex justify-between gap-2">
+                            <span className="text-muted-foreground">Total workstation cost</span>
+                            <span className="font-medium">₱{standardBreakdown.totalMachineCost.toFixed(2)}</span>
                         </div>
                         <div className="flex justify-between gap-2">
                             <span className="text-muted-foreground">Custom overhead</span>
                             <span className="font-medium">₱{standardBreakdown.customOverheadCost.toFixed(2)}</span>
                         </div>
                         <div className="flex justify-between gap-2 border-t pt-2 col-span-2">
-                            <span className="font-semibold">Pre-yield direct cost</span>
+                            <span className="font-semibold">Pre-yield direct unit cost</span>
                             <span className="font-semibold">₱{standardBreakdown.preYieldDirectCost.toFixed(2)}</span>
                         </div>
                         <div className="flex justify-between gap-2 col-span-2">
+                            <span className="text-muted-foreground">Yield-adjusted unit cost</span>
+                            <span className="font-medium">₱{standardBreakdown.yieldAdjustedUnitCost.toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between gap-2 col-span-2">
                             <span className="text-muted-foreground">Expected yield</span>
-                            <span className="font-medium">{standardBreakdown.yieldPercentage.toFixed(2)}% (factor {standardBreakdown.yieldFactor.toFixed(4)})</span>
+                            <span className="font-medium">{standardBreakdown.yieldPercentage.toFixed(2)}% (factor {standardBreakdown.yieldFactor.toFixed(4)}) · batch × {standardBreakdown.baseQuantity}</span>
                         </div>
                     </div>
 
@@ -443,7 +459,7 @@ export const CostRollupTab: React.FC<CostRollupTabProps> = ({
                     return (
                         <div className="rounded-xl border bg-muted/30 p-4 space-y-2">
                             <div className="flex justify-between items-center text-xs">
-                                <span>Simulated COGS:</span>
+                                <span>Simulated COGS / unit:</span>
                                 <span className="font-semibold text-foreground">₱{simulatedCogs.toFixed(2)}</span>
                             </div>
                             <div className="flex justify-between items-center text-xs font-bold text-primary">
@@ -463,8 +479,8 @@ export const CostRollupTab: React.FC<CostRollupTabProps> = ({
                                 <span className="font-semibold text-muted-foreground">₱{simulatedOverheads.additionalOperatingOverhead.toFixed(2)}</span>
                             </div>
                             <div className="flex justify-between items-center text-xs">
-                                <span>Simulated pre-yield direct cost:</span>
-                                <span className="font-semibold text-muted-foreground">₱{simulatedBreakdown.preYieldDirectCost.toFixed(2)}</span>
+                                <span>Simulated batch COGS:</span>
+                                <span className="font-semibold text-muted-foreground">₱{simulatedBreakdown.totalBaseCost.toFixed(2)}</span>
                             </div>
                             <div className="flex justify-between items-center text-sm border-t pt-2 mt-1">
                                 <span className="font-extrabold text-foreground">Simulated Net Profit (margin on sales):</span>

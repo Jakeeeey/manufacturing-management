@@ -350,12 +350,15 @@ export default function FinishedGoodsModule() {
         let materialsCost = 0;
         let laborCost = 0;
         let machineOverheadCost = 0;
+        let machineHours = 0;
+        let totalMachineCost = 0;
 
         editedRoutes.forEach(route => {
             const workCenter = workCenters.find(wc => wc.work_center_id === route.work_center_id);
             const routeBreakdown = calculateRouteBreakdown({
                 laborCost: route.estimated_labor_cost,
                 machineHourlyRate: workCenter?.overhead_cost_per_hour || 0,
+                operationCapacity: workCenter?.capacity_per_hour || 0,
                 setupTimeHours: route.setup_time_hours,
                 runTimeHours: route.run_time_hours,
                 baseQuantity: Number(editedVersionDetails.base_quantity) || 1,
@@ -369,6 +372,8 @@ export default function FinishedGoodsModule() {
             materialsCost += routeBreakdown.materialsCost;
             laborCost += routeBreakdown.laborCost;
             machineOverheadCost += routeBreakdown.machineOverheadCost;
+            machineHours += routeBreakdown.machineHours;
+            totalMachineCost += routeBreakdown.totalMachineCost;
         });
 
         return calculateCostBreakdown({
@@ -376,7 +381,10 @@ export default function FinishedGoodsModule() {
             laborCost,
             machineOverheadCost,
             customOverheadCost: editedVersionDetails.custom_overhead,
-            expectedYieldPercentage
+            expectedYieldPercentage,
+            baseQuantity: Number(editedVersionDetails.base_quantity) || 1,
+            machineHours,
+            totalMachineCost
         });
     };
 
@@ -405,10 +413,10 @@ export default function FinishedGoodsModule() {
     const standardMarginSummary = useMemo(
         () => calculateMarginSummary(
             standardPrice,
-            standardCostBreakdown.totalBaseCost,
+            standardCostBreakdown.yieldAdjustedUnitCost,
             standardOverheads.excludedFromCogs
         ),
-        [standardPrice, standardCostBreakdown.totalBaseCost, standardOverheads.excludedFromCogs]
+        [standardPrice, standardCostBreakdown.yieldAdjustedUnitCost, standardOverheads.excludedFromCogs]
     );
 
     const simulatedOverheads = useMemo(() => {
@@ -424,10 +432,10 @@ export default function FinishedGoodsModule() {
     const simulatedMarginSummary = useMemo(
         () => calculateMarginSummary(
             Number(simulationTargetPrice),
-            simulatedCostBreakdown.totalBaseCost,
+            simulatedCostBreakdown.yieldAdjustedUnitCost,
             simulatedOverheads.excludedFromCogs
         ),
-        [simulationTargetPrice, simulatedCostBreakdown.totalBaseCost, simulatedOverheads.excludedFromCogs]
+        [simulationTargetPrice, simulatedCostBreakdown.yieldAdjustedUnitCost, simulatedOverheads.excludedFromCogs]
     );
 
     const treeProducts = useMemo(() => {
@@ -1059,7 +1067,7 @@ export default function FinishedGoodsModule() {
                                         {activeTab === "costing" && (
                                             <CostRollupTab
                                                 standardPrice={standardPrice}
-                                                standardCogs={standardCostBreakdown.totalBaseCost}
+                                                standardCogs={standardCostBreakdown.yieldAdjustedUnitCost}
                                                 standardBreakdown={standardCostBreakdown}
                                                 standardOverheads={standardOverheads}
                                                 standardGrossProfit={standardMarginSummary.grossProfit}
@@ -1078,7 +1086,7 @@ export default function FinishedGoodsModule() {
                                                 simulatedGrossProfit={simulatedMarginSummary.grossProfit}
                                                 simulatedGrossMarginPercent={simulatedMarginSummary.grossMarginPercent}
                                                 simulatedNetProfit={simulatedMarginSummary.netProfit}
-                                                simulatedCogs={simulatedCostBreakdown.totalBaseCost}
+                                                simulatedCogs={simulatedCostBreakdown.yieldAdjustedUnitCost}
                                                 simulatedBreakdown={simulatedCostBreakdown}
                                                 simulatedOverheads={simulatedOverheads}
                                                 simulatedNetMarginPercent={simulatedMarginSummary.netMarginPercent}

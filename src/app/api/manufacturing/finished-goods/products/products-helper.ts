@@ -152,7 +152,11 @@ export async function calculateRollupCost(
         totalOverheadExpenses: 0,
         includedInCogs: 0,
         excludedFromCogs: 0,
+        baseQuantity: 1,
         preYieldDirectCost: 0,
+        yieldAdjustedUnitCost: 0,
+        machineHours: 0,
+        totalMachineCost: 0,
         routingsCost: 0,
         yieldPercentage: 100,
         yieldFactor: 1,
@@ -198,7 +202,8 @@ export async function calculateRollupCost(
             laborCost: 0,
             machineOverheadCost: 0,
             customOverheadCost: 0,
-            expectedYieldPercentage: 100
+            expectedYieldPercentage: 100,
+            baseQuantity: 1
         });
         return {
             ...defaultResult(currentProduct.product_name, currentProduct.product_code),
@@ -245,9 +250,11 @@ export async function calculateRollupCost(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const unitsMap = new Map<number, string>(unitsList.map((u: any) => [u.unit_id, u.unit_shortcut]));
 
-    let materialsSubtotal = 0;
+    let materialsBatchSubtotal = 0;
     let laborSubtotal = 0;
     let machineOverheadSubtotal = 0;
+    let machineHoursSubtotal = 0;
+    let totalMachineCostSubtotal = 0;
     const costTreeNodes: CostNode[] = [];
 
     // Process each route step
@@ -260,6 +267,7 @@ export async function calculateRollupCost(
         const routeBreakdown = calculateRouteBreakdown({
             laborCost: r.estimated_labor_cost,
             machineHourlyRate: wcOverheadRate,
+            operationCapacity: workCenter ? Number(workCenter.capacity_per_hour || 0) : 0,
             setupTimeHours: r.setup_time_hours,
             runTimeHours: r.run_time_hours,
             baseQuantity: Number(version?.base_quantity) || 1
@@ -268,6 +276,8 @@ export async function calculateRollupCost(
 
         laborSubtotal += routeBreakdown.laborCost;
         machineOverheadSubtotal += routeBreakdown.machineOverheadCost;
+        machineHoursSubtotal += routeBreakdown.machineHours;
+        totalMachineCostSubtotal += routeBreakdown.totalMachineCost;
 
         const childrenNodes: CostNode[] = [];
 
@@ -283,7 +293,7 @@ export async function calculateRollupCost(
 
                 if (hasVersions) {
                     const subResult = await calculateRollupCost(bomItem.product_id, new Set(visited), productsMap, forexRate, profilesMap);
-                    compUnitCost = subResult.totalBaseCost;
+                    compUnitCost = subResult.yieldAdjustedUnitCost;
                     subChildren = subResult.costTree;
                 } else if (bomItem.cost_per_unit !== null && bomItem.cost_per_unit !== undefined) {
                     compUnitCost = Number(bomItem.cost_per_unit);
@@ -297,7 +307,7 @@ export async function calculateRollupCost(
                     wastagePercent: bomItem.wastage_factor_percentage
                 });
 
-                materialsSubtotal += lineCost;
+                materialsBatchSubtotal += lineCost;
 
                 const ingName = compProduct ? compProduct.product_name : `Component #${bomItem.product_id}`;
                 const uomName = bomItem.unit_of_measurement
@@ -333,16 +343,24 @@ export async function calculateRollupCost(
             laborCost: routeBreakdown.laborCost,
             machineRate: wcOverheadRate,
             machineHours: routeBreakdown.machineHours,
+            machineCostPerUnit: routeBreakdown.machineCostPerUnit,
+            operationCapacity: routeBreakdown.operationCapacity,
             children: childrenNodes.length > 0 ? childrenNodes : undefined
         });
     }
+
+    const baseQuantity = Number(version?.base_quantity) > 0 ? Number(version?.base_quantity) : 1;
+    const materialsSubtotal = materialsBatchSubtotal / baseQuantity;
 
     const breakdown = calculateCostBreakdown({
         materialsCost: materialsSubtotal,
         laborCost: laborSubtotal,
         machineOverheadCost: machineOverheadSubtotal,
         customOverheadCost: version.custom_overhead,
-        expectedYieldPercentage: version.expected_yield_percentage
+        expectedYieldPercentage: version.expected_yield_percentage,
+        baseQuantity,
+        machineHours: machineHoursSubtotal,
+        totalMachineCost: totalMachineCostSubtotal
     });
     const overheadSummary = calculateOverheadSummary(
         breakdown.customOverheadCost,
