@@ -1,6 +1,8 @@
 // VOS ERP - Directus API Helper (BFF Server-Side Only)
 // Located inside src/app/api/manufacturing/ to ensure the modules/ folder has zero direct Directus imports.
 
+import { calculateCostBreakdown, calculateMaterialCost, calculateOverheadSummary, calculateRouteBreakdown } from "@/modules/manufacturing-management/finished-goods/costing";
+
 export const DIRECTUS_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://vtc:8074";
 export const DIRECTUS_TOKEN = process.env.DIRECTUS_STATIC_TOKEN !== undefined ? process.env.DIRECTUS_STATIC_TOKEN : "test";
 
@@ -43,7 +45,8 @@ export interface DirectusBOM {
     base_quantity: number;
     expected_yield_percentage: number;
     is_active: boolean;
-    version: { id: number; version_name: string; created_at?: string } | number | null;
+    version: { id: number; version_name: string; created_at?: string; custom_overhead?: number | null } | number | null;
+    custom_overhead?: number | null;
     valid_from?: string;
     valid_to?: string;
 }
@@ -109,8 +112,17 @@ export interface CostRollupResult {
     bomId: number | null;
     bomVersion: string | number;
     materialsCost: number;
+    laborCost: number;
+    machineOverheadCost: number;
+    customOverheadCost: number;
+    additionalOperatingOverhead: number;
+    totalOverheadExpenses: number;
+    includedInCogs: number;
+    excludedFromCogs: number;
+    preYieldDirectCost: number;
     routingsCost: number;
     yieldPercentage: number;
+    yieldFactor: number;
     totalBaseCost: number;
     targetSellingPrice: number;
     grossMarginPercent: number;
@@ -126,6 +138,9 @@ export interface CostNode {
     unitCost: number;
     wastagePercent: number;
     totalCost: number;
+    laborCost?: number;
+    machineRate?: number;
+    machineHours?: number;
     children?: CostNode[];
 }
 
@@ -362,8 +377,17 @@ export async function calculateRollupCost(
         bomId: null,
         bomVersion: "v1.0",
         materialsCost: 0,
+        laborCost: 0,
+        machineOverheadCost: 0,
+        customOverheadCost: 0,
+        additionalOperatingOverhead: 0,
+        totalOverheadExpenses: 0,
+        includedInCogs: 0,
+        excludedFromCogs: 0,
+        preYieldDirectCost: 0,
         routingsCost: 0,
         yieldPercentage: 100,
+        yieldFactor: 1,
         totalBaseCost: 0,
         targetSellingPrice: 0,
         grossMarginPercent: 0,
@@ -395,9 +419,26 @@ export async function calculateRollupCost(
     const { bom, components, routings } = await getActiveBOMForProduct(productId);
     if (!bom) {
         const landedCost = await getLatestLandedCost(productId, forexRate);
+        const leafBreakdown = calculateCostBreakdown({
+            materialsCost: landedCost,
+            laborCost: 0,
+            machineOverheadCost: 0,
+            customOverheadCost: 0,
+            expectedYieldPercentage: 100
+        });
         return {
             ...defaultResult(currentProduct.product_name, currentProduct.product_code),
-            totalBaseCost: landedCost,
+            ...leafBreakdown,
+            ...(() => {
+                const overheadSummary = calculateOverheadSummary(leafBreakdown.customOverheadCost);
+                return {
+                    additionalOperatingOverhead: overheadSummary.additionalOperatingOverhead,
+                    totalOverheadExpenses: overheadSummary.totalOverheadExpenses,
+                    includedInCogs: overheadSummary.includedInCogs,
+                    excludedFromCogs: overheadSummary.excludedFromCogs
+                };
+            })(),
+            routingsCost: 0,
             targetSellingPrice: currentProduct.price_per_unit || 0,
             costTree: [{
                 id: `leaf-${productId}`,
@@ -429,12 +470,14 @@ export async function calculateRollupCost(
             compUnitCost = await getLatestLandedCost(comp.component_product_id, forexRate);
         }
 
-        const wastageFactor = 1 - (comp.wastage_factor_percentage / 100);
-        let lineCost = (comp.quantity_required * compUnitCost) / (wastageFactor > 0 ? wastageFactor : 1);
+        const lineCost = calculateMaterialCost({
+            quantity: comp.quantity_required,
+            unitCost: compUnitCost,
+            wastagePercent: comp.wastage_factor_percentage,
+            isByProduct: comp.component_type === "by_product"
+        });
 
-        if (comp.component_type === "by_product") {
-            lineCost = -Math.abs(lineCost);
-        } else {
+        if (comp.component_type !== "by_product") {
             materialsSubtotal += lineCost;
         }
 
@@ -454,31 +497,45 @@ export async function calculateRollupCost(
         });
     }
 
-    let routingsSubtotal = 0;
+    let laborSubtotal = 0;
+    let machineOverheadSubtotal = 0;
     for (const r of routings) {
-        const laborCost = Number(r.estimated_labor_cost || 0);
-        const overheadCost = Number(r.estimated_overhead_cost || 0);
-        const hours = Number(r.duration_hours || 0);
-        const stepCost = laborCost + (overheadCost * hours);
-        routingsSubtotal += stepCost;
+        const routeBreakdown = calculateRouteBreakdown({
+            laborCost: r.estimated_labor_cost,
+            machineHourlyRate: r.estimated_overhead_cost,
+            setupTimeHours: 0,
+            runTimeHours: r.duration_hours,
+            baseQuantity: bom.base_quantity
+        });
+        laborSubtotal += routeBreakdown.laborCost;
+        machineOverheadSubtotal += routeBreakdown.machineOverheadCost;
 
         costTreeNodes.push({
             id: `route-${r.routing_id}`,
             name: r.operation_name,
             type: "routing",
-            quantity: hours,
+            quantity: routeBreakdown.machineHours,
             uom: "hrs",
-            unitCost: overheadCost,
+            unitCost: Number(r.estimated_overhead_cost || 0),
             wastagePercent: 0,
-            totalCost: stepCost
+            totalCost: routeBreakdown.totalCost,
+            laborCost: routeBreakdown.laborCost,
+            machineRate: Number(r.estimated_overhead_cost || 0),
+            machineHours: routeBreakdown.machineHours
         });
     }
 
-    const yieldFactor = bom.expected_yield_percentage / 100;
-    const rolledCost = (materialsSubtotal + routingsSubtotal) / (yieldFactor > 0 ? yieldFactor : 1);
+    const breakdown = calculateCostBreakdown({
+        materialsCost: materialsSubtotal,
+        laborCost: laborSubtotal,
+        machineOverheadCost: machineOverheadSubtotal,
+        customOverheadCost: bom.custom_overhead ?? (bom.version && typeof bom.version === "object" ? bom.version.custom_overhead : 0),
+        expectedYieldPercentage: bom.expected_yield_percentage
+    });
+    const overheadSummary = calculateOverheadSummary(breakdown.customOverheadCost);
     
     const targetPrice = currentProduct.price_per_unit || 0;
-    const marginPhp = targetPrice - rolledCost;
+    const marginPhp = targetPrice - breakdown.totalBaseCost;
     const marginPercent = targetPrice > 0 ? (marginPhp / targetPrice) * 100 : 0;
 
     return {
@@ -487,10 +544,12 @@ export async function calculateRollupCost(
         sku: currentProduct.product_code,
         bomId: bom.bom_id,
         bomVersion: (bom.version && typeof bom.version === "object") ? bom.version.version_name : (bom.version || "V1"),
-        materialsCost: materialsSubtotal,
-        routingsCost: routingsSubtotal,
-        yieldPercentage: bom.expected_yield_percentage,
-        totalBaseCost: rolledCost,
+        ...breakdown,
+        additionalOperatingOverhead: overheadSummary.additionalOperatingOverhead,
+        totalOverheadExpenses: overheadSummary.totalOverheadExpenses,
+        includedInCogs: overheadSummary.includedInCogs,
+        excludedFromCogs: overheadSummary.excludedFromCogs,
+        routingsCost: breakdown.laborCost + breakdown.machineOverheadCost,
         targetSellingPrice: targetPrice,
         grossMarginPercent: marginPercent,
         costTree: costTreeNodes

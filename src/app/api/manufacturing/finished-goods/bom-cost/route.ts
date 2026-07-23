@@ -20,7 +20,11 @@ export async function GET(request: Request) {
         // Calculate cost using rollup engine helper (which handles version -> routes -> bom_items)
         const rollup = await calculateRollupCost(productId, new Set(), undefined, forexRate, undefined, versionId);
 
-        return NextResponse.json({ cost: rollup.totalBaseCost, hasCogs: true });
+        return NextResponse.json({
+            cost: rollup.totalBaseCost,
+            hasCogs: true,
+            rollup
+        });
 
     } catch (e) {
         console.error("API Error calculating BOM cost:", e);

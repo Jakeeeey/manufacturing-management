@@ -177,7 +177,7 @@ export async function POST(request: Request) {
         }
 
         // 4. Run standard rollup costing recalculation and save to product standard cost field
-        const rollupResult = await calculateRollupCost(numericProductId);
+        const rollupResult = await calculateRollupCost(numericProductId, new Set(), undefined, 58, undefined, numericVersionId);
         if (rollupResult.bomId) {
             const standardCostUpdated = await updateProductStandardCost(numericProductId, rollupResult.totalBaseCost);
             if (!standardCostUpdated) {
