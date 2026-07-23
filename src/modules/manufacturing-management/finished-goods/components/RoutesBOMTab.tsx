@@ -8,6 +8,27 @@ import { BOMMaterialSelect } from "./BOMMaterialSelect";
 import { CreatableSelect } from "./CreatableSelect";
 import { Button } from "@/components/ui/button";
 
+function materialClassification(item: RouteBOMItem) {
+    if (!item.product_id) {
+        return { label: "Select a material", className: "bg-muted text-muted-foreground border-border" };
+    }
+
+    const productType = Number(item.product_type);
+    if (productType === 389) {
+        return { label: "Raw Material", className: "bg-blue-500/10 text-blue-600 border-blue-500/20" };
+    }
+    if (productType === 390) {
+        return { label: "Packaging Item", className: "bg-amber-500/10 text-amber-600 border-amber-500/20" };
+    }
+    if (productType === 388 && item.has_versions) {
+        return { label: "Sub-assembly", className: "bg-violet-500/10 text-violet-600 border-violet-500/20" };
+    }
+    if (productType === 388) {
+        return { label: "Finished Good", className: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" };
+    }
+    return { label: "Unclassified", className: "bg-muted text-muted-foreground border-border" };
+}
+
 interface RoutesBOMTabProps {
     editedRoutes: RouteStep[];
     setEditedRoutes: React.Dispatch<React.SetStateAction<RouteStep[]>>;
@@ -112,6 +133,8 @@ export const RoutesBOMTab: React.FC<RoutesBOMTabProps> = ({
                 route_id: routeId,
                 product_id: 0,
                 quantity_required: 0,
+                product_type: null,
+                has_versions: false,
                 unit_of_measurement: null,
                 wastage_factor_percentage: 0,
                 cost_per_unit: 0
@@ -475,6 +498,7 @@ export const RoutesBOMTab: React.FC<RoutesBOMTabProps> = ({
                                             <table className="w-full border-collapse text-left text-xs">
                                                 <thead>
                                                     <tr className="bg-muted/10 border-b border-muted/60 text-muted-foreground font-bold">
+                                                        <th className="p-2.5 w-[15%]">Material Type</th>
                                                         <th className="p-2.5 w-[30%]">Material</th>
                                                         <th className="p-2.5 w-[15%]">Qty Required</th>
                                                         <th className="p-2.5 w-[15%]">UOM</th>
@@ -488,8 +512,18 @@ export const RoutesBOMTab: React.FC<RoutesBOMTabProps> = ({
                                                     {(r.bom_items || []).map((b) => {
                                                         const wastageFact = 1 - (Number(b.wastage_factor_percentage || 0) / 100);
                                                         const compCost = (Number(b.quantity_required || 0) * Number(b.cost_per_unit || 0)) / (wastageFact > 0 ? wastageFact : 1);
+                                                        const classification = materialClassification(b);
                                                         return (
                                                             <tr key={b.id} className="border-b border-muted/50 hover:bg-muted/5">
+                                                                <td className="p-1.5 align-middle">
+                                                                    <span
+                                                                        aria-label={`Material Type: ${classification.label}`}
+                                                                        title={`Material Type: ${classification.label}`}
+                                                                        className={`inline-flex w-fit items-center rounded border px-2 py-1 text-[10px] font-bold uppercase tracking-wide ${classification.className}`}
+                                                                    >
+                                                                        {classification.label}
+                                                                    </span>
+                                                                </td>
                                                                 <td className="p-1.5 align-middle">
                                                                     <BOMMaterialSelect
                                                                         value={b.product_id || undefined}
@@ -497,6 +531,8 @@ export const RoutesBOMTab: React.FC<RoutesBOMTabProps> = ({
                                                                             handleUpdateIngredient(r.route_id, b.id, "product_id", prod.product_id);
                                                                             handleUpdateIngredient(r.route_id, b.id, "product_name", prod.product_name);
                                                                             handleUpdateIngredient(r.route_id, b.id, "product_code", prod.product_code);
+                                                                            handleUpdateIngredient(r.route_id, b.id, "product_type", prod.product_type ?? null);
+                                                                            handleUpdateIngredient(r.route_id, b.id, "has_versions", Boolean(prod.has_versions));
                                                                             handleUpdateIngredient(r.route_id, b.id, "cost_per_unit", Number(prod.cost_per_unit || prod.price_per_unit || 0));
                                                                             handleUpdateIngredient(r.route_id, b.id, "unit_of_measurement", prod.unit_of_measurement?.unit_shortcut || "PCS");
                                                                         }}

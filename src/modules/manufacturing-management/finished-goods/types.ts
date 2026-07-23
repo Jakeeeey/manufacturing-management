@@ -202,6 +202,8 @@ export interface RouteBOMItem {
     id: number;
     route_id: number;
     product_id: number;
+    product_type?: number | null;
+    has_versions?: boolean;
     quantity_required: number;
     unit_of_measurement?: number | string | null;
     wastage_factor_percentage: number;
