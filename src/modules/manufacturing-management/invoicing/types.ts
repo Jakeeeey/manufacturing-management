@@ -42,6 +42,7 @@ export interface CreatedInvoiceResult {
     invoiceId: number;
     invoiceNo: string;
     transactionStatus: "Prepared";
+    reservationCount: number;
 }
 
 export interface PrintableInvoiceLine {

@@ -30,6 +30,9 @@ export interface RawBatch {
     batch_no: string | null;
     expiration_date?: string | null;
     quantity_received: number;
+    on_hand_quantity?: number;
+    reserved_quantity?: number;
+    available_quantity?: number;
     final_landed_unit_cost: number;
     base_unit_cost_php: number;
     qa_status: string;
@@ -148,14 +151,15 @@ export function buildBatchesFromMovements(
     }
 
     // Build lookup for lot unit costs, QA statuses, transaction types, and lot names from inventoryLots fallback
-    const lotMetaMap = new Map<string, { unitCost: number; qaStatus: string; transactionType: string | null }>();
+    const lotMetaMap = new Map<string, { unitCost: number; qaStatus: string; transactionType: string | null; reservedQuantity: number }>();
     const lotNameByIdMap = new Map<number, string>();
     inventoryLots.forEach((l) => {
-        const key = `${l.product_id}:${l.branch_id}:${l.batch_no || ""}`;
+        const key = `${l.product_id}:${l.version_id ?? "null"}:${l.branch_id}:${l.lot_id ?? "null"}:${l.batch_no || ""}`;
         lotMetaMap.set(key, {
             unitCost: l.final_landed_unit_cost || l.base_unit_cost_php || 0,
             qaStatus: l.qa_status || "Passed",
-            transactionType: l.transaction_type || null
+            transactionType: l.transaction_type || null,
+            reservedQuantity: Number(l.reserved_quantity || 0),
         });
         if (l.lot_id && l.lot_name) {
             lotNameByIdMap.set(l.lot_id, l.lot_name);
@@ -253,8 +257,11 @@ export function buildBatchesFromMovements(
         if (group.totalQty <= 0) return;
 
         const m = group.firstMvt;
-        const metaKey = `${group.productId}:${group.branchId}:${group.batchNo}`;
-        const lotMeta = lotMetaMap.get(metaKey);
+        const metaKey = `${group.productId}:${group.versionId ?? "null"}:${group.branchId}:${group.lotId ?? "null"}:${group.batchNo}`;
+        const fallbackMetaKey = `${group.productId}:null:${group.branchId}:${group.lotId ?? "null"}:${group.batchNo}`;
+        const lotMeta = lotMetaMap.get(metaKey) || lotMetaMap.get(fallbackMetaKey);
+        const reservedQuantity = Math.min(group.totalQty, lotMeta?.reservedQuantity || 0);
+        const availableQuantity = Math.max(0, group.totalQty - reservedQuantity);
 
         const lotName = typeof m.lot_id === "object" ? m.lot_id?.lot_name || null : (group.lotId ? lotNameByIdMap.get(group.lotId) || null : null);
         let versionName = typeof m.version_id === "object" ? m.version_id?.version_name || null : null;
@@ -313,7 +320,10 @@ export function buildBatchesFromMovements(
             lot_number: group.batchNo,
             batch_no: group.batchNo,
             expiration_date: m.expiry_date || null,
-            quantity_received: group.totalQty,
+            quantity_received: availableQuantity,
+            on_hand_quantity: group.totalQty,
+            reserved_quantity: reservedQuantity,
+            available_quantity: availableQuantity,
             final_landed_unit_cost: lotMeta?.unitCost || 0,
             base_unit_cost_php: lotMeta?.unitCost || 0,
             qa_status: lotMeta?.qaStatus || "Passed",

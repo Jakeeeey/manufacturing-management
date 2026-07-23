@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { getUserIdFromToken } from "../invoice-consolidation/_auth";
+import { releaseInvoiceReservations } from "../invoice-consolidation/_reservation-service";
 
 const DIRECTUS_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://vtc:8074";
 const DIRECTUS_STATIC_TOKEN = process.env.DIRECTUS_STATIC_TOKEN || "test";
@@ -481,6 +483,11 @@ export async function PATCH(request: Request) {
         }
 
         const updatePayload: Record<string, unknown> = {};
+        const cancelling = status === "Cancelled";
+        const userId = cancelling ? await getUserIdFromToken() : null;
+        if (cancelling && !userId) {
+            return NextResponse.json({ error: "Authentication is required." }, { status: 401 });
+        }
 
         if (payment) {
             if (currentInvoice.transaction_status === "Cancelled") {
@@ -530,7 +537,21 @@ export async function PATCH(request: Request) {
 
         if (!res.ok) throw new Error(`Failed to update invoice in Directus: ${res.status}`);
 
-        // If status was changed to Cancelled, revert the Sales Order status back to For Invoicing
+        if (cancelling) {
+            try {
+                await releaseInvoiceReservations(Number(invoiceId), userId!);
+            } catch (error) {
+                await fetch(`${DIRECTUS_URL}/items/sales_invoice/${invoiceId}`, {
+                    method: "PATCH",
+                    headers,
+                    body: JSON.stringify({ transaction_status: currentInvoice.transaction_status }),
+                }).catch(() => undefined);
+                const message = error instanceof Error ? error.message : "Failed to release invoice reservations";
+                return NextResponse.json({ error: message }, { status: 409 });
+            }
+        }
+
+        // Return the order to the invoicing candidate queue after cancellation.
         if ((status === "Cancelled" || updatePayload.transaction_status === "Cancelled") && currentInvoice.order_id) {
             try {
                 await fetch(`${DIRECTUS_URL}/items/sales_order/${currentInvoice.order_id}`, {
