@@ -2,12 +2,13 @@
 // disabled-lint-next-line @typescript-eslint/no-unused-vars
 import React, { useState, useEffect } from "react";
 import { 
-    Loader2, ShieldCheck, Save, Send, Building2, 
-    FileText, CreditCard, Calendar, Plus, Minus, AlertCircle,
-    X, CheckCircle2, PackageCheck, PackageOpen
+    Loader2, AlertCircle, Building2, 
+    FileText, CreditCard, Calendar, Check, Minus, Plus,
+    ShieldCheck, PackageCheck, X, CheckCircle2, PackageOpen, Save, Send 
 } from "lucide-react";
 import { toast } from "sonner";
 import { SalesOrder, SalesOrderDetail } from "../types";
+import { formatCurrency } from "@/lib/utils";
 
 interface SalesOrderDetailPanelProps {
     selectedOrder: SalesOrder | null;
@@ -15,10 +16,8 @@ interface SalesOrderDetailPanelProps {
     orderDetails: SalesOrderDetail[];
     loadingDetails: boolean;
     updatingStatusId: number | null;
-    savingQuantities?: boolean;
     handleApproveOrder: (orderId: number) => void;
-    handleUpdateQuantities: (orderId: number, details: { detail_id: number; ordered_quantity: number }[]) => void;
-    handleSubmitForApproval: (orderId: number) => void;
+    onOrderUpdated?: () => void;
 }
 
 export function SalesOrderDetailPanel({
@@ -27,73 +26,104 @@ export function SalesOrderDetailPanel({
     orderDetails,
     loadingDetails,
     updatingStatusId,
-    savingQuantities = false,
-// disabled-lint-next-line @typescript-eslint/no-unused-vars
     handleApproveOrder,
-    handleUpdateQuantities,
-    handleSubmitForApproval
+    onOrderUpdated
 }: SalesOrderDetailPanelProps) {
     const [editableQuantities, setEditableQuantities] = useState<Record<number, number>>({});
-    const [prevOrderDetails, setPrevOrderDetails] = useState<unknown[]>([]);
+    const [savingQuantities, setSavingQuantities] = useState(false);
     const [isAllocationModalOpen, setIsAllocationModalOpen] = useState(false);
 
-    if (orderDetails !== prevOrderDetails) {
-        setPrevOrderDetails(orderDetails);
+    // Sync initial quantities when orderDetails changes or panel opens
+    useEffect(() => {
         if (orderDetails.length > 0) {
-            const initialQtys: Record<number, number> = {};
+            const initialMap: Record<number, number> = {};
             orderDetails.forEach(item => {
-                initialQtys[item.detail_id] = item.ordered_quantity;
+                initialMap[item.detail_id] = item.ordered_quantity;
             });
-            setEditableQuantities(initialQtys);
+            setEditableQuantities(initialMap);
         } else {
             setEditableQuantities({});
         }
-    }
+    }, [orderDetails]);
 
     if (!selectedOrder) {
         return (
             <div className="border border-dashed rounded-xl p-8 text-center text-muted-foreground text-xs bg-card/50">
                 <FileText className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
-                Select an active Sales Order to view committed price locks, line items, and schedule details.
+                Select a Sales Order from the list to view detailed items and financial breakdown.
             </div>
         );
     }
 
-    // Determine if any quantities have been edited
-    const hasChanges = orderDetails.some(item => {
-        const currentVal = editableQuantities[item.detail_id];
-        const normalizedVal = currentVal === 0 ? 1 : (currentVal ?? item.ordered_quantity);
-        return normalizedVal !== item.ordered_quantity;
-    });
+    const isEditable = selectedOrder.order_status === "Draft" || selectedOrder.order_status === "Pending";
 
-    // Compute live pricing sums for immediate feedback
+    // Compute pricing sums dynamically using editable quantities if present
     const grossSum = orderDetails.reduce((acc, item) => {
-        const qty = editableQuantities[item.detail_id] !== undefined 
-            ? editableQuantities[item.detail_id] 
-            : item.ordered_quantity;
-        return acc + (item.unit_price * (qty === 0 ? 1 : qty));
+        const qty = editableQuantities[item.detail_id] ?? item.ordered_quantity;
+        return acc + (item.unit_price * qty);
     }, 0);
     const discount = Number(selectedOrder.discount_amount || 0);
     const netSum = Math.max(0, grossSum - discount);
 
-    const decrementQty = (detailId: number, currentVal: number) => {
+    // Check if any quantity has been edited from initial orderDetails
+    const hasChanges = isEditable && orderDetails.some(item => {
+        const current = editableQuantities[item.detail_id];
+        return current !== undefined && current !== item.ordered_quantity;
+    });
+
+    const handleSaveQuantities = async (andApprove = false) => {
+        setSavingQuantities(true);
+        try {
+            const detailsPayload = orderDetails.map(item => ({
+                detail_id: item.detail_id,
+                ordered_quantity: editableQuantities[item.detail_id] ?? item.ordered_quantity
+            }));
+
+            const res = await fetch(`/api/manufacturing/sales-order/${selectedOrder.order_id}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ details: detailsPayload })
+            });
+
+            if (!res.ok) {
+                const errData = await res.json().catch(() => ({}));
+                throw new Error(errData.error || "Failed to update item quantities");
+            }
+
+            toast.success("Item quantities updated successfully!");
+
+            if (onOrderUpdated) {
+                onOrderUpdated();
+            }
+
+            if (andApprove) {
+                handleApproveOrder(selectedOrder.order_id);
+            }
+        } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : "Error saving quantities";
+            toast.error(msg);
+        } finally {
+            setSavingQuantities(false);
+        }
+    };
+
+    const incrementQty = (detailId: number, current: number) => {
         setEditableQuantities(prev => ({
             ...prev,
-            [detailId]: Math.max(1, (currentVal === 0 ? 1 : currentVal) - 1)
+            [detailId]: (current || 0) + 1
         }));
     };
 
-    const incrementQty = (detailId: number, currentVal: number) => {
+    const decrementQty = (detailId: number, current: number) => {
+        if (current <= 1) return;
         setEditableQuantities(prev => ({
             ...prev,
-            [detailId]: (currentVal === 0 ? 1 : currentVal) + 1
+            [detailId]: current - 1
         }));
     };
-
-    const isEditable = selectedOrder.order_status === "Draft" || selectedOrder.order_status === "Pending";
 
     return (
-        <div className="border border-border/80 rounded-2xl bg-card p-6 shadow-sm space-y-6 border-t-2 border-t-indigo-600">
+        <div className="border border-border rounded-2xl bg-card p-6 shadow-sm space-y-6">
             {/* Header info */}
             <div className="flex justify-between items-start border-b border-border pb-4">
                 <div>
@@ -101,34 +131,34 @@ export function SalesOrderDetailPanel({
                         <h4 className="text-sm font-black text-foreground uppercase tracking-wider">
                             {selectedOrder.order_no}
                         </h4>
-                        <span className={`inline-flex px-2 py-0.5 rounded-full text-[8.5px] font-black uppercase tracking-wider ${
+                        <span className={`inline-flex px-2.5 py-0.5 rounded-full text-[8.5px] font-black uppercase tracking-wider whitespace-nowrap ${
                             selectedOrder.order_status === "Draft"
                                 ? "bg-muted text-foreground border border-border"
                                 : selectedOrder.order_status === "Pending"
-                                ? "bg-sky-50 text-sky-700 border border-sky-200/60"
+                                ? "bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20"
                                 : selectedOrder.order_status === "For Approval"
-                                ? "bg-amber-50 text-amber-700 border border-amber-200/60"
-                                : "bg-emerald-50 text-emerald-700 border border-emerald-200/60"
+                                ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20"
+                                : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
                         }`}>
-                            {selectedOrder.order_status}
+                            {selectedOrder.order_status || "Draft"}
                         </span>
                     </div>
-                    <p className="text-[10px] text-muted-foreground mt-0.5">Sales Order Details & Scope</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">Sales Order Overview & Line Items</p>
                 </div>
                 <button
                     onClick={() => setSelectedOrder(null)}
-                    className="text-muted-foreground hover:text-muted-foreground text-xs font-bold px-2.5 py-1.5 rounded-lg hover:bg-muted transition-all cursor-pointer border-none bg-transparent"
+                    className="text-muted-foreground hover:text-foreground text-xs font-bold px-2.5 py-1.5 rounded-lg hover:bg-muted transition-all cursor-pointer border-none bg-transparent"
                 >
                     Close
                 </button>
             </div>
 
             {/* Metadata Grid */}
-            <div className="grid grid-cols-2 gap-3.5 bg-muted/50 p-4.5 rounded-xl border border-border/60 text-xs">
+            <div className="grid grid-cols-2 gap-3.5 bg-muted/50 p-4.5 rounded-xl border border-border text-xs">
                 <div className="space-y-1 col-span-2">
                     <span className="text-muted-foreground block text-[9.5px] font-bold uppercase tracking-wider">Customer</span>
                     <span className="font-extrabold text-foreground flex items-center gap-2">
-                        <Building2 className="h-4 w-4 text-indigo-500" />
+                        <Building2 className="h-4 w-4 text-primary" />
                         {selectedOrder.customer_name ? (
                             <span>
                                 {selectedOrder.customer_name}{" "}
@@ -152,18 +182,7 @@ export function SalesOrderDetailPanel({
                     <span className="text-muted-foreground block text-[9.5px] font-bold uppercase tracking-wider">Payment Terms</span>
                     <span className="font-bold text-foreground flex items-center gap-2">
                         <CreditCard className="h-4 w-4 text-muted-foreground" />
-                        {selectedOrder.payment_term_name ? (
-                            <span className="truncate">
-                                {selectedOrder.payment_term_name}
-                                {selectedOrder.payment_term_days !== undefined && selectedOrder.payment_term_days !== null && (
-                                    <span className="text-[9.5px] text-muted-foreground font-normal">
-                                        {" "}({selectedOrder.payment_term_days}d)
-                                    </span>
-                                )}
-                            </span>
-                        ) : (
-                            selectedOrder.payment_terms ? `${selectedOrder.payment_terms} Days` : "COD"
-                        )}
+                        {selectedOrder.payment_terms ? `${selectedOrder.payment_terms} Days` : "COD"}
                     </span>
                 </div>
 
@@ -184,7 +203,7 @@ export function SalesOrderDetailPanel({
                 </div>
 
                 {selectedOrder.remarks && (
-                    <div className="space-y-1 col-span-2 pt-3 border-t border-border/60 border-dashed mt-1.5">
+                    <div className="space-y-1 col-span-2 pt-3 border-t border-border border-dashed mt-1.5">
                         <span className="text-muted-foreground block text-[9.5px] font-bold uppercase tracking-wider">Remarks / Notes</span>
                         <p className="text-[11px] text-muted-foreground leading-relaxed italic">
                             &ldquo;{selectedOrder.remarks}&rdquo;
@@ -200,7 +219,7 @@ export function SalesOrderDetailPanel({
                         Agreement Line Items
                     </h5>
                     {hasChanges && (
-                        <span className="text-[9px] bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full font-black uppercase tracking-wider flex items-center gap-1">
+                        <span className="text-[9px] bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded-full font-black uppercase tracking-wider flex items-center gap-1">
                             <AlertCircle className="h-3 w-3" /> Unsaved Changes
                         </span>
                     )}
@@ -208,7 +227,7 @@ export function SalesOrderDetailPanel({
 
                 {loadingDetails ? (
                     <div className="flex flex-col items-center justify-center p-12 gap-2 border border-dashed rounded-xl bg-muted/50">
-                        <Loader2 className="h-5 w-5 animate-spin text-indigo-600" />
+                        <Loader2 className="h-5 w-5 animate-spin text-primary" />
                         <span className="text-[10px] text-muted-foreground font-semibold">Fetching agreement items...</span>
                     </div>
                 ) : orderDetails.length === 0 ? (
@@ -224,22 +243,21 @@ export function SalesOrderDetailPanel({
                             const brand = pId?.brand || "N/A";
                             const category = pId?.category || "N/A";
                             const uom = pId?.uom || "PCS";
-                            const bomVersionName = item.bom_version_name?.trim() || "No Version";
-                            const hasBomVersion = bomVersionName !== "No Version";
-                            
-                            const rawQty = editableQuantities[item.detail_id];
-                            const currentQty = rawQty !== undefined ? rawQty : item.ordered_quantity;
-                            const resolvedQty = currentQty === 0 ? 1 : currentQty;
-                            const totalCost = item.unit_price * resolvedQty;
-                            const isChanged = resolvedQty !== item.ordered_quantity;
+
+                            const currentQty = editableQuantities[item.detail_id] ?? item.ordered_quantity;
+                            const totalCost = item.unit_price * currentQty;
+                            const isChanged = currentQty !== item.ordered_quantity;
+
+                            const bomVersionName = item.bom_version_name;
+                            const hasBomVersion = Boolean(bomVersionName && bomVersionName.trim() !== "");
 
                             return (
                                 <div 
                                     key={item.detail_id} 
-                                    className={`border rounded-xl p-4 bg-background flex flex-col justify-between gap-3 transition-all duration-200 ${
+                                    className={`border rounded-xl p-4 transition-all duration-200 flex flex-col justify-between gap-3 ${
                                         isChanged 
-                                            ? "border-l-4 border-l-amber-500 border-y-amber-200 border-r-amber-200 bg-amber-500/[0.01] shadow-xs" 
-                                            : "border-border/80 hover:border-border hover:shadow-xs"
+                                            ? "bg-amber-500/5 border-amber-500/30" 
+                                            : "bg-background border-border hover:border-primary/50"
                                     }`}
                                 >
                                     <div className="flex items-start justify-between gap-2.5">
@@ -250,7 +268,7 @@ export function SalesOrderDetailPanel({
                                                     {code}
                                                 </span>
                                                 {hasBomVersion ? (
-                                                    <span className="text-[9px] bg-indigo-50 text-indigo-700 border border-indigo-200 px-1.5 py-0.2 rounded font-bold">
+                                                    <span className="text-[9px] bg-primary/10 text-primary border border-primary/20 px-1.5 py-0.2 rounded font-bold">
                                                         {bomVersionName}
                                                     </span>
                                                 ) : (
@@ -259,7 +277,7 @@ export function SalesOrderDetailPanel({
                                                     </span>
                                                 )}
                                                 {brand !== "N/A" && (
-                                                    <span className="text-[9px] bg-indigo-500/10 text-indigo-600 px-1.5 py-0.2 rounded font-semibold">
+                                                    <span className="text-[9px] bg-primary/10 text-primary px-1.5 py-0.2 rounded font-semibold">
                                                         {brand}
                                                     </span>
                                                 )}
@@ -272,10 +290,10 @@ export function SalesOrderDetailPanel({
                                         </div>
                                         <div className="text-right shrink-0">
                                             <div className="text-xs font-black text-foreground font-mono">
-                                                ₱{totalCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                                {formatCurrency(totalCost)}
                                             </div>
                                             <div className="text-[9px] text-muted-foreground font-semibold mt-0.5">
-                                                ₱{item.unit_price.toFixed(2)} / {uom}
+                                                {formatCurrency(item.unit_price)} / {uom}
                                             </div>
                                         </div>
                                     </div>
@@ -286,7 +304,7 @@ export function SalesOrderDetailPanel({
                                         </span>
                                         <div className="flex items-center gap-2.5">
                                             {isChanged && (
-                                                <span className="text-[9px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200 font-black font-mono uppercase tracking-wider">
+                                                <span className="text-[9px] text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20 font-black font-mono uppercase tracking-wider">
                                                     Was {item.ordered_quantity}
                                                 </span>
                                             )}
@@ -302,29 +320,20 @@ export function SalesOrderDetailPanel({
                                                     <input
                                                         type="number"
                                                         min="1"
-                                                        value={currentQty === 0 ? "" : currentQty}
+                                                        value={currentQty}
                                                         onChange={e => {
-                                                            const rawVal = e.target.value;
-                                                            const parsed = parseInt(rawVal);
+                                                            const val = parseInt(e.target.value);
                                                             setEditableQuantities(prev => ({
                                                                 ...prev,
-                                                                [item.detail_id]: rawVal === "" ? 0 : (isNaN(parsed) ? 1 : parsed)
+                                                                [item.detail_id]: isNaN(val) ? 1 : Math.max(1, val)
                                                             }));
                                                         }}
-                                                        onBlur={() => {
-                                                            if (currentQty < 1) {
-                                                                 setEditableQuantities(prev => ({
-                                                                     ...prev,
-                                                                     [item.detail_id]: 1
-                                                                 }));
-                                                            }
-                                                        }}
-                                                        className="w-12 h-7 text-center border-y border-border bg-background text-foreground text-xs font-mono font-bold focus:ring-0 focus:outline-none"
+                                                        className="h-7 w-12 border-y border-border bg-background text-center text-xs font-bold text-foreground outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                                     />
                                                     <button
                                                         type="button"
                                                         onClick={() => incrementQty(item.detail_id, currentQty)}
-                                                        className="h-7 w-7 rounded-r-lg border border-border border-l-0 bg-background hover:bg-muted text-muted-foreground flex items-center justify-center transition-all font-bold cursor-pointer"
+                                                        className="h-7 w-7 rounded-r-lg border border-border bg-background hover:bg-muted text-muted-foreground flex items-center justify-center transition-all font-bold cursor-pointer"
                                                     >
                                                         <Plus className="h-3.5 w-3.5" />
                                                     </button>
@@ -344,39 +353,37 @@ export function SalesOrderDetailPanel({
             </div>
 
             {/* Financial Breakdown card */}
-            <div className="bg-slate-900 dark:bg-slate-800/80 text-slate-100 dark:text-slate-200 border dark:border-slate-700/50 rounded-xl p-4.5 space-y-3 shadow-md relative overflow-hidden">
+            <div className="bg-card text-card-foreground border border-border rounded-xl p-4.5 space-y-3 shadow-xs relative overflow-hidden">
                 <div className="flex justify-between items-center text-xs">
                     <span className="text-muted-foreground font-medium">Subtotal Gross</span>
                     <span className="font-bold font-mono">
-                        ₱{grossSum.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        {formatCurrency(grossSum)}
                     </span>
                 </div>
                 {selectedOrder.discount_amount ? (
-                    <div className="flex justify-between items-center text-xs text-rose-400">
+                    <div className="flex justify-between items-center text-xs text-destructive">
                         <span className="font-medium">Discount Code</span>
                         <span className="font-bold font-mono">
-                            - ₱{discount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                            - {formatCurrency(discount)}
                         </span>
                     </div>
                 ) : null}
-                <div className="border-t border-slate-800 dark:border-slate-700 my-2 pt-3 flex justify-between items-center">
-                    <span className="text-xs font-extrabold uppercase tracking-wider text-slate-300">
+                <div className="border-t border-border my-2 pt-3 flex justify-between items-center">
+                    <span className="text-xs font-extrabold uppercase tracking-wider text-foreground">
                         Net Amount Locked
                     </span>
-                    <span className="text-sm font-black text-emerald-400 font-mono bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20">
-                        ₱{netSum.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    <span className="text-sm font-black text-emerald-600 dark:text-emerald-400 font-mono bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20">
+                        {formatCurrency(netSum)}
                     </span>
                 </div>
-                {/* Visual decoration inside the breakdown card */}
-                <div className="absolute right-0 bottom-0 -mb-6 -mr-6 w-16 h-16 bg-emerald-500/5 rounded-full blur-lg"></div>
             </div>
 
             {/* Action buttons */}
             <div className="space-y-2.5 pt-1">
                 {hasChanges && (
-                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-2.5 text-[11px] font-semibold text-amber-800 leading-relaxed shadow-xs">
-                        <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-amber-600" />
-                        <span>You have unsaved quantity changes. Press &quot;Allocate Inventory&quot; below to commit them.</span>
+                    <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 flex items-start gap-2.5 text-[11px] font-semibold text-amber-600 dark:text-amber-400 leading-relaxed shadow-xs">
+                        <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-amber-500" />
+                        <span>You have unsaved quantity changes. Press &quot;Save Changes&quot; below to commit them.</span>
                     </div>
                 )}
 
@@ -384,31 +391,25 @@ export function SalesOrderDetailPanel({
                     <div className="space-y-2">
                         <button
                             disabled={savingQuantities || orderDetails.length === 0 || !hasChanges}
-                            onClick={() => {
-                                const detailsPayload = orderDetails.map(item => ({
-                                    detail_id: item.detail_id,
-                                    ordered_quantity: editableQuantities[item.detail_id] ?? item.ordered_quantity
-                                }));
-                                handleUpdateQuantities(selectedOrder.order_id, detailsPayload);
-                            }}
-                            className={`w-full inline-flex items-center justify-center gap-2 rounded-xl py-3 text-xs font-bold shadow-sm transition-all cursor-pointer ${
+                            onClick={() => handleSaveQuantities(false)}
+                            className={`w-full inline-flex items-center justify-center gap-2 rounded-xl py-3 text-xs font-bold shadow-xs transition-all cursor-pointer ${
                                 hasChanges 
                                     ? "bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-600 active:scale-[0.98] shadow-md shadow-emerald-500/10 hover:shadow-emerald-500/25"
                                     : "border border-border bg-muted text-muted-foreground cursor-not-allowed opacity-75"
                             }`}
-                            title={hasChanges ? "Save changes and update status" : "No quantity changes to save"}
+                            title={hasChanges ? "Save quantity edits" : "No quantity changes to save"}
                         >
                             {savingQuantities ? (
                                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
                             ) : (
                                 <Save className="h-3.5 w-3.5" />
                             )}
-                            Allocate Inventory
+                            Save Changes
                         </button>
                         <button
                             disabled={updatingStatusId === selectedOrder.order_id || orderDetails.length === 0 || hasChanges}
-                            onClick={() => handleSubmitForApproval(selectedOrder.order_id)}
-                            className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 hover:bg-slate-800 py-3 text-xs font-bold text-white shadow-md transition-all active:scale-[0.98] disabled:opacity-50 cursor-pointer"
+                            onClick={() => handleSaveQuantities(true)}
+                            className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-primary hover:bg-primary/90 py-3 text-xs font-bold text-primary-foreground shadow-xs transition-all active:scale-[0.98] disabled:opacity-50 cursor-pointer border-none"
                             title={hasChanges ? "Please save quantity edits before submitting for approval" : ""}
                         >
                             {updatingStatusId === selectedOrder.order_id ? (

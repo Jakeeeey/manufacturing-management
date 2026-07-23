@@ -5,6 +5,8 @@ import {
     fetchSalesOrders, 
     fetchSalesOrderDetails, 
     approveSalesOrder, 
+    holdSalesOrder,
+    cancelSalesOrder,
     updateSalesOrderStatus 
 } from "../../sales-order/services/sales-order-api";
 
@@ -62,12 +64,15 @@ export function useSalesOrderApproval() {
         const requestId = ++listRequestIdRef.current;
         listAbortRef.current = controller;
         setLoading(true);
+
+        const effectiveStatus = (status === "All" || status === "All Status") ? "" : status;
+
         try {
             const res = await fetchSalesOrders({
                 page,
                 limit,
                 search,
-                status,
+                status: effectiveStatus,
                 customerCode: customer,
                 dateFrom,
                 dateTo
@@ -79,10 +84,9 @@ export function useSalesOrderApproval() {
             setTotalCount(res.meta.totalCount);
             setTotalPages(res.meta.totalPages);
             setCurrentPage(res.meta.page);
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-        } catch (e: any) {
+        } catch (e: unknown) {
             if (!isAbortError(e) && requestId === listRequestIdRef.current) {
-                toast.error(e.message || "Failed to load approval queue");
+                toast.error(e instanceof Error ? e.message : "Failed to load approval queue");
             }
         } finally {
             if (requestId === listRequestIdRef.current) {
@@ -119,10 +123,9 @@ export function useSalesOrderApproval() {
             const data = await fetchSalesOrderDetails(order.order_id, { signal: controller.signal });
             if (requestId !== detailRequestIdRef.current || selectedOrderIdRef.current !== order.order_id) return;
             setOrderDetails(data);
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-        } catch (e: any) {
+        } catch (e: unknown) {
             if (!isAbortError(e) && requestId === detailRequestIdRef.current) {
-                toast.error(e.message || "Failed to load order details");
+                toast.error(e instanceof Error ? e.message : "Failed to load order details");
             }
         } finally {
             if (requestId === detailRequestIdRef.current) {
@@ -140,9 +143,24 @@ export function useSalesOrderApproval() {
             if (selectedOrder && selectedOrder.order_id === orderId) {
                 setSelectedOrder(null);
             }
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-        } catch (e: any) {
-            toast.error(e.message || "Approval failed");
+        } catch (e: unknown) {
+            toast.error(e instanceof Error ? e.message : "Approval failed");
+        } finally {
+            setUpdatingStatusId(null);
+        }
+    };
+
+    const handleHold = async (orderId: number) => {
+        setUpdatingStatusId(orderId);
+        try {
+            await holdSalesOrder(orderId);
+            toast.success("Sales Order placed On Hold.");
+            loadPendingOrders(currentPage, searchQuery, statusFilter, customerCodeFilter, dateFromFilter, dateToFilter);
+            if (selectedOrder && selectedOrder.order_id === orderId) {
+                setSelectedOrder(null);
+            }
+        } catch (e: unknown) {
+            toast.error(e instanceof Error ? e.message : "Placing order on hold failed");
         } finally {
             setUpdatingStatusId(null);
         }
@@ -157,12 +175,47 @@ export function useSalesOrderApproval() {
             if (selectedOrder && selectedOrder.order_id === orderId) {
                 setSelectedOrder(null);
             }
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-        } catch (e: any) {
-            toast.error(e.message || "Rejection failed");
+        } catch (e: unknown) {
+            toast.error(e instanceof Error ? e.message : "Rejection failed");
         } finally {
             setUpdatingStatusId(null);
         }
+    };
+
+    const handleCancel = async (orderId: number) => {
+        setUpdatingStatusId(orderId);
+        try {
+            await cancelSalesOrder(orderId);
+            toast.success("Sales Order cancelled.");
+            loadPendingOrders(currentPage, searchQuery, statusFilter, customerCodeFilter, dateFromFilter, dateToFilter);
+            if (selectedOrder && selectedOrder.order_id === orderId) {
+                setSelectedOrder(null);
+            }
+        } catch (e: unknown) {
+            toast.error(e instanceof Error ? e.message : "Cancellation failed");
+        } finally {
+            setUpdatingStatusId(null);
+        }
+    };
+
+    const handleStatusFilterChange = (status: string) => {
+        setStatusFilter(status);
+        setCurrentPage(1);
+    };
+
+    const handleCustomerCodeFilterChange = (code: string) => {
+        setCustomerCodeFilter(code);
+        setCurrentPage(1);
+    };
+
+    const handleDateFromFilterChange = (date: string) => {
+        setDateFromFilter(date);
+        setCurrentPage(1);
+    };
+
+    const handleDateToFilterChange = (date: string) => {
+        setDateToFilter(date);
+        setCurrentPage(1);
     };
 
     const refreshData = () => {
@@ -182,19 +235,21 @@ export function useSalesOrderApproval() {
         searchQuery,
         setSearchQuery: handleSearchChange,
         statusFilter,
-        setStatusFilter,
+        setStatusFilter: handleStatusFilterChange,
         customerCodeFilter,
-        setCustomerCodeFilter,
+        setCustomerCodeFilter: handleCustomerCodeFilterChange,
         dateFromFilter,
-        setDateFromFilter,
+        setDateFromFilter: handleDateFromFilterChange,
         dateToFilter,
-        setDateToFilter,
+        setDateToFilter: handleDateToFilterChange,
         totalCount,
         totalPages,
         limit,
         viewOrderDetails,
         handleApprove,
+        handleHold,
         handleReject,
+        handleCancel,
         refreshData
     };
 }

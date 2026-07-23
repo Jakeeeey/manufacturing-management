@@ -4,6 +4,7 @@ import {
     FileText, CreditCard, Calendar 
 } from "lucide-react";
 import { SalesOrder, SalesOrderDetail } from "../../sales-order/types";
+import { formatCurrency } from "@/lib/utils";
 
 interface SalesOrderApprovalDetailPanelProps {
     selectedOrder: SalesOrder | null;
@@ -12,7 +13,9 @@ interface SalesOrderApprovalDetailPanelProps {
     loadingDetails: boolean;
     updatingStatusId: number | null;
     handleApprove: (orderId: number) => void;
+    handleHold?: (orderId: number) => void;
     handleReject: (orderId: number) => void;
+    handleCancel?: (orderId: number) => void;
 }
 
 export function SalesOrderApprovalDetailPanel({
@@ -22,7 +25,9 @@ export function SalesOrderApprovalDetailPanel({
     loadingDetails,
     updatingStatusId,
     handleApprove,
-    handleReject
+    handleHold,
+    handleReject,
+    handleCancel
 }: SalesOrderApprovalDetailPanelProps) {
     if (!selectedOrder) {
         return (
@@ -37,9 +42,10 @@ export function SalesOrderApprovalDetailPanel({
     const grossSum = orderDetails.reduce((acc, item) => acc + (item.unit_price * item.ordered_quantity), 0);
     const discount = Number(selectedOrder.discount_amount || 0);
     const netSum = Math.max(0, grossSum - discount);
+    const isZeroNet = netSum <= 0;
 
     return (
-        <div className="border border-border/80 rounded-2xl bg-card p-6 shadow-sm space-y-6 border-t-2 border-t-amber-600">
+        <div className="border border-border rounded-2xl bg-card p-6 shadow-sm space-y-6 border-t-2 border-t-amber-500">
             {/* Header info */}
             <div className="flex justify-between items-start border-b border-border pb-4">
                 <div>
@@ -47,22 +53,30 @@ export function SalesOrderApprovalDetailPanel({
                         <h4 className="text-sm font-black text-foreground uppercase tracking-wider">
                             {selectedOrder.order_no}
                         </h4>
-                        <span className="inline-flex px-2 py-0.5 rounded-full text-[8.5px] font-black uppercase tracking-wider bg-amber-50 text-amber-705 border border-amber-200/60 whitespace-nowrap">
-                            Pending Approval
+                        <span className={`inline-flex px-2.5 py-0.5 rounded-full text-[8.5px] font-black uppercase tracking-wider whitespace-nowrap ${
+                            selectedOrder.order_status === "For Picking"
+                                ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
+                                : selectedOrder.order_status === "On Hold"
+                                ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20"
+                                : selectedOrder.order_status === "Cancelled"
+                                ? "bg-destructive/10 text-destructive border border-destructive/20"
+                                : "bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20"
+                        }`}>
+                            {selectedOrder.order_status || "Pending Approval"}
                         </span>
                     </div>
                     <p className="text-[10px] text-muted-foreground mt-0.5">Review Sales Order Pricing & Scope</p>
                 </div>
                 <button
                     onClick={() => setSelectedOrder(null)}
-                    className="text-muted-foreground hover:text-muted-foreground text-xs font-bold px-2.5 py-1.5 rounded-lg hover:bg-muted transition-all cursor-pointer border-none bg-transparent"
+                    className="text-muted-foreground hover:text-foreground text-xs font-bold px-2.5 py-1.5 rounded-lg hover:bg-muted transition-all cursor-pointer border-none bg-transparent"
                 >
                     Close
                 </button>
             </div>
 
             {/* Metadata Grid */}
-            <div className="grid grid-cols-2 gap-3.5 bg-muted/50 p-4.5 rounded-xl border border-border/60 text-xs">
+            <div className="grid grid-cols-2 gap-3.5 bg-muted/50 p-4.5 rounded-xl border border-border text-xs">
                 <div className="space-y-1 col-span-2">
                     <span className="text-muted-foreground block text-[9.5px] font-bold uppercase tracking-wider">Customer</span>
                     <span className="font-extrabold text-foreground flex items-center gap-2">
@@ -122,7 +136,7 @@ export function SalesOrderApprovalDetailPanel({
                 </div>
 
                 {selectedOrder.remarks && (
-                    <div className="space-y-1 col-span-2 pt-3 border-t border-border/60 border-dashed mt-1.5">
+                    <div className="space-y-1 col-span-2 pt-3 border-t border-border border-dashed mt-1.5">
                         <span className="text-muted-foreground block text-[9.5px] font-bold uppercase tracking-wider">Remarks / Notes</span>
                         <p className="text-[11px] text-muted-foreground leading-relaxed italic">
                             &ldquo;{selectedOrder.remarks}&rdquo;
@@ -139,7 +153,7 @@ export function SalesOrderApprovalDetailPanel({
 
                 {loadingDetails ? (
                     <div className="flex flex-col items-center justify-center p-12 gap-2 border border-dashed rounded-xl bg-muted/50">
-                        <Loader2 className="h-5 w-5 animate-spin text-amber-600" />
+                        <Loader2 className="h-5 w-5 animate-spin text-amber-500" />
                         <span className="text-[10px] text-muted-foreground font-semibold">Fetching agreement items...</span>
                     </div>
                 ) : orderDetails.length === 0 ? (
@@ -160,7 +174,7 @@ export function SalesOrderApprovalDetailPanel({
                             return (
                                 <div 
                                     key={item.detail_id} 
-                                    className="border border-border/80 rounded-xl p-4 bg-background flex flex-col justify-between gap-3 hover:border-slate-350 hover:shadow-xs transition-all duration-200"
+                                    className="border border-border rounded-xl p-4 bg-background flex flex-col justify-between gap-3 hover:border-primary/50 transition-all duration-200"
                                 >
                                     <div className="flex items-start justify-between gap-2.5">
                                         <div className="space-y-1.5">
@@ -170,7 +184,7 @@ export function SalesOrderApprovalDetailPanel({
                                                     {code}
                                                 </span>
                                                 {brand !== "N/A" && (
-                                                    <span className="text-[9px] bg-indigo-500/10 text-indigo-650 px-1.5 py-0.2 rounded font-semibold">
+                                                    <span className="text-[9px] bg-primary/10 text-primary px-1.5 py-0.2 rounded font-semibold">
                                                         {brand}
                                                     </span>
                                                 )}
@@ -183,10 +197,10 @@ export function SalesOrderApprovalDetailPanel({
                                         </div>
                                         <div className="text-right shrink-0">
                                             <div className="text-xs font-black text-foreground font-mono">
-                                                ₱{totalCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                                {formatCurrency(totalCost)}
                                             </div>
                                             <div className="text-[9px] text-muted-foreground font-semibold mt-0.5">
-                                                ₱{item.unit_price.toFixed(2)} / {uom}
+                                                {formatCurrency(item.unit_price)} / {uom}
                                             </div>
                                         </div>
                                     </div>
@@ -207,39 +221,51 @@ export function SalesOrderApprovalDetailPanel({
             </div>
 
             {/* Financial Breakdown card */}
-            <div className="bg-slate-900 dark:bg-slate-800/80 text-slate-100 dark:text-slate-200 border dark:border-slate-700/50 rounded-xl p-4.5 space-y-3 shadow-md relative overflow-hidden">
+            <div className="bg-card text-card-foreground border border-border rounded-xl p-4.5 space-y-3 shadow-xs relative overflow-hidden">
                 <div className="flex justify-between items-center text-xs">
                     <span className="text-muted-foreground font-medium">Subtotal Gross</span>
                     <span className="font-bold font-mono">
-                        ₱{grossSum.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        {formatCurrency(grossSum)}
                     </span>
                 </div>
                 {selectedOrder.discount_amount ? (
-                    <div className="flex justify-between items-center text-xs text-rose-400">
+                    <div className="flex justify-between items-center text-xs text-destructive">
                         <span className="font-medium">Discount Code</span>
                         <span className="font-bold font-mono">
-                            - ₱{discount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                            - {formatCurrency(discount)}
                         </span>
                     </div>
                 ) : null}
-                <div className="border-t border-slate-800 dark:border-slate-700 my-2 pt-3 flex justify-between items-center">
-                    <span className="text-xs font-extrabold uppercase tracking-wider text-slate-300">
+                <div className="border-t border-border my-2 pt-3 flex justify-between items-center">
+                    <span className="text-xs font-extrabold uppercase tracking-wider text-foreground">
                         Net Amount Locked
                     </span>
-                    <span className="text-sm font-black text-emerald-400 font-mono bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20">
-                        ₱{netSum.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    <span className="text-sm font-black text-emerald-600 dark:text-emerald-400 font-mono bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20">
+                        {formatCurrency(netSum)}
                     </span>
                 </div>
-                {/* Visual decoration inside the breakdown card */}
-                <div className="absolute right-0 bottom-0 -mb-6 -mr-6 w-16 h-16 bg-emerald-500/5 rounded-full blur-lg"></div>
             </div>
+
+            {/* Zero-Net Balance Warning Banner */}
+            {isZeroNet && (
+                <div className="bg-destructive/10 border border-destructive/20 text-destructive rounded-xl p-3.5 text-xs flex items-start gap-2.5 shadow-xs">
+                    <X className="h-4 w-4 shrink-0 mt-0.5 text-destructive" />
+                    <div className="space-y-0.5">
+                        <span className="font-extrabold uppercase tracking-wider block text-[10px]">Approval Blocked</span>
+                        <p className="text-[11px] leading-relaxed">
+                            Sales Order total net balance is ₱0.00. Valid unit pricing or promo discounts are required before this document can be approved.
+                        </p>
+                    </div>
+                </div>
+            )}
 
             {/* Action buttons */}
             <div className="flex flex-col gap-2.5 pt-1">
                 <button
-                    disabled={updatingStatusId === selectedOrder.order_id}
+                    disabled={updatingStatusId === selectedOrder.order_id || isZeroNet}
                     onClick={() => handleApprove(selectedOrder.order_id)}
-                    className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 py-3.5 text-xs font-black text-white shadow-md shadow-emerald-500/10 hover:shadow-emerald-500/25 transition-all active:scale-[0.98] cursor-pointer disabled:opacity-50 border-none"
+                    className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 py-3.5 text-xs font-black text-white shadow-md shadow-emerald-500/10 hover:shadow-emerald-500/25 transition-all active:scale-[0.98] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed border-none"
+                    title={isZeroNet ? "Approval blocked due to ₱0.00 net total" : "Approve & Release to Floor"}
                 >
                     {updatingStatusId === selectedOrder.order_id ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
@@ -248,18 +274,39 @@ export function SalesOrderApprovalDetailPanel({
                     )}
                     Approve & Release to Floor
                 </button>
-                <button
-                    disabled={updatingStatusId === selectedOrder.order_id}
-                    onClick={() => handleReject(selectedOrder.order_id)}
-                    className="w-full inline-flex items-center justify-semibold gap-2 rounded-xl border border-rose-250 bg-background hover:bg-rose-50/50 text-rose-700 py-3 text-xs font-bold transition-all active:scale-[0.98] cursor-pointer disabled:opacity-50"
-                >
-                    {updatingStatusId === selectedOrder.order_id ? (
-                        <Loader2 className="h-4 w-4 animate-spin text-rose-700" />
-                    ) : (
-                        <X className="h-4 w-4 stroke-[3]" />
+
+                <div className="grid grid-cols-2 gap-2">
+                    {handleHold && (
+                        <button
+                            disabled={updatingStatusId === selectedOrder.order_id}
+                            onClick={() => handleHold(selectedOrder.order_id)}
+                            className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50/80 hover:bg-amber-100/80 text-amber-900 py-2.5 text-xs font-bold transition-all cursor-pointer disabled:opacity-50"
+                        >
+                            Put On Hold
+                        </button>
                     )}
-                    Reject & Return to Draft
-                </button>
+                    <button
+                        disabled={updatingStatusId === selectedOrder.order_id}
+                        onClick={() => handleReject(selectedOrder.order_id)}
+                        className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl border border-border bg-background hover:bg-muted text-foreground py-2.5 text-xs font-bold transition-all cursor-pointer disabled:opacity-50"
+                    >
+                        Reject to Draft
+                    </button>
+                </div>
+
+                {handleCancel && (
+                    <button
+                        disabled={updatingStatusId === selectedOrder.order_id}
+                        onClick={() => {
+                            if (window.confirm(`Are you sure you want to permanently cancel Sales Order ${selectedOrder.order_no}? This action is irreversible.`)) {
+                                handleCancel(selectedOrder.order_id);
+                            }
+                        }}
+                        className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl border border-destructive/20 bg-destructive/10 hover:bg-destructive/20 text-destructive py-2.5 text-xs font-bold transition-all cursor-pointer disabled:opacity-50"
+                    >
+                        Cancel Order
+                    </button>
+                )}
             </div>
         </div>
     );
