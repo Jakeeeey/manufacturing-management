@@ -64,6 +64,51 @@ export type RegisterFormField =
 
 export type RegisterFormErrors = Partial<Record<RegisterFormField, string>>;
 
+export type EditProductFieldErrors = Record<string, string>;
+
+function validateEditedProductDetails(
+    details: Partial<Product>,
+    versionDetails: Partial<ProductVersion>,
+    units: Unit[]
+): EditProductFieldErrors {
+    const errors: EditProductFieldErrors = {};
+    const requiredText = (value: unknown, field: string, message: string) => {
+        if (typeof value !== "string" || !value.trim()) errors[field] = message;
+    };
+    const requiredPositiveNumber = (value: unknown, field: string, message: string) => {
+        const parsed = Number(value);
+        if (value === undefined || value === null || value === "" || !Number.isFinite(parsed) || parsed <= 0) {
+            errors[field] = message;
+        }
+    };
+
+    requiredText(details.title, "title", "Product Title is required.");
+    requiredText(details.sku, "sku", "SKU / Code is required.");
+
+    if (!Number.isInteger(Number(details.product_brand)) || Number(details.product_brand) <= 0) {
+        errors.productBrand = "Brand is required.";
+    }
+    if (!Number.isInteger(Number(details.product_category)) || Number(details.product_category) <= 0) {
+        errors.productCategory = "Category is required.";
+    }
+
+    if (!details.baseUom || !units.some(unit => unit.unit_shortcut === details.baseUom)) {
+        errors.unit_of_measurement = "Base UOM is required.";
+    }
+
+    requiredPositiveNumber(details.unit_of_measurement_count, "unitOfMeasurementCount", "UOM Count must be greater than 0.");
+    requiredPositiveNumber(details.densityFactor, "densityFactor", "Density Factor must be greater than 0.");
+
+    const expectedYield = Number(versionDetails.expected_yield_percentage ?? details.expectedYieldPercent);
+    if (!Number.isFinite(expectedYield) || expectedYield <= 0 || expectedYield > 100) {
+        errors.expected_yield_percentage = "Expected Yield must be between 1 and 100.";
+    }
+
+    requiredPositiveNumber(details.product_shelf_life, "productShelfLife", "Shelf Life must be greater than 0.");
+    requiredPositiveNumber(details.production_capacity_per_hour, "productionCapacityPerHour", "Capacity must be greater than 0.");
+    return errors;
+}
+
 export function useFinishedGoods(initialTab: string = "details") {
     // UI Layout & Tab States
     const [activeTab, setActiveTab] = useState(initialTab);
@@ -150,6 +195,7 @@ export function useFinishedGoods(initialTab: string = "details") {
 
     // Form Edits (Legacy compatibility states)
     const [editedDetails, setEditedDetails] = useState<Partial<Product>>({});
+    const [editFieldErrors, setEditFieldErrors] = useState<EditProductFieldErrors>({});
     const [editedBOM, setEditedBOM] = useState<BOMItem[]>([]);
     const [editedRoutings, setEditedRoutings] = useState<RoutingStep[]>([]);
     const [editedOverheads, setEditedOverheads] = useState<ProductOverhead[]>([]);
@@ -797,6 +843,14 @@ export function useFinishedGoods(initialTab: string = "details") {
             return;
         }
 
+        const validationErrors = validateEditedProductDetails(editedDetails, editedVersionDetails, units);
+        if (Object.keys(validationErrors).length > 0) {
+            setEditFieldErrors(validationErrors);
+            toast.error("Please complete the required product fields.");
+            return;
+        }
+
+        setEditFieldErrors({});
         setSavingBOM(true);
         setSaveProgress(5);
         setSaveStatus("Updating product details...");
@@ -940,6 +994,7 @@ export function useFinishedGoods(initialTab: string = "details") {
                 const vList = await fetchVersions(numericProductId);
                 setVersions(vList);
                 setHasUnsavedChanges(false);
+                setEditFieldErrors({});
                 toast.success("Finished good configuration saved successfully!");
             }
         } catch (err) {
@@ -947,7 +1002,12 @@ export function useFinishedGoods(initialTab: string = "details") {
             setSaveProgress(0);
             setSaveStatus("");
             console.error("Save error:", err);
-            const error = err instanceof Error ? err : new Error(String(err));
+            const error = err as Error & { code?: string; fields?: Record<string, string> };
+            if (error.fields && Object.keys(error.fields).length > 0) {
+                setEditFieldErrors(error.fields);
+            } else if (error.code === "PRODUCT_SKU_CONFLICT") {
+                setEditFieldErrors({ sku: error.message });
+            }
             toast.error(error.message || "Error saving configuration");
         } finally {
             clearInterval(interval);
@@ -1189,6 +1249,8 @@ export function useFinishedGoods(initialTab: string = "details") {
         resetRegisterFormErrors,
         editedDetails,
         setEditedDetails,
+        editFieldErrors,
+        setEditFieldErrors,
         editedBOM,
         setEditedBOM,
         editedRoutings,

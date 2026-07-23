@@ -166,13 +166,29 @@ export async function saveBOMDetails(
     });
     if (!res.ok) {
         let msg = "Failed to save BOM details via BFF";
+        let code: string | undefined;
+        let fields: Record<string, string> | undefined;
         try {
             const errJson = await res.json();
             if (errJson && errJson.error) msg = errJson.error;
+            if (errJson && errJson.code) code = errJson.code;
+            if (errJson && errJson.fields) fields = errJson.fields;
         } catch { }
-        throw new Error(msg);
+        const error = new Error(msg) as Error & {
+            status?: number;
+            code?: string;
+            fields?: Record<string, string>;
+        };
+        error.status = res.status;
+        error.code = code;
+        error.fields = fields;
+        throw error;
     }
-    return res.json();
+    const payload = await res.json();
+    if (!payload?.success) {
+        throw new Error("The product update was not confirmed by the server.");
+    }
+    return payload;
 }
 
 export async function registerProduct(
