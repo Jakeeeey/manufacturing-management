@@ -496,22 +496,6 @@ export const ProductDetailsTab: React.FC<ProductDetailsTabProps> = ({
                                 {fieldError("productShelfLife") && <p id="edit-shelf-life-error" className="text-[10px] text-red-600" role="alert">{fieldError("productShelfLife")}</p>}
                             </div>
 
-                            <div className="space-y-1">
-                                <label className="text-[11px] font-bold text-muted-foreground uppercase flex items-center gap-1">
-                                    <Sliders className="h-3 w-3 text-muted-foreground" /> Capacity (Qty/Hr) <span className="text-red-500">*</span>
-                                </label>
-                                <input 
-                                    type="number" 
-                                    required
-                                    value={editedDetails.production_capacity_per_hour !== undefined ? editedDetails.production_capacity_per_hour : ""} 
-                                    onChange={e => handleDetailChange("production_capacity_per_hour", e.target.value === "" ? undefined : Number(e.target.value))}
-                                    aria-invalid={!!fieldError("productionCapacityPerHour")}
-                                    aria-describedby={fieldError("productionCapacityPerHour") ? "edit-capacity-error" : undefined}
-                                    className={`w-full rounded-lg border bg-background px-3 py-1.5 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all ${fieldError("productionCapacityPerHour") ? "border-red-500 focus:ring-red-500" : "border-border"}`}
-                                    placeholder="e.g. 100"
-                                />
-                                {fieldError("productionCapacityPerHour") && <p id="edit-capacity-error" className="text-[10px] text-red-600" role="alert">{fieldError("productionCapacityPerHour")}</p>}
-                            </div>
                         </div>
                     </div>
 

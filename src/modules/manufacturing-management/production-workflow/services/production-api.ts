@@ -55,7 +55,6 @@ export interface PatchTaskPayload {
     taskPatch: {
         status?: string;
         completed_at?: string | null;
-        actual_labor_cost: number;
         actual_run_hours: number;
     };
 }

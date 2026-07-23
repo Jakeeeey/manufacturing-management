@@ -99,7 +99,7 @@ interface RouteStep {
     sequence_order: number;
     setup_time_hours?: string | number;
     run_time_hours?: string | number;
-    estimated_labor_cost?: string | number;
+    step_batch_size?: string | number;
 }
 
 interface RouteBOMItem {
@@ -137,7 +137,7 @@ export async function GET(request: Request) {
             fetch(`${DIRECTUS_URL}/items/sales_invoice_details?limit=-1`, { headers, cache: "no-store" }),
             fetch(`${DIRECTUS_URL}/items/branches?limit=-1`, { headers, cache: "no-store" }),
             fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_qa_records?limit=-1`, { headers, cache: "no-store" }).catch(() => null),
-            fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_routes?limit=-1&fields=jo_route_id,job_order_id,sequence_order,work_center_id,operation_id,planned_setup_hours,planned_run_hours,actual_setup_hours,actual_run_hours,estimated_labor_cost,actual_labor_cost`, { headers, cache: "no-store" }).catch(() => null),
+            fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_routes?limit=-1&fields=jo_route_id,job_order_id,sequence_order,work_center_id,operation_id,planned_setup_hours,planned_run_hours,actual_setup_hours,actual_run_hours,step_batch_size,run_time_hours_factor`, { headers, cache: "no-store" }).catch(() => null),
             fetch(`${DIRECTUS_URL}/items/manufacturing_routes?limit=-1`, { headers, cache: "no-store" }).catch(() => null),
             fetch(`${DIRECTUS_URL}/items/manufacturing_routes_bom?limit=-1`, { headers, cache: "no-store" }).catch(() => null),
             fetch(`${DIRECTUS_URL}/items/manufacturing_job_orders?limit=-1`, { headers, cache: "no-store" }).catch(() => null),
@@ -522,8 +522,8 @@ export async function GET(request: Request) {
             verRoutes.forEach((r: RouteStep) => {
                 totalSetupHours += Number(r.setup_time_hours || 0);
                 
-                const baseQty = Number(activeVer.base_quantity) || 1;
-                const runHoursPerUnit = Number(r.run_time_hours || 0) / baseQty;
+                const stepBatchSize = Number(r.step_batch_size) > 0 ? Number(r.step_batch_size) : 1;
+                const runHoursPerUnit = Number(r.run_time_hours || 0) / stepBatchSize;
                 totalRunHoursPerUnit += runHoursPerUnit;
             });
 

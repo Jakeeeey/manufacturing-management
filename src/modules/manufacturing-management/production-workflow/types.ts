@@ -21,8 +21,7 @@ export interface RoutingTask {
     planned_run_hours: number;
     actual_setup_hours: number;
     actual_run_hours: number;
-    estimated_labor_cost: number;
-    actual_labor_cost: number;
+
     completed_at: string | null;
     requires_qa: number; // 0 or 1
     assignments: OperatorAssignment[];

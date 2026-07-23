@@ -237,10 +237,7 @@ export const CostRollupTab: React.FC<CostRollupTabProps> = ({
                             <span className="text-muted-foreground">Materials (pre-yield, per unit)</span>
                             <span className="font-medium">₱{standardBreakdown.materialsCost.toFixed(2)}</span>
                         </div>
-                        <div className="flex justify-between gap-2">
-                            <span className="text-muted-foreground">Direct labor (per unit)</span>
-                            <span className="font-medium">₱{standardBreakdown.laborCost.toFixed(2)}</span>
-                        </div>
+
                         <div className="flex justify-between gap-2">
                             <span className="text-muted-foreground">Machine overhead (per unit)</span>
                             <span className="font-medium">₱{standardBreakdown.machineOverheadCost.toFixed(2)}</span>

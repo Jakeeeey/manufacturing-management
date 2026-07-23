@@ -6,9 +6,8 @@ export interface CostingMaterialInput {
 }
 
 export interface CostingRouteInput {
-    laborCost: number;
     machineHourlyRate: number;
-    operationCapacity?: number | null;
+    stepBatchSize?: number | null;
     setupTimeHours: number;
     runTimeHours: number;
     baseQuantity: number;
@@ -17,12 +16,11 @@ export interface CostingRouteInput {
 
 export interface CostingRouteBreakdown {
     materialsCost: number;
-    laborCost: number;
     machineHours: number;
     totalMachineCost: number;
     machineOverheadCost: number;
     machineCostPerUnit: number;
-    operationCapacity: number;
+    stepBatchSize: number;
     totalCost: number;
 }
 
@@ -33,7 +31,6 @@ export interface CostingBreakdown {
     /** Yield-adjusted cost for the configured base batch. */
     batchCost: number;
     materialsCost: number;
-    laborCost: number;
     machineOverheadCost: number;
     machineHours: number;
     totalMachineCost: number;
@@ -73,19 +70,18 @@ export function calculateMaterialCost(input: CostingMaterialInput): number {
 
 export function calculateRouteBreakdown(input: CostingRouteInput): CostingRouteBreakdown {
     const baseQuantity = Number(input.baseQuantity) > 0 ? Number(input.baseQuantity) : 1;
-    const laborCost = (Number(input.laborCost) || 0) / baseQuantity;
+    const stepBatchSize = Number(input.stepBatchSize) > 0 ? Number(input.stepBatchSize) : 1;
     const setupHours = Math.max(0, Number(input.setupTimeHours) || 0);
     const runHours = Math.max(0, Number(input.runTimeHours) || 0);
-    const machineHours = setupHours + runHours;
     const machineHourlyRate = Math.max(0, Number(input.machineHourlyRate) || 0);
-    const operationCapacity = Number(input.operationCapacity) || 0;
-    const totalMachineCost = machineHourlyRate * machineHours;
 
-    if (totalMachineCost > 0 && (!Number.isFinite(operationCapacity) || operationCapacity <= 0)) {
-        throw new Error("Operation capacity must be greater than 0 when a machine rate is configured.");
-    }
+    const setupHoursPerUnit = setupHours / baseQuantity;
+    const runHoursPerUnit = runHours / stepBatchSize;
+    const machineCostPerUnit = machineHourlyRate * (setupHoursPerUnit + runHoursPerUnit);
 
-    const machineCostPerUnit = operationCapacity > 0 ? totalMachineCost / operationCapacity : 0;
+    const machineHours = setupHours + (runHours / stepBatchSize) * baseQuantity; // approximate for the batch
+    const totalMachineCost = machineCostPerUnit * baseQuantity;
+
     const materialsBatchCost = (input.materials || []).reduce(
         (total, material) => total + calculateMaterialCost(material),
         0
@@ -95,19 +91,17 @@ export function calculateRouteBreakdown(input: CostingRouteInput): CostingRouteB
 
     return {
         materialsCost,
-        laborCost,
         machineHours,
         totalMachineCost,
         machineOverheadCost,
         machineCostPerUnit,
-        operationCapacity,
-        totalCost: laborCost + machineCostPerUnit
+        stepBatchSize,
+        totalCost: machineCostPerUnit
     };
 }
 
 export function calculateCostBreakdown(input: {
     materialsCost: number;
-    laborCost: number;
     machineOverheadCost: number;
     customOverheadCost?: number | null;
     expectedYieldPercentage?: number | null;
@@ -117,14 +111,13 @@ export function calculateCostBreakdown(input: {
 }): CostingBreakdown {
     const baseQuantity = Number(input.baseQuantity) > 0 ? Number(input.baseQuantity) : 1;
     const materialsCost = Number(input.materialsCost) || 0;
-    const laborCost = Number(input.laborCost) || 0;
     const machineOverheadCost = Number(input.machineOverheadCost) || 0;
     const customOverheadCost = Math.max(0, Number(input.customOverheadCost) || 0);
     const yieldPercentage = Number(input.expectedYieldPercentage) > 0
         ? Number(input.expectedYieldPercentage)
         : 100;
     const yieldFactor = yieldPercentage / 100;
-    const preYieldDirectCost = materialsCost + laborCost + machineOverheadCost + customOverheadCost;
+    const preYieldDirectCost = materialsCost + machineOverheadCost + customOverheadCost;
     const yieldAdjustedUnitCost = preYieldDirectCost / (yieldFactor > 0 ? yieldFactor : 1);
     const batchCost = yieldAdjustedUnitCost * baseQuantity;
 
@@ -133,7 +126,6 @@ export function calculateCostBreakdown(input: {
         unitCost: yieldAdjustedUnitCost,
         batchCost,
         materialsCost,
-        laborCost,
         machineOverheadCost,
         machineHours: Math.max(0, Number(input.machineHours) || 0),
         totalMachineCost: Math.max(0, Number(input.totalMachineCost) || 0),

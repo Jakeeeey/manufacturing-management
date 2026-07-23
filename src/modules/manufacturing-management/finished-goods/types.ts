@@ -20,9 +20,9 @@ export interface RoutingStep {
     sequence: number;
     name: string;
     operationId?: number;
-    laborFlatRate: number;
     machineHourlyRate: number;
     durationHours: number;
+    stepBatchSize?: number;
     requiresQA?: boolean;
 }
 
@@ -53,7 +53,6 @@ export interface Product {
     product_image?: string;
     customOverhead?: number;
     has_versions?: boolean;
-    production_capacity_per_hour?: number;
     versions?: ProductVersion[];
     selectedVersion?: ProductVersion;
 }
@@ -190,7 +189,7 @@ export interface RouteStep {
     sequence_order: number;
     setup_time_hours: number;
     run_time_hours: number;
-    estimated_labor_cost: number;
+    step_batch_size?: number;
     qa_template_id?: number | null;
     bom_items?: RouteBOMItem[];
     // Expandable relations for easy UI rendering
@@ -248,7 +247,6 @@ export interface BFFCatalogProduct {
     product_image?: string | null;
     product_type?: number;
     has_versions?: boolean;
-    production_capacity_per_hour?: number | null;
 }
 
 export interface OperationType {
@@ -283,7 +281,6 @@ export interface DirectusProduct {
     barcode?: string | null;
     parent_id?: number | null;
     density_factor?: number | null;
-    production_capacity_per_hour?: number | null;
     has_versions?: boolean;
     currency_profile?: DirectusProductCurrencyProfile | null;
 }
@@ -327,10 +324,10 @@ export interface DirectusRouting {
     bom_id: number;
     operation_name: string;
     operation_id?: number | null;
-    estimated_labor_cost: number;
     estimated_overhead_cost: number;
     duration_hours: number;
     sequence_order: number;
+    step_batch_size?: number;
     requires_qa?: boolean;
 }
 
@@ -350,9 +347,9 @@ export interface DirectusRoutingStepInput {
     sequence: number;
     name: string;
     operationId?: number | null;
-    laborFlatRate: number;
     machineHourlyRate: number;
     durationHours: number;
+    stepBatchSize?: number;
     requiresQA?: boolean;
 }
 
@@ -363,7 +360,6 @@ export interface CostRollupResult {
     bomId: number | null;
     bomVersion: string | number;
     materialsCost: number;
-    laborCost: number;
     machineOverheadCost: number;
     customOverheadCost: number;
     additionalOperatingOverhead: number;
@@ -401,11 +397,10 @@ export interface CostNode {
     unitCost: number;
     wastagePercent: number;
     totalCost: number;
-    laborCost?: number;
     machineRate?: number;
     machineHours?: number;
     machineCostPerUnit?: number;
-    operationCapacity?: number;
+    stepBatchSize?: number;
     children?: CostNode[];
 }
 
