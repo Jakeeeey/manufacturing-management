@@ -324,6 +324,12 @@ export async function calculateRollupCost(
 /**
  * Updates product details.
  */
+export interface ProductDetailsUpdateResult {
+    ok: boolean;
+    status?: number;
+    error?: string;
+}
+
 export async function updateProductDetails(
     productId: number,
     details: {
@@ -347,7 +353,7 @@ export async function updateProductDetails(
         production_capacity_per_hour?: number;
         unit_of_measurement?: number | null;
     }
-): Promise<boolean> {
+): Promise<ProductDetailsUpdateResult> {
     try {
         const url = `${DIRECTUS_URL}/items/products/${productId}`;
         const res = await fetch(url, {
@@ -355,10 +361,96 @@ export async function updateProductDetails(
             headers,
             body: JSON.stringify(details)
         });
-        return res.ok;
+        if (res.ok) return { ok: true };
+        return {
+            ok: false,
+            status: res.status,
+            error: await res.text()
+        };
     } catch (e) {
         console.error(`[Manufacturing Directus API] Failed updating product details:`, e);
-        return false;
+        return {
+            ok: false,
+            error: e instanceof Error ? e.message : String(e)
+        };
+    }
+}
+
+export interface ProductDetailsVerificationInput {
+    productName: string;
+    productCode: string;
+    parentId: number | null;
+    productBrand: number;
+    productCategory: number;
+    unitOfMeasurement: number;
+    unitOfMeasurementCount: number;
+    densityFactor: number;
+    productShelfLife: number;
+    productionCapacityPerHour: number;
+}
+
+function directusRelationId(value: unknown, keys: string[]): number | null {
+    if (value === null || value === undefined) return null;
+    if (typeof value === "object") {
+        const record = value as Record<string, unknown>;
+        for (const key of keys) {
+            if (record[key] !== undefined && record[key] !== null) {
+                const nestedId = Number(record[key]);
+                return Number.isFinite(nestedId) ? nestedId : null;
+            }
+        }
+        return null;
+    }
+    const id = Number(value);
+    return Number.isFinite(id) ? id : null;
+}
+
+function numbersMatch(actual: unknown, expected: number): boolean {
+    const parsed = Number(actual);
+    return Number.isFinite(parsed) && Math.abs(parsed - expected) < 0.000001;
+}
+
+export async function verifyProductDetails(
+    productId: number,
+    expected: ProductDetailsVerificationInput
+): Promise<{ ok: boolean; error?: string }> {
+    try {
+        const query = new URLSearchParams({
+            fields: "product_id,product_name,product_code,parent_id,product_brand,product_category,unit_of_measurement,unit_of_measurement_count,density_factor,product_shelf_life,production_capacity_per_hour",
+            limit: "1"
+        });
+        const res = await fetch(`${DIRECTUS_URL}/items/products/${productId}?${query.toString()}`, {
+            headers,
+            cache: "no-store"
+        });
+        if (!res.ok) return { ok: false, error: "Product update could not be verified." };
+
+        const saved = (await res.json()).data as Record<string, unknown> | undefined;
+        if (!saved) return { ok: false, error: "Product update could not be verified." };
+
+        const parentId = directusRelationId(saved.parent_id, ["product_id", "id"]);
+        const productBrand = directusRelationId(saved.product_brand, ["brand_id", "id"]);
+        const productCategory = directusRelationId(saved.product_category, ["category_id", "id"]);
+        const unitOfMeasurement = directusRelationId(saved.unit_of_measurement, ["unit_id", "id"]);
+
+        const matches =
+            String(saved.product_name || "").trim() === expected.productName &&
+            String(saved.product_code || "").trim() === expected.productCode &&
+            parentId === expected.parentId &&
+            productBrand === expected.productBrand &&
+            productCategory === expected.productCategory &&
+            unitOfMeasurement === expected.unitOfMeasurement &&
+            numbersMatch(saved.unit_of_measurement_count, expected.unitOfMeasurementCount) &&
+            numbersMatch(saved.density_factor, expected.densityFactor) &&
+            numbersMatch(saved.product_shelf_life, expected.productShelfLife) &&
+            numbersMatch(saved.production_capacity_per_hour, expected.productionCapacityPerHour);
+
+        return matches
+            ? { ok: true }
+            : { ok: false, error: "Directus did not persist all requested product details." };
+    } catch (e) {
+        console.error("[Manufacturing Directus API] Failed verifying product details:", e);
+        return { ok: false, error: "Product update could not be verified." };
     }
 }
 

@@ -86,6 +86,8 @@ export default function FinishedGoodsModule() {
         resetRegisterFormErrors,
         editedDetails,
         setEditedDetails,
+        editFieldErrors,
+        setEditFieldErrors,
         editedBOM,
         setEditedBOM,
         editedRoutings,
@@ -232,10 +234,31 @@ export default function FinishedGoodsModule() {
         setHasUnsavedChanges(true);
         setEditedDetails(prev => ({ ...prev, [field]: value }));
 
+        const errorKeys: Partial<Record<keyof Product, string>> = {
+            title: "title",
+            sku: "sku",
+            product_brand: "productBrand",
+            product_category: "productCategory",
+            baseUom: "unit_of_measurement",
+            unit_of_measurement_count: "unitOfMeasurementCount",
+            densityFactor: "densityFactor",
+            expectedYieldPercent: "expected_yield_percentage",
+            product_shelf_life: "productShelfLife",
+            production_capacity_per_hour: "productionCapacityPerHour"
+        };
+        const errorKey = errorKeys[field];
+        if (errorKey) {
+            setEditFieldErrors(prev => {
+                const next = { ...prev };
+                delete next[errorKey];
+                return next;
+            });
+        }
+
         if (field === "expectedYieldPercent") {
             setEditedVersionDetails(prev => ({
                 ...prev,
-                expected_yield_percentage: Number(value)
+                expected_yield_percentage: value === undefined ? undefined : Number(value)
             }));
         }
     };
@@ -945,6 +968,17 @@ export default function FinishedGoodsModule() {
                         })}
                     </div>
 
+                    {Object.keys(editFieldErrors).length > 0 && (
+                        <div className="mx-6 mt-4 rounded-lg border border-red-500/30 bg-red-500/5 px-4 py-3 text-xs text-red-700" role="alert">
+                            <p className="font-semibold">Please correct the highlighted fields before saving.</p>
+                            <ul className="mt-1 list-disc pl-4">
+                                {Object.values(editFieldErrors).map((message, index) => (
+                                    <li key={`${message}-${index}`}>{message}</li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+
                     {/* Tab Contents */}
                     <div className="flex-1 overflow-y-auto p-6 min-h-0 relative">
                         {loadingProducts && !selectedProduct ? (
@@ -958,6 +992,7 @@ export default function FinishedGoodsModule() {
                                 {activeTab === "details" && (
                                     <ProductDetailsTab
                                         editedDetails={editedDetails}
+                                        editFieldErrors={editFieldErrors}
                                         handleDetailChange={handleDetailChange}
                                         customOverhead={editedVersionDetails.custom_overhead ?? 0}
                                         handleCustomOverheadChange={handleCustomOverheadChange}

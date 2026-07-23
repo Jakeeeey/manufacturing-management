@@ -5,6 +5,7 @@ import { calculateRollupCost } from "./products-helper";
 import {
     ProductIdentityError,
     ensureProductIdentityAvailable,
+    ensureProductSkuAvailable,
     resolveProductIdentity
 } from "./product-identity";
 
@@ -138,16 +139,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Missing required fields (product_name, product_code, versionName)" }, { status: 400 });
         }
 
-        const checkCodeRes = await fetch(`${DIRECTUS_URL}/items/products?filter[product_code][_eq]=${encodeURIComponent(productDetails.product_code)}&limit=1`, { headers });
-        if (checkCodeRes.ok) {
-            const checkData = await checkCodeRes.json();
-            if (checkData.data && checkData.data.length > 0) {
-                return NextResponse.json({
-                    error: "A product with this SKU already exists. Please choose a unique SKU.",
-                    code: "PRODUCT_SKU_CONFLICT"
-                }, { status: 400 });
-            }
-        }
+        const productCode = await ensureProductSkuAvailable(productDetails.product_code);
 
         const identity = await resolveProductIdentity({
             productName: productDetails.product_name,
@@ -187,6 +179,7 @@ export async function POST(request: Request) {
         delete productFields.unit_of_measurement;
         const productPayload = {
             ...productFields,
+            product_code: productCode,
             product_name: identity.productName,
             parent_id: identity.parentId,
             unit_of_measurement: identity.unitId,
@@ -214,7 +207,7 @@ export async function POST(request: Request) {
             const errText = await prodRes.text();
             if (prodRes.status === 409 || /duplicate|unique constraint|unique key/i.test(errText)) {
                 const skuCheckRes = await fetch(
-                    `${DIRECTUS_URL}/items/products?filter[product_code][_eq]=${encodeURIComponent(productDetails.product_code)}&limit=1`,
+                    `${DIRECTUS_URL}/items/products?filter[product_code][_eq]=${encodeURIComponent(productCode)}&limit=1`,
                     { headers, cache: "no-store" }
                 );
                 if (skuCheckRes.ok) {
@@ -223,7 +216,7 @@ export async function POST(request: Request) {
                         return NextResponse.json({
                             error: "A product with this SKU already exists. Please choose a unique SKU.",
                             code: "PRODUCT_SKU_CONFLICT"
-                        }, { status: 400 });
+                        }, { status: 409 });
                     }
                 }
                 return NextResponse.json({

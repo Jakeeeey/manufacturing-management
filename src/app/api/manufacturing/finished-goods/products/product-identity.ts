@@ -42,6 +42,10 @@ function normalizeText(value: string | null | undefined): string {
     return String(value || "").trim().replace(/\s+/g, " ");
 }
 
+export function normalizeProductSku(value: string | null | undefined): string {
+    return String(value || "").trim();
+}
+
 function parseOptionalId(value: number | string | null | undefined, fieldName: string): number | null {
     if (value === null || value === undefined || value === "") return null;
     const parsed = Number(value);
@@ -175,4 +179,46 @@ export async function ensureProductIdentityAvailable(
             "PRODUCT_PARENT_UOM_CONFLICT"
         );
     }
+}
+
+export async function ensureProductSkuAvailable(
+    productCode: string | null | undefined,
+    currentProductId?: number
+): Promise<string> {
+    const normalizedSku = normalizeProductSku(productCode);
+    if (!normalizedSku) {
+        throw new ProductIdentityError(
+            "A SKU / code is required.",
+            400,
+            "PRODUCT_SKU_REQUIRED"
+        );
+    }
+
+    const query = new URLSearchParams({
+        "filter[product_code][_eq]": normalizedSku,
+        fields: "product_id",
+        limit: "10"
+    });
+    const res = await fetch(`${DIRECTUS_URL}/items/products?${query.toString()}`, {
+        headers,
+        cache: "no-store"
+    });
+    if (!res.ok) {
+        throw new ProductIdentityError("Unable to verify whether the SKU is available.", 503);
+    }
+
+    const json = await res.json();
+    const currentId = currentProductId === undefined ? null : Number(currentProductId);
+    const conflict = (json.data || []).find(
+        (product: { product_id?: number | string }) => Number(product.product_id) !== currentId
+    );
+    if (conflict) {
+        throw new ProductIdentityError(
+            "A product with this SKU already exists. Please choose a unique SKU.",
+            409,
+            "PRODUCT_SKU_CONFLICT"
+        );
+    }
+
+    return normalizedSku;
 }
