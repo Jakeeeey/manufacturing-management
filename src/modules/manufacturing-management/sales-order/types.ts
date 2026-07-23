@@ -39,6 +39,26 @@ export interface SalesOrderDetail {
     bom_version_name?: string | null;
 }
 
+export interface DirectOrderItemPayload {
+    parent_product_id: number;
+    product_id: number;
+    quantity: number;
+    unit_price: number;
+}
+
+export interface CreateSalesOrderPayload {
+    customerId: number;
+    poNo: string;
+    branchId: number;
+    paymentTerms: number;
+    deliveryDate: string;
+    dueDate: string;
+    salesmanId?: number;
+    discountAmount?: number;
+    remarks?: string;
+    items: DirectOrderItemPayload[];
+}
+
 export interface QuotationHeader {
     id: number;
     quote_number: string;
@@ -52,3 +72,4 @@ export interface QuotationHeader {
     status: string;
     remarks: string;
 }
+
