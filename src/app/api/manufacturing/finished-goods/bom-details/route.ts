@@ -109,7 +109,7 @@ export async function POST(request: Request) {
             product_section: details.productSection,
             product_shelf_life: validatedDetails.productShelfLife,
             product_image: details.productImage,
-            production_capacity_per_hour: validatedDetails.productionCapacityPerHour,
+
             unit_of_measurement: identity.unitId,
             parent_id: identity.parentId
         });
@@ -134,7 +134,7 @@ export async function POST(request: Request) {
             unitOfMeasurementCount: validatedDetails.unitOfMeasurementCount,
             densityFactor: validatedDetails.densityFactor,
             productShelfLife: validatedDetails.productShelfLife,
-            productionCapacityPerHour: validatedDetails.productionCapacityPerHour
+
         });
         if (!productVerification.ok) {
             throw new Error(productVerification.error || "Product update could not be verified.");

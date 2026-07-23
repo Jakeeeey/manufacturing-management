@@ -78,7 +78,7 @@ export interface DirectusRouting {
     bom_id: number;
     operation_name: string;
     operation_id?: number | null;
-    estimated_labor_cost: number;
+    step_batch_size?: number;
     estimated_overhead_cost: number;
     duration_hours: number;
     sequence_order: number;
@@ -100,7 +100,7 @@ export interface DirectusRoutingStepInput {
     sequence: number;
     name: string;
     operationId?: number | null;
-    laborFlatRate: number;
+    stepBatchSize?: number;
     machineHourlyRate: number;
     durationHours: number;
 }
@@ -112,7 +112,7 @@ export interface CostRollupResult {
     bomId: number | null;
     bomVersion: string | number;
     materialsCost: number;
-    laborCost: number;
+    stepBatchSize?: number;
     machineOverheadCost: number;
     customOverheadCost: number;
     additionalOperatingOverhead: number;
@@ -142,7 +142,7 @@ export interface CostNode {
     unitCost: number;
     wastagePercent: number;
     totalCost: number;
-    laborCost?: number;
+    stepBatchSize?: number;
     machineRate?: number;
     machineHours?: number;
     children?: CostNode[];
@@ -382,7 +382,7 @@ export async function calculateLegacyRollupCost(
         bomId: null,
         bomVersion: "v1.0",
         materialsCost: 0,
-        laborCost: 0,
+        stepBatchSize: 1,
         machineOverheadCost: 0,
         customOverheadCost: 0,
         additionalOperatingOverhead: 0,
@@ -430,7 +430,6 @@ export async function calculateLegacyRollupCost(
         const landedCost = await getLatestLandedCost(productId, forexRate);
         const leafBreakdown = calculateCostBreakdown({
             materialsCost: landedCost,
-            laborCost: 0,
             machineOverheadCost: 0,
             customOverheadCost: 0,
             expectedYieldPercentage: 100
@@ -506,17 +505,14 @@ export async function calculateLegacyRollupCost(
         });
     }
 
-    let laborSubtotal = 0;
     let machineOverheadSubtotal = 0;
     for (const r of routings) {
         const routeBreakdown = calculateRouteBreakdown({
-            laborCost: r.estimated_labor_cost,
             machineHourlyRate: r.estimated_overhead_cost,
             setupTimeHours: 0,
             runTimeHours: r.duration_hours,
             baseQuantity: bom.base_quantity
         });
-        laborSubtotal += routeBreakdown.laborCost;
         machineOverheadSubtotal += routeBreakdown.machineOverheadCost;
 
         costTreeNodes.push({
@@ -528,7 +524,6 @@ export async function calculateLegacyRollupCost(
             unitCost: Number(r.estimated_overhead_cost || 0),
             wastagePercent: 0,
             totalCost: routeBreakdown.totalCost,
-            laborCost: routeBreakdown.laborCost,
             machineRate: Number(r.estimated_overhead_cost || 0),
             machineHours: routeBreakdown.machineHours
         });
@@ -536,7 +531,6 @@ export async function calculateLegacyRollupCost(
 
     const breakdown = calculateCostBreakdown({
         materialsCost: materialsSubtotal,
-        laborCost: laborSubtotal,
         machineOverheadCost: machineOverheadSubtotal,
         customOverheadCost: bom.custom_overhead ?? (bom.version && typeof bom.version === "object" ? bom.version.custom_overhead : 0),
         expectedYieldPercentage: bom.expected_yield_percentage
@@ -561,7 +555,7 @@ export async function calculateLegacyRollupCost(
         totalOverheadExpenses: overheadSummary.totalOverheadExpenses,
         includedInCogs: overheadSummary.includedInCogs,
         excludedFromCogs: overheadSummary.excludedFromCogs,
-        routingsCost: breakdown.laborCost + breakdown.machineOverheadCost,
+        routingsCost: breakdown.machineOverheadCost,
         targetSellingPrice: targetPrice,
         ...margin,
         costTree: costTreeNodes
@@ -763,7 +757,7 @@ export async function syncRoutingSteps(
                     sequence_order: step.sequence,
                     operation_name: step.name,
                     operation_id: matchedOp ? matchedOp.id : (step.operationId || null),
-                    estimated_labor_cost: step.laborFlatRate,
+                    step_batch_size: step.stepBatchSize || 1,
                     estimated_overhead_cost: step.machineHourlyRate,
                     duration_hours: step.durationHours
                 };
@@ -791,7 +785,7 @@ export async function syncRoutingSteps(
                 sequence_order: step.sequence,
                 operation_name: step.name,
                 operation_id: matchedOp ? matchedOp.id : (step.operationId || null),
-                estimated_labor_cost: step.laborFlatRate,
+                step_batch_size: step.stepBatchSize || 1,
                 estimated_overhead_cost: step.machineHourlyRate,
                 duration_hours: step.durationHours
             };

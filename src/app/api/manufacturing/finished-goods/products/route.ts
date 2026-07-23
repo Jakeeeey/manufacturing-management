@@ -190,7 +190,7 @@ export async function POST(request: Request) {
             product_brand: validatedDetails.productBrand,
             product_category: validatedDetails.productCategory,
             product_shelf_life: validatedDetails.productShelfLife,
-            production_capacity_per_hour: validatedDetails.productionCapacityPerHour,
+
             description: identity.descriptionKey,
             short_description: typeof short_description === "string" ? short_description.trim() || null : description?.trim() || null,
             product_class: productDetails.product_class !== undefined ? productDetails.product_class : null,

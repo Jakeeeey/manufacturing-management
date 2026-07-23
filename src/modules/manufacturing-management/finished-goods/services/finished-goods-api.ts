@@ -63,7 +63,7 @@ export async function fetchProducts(search?: string, limit: number = 100): Promi
             cost_per_unit: p.cost_per_unit ? Number(p.cost_per_unit) : undefined,
             unit_of_measurement_count: p.unit_of_measurement_count ? Number(p.unit_of_measurement_count) : undefined,
             product_image: p.product_image || undefined,
-            production_capacity_per_hour: p.production_capacity_per_hour ? Number(p.production_capacity_per_hour) : undefined,
+
             has_versions: !!p.has_versions
         };
     });
@@ -153,7 +153,6 @@ export async function saveBOMDetails(
         productShelfLife?: number;
         productImage?: string;
         parent_id?: number | null;
-        productionCapacityPerHour?: number;
         unit_of_measurement?: number | null;
     },
     routes: RouteStep[],

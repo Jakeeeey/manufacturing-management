@@ -309,7 +309,7 @@ export default function MarginSimulatorModule() {
                         isForeign: ing.is_foreign || false
                     }));
                     const calculatedRoutingCost = details.routes?.reduce((sum, r) => {
-                        return sum + (Number(r.estimated_labor_cost || 0) + (Number(r.work_center?.overhead_cost_per_hour || 0) * Number(r.setup_time_hours + r.run_time_hours)));
+                        return sum + ((Number(r.work_center?.overhead_cost_per_hour || 0) * Number(r.setup_time_hours + r.run_time_hours)) / (r.step_batch_size || 1));
                     }, 0) || 0;
 
                     // Update the product's details in the products list state

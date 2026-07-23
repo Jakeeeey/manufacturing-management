@@ -128,7 +128,7 @@ export default function FinishedGoodsModule() {
                 sequence: r.sequence_order,
                 name: `Step ${r.sequence_order}`,
                 operationId: r.operation_id || undefined,
-                laborFlatRate: r.estimated_labor_cost,
+                stepBatchSize: r.step_batch_size || 1,
                 machineHourlyRate: machineRate,
                 durationHours: r.run_time_hours,
                 requiresQA: !!r.qa_template_id
@@ -244,8 +244,7 @@ export default function FinishedGoodsModule() {
             unit_of_measurement_count: "unitOfMeasurementCount",
             densityFactor: "densityFactor",
             expectedYieldPercent: "expected_yield_percentage",
-            product_shelf_life: "productShelfLife",
-            production_capacity_per_hour: "productionCapacityPerHour"
+            product_shelf_life: "productShelfLife"
         };
         const errorKey = errorKeys[field];
         if (errorKey) {
@@ -348,7 +347,6 @@ export default function FinishedGoodsModule() {
 
     const calculateCurrentCost = (priceOverrides: Record<string, number>, expectedYieldPercentage: number) => {
         let materialsCost = 0;
-        let laborCost = 0;
         let machineOverheadCost = 0;
         let machineHours = 0;
         let totalMachineCost = 0;
@@ -356,9 +354,8 @@ export default function FinishedGoodsModule() {
         editedRoutes.forEach(route => {
             const workCenter = workCenters.find(wc => wc.work_center_id === route.work_center_id);
             const routeBreakdown = calculateRouteBreakdown({
-                laborCost: route.estimated_labor_cost,
+                stepBatchSize: route.step_batch_size || 1,
                 machineHourlyRate: workCenter?.overhead_cost_per_hour || 0,
-                operationCapacity: workCenter?.capacity_per_hour || 0,
                 setupTimeHours: route.setup_time_hours,
                 runTimeHours: route.run_time_hours,
                 baseQuantity: Number(editedVersionDetails.base_quantity) || 1,
@@ -370,7 +367,6 @@ export default function FinishedGoodsModule() {
             });
 
             materialsCost += routeBreakdown.materialsCost;
-            laborCost += routeBreakdown.laborCost;
             machineOverheadCost += routeBreakdown.machineOverheadCost;
             machineHours += routeBreakdown.machineHours;
             totalMachineCost += routeBreakdown.totalMachineCost;
@@ -378,7 +374,6 @@ export default function FinishedGoodsModule() {
 
         return calculateCostBreakdown({
             materialsCost,
-            laborCost,
             machineOverheadCost,
             customOverheadCost: editedVersionDetails.custom_overhead,
             expectedYieldPercentage,
@@ -609,7 +604,6 @@ export default function FinishedGoodsModule() {
                                     shelfLife: "",
                                     productImage: "",
                                     parentId: "",
-                                    productionCapacityPerHour: "",
                                     supplierIds: [] as string[]
                                 });
                                 resetRegisterFormErrors();
@@ -660,7 +654,6 @@ export default function FinishedGoodsModule() {
                                                 shelfLife: "",
                                                 productImage: "",
                                                 parentId: "",
-                                                productionCapacityPerHour: "",
                                                 supplierIds: [] as string[]
                                             });
                                             resetRegisterFormErrors();
@@ -696,7 +689,6 @@ export default function FinishedGoodsModule() {
                                                     shelfLife: selectedProduct.product_shelf_life ? String(selectedProduct.product_shelf_life) : "",
                                                     productImage: "",
                                                     parentId: selectedProduct.id,
-                                                    productionCapacityPerHour: String(selectedProduct.production_capacity_per_hour || ""),
                                                     supplierIds: [] as string[]
                                                 });
                                                 resetRegisterFormErrors();
@@ -1607,20 +1599,6 @@ export default function FinishedGoodsModule() {
                                                 if (newId) setRegisterForm(prev => ({ ...prev, sectionId: String(newId) }));
                                             }}
                                         />
-                                    </div>
-                                    <div>
-                                        <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Capacity (Qty/Hr) <span className="text-red-500">*</span></label>
-                                        <input
-                                            id="register-capacity"
-                                            type="number"
-                                            placeholder="e.g. 100"
-                                            value={registerForm.productionCapacityPerHour}
-                                            onChange={e => updateRegisterField("productionCapacityPerHour", e.target.value)}
-                                            aria-invalid={!!registerError("productionCapacityPerHour")}
-                                            aria-describedby={registerError("productionCapacityPerHour") ? "register-productionCapacityPerHour-error" : undefined}
-                                            className={registerInputClass("productionCapacityPerHour")}
-                                        />
-                                        {registerErrorMessage("productionCapacityPerHour")}
                                     </div>
                                     <div className="col-span-2">
                                         <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Product Image</label>

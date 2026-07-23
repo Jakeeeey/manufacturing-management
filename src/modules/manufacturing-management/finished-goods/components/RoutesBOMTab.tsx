@@ -109,7 +109,7 @@ export const RoutesBOMTab: React.FC<RoutesBOMTabProps> = ({
             sequence_order: nextSeq,
             setup_time_hours: 0,
             run_time_hours: 0,
-            estimated_labor_cost: 0,
+            step_batch_size: 1,
             qa_template_id: null,
             bom_items: []
         };
@@ -347,6 +347,10 @@ export const RoutesBOMTab: React.FC<RoutesBOMTabProps> = ({
                                             value={r.work_center_id ? String(r.work_center_id) : ""}
                                             onValueChange={(val) => {
                                                 handleUpdateRoute(r.route_id, "work_center_id", val ? parseInt(val) : null);
+                                                const selectedWorkCenter = workCenters.find(wc => wc.work_center_id === (val ? parseInt(val) : null));
+                                                if (selectedWorkCenter && selectedWorkCenter.capacity_per_hour) {
+                                                    handleUpdateRoute(r.route_id, "step_batch_size", selectedWorkCenter.capacity_per_hour);
+                                                }
                                             }}
                                             placeholder="Select Work Center..."
                                             className="h-9 text-xs"
@@ -355,7 +359,7 @@ export const RoutesBOMTab: React.FC<RoutesBOMTabProps> = ({
                                             const selectedWorkCenter = workCenters.find(wc => wc.work_center_id === r.work_center_id);
                                             return selectedWorkCenter ? (
                                                 <span className="text-[10px] text-muted-foreground">
-                                                    Machine rate: ₱{Number(selectedWorkCenter.overhead_cost_per_hour || 0).toFixed(2)}/hr
+                                                    Machine rate: ₱{Number(selectedWorkCenter.overhead_cost_per_hour || 0).toFixed(2)}/hr | Cap: {Number(selectedWorkCenter.capacity_per_hour || 1).toFixed(2)}/hr
                                                 </span>
                                             ) : null;
                                         })()}
@@ -477,15 +481,15 @@ export const RoutesBOMTab: React.FC<RoutesBOMTabProps> = ({
                                         </div>
                                     </div>
 
-                                    {/* Estimated Labor Cost */}
+                                    {/* Step Batch Size */}
                                     <div className="space-y-1">
                                         <label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wide flex items-center gap-1">
-                                            <DollarSign className="h-3 w-3" /> Labor Cost (Flat)
+                                            <Layers className="h-3 w-3" /> Step Batch Size
                                         </label>
                                         <input
                                             type="number"
-                                            value={r.estimated_labor_cost}
-                                            onChange={(e) => handleUpdateRoute(r.route_id, "estimated_labor_cost", parseFloat(e.target.value) || 0)}
+                                            value={r.step_batch_size ?? 1}
+                                            onChange={(e) => handleUpdateRoute(r.route_id, "step_batch_size", parseFloat(e.target.value) || 1)}
                                             className="w-full h-9 px-2.5 rounded-lg border border-muted bg-background text-foreground text-xs focus:outline-none focus:ring-1 focus:ring-primary"
                                         />
                                     </div>

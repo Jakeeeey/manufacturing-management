@@ -52,7 +52,9 @@ const collectionsSchema = [
             { field: "estimated_labor_cost", type: "float", schema: { is_nullable: false } },
             { field: "actual_labor_cost", type: "float", schema: { is_nullable: true, default_value: 0 } },
             { field: "status", type: "string", schema: { is_nullable: false, default_value: "Pending" } },
-            { field: "completed_at", type: "timestamp", schema: { is_nullable: true } }
+            { field: "completed_at", type: "timestamp", schema: { is_nullable: true } },
+            { field: "step_batch_size", type: "float", schema: { is_nullable: true, default_value: 1 } },
+            { field: "run_time_hours_factor", type: "float", schema: { is_nullable: true, default_value: 0 } }
         ]
     },
     {
@@ -92,6 +94,13 @@ const collectionsSchema = [
             { field: "inspected_by", type: "integer", schema: { is_nullable: false } },
             { field: "inspected_at", type: "timestamp", schema: { is_nullable: false } },
             { field: "remarks", type: "text", schema: { is_nullable: true } }
+        ]
+    },
+    {
+        name: "manufacturing_routes",
+        primaryKey: "route_id",
+        fields: [
+            { field: "step_batch_size", type: "float", schema: { is_nullable: true, default_value: 1 } }
         ]
     }
 ];

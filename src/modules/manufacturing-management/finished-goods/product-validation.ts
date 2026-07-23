@@ -20,7 +20,7 @@ export interface ValidatedProductEditDetails {
     densityFactor: number;
     expectedYield: number;
     productShelfLife: number;
-    productionCapacityPerHour: number;
+
 }
 
 export interface ValidatedProductRegistrationDetails {
@@ -33,7 +33,7 @@ export interface ValidatedProductRegistrationDetails {
     densityFactor: number;
     expectedYield: number;
     productShelfLife: number;
-    productionCapacityPerHour: number;
+
     versionName: string;
 }
 
@@ -100,10 +100,7 @@ function addEditValidationErrors(input: unknown): ProductValidationFields {
         fields.productShelfLife = "Shelf Life must be greater than 0.";
     }
 
-    const productionCapacityPerHour = readNumber(details.productionCapacityPerHour);
-    if (productionCapacityPerHour === null || productionCapacityPerHour <= 0) {
-        fields.productionCapacityPerHour = "Capacity must be greater than 0.";
-    }
+
 
     return fields;
 }
@@ -128,8 +125,7 @@ export function validateProductEditDetails(input: unknown): ValidatedProductEdit
         unitOfMeasurementCount: readNumber(details.unitOfMeasurementCount) as number,
         densityFactor: readNumber(details.densityFactor) as number,
         expectedYield: readNumber(details.expected_yield_percentage ?? details.expectedYieldPercent) as number,
-        productShelfLife: readNumber(details.productShelfLife) as number,
-        productionCapacityPerHour: readNumber(details.productionCapacityPerHour) as number
+        productShelfLife: readNumber(details.productShelfLife) as number
     };
 }
 
@@ -158,10 +154,7 @@ function addRegistrationValidationErrors(input: unknown): ProductValidationField
     const shelfLife = readNumber(productDetails.product_shelf_life);
     if (shelfLife === null || shelfLife <= 0) fields.shelfLife = "Shelf Life is required and must be greater than 0.";
 
-    const productionCapacityPerHour = readNumber(productDetails.production_capacity_per_hour);
-    if (productionCapacityPerHour === null || productionCapacityPerHour <= 0) {
-        fields.productionCapacityPerHour = "Capacity is required and must be greater than 0.";
-    }
+
 
     if (!readText(body.versionName)) fields.versionName = "Version Name is required.";
     return fields;
@@ -189,7 +182,6 @@ export function validateProductRegistration(input: unknown): ValidatedProductReg
         densityFactor: readNumber(productDetails.density_factor) as number,
         expectedYield: readNumber(body.expectedYield) as number,
         productShelfLife: readNumber(productDetails.product_shelf_life) as number,
-        productionCapacityPerHour: readNumber(productDetails.production_capacity_per_hour) as number,
         versionName: readText(body.versionName)
     };
 }
