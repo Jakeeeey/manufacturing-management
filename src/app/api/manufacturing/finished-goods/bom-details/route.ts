@@ -15,7 +15,7 @@ import {
 import {
     ProductRequiredFieldsError,
     validateProductEditDetails
-} from "@/lib/manufacturing/finished-goods/product-validation";
+} from "@/modules/manufacturing-management/finished-goods/product-validation";
 import {
     ProductIdentityError,
     ensureProductIdentityAvailable,

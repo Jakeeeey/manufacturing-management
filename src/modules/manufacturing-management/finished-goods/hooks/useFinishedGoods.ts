@@ -52,7 +52,7 @@ import {
     getProductRegistrationValidationErrors,
     validateProductEditDetails,
     type ProductValidationFields
-} from "@/lib/manufacturing/finished-goods/product-validation";
+} from "../product-validation";
 
 export type RegisterFormField =
     | "title"

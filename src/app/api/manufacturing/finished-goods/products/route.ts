@@ -11,7 +11,7 @@ import {
 import {
     ProductRequiredFieldsError,
     validateProductRegistration
-} from "@/lib/manufacturing/finished-goods/product-validation";
+} from "@/modules/manufacturing-management/finished-goods/product-validation";
 
 interface DirectusProductCurrencyProfile {
     id: number;
