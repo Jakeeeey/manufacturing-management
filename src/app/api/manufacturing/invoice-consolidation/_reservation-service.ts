@@ -1,5 +1,6 @@
 import { DIRECTUS_URL, headers as directusHeaders } from "../directus-api";
 import { resolveVersions } from "./version-resolver";
+import type { MovementRow } from "./inventory-movements-client";
 
 type ReservationStatus = "Pending" | "Reserved" | "Consumed" | "Released";
 
@@ -233,19 +234,36 @@ export async function getInvoiceReservationSummaries(branchId: number, search?: 
 async function reconcileInventoryLots(inventoryLotIds: number[], userId: number) {
     if (inventoryLotIds.length === 0) return;
 
-    // Fetch inventory movements to calculate the true ledger stock
+    // Resolve physical lots.lot_id from inventory_lots; query movements by physical lot + product
+    const inventoryLotsJson = await directusJson(
+        `${DIRECTUS_URL}/items/inventory_lots?filter[id][_in]=${inventoryLotIds.join(",")}&fields=id,lot_id,product_id&limit=-1`
+    );
+    const inventoryLots: { id: number; lot_id: number; product_id: number }[] = inventoryLotsJson.data || [];
+    if (inventoryLots.length === 0) return;
+
+    const physicalLotIds = [...new Set(inventoryLots.map(l => Number(l.lot_id)).filter(Boolean))];
+    const productIds = [...new Set(inventoryLots.map(l => Number(l.product_id)).filter(Boolean))];
+
+    // Map inventory_lots.id → (product_id, physical lot_id) key
+    const lotToKey = new Map<number, string>();
+    for (const il of inventoryLots) {
+        lotToKey.set(il.id, `${il.product_id}:${il.lot_id}`);
+    }
+
     const movFilter = encodeURIComponent(JSON.stringify({
-        lot_id: { _in: inventoryLotIds }
+        _and: [
+            { lot_id: { _in: physicalLotIds } },
+            { product_id: { _in: productIds } },
+        ],
     }));
     const movJson = await directusJson(
         `${DIRECTUS_URL}/items/inventory_movements?filter=${movFilter}&limit=-1`
     );
-    const movements = movJson.data || [];
-    const capacityMap = new Map<number, number>();
-    movements.forEach((mov: any) => {
-        const lotId = Number(mov.lot_id);
-        const qty = Number(mov.quantity || 0);
-        capacityMap.set(lotId, (capacityMap.get(lotId) || 0) + qty);
+    const movements: MovementRow[] = movJson.data || [];
+    const capacityByPhysicalKey = new Map<string, number>();
+    movements.forEach((mov) => {
+        const key = `${mov.product_id}:${mov.lot_id}`;
+        capacityByPhysicalKey.set(key, (capacityByPhysicalKey.get(key) || 0) + Number(mov.quantity || 0));
     });
 
     const filter = encodeURIComponent(JSON.stringify({
@@ -267,8 +285,9 @@ async function reconcileInventoryLots(inventoryLotIds: number[], userId: number)
     }
 
     const now = new Date().toISOString();
-    for (const [lotId, lotRows] of grouped) {
-        let remaining = capacityMap.get(lotId) || 0;
+    for (const [invLotId, lotRows] of grouped) {
+        const key = lotToKey.get(invLotId) || "";
+        let remaining = capacityByPhysicalKey.get(key) || 0;
         const reservedRows = lotRows.filter((row) => row.status === "Reserved");
         const pendingRows = lotRows.filter((row) => row.status === "Pending");
 
@@ -353,20 +372,17 @@ export async function allocateInvoice(invoiceId: number, userId: number) {
     const movJson = await directusJson(
         `${DIRECTUS_URL}/items/inventory_movements?filter=${movFilter}&limit=-1`
     );
-    const movements = movJson.data || [];
-    const movementStockMap = new Map<number, number>();
-    movements.forEach((mov: any) => {
-        const lotId = Number(mov.lot_id);
-        const qty = Number(mov.quantity || 0);
-        movementStockMap.set(lotId, (movementStockMap.get(lotId) || 0) + qty);
+    const movements: MovementRow[] = movJson.data || [];
+    const movementStockByPhysicalLot = new Map<number, number>();
+    movements.forEach((mov) => {
+        const phyLotId = Number(mov.lot_id);
+        movementStockByPhysicalLot.set(phyLotId, (movementStockByPhysicalLot.get(phyLotId) || 0) + Number(mov.quantity || 0));
     });
 
     const lots = unfilteredLots.map((lot: InventoryLotRow) => {
-        const ledgerQty = movementStockMap.get(lot.id) || 0;
-        return {
-            ...lot,
-            quantity: ledgerQty
-        };
+        const phyLotId = numericId(lot.lot_id, ["lot_id"]) || 0;
+        const ledgerQty = movementStockByPhysicalLot.get(phyLotId) || 0;
+        return { ...lot, quantity: ledgerQty };
     }).filter((lot: InventoryLotRow) => lot.quantity > 0);
 
     const jobOrderNumbers = [...new Set(lots.map((lot) => lot.source_reference).filter(Boolean))] as string[];
@@ -614,20 +630,17 @@ export async function previewConsolidationAllocations(branchId: number, invoiceI
     const movJson = await directusJson(
         `${DIRECTUS_URL}/items/inventory_movements?filter=${movFilter}&limit=-1`
     );
-    const movements = movJson.data || [];
-    const movementStockMap = new Map<number, number>();
-    movements.forEach((mov: any) => {
-        const lotId = Number(mov.lot_id);
-        const qty = Number(mov.quantity || 0);
-        movementStockMap.set(lotId, (movementStockMap.get(lotId) || 0) + qty);
+    const movements: MovementRow[] = movJson.data || [];
+    const movementStockByPhysicalLot = new Map<number, number>();
+    movements.forEach((mov) => {
+        const phyLotId = Number(mov.lot_id);
+        movementStockByPhysicalLot.set(phyLotId, (movementStockByPhysicalLot.get(phyLotId) || 0) + Number(mov.quantity || 0));
     });
 
     const lots = unfilteredLots.map((lot: InventoryLotRow) => {
-        const ledgerQty = movementStockMap.get(lot.id) || 0;
-        return {
-            ...lot,
-            quantity: ledgerQty
-        };
+        const phyLotId = numericId(lot.lot_id, ["lot_id"]) || 0;
+        const ledgerQty = movementStockByPhysicalLot.get(phyLotId) || 0;
+        return { ...lot, quantity: ledgerQty };
     }).filter((lot: InventoryLotRow) => lot.quantity > 0);
 
     const jobOrderNumbers = [...new Set(lots.map((lot) => lot.source_reference).filter(Boolean))] as string[];

@@ -4,6 +4,7 @@ import {
     fetchSourceMovements,
     netMovementsZeroForSource,
     postMovements,
+    type MovementRow,
     type PostMovementPayload,
 } from "../inventory-movements-client";
 import { productLedgerMatchesQuantities, syncProductLedgerToTarget } from "../product-ledger-client";
@@ -322,8 +323,8 @@ export async function POST(req: NextRequest) {
                 if (!currentMovementsRes.ok) {
                     return NextResponse.json({ message: "Failed to revalidate reserved inventory lots" }, { status: 502 });
                 }
-                const movements = (await currentMovementsRes.json()).data || [];
-                movements.forEach((mov: any) => {
+                const movements: MovementRow[] = (await currentMovementsRes.json()).data || [];
+                movements.forEach((mov) => {
                     const lotId = Number(mov.lot_id);
                     const qty = Number(mov.quantity || 0);
                     currentLotQuantities.set(lotId, (currentLotQuantities.get(lotId) || 0) + qty);

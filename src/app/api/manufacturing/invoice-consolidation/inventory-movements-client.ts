@@ -3,6 +3,7 @@ import { DIRECTUS_URL, headers } from "../directus-api";
 export interface MovementRow {
     movement_id: number;
     product_id: number;
+    version_id?: number | null;
     lot_id: number;
     branch_id: number;
     transaction_type_id: number;
@@ -19,6 +20,7 @@ export interface MovementRow {
 
 export interface PostMovementPayload {
     product_id: number;
+    version_id?: number | null;
     lot_id: number;
     branch_id: number;
     transaction_type_id: number;
@@ -97,6 +99,80 @@ export async function fetchSourceMovements(
     if (!res.ok) throw new Error(`Failed to fetch source movements: ${res.status}`);
     const json = await res.json();
     return json.data || [];
+}
+
+/**
+ * Resolve the consolidator_detail IDs for a batch to dual-read movements.
+ */
+async function fetchDetailIdsForBatch(batchId: number): Promise<number[]> {
+    const { DIRECTUS_URL, headers } = await import("../directus-api");
+    const res = await fetch(
+        `${DIRECTUS_URL}/items/consolidator_details?filter[consolidator_id][_eq]=${batchId}&fields=id&limit=-1`,
+        { headers, cache: "no-store" }
+    );
+    if (!res.ok) return [];
+    const json = await res.json();
+    return ((json.data || []) as { id: number }[]).map((d) => d.id).filter(Boolean);
+}
+
+/**
+ * Fetch all movements for a consolidation batch by dual-reading:
+ *   new: source_document_id IN (consolidator_details.id)
+ *   legacy: source_document_id = batchId (header-level)
+ */
+export async function fetchMovementsForBatch(
+    batchId: number,
+    transactionTypeId: number,
+): Promise<MovementRow[]> {
+    const { DIRECTUS_URL, headers } = await import("../directus-api");
+    const detailIds = await fetchDetailIdsForBatch(batchId);
+    const allMovements: MovementRow[] = [];
+
+    if (detailIds.length > 0) {
+        const newFilter = encodeURIComponent(JSON.stringify({
+            _and: [
+                { source_document_id: { _in: detailIds } },
+                { transaction_type_id: { _eq: transactionTypeId } },
+            ],
+        }));
+        const newRes = await fetch(
+            `${DIRECTUS_URL}/items/inventory_movements?filter=${newFilter}&limit=-1`,
+            { headers, cache: "no-store" }
+        );
+        if (newRes.ok) {
+            const json = await newRes.json();
+            allMovements.push(...(json.data || []));
+        }
+    }
+
+    // Legacy: movements by header ID
+    const legacyFilter = encodeURIComponent(JSON.stringify({
+        _and: [
+            { source_document_id: { _eq: batchId } },
+            { transaction_type_id: { _eq: transactionTypeId } },
+        ],
+    }));
+    const legacyRes = await fetch(
+        `${DIRECTUS_URL}/items/inventory_movements?filter=${legacyFilter}&limit=-1`,
+        { headers, cache: "no-store" }
+    );
+    if (legacyRes.ok) {
+        const json = await legacyRes.json();
+        allMovements.push(...(json.data || []));
+    }
+
+    return allMovements;
+}
+
+/**
+ * Total net quantity for all movements across a batch (detail + legacy).
+ */
+export async function netForBatch(
+    batchId: number,
+    transactionTypeId: number,
+): Promise<number> {
+    const movements = await fetchMovementsForBatch(batchId, transactionTypeId);
+    return movements.reduce((sum, m) => sum + Number(m.quantity || 0), 0);
 }
 
 /**
