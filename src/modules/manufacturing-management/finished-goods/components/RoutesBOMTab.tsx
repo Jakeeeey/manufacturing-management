@@ -7,6 +7,7 @@ import { RouteStep, RouteBOMItem, OperationType, WorkCenter, QATemplate, Unit } 
 import { BOMMaterialSelect } from "./BOMMaterialSelect";
 import { CreatableSelect } from "./CreatableSelect";
 import { Button } from "@/components/ui/button";
+import { calculateMaterialCost } from "../costing";
 
 function materialClassification(item: RouteBOMItem) {
     if (!item.product_id) {
@@ -326,6 +327,14 @@ export const RoutesBOMTab: React.FC<RoutesBOMTabProps> = ({
                                             placeholder="Select Work Center..."
                                             className="h-9 text-xs"
                                         />
+                                        {(() => {
+                                            const selectedWorkCenter = workCenters.find(wc => wc.work_center_id === r.work_center_id);
+                                            return selectedWorkCenter ? (
+                                                <span className="text-[10px] text-muted-foreground">
+                                                    Machine rate: ₱{Number(selectedWorkCenter.overhead_cost_per_hour || 0).toFixed(2)}/hr
+                                                </span>
+                                            ) : null;
+                                        })()}
                                     </div>
 
                                     {/* Setup Time */}
@@ -504,14 +513,17 @@ export const RoutesBOMTab: React.FC<RoutesBOMTabProps> = ({
                                                         <th className="p-2.5 w-[15%]">UOM</th>
                                                         <th className="p-2.5 w-[12%]">Wastage %</th>
                                                         <th className="p-2.5 w-[12%]">Landed Cost</th>
-                                                        <th className="p-2.5 w-[12%]">Computed Cost</th>
+                                                        <th className="p-2.5 w-[12%]">Ingredient Cost (pre-yield)</th>
                                                         <th className="p-2.5 w-[6%] text-center">Action</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody>
                                                     {(r.bom_items || []).map((b) => {
-                                                        const wastageFact = 1 - (Number(b.wastage_factor_percentage || 0) / 100);
-                                                        const compCost = (Number(b.quantity_required || 0) * Number(b.cost_per_unit || 0)) / (wastageFact > 0 ? wastageFact : 1);
+                                                        const compCost = calculateMaterialCost({
+                                                            quantity: b.quantity_required,
+                                                            unitCost: b.cost_per_unit || 0,
+                                                            wastagePercent: b.wastage_factor_percentage
+                                                        });
                                                         const classification = materialClassification(b);
                                                         return (
                                                             <tr key={b.id} className="border-b border-muted/50 hover:bg-muted/5">

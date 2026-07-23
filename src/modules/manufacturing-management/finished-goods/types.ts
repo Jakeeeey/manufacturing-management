@@ -362,8 +362,17 @@ export interface CostRollupResult {
     bomId: number | null;
     bomVersion: string | number;
     materialsCost: number;
+    laborCost: number;
+    machineOverheadCost: number;
+    customOverheadCost: number;
+    additionalOperatingOverhead: number;
+    totalOverheadExpenses: number;
+    includedInCogs: number;
+    excludedFromCogs: number;
+    preYieldDirectCost: number;
     routingsCost: number;
     yieldPercentage: number;
+    yieldFactor: number;
     totalBaseCost: number;
     targetSellingPrice: number;
     grossMarginPercent: number;
@@ -379,6 +388,9 @@ export interface CostNode {
     unitCost: number;
     wastagePercent: number;
     totalCost: number;
+    laborCost?: number;
+    machineRate?: number;
+    machineHours?: number;
     children?: CostNode[];
 }
 
