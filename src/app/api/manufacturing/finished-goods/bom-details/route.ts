@@ -3,7 +3,9 @@ import { cookies } from "next/headers";
 import {
     getBOMDetailsForVersion,
     saveActiveBOMDetails,
-    syncRoutesAndBOM
+    syncRoutesAndBOM,
+    BOMValidationError,
+    validateRoutesAndBOM
 } from "./bom-details-helper";
 import {
     updateProductDetails,
@@ -60,6 +62,8 @@ export async function POST(request: Request) {
 
         const numericProductId = parseInt(productId);
         const numericVersionId = parseInt(versionId);
+
+        await validateRoutesAndBOM(routes);
 
         const validatedDetails = validateProductEditDetails(details);
         const expectedYield = validatedDetails.expectedYield;
@@ -191,6 +195,12 @@ export async function POST(request: Request) {
         });
     } catch (e) {
         console.error("API Error saving BOM details:", e);
+        if (e instanceof BOMValidationError) {
+            return NextResponse.json(
+                { error: e.message, code: e.code, details: e.details },
+                { status: 400 }
+            );
+        }
         if (e instanceof ProductRequiredFieldsError) {
             return NextResponse.json(
                 { error: e.message, code: e.code, fields: e.fields },
