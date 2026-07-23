@@ -13,9 +13,9 @@ import {
     syncProductOverheads
 } from "../products/products-helper";
 import {
-    ProductEditValidationError,
+    ProductRequiredFieldsError,
     validateProductEditDetails
-} from "../products/product-validation";
+} from "@/lib/manufacturing/finished-goods/product-validation";
 import {
     ProductIdentityError,
     ensureProductIdentityAvailable,
@@ -191,7 +191,7 @@ export async function POST(request: Request) {
         });
     } catch (e) {
         console.error("API Error saving BOM details:", e);
-        if (e instanceof ProductEditValidationError) {
+        if (e instanceof ProductRequiredFieldsError) {
             return NextResponse.json(
                 { error: e.message, code: e.code, fields: e.fields },
                 { status: e.status }
