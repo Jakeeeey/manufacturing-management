@@ -1,12 +1,10 @@
 // src/modules/manufacturing-management/invoices/hooks/useInvoices.ts
 
 import { useState, useEffect, useCallback } from "react";
-import { Invoice, InvoiceLineItem, PendingSalesOrder, PrinterAlignmentSettings, SalesOrderLineItem } from "../types";
+import { Invoice, InvoiceLineItem, PrinterAlignmentSettings } from "../types";
 import { 
     fetchInvoices, 
-    createInvoice, 
-    updateInvoiceStatus, 
-    fetchPendingInvoicesSalesOrders 
+    updateInvoiceStatus
 } from "../services/invoices-api";
 import { toast } from "sonner";
 
@@ -37,8 +35,6 @@ const defaultAlignmentSettings: PrinterAlignmentSettings = {
 export function useInvoices() {
     const [invoices, setInvoices] = useState<Invoice[]>([]);
     const [detailsMap, setDetailsMap] = useState<Record<number, InvoiceLineItem[]>>({});
-    const [pendingOrders, setPendingOrders] = useState<PendingSalesOrder[]>([]);
-    const [pendingDetailsMap, setPendingDetailsMap] = useState<Record<number, SalesOrderLineItem[]>>({});
     const [loading, setLoading] = useState<boolean>(true);
     const [submitting, setSubmitting] = useState<boolean>(false);
     const [loadingDetails, setLoadingDetails] = useState<Record<number, boolean>>({});
@@ -96,7 +92,7 @@ export function useInvoices() {
         }
     }, [detailsMap]);
 
-    // Load Invoices and Pending Sales Orders
+    // Load invoice registry
     const loadData = useCallback(async () => {
         setLoading(true);
         try {
@@ -104,13 +100,10 @@ export function useInvoices() {
             setInvoices(invoicesResult.data || []);
             setDetailsMap(invoicesResult.detailsMap || {});
 
-            const pendingResult = await fetchPendingInvoicesSalesOrders();
-            setPendingOrders(pendingResult.data || []);
-            setPendingDetailsMap(pendingResult.detailsMap || {});
         } catch (e) {
             const error = e as Error;
             console.error("Error loading invoices data:", e);
-            toast.error(error.message || "Failed to load invoices or pending orders");
+            toast.error(error.message || "Failed to load invoices");
         } finally {
             setLoading(false);
         }
@@ -119,36 +112,6 @@ export function useInvoices() {
     useEffect(() => {
         loadData();
     }, [loadData]);
-
-    // Create invoice from an approved Sales Order
-    const handleCreateInvoice = async (payload: {
-        invoice_no: string;
-        invoice_date: string;
-        due_date: string;
-        customer_id: number;
-        sales_order_id?: number | null;
-        total_amount: number;
-        discount_amount: number;
-        vat_amount: number;
-        net_amount: number;
-        remarks?: string;
-        items: { product_id: number; quantity: number; unit_price: number; net_amount: number }[];
-    }) => {
-        setSubmitting(true);
-        try {
-            await createInvoice(payload);
-            toast.success(`Invoice ${payload.invoice_no} created successfully!`);
-            await loadData();
-            return true;
-        } catch (e) {
-            const error = e as Error;
-            console.error("Error creating invoice:", e);
-            toast.error(error.message || "Failed to create invoice");
-            return false;
-        } finally {
-            setSubmitting(false);
-        }
-    };
 
     // Record invoice payment
     const handleRecordPayment = async (invoiceId: number, currentStatus: string, amount: number, paymentRef: string, paymentMethod: string) => {
@@ -193,8 +156,6 @@ export function useInvoices() {
     return {
         invoices,
         detailsMap,
-        pendingOrders,
-        pendingDetailsMap,
         loading,
         submitting,
         loadingDetails,
@@ -202,7 +163,6 @@ export function useInvoices() {
         alignment,
         saveAlignmentSettings,
         resetAlignmentSettings,
-        handleCreateInvoice,
         handleRecordPayment,
         handleCancelInvoice,
         refresh: loadData

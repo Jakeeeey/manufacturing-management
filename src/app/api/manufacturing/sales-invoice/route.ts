@@ -350,6 +350,20 @@ export async function GET(request: Request) {
             const custAddress = cust ? [cust.brgy, cust.city, cust.province].filter(Boolean).join(", ") : "N/A";
             const custTin = cust ? cust.customer_tin : "N/A";
 
+            let paid = 0;
+            try {
+                const payments = JSON.parse(inv.payment_status || "[]");
+                if (Array.isArray(payments)) paid = payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+            } catch {
+                // Legacy rows may contain the literal "Unpaid" instead of payment history JSON.
+            }
+            const netAmount = Number(inv.net_amount || 0);
+            const displayStatus = inv.transaction_status === "Cancelled"
+                ? "Cancelled"
+                : paid >= netAmount && netAmount > 0
+                    ? "Paid"
+                    : paid > 0 ? "Partially Paid" : "Unpaid";
+
             dataList.push({
                 order_id: invId,
                 invoice_id: invId,
@@ -374,8 +388,8 @@ export async function GET(request: Request) {
                 total_amount: Number(inv.total_amount || 0),
                 discount_amount: Number(inv.discount_amount || 0),
                 vat_amount: Number(inv.vat_amount || 0),
-                net_amount: Number(inv.net_amount || 0),
-                status: inv.transaction_status || "Unpaid",
+                net_amount: netAmount,
+                status: displayStatus,
                 payment_status: inv.payment_status || "[]",
                 remarks: inv.remarks || ""
             });
@@ -440,162 +454,11 @@ export async function GET(request: Request) {
     }
 }
 
-export async function POST(request: Request) {
-    try {
-        const body = await request.json();
-        const {
-            invoice_no,
-            invoice_date,
-            due_date,
-            customer_id,
-            sales_order_id,
-            total_amount,
-            discount_amount,
-            vat_amount,
-            net_amount,
-            remarks,
-            items
-        } = body;
-
-        if (!invoice_no || !customer_id || !items || !Array.isArray(items) || items.length === 0) {
-            return NextResponse.json({ error: "Missing required fields (invoice_no, customer_id, items)" }, { status: 400 });
-        }
-
-        // Validate invoice_no is globally unique in sales_invoice table
-        try {
-            const checkUrl = `${DIRECTUS_URL}/items/sales_invoice?filter[invoice_no][_eq]=${encodeURIComponent(invoice_no.trim())}`;
-            const checkRes = await fetch(checkUrl, { headers });
-            if (checkRes.ok) {
-                const checkData = await checkRes.json();
-                if (checkData.data && checkData.data.length > 0) {
-                    return NextResponse.json({ error: `Invoice number "${invoice_no}" already exists. Please enter a unique invoice number.` }, { status: 400 });
-                }
-            }
-        } catch (err) {
-            console.error("Failed to verify unique invoice number:", err);
-        }
-
-        // 1. Resolve values from Sales Order or Customer
-        let customerCode = "GEN";
-        let salesmanId = null;
-        let branchId = 1;
-        let paymentTerms = null;
-
-        if (sales_order_id) {
-            try {
-                const soRes = await fetch(`${DIRECTUS_URL}/items/sales_order/${sales_order_id}`, { headers });
-                if (soRes.ok) {
-                    const soData = (await soRes.json()).data;
-                    if (soData) {
-                        customerCode = soData.customer_code || "GEN";
-                        salesmanId = soData.salesman_id || null;
-                        if (!soData.branch_id) {
-                            return NextResponse.json({ error: `Sales Order ${sales_order_id} has no branch_id` }, { status: 400 });
-                        }
-                        branchId = soData.branch_id;
-                        paymentTerms = soData.payment_terms || null;
-                    }
-                }
-            } catch (err) {
-                console.error("Failed to query sales order details:", err);
-            }
-        } else if (customer_id) {
-            try {
-                const custRes = await fetch(`${DIRECTUS_URL}/items/customer/${customer_id}`, { headers });
-                if (custRes.ok) {
-                    const custData = (await custRes.json()).data;
-                    if (custData) {
-                        customerCode = custData.customer_code || "GEN";
-                    }
-                }
-            } catch (err) {
-                console.error("Failed to query customer details:", err);
-            }
-        }
-
-        // 2. Create Sales Invoice Header
-        const invoicePayload = {
-            invoice_no,
-            invoice_date: invoice_date || new Date().toISOString(),
-            created_date: new Date().toISOString(),
-            due_date: due_date || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-            customer_code: customerCode,
-            order_id: sales_order_id ? String(sales_order_id) : null,
-            salesman_id: salesmanId,
-            branch_id: branchId,
-            payment_terms: paymentTerms,
-            transaction_status: "Unpaid",
-            total_amount: Number(total_amount || 0),
-            gross_amount: Number(total_amount || 0),
-            discount_amount: Number(discount_amount || 0),
-            vat_amount: Number(vat_amount || 0),
-            net_amount: Number(net_amount || 0),
-            remarks: remarks || ""
-        };
-
-        const createInvoiceRes = await fetch(`${DIRECTUS_URL}/items/sales_invoice`, {
-            method: "POST",
-            headers,
-            body: JSON.stringify(invoicePayload)
-        });
-
-        if (!createInvoiceRes.ok) {
-            const errText = await createInvoiceRes.text();
-            throw new Error(`Failed to create sales invoice header: ${createInvoiceRes.status} - ${errText}`);
-        }
-
-        const newInvoice = (await createInvoiceRes.json()).data;
-        const newInvoiceId = newInvoice.invoice_id;
-
-        // 3. Create Sales Invoice Details
-        for (const item of items) {
-            const qty = Number(item.quantity || 0);
-            const price = Number(item.unit_price || 0);
-            const discount = Number(item.discount_amount || 0);
-            const gross = qty * price;
-            const total = gross - discount;
-
-            const detailPayload = {
-                order_id: sales_order_id ? String(sales_order_id) : "",
-                invoice_no: newInvoiceId, // Column named invoice_no maps to primary key invoice_id in details
-                product_id: Number(item.product_id),
-                unit: 1, // Default unit value to satisfy NOT NULL constraint
-                unit_price: price,
-                quantity: qty,
-                discount_amount: discount,
-                gross_amount: gross,
-                total_amount: total
-            };
-
-            const detailRes = await fetch(`${DIRECTUS_URL}/items/sales_invoice_details`, {
-                method: "POST",
-                headers,
-                body: JSON.stringify(detailPayload)
-            });
-
-            if (!detailRes.ok) {
-                console.error(`Failed to insert sales invoice detail: ${detailRes.status}`);
-            }
-        }
-
-        // 4. Update Sales Order status if sales_order_id is provided
-        if (sales_order_id) {
-            try {
-                await fetch(`${DIRECTUS_URL}/items/sales_order/${sales_order_id}`, {
-                    method: "PATCH",
-                    headers,
-                    body: JSON.stringify({ order_status: "For Loading" })
-                });
-            } catch (err) {
-                console.error("Failed to update sales order status:", err);
-            }
-        }
-
-        return NextResponse.json({ success: true, invoice_id: newInvoiceId, invoice_no });
-    } catch (e) {
-        console.error("API Error in sales-invoice POST:", e);
-        return NextResponse.json({ error: (e as { message?: string }).message || "Failed to create invoice" }, { status: 500 });
-    }
+export async function POST() {
+    return NextResponse.json(
+        { error: "Create invoices through /api/manufacturing/invoicing." },
+        { status: 410 },
+    );
 }
 
 export async function PATCH(request: Request) {
@@ -620,7 +483,13 @@ export async function PATCH(request: Request) {
         const updatePayload: Record<string, unknown> = {};
 
         if (payment) {
-            // Process payment recording and dynamically transition status
+            if (currentInvoice.transaction_status === "Cancelled") {
+                return NextResponse.json({ error: "Cancelled invoices cannot accept payments." }, { status: 409 });
+            }
+            const amount = Number(payment.amount);
+            if (!Number.isFinite(amount) || amount <= 0) {
+                return NextResponse.json({ error: "Payment amount must be positive." }, { status: 400 });
+            }
             let history: PaymentHistoryItem[] = [];
             if (currentInvoice.payment_status) {
                 try {
@@ -632,25 +501,14 @@ export async function PATCH(request: Request) {
             }
 
             const newPayment = {
-                amount: Number(payment.amount || 0),
+                amount,
                 method: payment.method || "Cash",
                 reference: payment.reference || "",
                 date: new Date().toISOString()
             };
 
             history.push(newPayment);
-            
-            const totalPaid = history.reduce((sum, p) => sum + Number(p.amount || 0), 0);
-            const netAmount = Number(currentInvoice.net_amount || 0);
 
-            let nextStatus = "Unpaid";
-            if (totalPaid >= netAmount) {
-                nextStatus = "Paid";
-            } else if (totalPaid > 0) {
-                nextStatus = "Partially Paid";
-            }
-
-            updatePayload.transaction_status = nextStatus;
             updatePayload.payment_status = JSON.stringify(history);
 
             // Append payment record to remarks log
@@ -678,7 +536,7 @@ export async function PATCH(request: Request) {
                 await fetch(`${DIRECTUS_URL}/items/sales_order/${currentInvoice.order_id}`, {
                     method: "PATCH",
                     headers,
-                    body: JSON.stringify({ order_status: "For Invoicing" })
+                    body: JSON.stringify({ order_status: "For Picking" })
                 });
             } catch (err) {
                 console.error("Failed to revert sales order status on invoice cancellation:", err);
