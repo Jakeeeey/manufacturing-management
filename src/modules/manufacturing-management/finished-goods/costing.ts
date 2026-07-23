@@ -33,6 +33,14 @@ export interface OverheadSummary {
     excludedFromCogs: number;
 }
 
+export interface MarginSummary {
+    grossProfit: number;
+    grossMarginPercent: number;
+    netProfit: number;
+    netMarginPercent: number;
+    marginBasis: "sales";
+}
+
 export function calculateMaterialCost(input: CostingMaterialInput): number {
     const quantity = Number(input.quantity) || 0;
     const unitCost = Number(input.unitCost) || 0;
@@ -109,5 +117,26 @@ export function calculateOverheadSummary(
         totalOverheadExpenses: customOverhead + additionalOperatingOverhead,
         includedInCogs: customOverhead,
         excludedFromCogs: additionalOperatingOverhead
+    };
+}
+
+export function calculateMarginSummary(
+    sellingPrice: number,
+    cogs: number,
+    excludedOperatingOverhead: number = 0
+): MarginSummary {
+    const price = Number(sellingPrice) || 0;
+    const cost = Number(cogs) || 0;
+    const operatingOverhead = Math.max(0, Number(excludedOperatingOverhead) || 0);
+    const grossProfit = price - cost;
+    const netProfit = grossProfit - operatingOverhead;
+    const marginPercent = (profit: number) => price > 0 ? (profit / price) * 100 : 0;
+
+    return {
+        grossProfit,
+        grossMarginPercent: marginPercent(grossProfit),
+        netProfit,
+        netMarginPercent: marginPercent(netProfit),
+        marginBasis: "sales"
     };
 }

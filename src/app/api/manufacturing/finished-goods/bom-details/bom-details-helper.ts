@@ -1,8 +1,25 @@
 /* eslint-disable */
 import { DIRECTUS_URL, headers } from "@/app/api/manufacturing/directus-api";
 import { getBOMDetailsForVersion } from "../versions/versions-helper";
+import {
+    isMaterialType,
+    isMaterialTypeCompatible,
+    materialTypeFromProduct,
+    MaterialType
+} from "@/modules/manufacturing-management/finished-goods/material-types";
 
 export { getBOMDetailsForVersion };
+
+export class BOMValidationError extends Error {
+    readonly code = "BOM_VALIDATION_ERROR";
+    readonly details: Record<string, number | string>;
+
+    constructor(message: string, details: Record<string, number | string>) {
+        super(message);
+        this.name = "BOMValidationError";
+        this.details = details;
+    }
+}
 
 export async function updateProductVersionOverhead(versionId: number, customOverhead: number): Promise<boolean> {
     try {
@@ -65,8 +82,93 @@ export async function saveActiveBOMDetails(
     }
 }
 
+export async function validateRoutesAndBOM(routes: any[]): Promise<void> {
+    const bomRows = routes.flatMap((route: any, routeIndex: number) =>
+            (route.bom_items || route.ingredients || []).map((item: any, rowIndex: number) => ({
+                item,
+                routeId: Number(route.route_id || route.id || 0),
+                routeIndex,
+                rowNumber: rowIndex + 1
+            }))
+        );
+    const productIds = [...new Set(
+            bomRows
+                .map(({ item }) => Number(item.product_id || item.productId || 0))
+                .filter(productId => Number.isFinite(productId) && productId > 0)
+        )];
+
+    const missingSelection = bomRows.find(({ item }) =>
+            !isMaterialType(item.material_type) ||
+            !Number.isFinite(Number(item.product_id || item.productId)) ||
+            Number(item.product_id || item.productId) <= 0
+        );
+    if (missingSelection) {
+            const materialTypeSelected = isMaterialType(missingSelection.item.material_type);
+            throw new BOMValidationError(
+                `Route ${missingSelection.routeId || missingSelection.routeIndex + 1}, BOM row ${missingSelection.rowNumber}: ${materialTypeSelected ? "select a material" : "select a Material Type"} before saving.`,
+                {
+                    routeId: missingSelection.routeId || missingSelection.routeIndex + 1,
+                    rowNumber: missingSelection.rowNumber,
+                    field: materialTypeSelected ? "product_id" : "material_type"
+                }
+            );
+    }
+
+    if (productIds.length > 0) {
+            const productFilter = encodeURIComponent(JSON.stringify({ product_id: { _in: productIds } }));
+            const [productsRes, versionsRes] = await Promise.all([
+                fetch(`${DIRECTUS_URL}/items/products?filter=${productFilter}&fields=product_id,product_type&limit=-1`, { headers, cache: "no-store" }),
+                fetch(`${DIRECTUS_URL}/items/product_manufacturing_version?filter=${productFilter}&fields=product_id&limit=-1`, { headers, cache: "no-store" })
+            ]);
+        if (!productsRes.ok || !versionsRes.ok) {
+                throw new BOMValidationError("Unable to validate BOM material classifications.", { field: "product_id" });
+        }
+
+        const productData = (await productsRes.json()).data || [];
+        const versionData = (await versionsRes.json()).data || [];
+        const productMap = new Map<number, { product_type?: number | null }>(
+                productData.map((product: { product_id?: number; product_type?: number | null }) => [
+                    Number(product.product_id),
+                    product
+                ])
+            );
+        const versionedProductIds = new Set<number>(
+                versionData
+                    .map((version: { product_id?: number }) => Number(version.product_id))
+                    .filter((productId: number) => Number.isFinite(productId) && productId > 0)
+            );
+
+        const mismatchedRow = bomRows.find(({ item }) => {
+                const productId = Number(item.product_id || item.productId);
+                const product = productMap.get(productId);
+                const expectedType = product
+                    ? materialTypeFromProduct(product.product_type, versionedProductIds.has(productId))
+                    : null;
+                return !product || !expectedType || !isMaterialTypeCompatible(
+                    item.material_type as MaterialType,
+                    product.product_type,
+                    versionedProductIds.has(productId)
+                );
+            });
+        if (mismatchedRow) {
+                const productId = Number(mismatchedRow.item.product_id || mismatchedRow.item.productId);
+                throw new BOMValidationError(
+                    `Route ${mismatchedRow.routeId || mismatchedRow.routeIndex + 1}, BOM row ${mismatchedRow.rowNumber}: selected Material Type does not match the selected material.`,
+                    {
+                        routeId: mismatchedRow.routeId || mismatchedRow.routeIndex + 1,
+                        rowNumber: mismatchedRow.rowNumber,
+                        productId,
+                        field: "material_type"
+                    }
+                );
+        }
+    }
+}
+
 export async function syncRoutesAndBOM(versionId: number, routes: any[], userId: number | null = null): Promise<boolean> {
     try {
+        await validateRoutesAndBOM(routes);
+
         // 0. Fetch units to map shortcuts to IDs
         const resUnits = await fetch(`${DIRECTUS_URL}/items/units?limit=-1`, { headers, cache: "no-store" });
         const unitsList = resUnits.ok ? (await resUnits.json()).data || [] : [];
@@ -197,6 +299,7 @@ export async function syncRoutesAndBOM(versionId: number, routes: any[], userId:
         }
         return true;
     } catch (e) {
+        if (e instanceof BOMValidationError) throw e;
         console.error("[Manufacturing Directus API] Failed syncing routes and BOM:", e);
         return false;
     }

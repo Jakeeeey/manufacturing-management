@@ -22,6 +22,7 @@ import {
     QATemplate,
     RouteStep
 } from "../types";
+import { materialTypeFromProduct } from "../material-types";
 import {
     fetchBrands,
     fetchCategories,
@@ -415,7 +416,14 @@ export function useFinishedGoods(initialTab: string = "details") {
                         valid_from: versionObj.valid_from,
                         valid_to: versionObj.valid_to
                     });
-                    setEditedRoutes(versionObj.routes || []);
+                    const normalizedRoutes = (versionObj.routes || []).map(route => ({
+                        ...route,
+                        bom_items: (route.bom_items || []).map(item => ({
+                            ...item,
+                            material_type: item.material_type || materialTypeFromProduct(item.product_type, item.has_versions)
+                        }))
+                    }));
+                    setEditedRoutes(normalizedRoutes);
                     setActiveBOMId(versionObj.version_id);
 
                     // Populate legacy details for backward compatibility with UI components
@@ -816,6 +824,27 @@ export function useFinishedGoods(initialTab: string = "details") {
 
         const validatedDetails = validateProductEditDetails(editValidationInput);
 
+        const invalidBomRow = editedRoutes.flatMap(route => (route.bom_items || []).map((item, index) => ({
+            routeId: route.route_id,
+            rowNumber: index + 1,
+            item,
+            materialType: item.material_type || materialTypeFromProduct(item.product_type, item.has_versions)
+        }))).find(row => !row.materialType || !Number.isFinite(Number(row.item.product_id)) || Number(row.item.product_id) <= 0);
+
+        if (invalidBomRow) {
+            const issue = !invalidBomRow.materialType ? "select a Material Type" : "select a Material";
+            toast.error(`Route ${invalidBomRow.routeId}, BOM row ${invalidBomRow.rowNumber}: ${issue} before saving.`);
+            return;
+        }
+
+        const routesPayload = editedRoutes.map(route => ({
+            ...route,
+            bom_items: (route.bom_items || []).map(item => ({
+                ...item,
+                material_type: item.material_type || materialTypeFromProduct(item.product_type, item.has_versions)
+            }))
+        }));
+
         setEditFieldErrors({});
         setSavingBOM(true);
         setSaveProgress(5);
@@ -877,7 +906,7 @@ export function useFinishedGoods(initialTab: string = "details") {
                 numericProductId,
                 activeBOMId,
                 detailsPayload,
-                editedRoutes,
+                routesPayload,
                 editedOverheads
             );
 

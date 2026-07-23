@@ -18,6 +18,8 @@ interface CostRollupTabProps {
     standardOverheads: OverheadSummary & {
         items: ProductOverhead[];
     };
+    standardGrossProfit: number;
+    standardGrossMarginPercent: number;
     standardNetProfit: number;
     standardNetMarginPercent: number;
     simulationYield: number;
@@ -29,6 +31,8 @@ interface CostRollupTabProps {
     editedBOM: BOMItem[];
     selectedProduct: Product;
     selectedVersionId: number | null;
+    simulatedGrossProfit: number;
+    simulatedGrossMarginPercent: number;
     simulatedNetProfit: number;
     simulatedCogs: number;
     simulatedBreakdown: CostingBreakdown;
@@ -45,6 +49,8 @@ export const CostRollupTab: React.FC<CostRollupTabProps> = ({
     standardCogs,
     standardBreakdown,
     standardOverheads,
+    standardGrossProfit,
+    standardGrossMarginPercent,
     standardNetProfit,
     standardNetMarginPercent,
     simulationYield,
@@ -56,6 +62,8 @@ export const CostRollupTab: React.FC<CostRollupTabProps> = ({
     editedBOM,
     selectedProduct,
     selectedVersionId,
+    simulatedGrossProfit,
+    simulatedGrossMarginPercent,
     simulatedNetProfit,
     simulatedCogs,
     simulatedBreakdown,
@@ -212,16 +220,12 @@ export const CostRollupTab: React.FC<CostRollupTabProps> = ({
                             <span>Cost of Goods Sold (COGS)</span>
                             <span className="text-foreground text-sm font-bold">₱{standardCogs.toFixed(2)}</span>
                         </div>
-                        {(() => {
-                            const gp = standardPrice - standardCogs;
-                            const gpm = standardPrice > 0 ? (gp / standardPrice) * 100 : 0;
-                            return (
-                                <div className="flex justify-between items-center text-xs font-bold pt-1">
-                                    <span className="text-primary">Gross Profit Margin</span>
-                                    <span className="text-primary text-sm">₱{gp.toFixed(2)} ({gpm.toFixed(1)}%)</span>
-                                </div>
-                            );
-                        })()}
+                        <div className="flex justify-between items-center text-xs font-bold pt-1">
+                            <span className="text-primary">Gross Margin (on sales)</span>
+                            <span className="text-primary text-sm">
+                                ₱{standardGrossProfit.toFixed(2)} ({standardPrice > 0 ? `${standardGrossMarginPercent.toFixed(1)}%` : "N/A"})
+                            </span>
+                        </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-2 text-xs rounded-lg border bg-card p-3">
@@ -294,9 +298,9 @@ export const CostRollupTab: React.FC<CostRollupTabProps> = ({
                         standardNetProfit >= 0 ? "bg-emerald-500/5 border-emerald-500/20" : "bg-destructive/5 border-destructive/20"
                     }`}>
                         <div>
-                          <div className="text-xs font-bold text-muted-foreground uppercase">Net Profit Bottom Line</div>
+                          <div className="text-xs font-bold text-muted-foreground uppercase">Net Profit Bottom Line (margin on sales)</div>
                           <div className={`text-xl font-extrabold tracking-tight ${standardNetProfit >= 0 ? "text-emerald-600" : "text-destructive"}`}>
-                              ₱{standardNetProfit.toFixed(2)} ({standardNetMarginPercent.toFixed(1)}%)
+                              ₱{standardNetProfit.toFixed(2)} ({standardPrice > 0 ? `${standardNetMarginPercent.toFixed(1)}%` : "N/A"})
                           </div>
                         </div>
                         <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-bold uppercase tracking-wider ${
@@ -442,16 +446,10 @@ export const CostRollupTab: React.FC<CostRollupTabProps> = ({
                                 <span>Simulated COGS:</span>
                                 <span className="font-semibold text-foreground">₱{simulatedCogs.toFixed(2)}</span>
                             </div>
-                            {(() => {
-                                const simGp = simulationTargetPrice - simulatedCogs;
-                                const simGpm = simulationTargetPrice > 0 ? (simGp / simulationTargetPrice) * 100 : 0;
-                                return (
-                                    <div className="flex justify-between items-center text-xs font-bold text-primary">
-                                        <span>Simulated Gross Margin:</span>
-                                        <span>₱{simGp.toFixed(2)} ({simGpm.toFixed(1)}%)</span>
-                                    </div>
-                                );
-                            })()}
+                            <div className="flex justify-between items-center text-xs font-bold text-primary">
+                                <span>Simulated Gross Margin (on sales):</span>
+                                <span>₱{simulatedGrossProfit.toFixed(2)} ({simulationTargetPrice > 0 ? `${simulatedGrossMarginPercent.toFixed(1)}%` : "N/A"})</span>
+                            </div>
                             <div className="flex justify-between items-center text-xs border-b pb-2">
                                 <span>Simulated Overhead Expenses:</span>
                                 <span className="font-semibold text-muted-foreground">₱{simulatedOverheads.totalOverheadExpenses.toFixed(2)}</span>
@@ -469,11 +467,11 @@ export const CostRollupTab: React.FC<CostRollupTabProps> = ({
                                 <span className="font-semibold text-muted-foreground">₱{simulatedBreakdown.preYieldDirectCost.toFixed(2)}</span>
                             </div>
                             <div className="flex justify-between items-center text-sm border-t pt-2 mt-1">
-                                <span className="font-extrabold text-foreground">Simulated Net Profit:</span>
+                                <span className="font-extrabold text-foreground">Simulated Net Profit (margin on sales):</span>
                                 <span className={`font-extrabold text-sm ${
                                     isLow ? "text-destructive" : "text-emerald-600"
                                 }`}>
-                                    ₱{simProfit.toFixed(2)} ({simulatedNetMarginPercent.toFixed(1)}%)
+                                    ₱{simProfit.toFixed(2)} ({simulationTargetPrice > 0 ? `${simulatedNetMarginPercent.toFixed(1)}%` : "N/A"})
                                 </span>
                             </div>
                         </div>

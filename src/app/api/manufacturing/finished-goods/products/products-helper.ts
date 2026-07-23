@@ -5,7 +5,7 @@ import {
     CostRollupResult,
     CostNode
 } from "@/modules/manufacturing-management/finished-goods/types";
-import { calculateCostBreakdown, calculateMaterialCost, calculateOverheadSummary, calculateRouteBreakdown } from "@/modules/manufacturing-management/finished-goods/costing";
+import { calculateCostBreakdown, calculateMaterialCost, calculateMarginSummary, calculateOverheadSummary, calculateRouteBreakdown } from "@/modules/manufacturing-management/finished-goods/costing";
 import { getActiveVersionForProduct, getBOMDetailsForVersion } from "../versions/versions-helper";
 
 /**
@@ -158,7 +158,11 @@ export async function calculateRollupCost(
         yieldFactor: 1,
         totalBaseCost: 0,
         targetSellingPrice: 0,
+        grossProfit: 0,
         grossMarginPercent: 0,
+        netProfit: 0,
+        netMarginPercent: 0,
+        marginBasis: "sales",
         costTree: []
     });
 
@@ -346,8 +350,11 @@ export async function calculateRollupCost(
     );
 
     const targetPrice = currentProduct.price_per_unit || 0;
-    const marginPhp = targetPrice - breakdown.totalBaseCost;
-    const marginPercent = targetPrice > 0 ? (marginPhp / targetPrice) * 100 : 0;
+    const margin = calculateMarginSummary(
+        targetPrice,
+        breakdown.totalBaseCost,
+        overheadSummary.excludedFromCogs
+    );
 
     return {
         productId,
@@ -362,7 +369,7 @@ export async function calculateRollupCost(
         excludedFromCogs: overheadSummary.excludedFromCogs,
         routingsCost: breakdown.laborCost + breakdown.machineOverheadCost,
         targetSellingPrice: targetPrice,
-        grossMarginPercent: marginPercent,
+        ...margin,
         costTree: costTreeNodes
     };
 }
