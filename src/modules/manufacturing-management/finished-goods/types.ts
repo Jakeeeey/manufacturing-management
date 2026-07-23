@@ -370,7 +370,15 @@ export interface CostRollupResult {
     totalOverheadExpenses: number;
     includedInCogs: number;
     excludedFromCogs: number;
+    baseQuantity: number;
+    /** Yield-adjusted cost for one finished unit. */
+    unitCost: number;
+    /** Yield-adjusted cost for the configured base batch. */
+    batchCost: number;
     preYieldDirectCost: number;
+    yieldAdjustedUnitCost: number;
+    machineHours: number;
+    totalMachineCost: number;
     routingsCost: number;
     yieldPercentage: number;
     yieldFactor: number;
@@ -396,6 +404,8 @@ export interface CostNode {
     laborCost?: number;
     machineRate?: number;
     machineHours?: number;
+    machineCostPerUnit?: number;
+    operationCapacity?: number;
     children?: CostNode[];
 }
 

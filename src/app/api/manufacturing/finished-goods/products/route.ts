@@ -108,7 +108,7 @@ export async function GET(request: Request) {
                 // Get rolled up cost (COGS) using current active version routes & route-level BOM
                 const costRollup = await calculateRollupCost(p.product_id, new Set(), productsMap, 58.00, profilesMap);
                 if (costRollup && costRollup.bomId !== null) {
-                    productCopy.cost_per_unit = costRollup.totalBaseCost;
+                    productCopy.cost_per_unit = costRollup.unitCost;
                     productCopy.has_cogs = true;
                 } else {
                     productCopy.cost_per_unit = 0;
