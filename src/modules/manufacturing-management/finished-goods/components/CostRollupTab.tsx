@@ -2,6 +2,7 @@ import React from "react";
 import { Sliders, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { BOMItem, Product } from "../types";
+import { CostingBreakdown, OverheadSummary } from "../costing";
 
 interface ProductOverhead {
     id: string;
@@ -12,9 +13,9 @@ interface ProductOverhead {
 
 interface CostRollupTabProps {
     standardPrice: number;
-    baseMaterialCost: number;
-    standardOverheads: {
-        totalOverheads: number;
+    standardCogs: number;
+    standardBreakdown: CostingBreakdown;
+    standardOverheads: OverheadSummary & {
         items: ProductOverhead[];
     };
     standardNetProfit: number;
@@ -29,9 +30,9 @@ interface CostRollupTabProps {
     selectedProduct: Product;
     selectedVersionId: number | null;
     simulatedNetProfit: number;
-    simulatedMaterialCost: number;
-    simulatedOverheads: {
-        totalOverheads: number;
+    simulatedCogs: number;
+    simulatedBreakdown: CostingBreakdown;
+    simulatedOverheads: OverheadSummary & {
         items: ProductOverhead[];
     };
     simulatedNetMarginPercent: number;
@@ -41,7 +42,8 @@ interface CostRollupTabProps {
 
 export const CostRollupTab: React.FC<CostRollupTabProps> = ({
     standardPrice,
-    baseMaterialCost,
+    standardCogs,
+    standardBreakdown,
     standardOverheads,
     standardNetProfit,
     standardNetMarginPercent,
@@ -55,7 +57,8 @@ export const CostRollupTab: React.FC<CostRollupTabProps> = ({
     selectedProduct,
     selectedVersionId,
     simulatedNetProfit,
-    simulatedMaterialCost,
+    simulatedCogs,
+    simulatedBreakdown,
     simulatedOverheads,
     simulatedNetMarginPercent,
     simulatedForexRate,
@@ -118,7 +121,7 @@ export const CostRollupTab: React.FC<CostRollupTabProps> = ({
                 quote_number: quoteNumber,
                 customer_id: parseInt(selectedCustomerId),
                 total_selling_price: simulationTargetPrice,
-                total_simulated_cost: simulatedMaterialCost,
+                total_simulated_cost: simulatedCogs,
                 forex_rate_used: simulatedForexRate,
                 remarks: remarks || ""
             };
@@ -207,10 +210,10 @@ export const CostRollupTab: React.FC<CostRollupTabProps> = ({
                         </div>
                         <div className="flex justify-between items-center text-xs font-semibold text-muted-foreground border-b pb-2">
                             <span>Cost of Goods Sold (COGS)</span>
-                            <span className="text-foreground text-sm font-bold">₱{baseMaterialCost.toFixed(2)}</span>
+                            <span className="text-foreground text-sm font-bold">₱{standardCogs.toFixed(2)}</span>
                         </div>
                         {(() => {
-                            const gp = standardPrice - baseMaterialCost;
+                            const gp = standardPrice - standardCogs;
                             const gpm = standardPrice > 0 ? (gp / standardPrice) * 100 : 0;
                             return (
                                 <div className="flex justify-between items-center text-xs font-bold pt-1">
@@ -221,10 +224,43 @@ export const CostRollupTab: React.FC<CostRollupTabProps> = ({
                         })()}
                     </div>
 
+                    <div className="grid grid-cols-2 gap-2 text-xs rounded-lg border bg-card p-3">
+                        <div className="flex justify-between gap-2">
+                            <span className="text-muted-foreground">Materials (pre-yield)</span>
+                            <span className="font-medium">₱{standardBreakdown.materialsCost.toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between gap-2">
+                            <span className="text-muted-foreground">Direct labor</span>
+                            <span className="font-medium">₱{standardBreakdown.laborCost.toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between gap-2">
+                            <span className="text-muted-foreground">Machine overhead</span>
+                            <span className="font-medium">₱{standardBreakdown.machineOverheadCost.toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between gap-2">
+                            <span className="text-muted-foreground">Custom overhead</span>
+                            <span className="font-medium">₱{standardBreakdown.customOverheadCost.toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between gap-2 border-t pt-2 col-span-2">
+                            <span className="font-semibold">Pre-yield direct cost</span>
+                            <span className="font-semibold">₱{standardBreakdown.preYieldDirectCost.toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between gap-2 col-span-2">
+                            <span className="text-muted-foreground">Expected yield</span>
+                            <span className="font-medium">{standardBreakdown.yieldPercentage.toFixed(2)}% (factor {standardBreakdown.yieldFactor.toFixed(4)})</span>
+                        </div>
+                    </div>
+
                     {/* Overhead Details */}
                     <div className="space-y-2.5">
                         <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider block">Overhead Expenses</span>
                         <div className="grid grid-cols-2 gap-2 text-xs border rounded-lg bg-card p-3 shadow-xs">
+                            <div className="flex justify-between gap-2 border-b pb-1 col-span-2">
+                                <span className="text-muted-foreground">Custom Manufacturing Overhead (included in COGS):</span>
+                                <span className="font-medium text-foreground shrink-0">
+                                    ₱{standardOverheads.customOverhead.toFixed(2)}
+                                </span>
+                            </div>
                             {standardOverheads.items.map((item) => (
                                 <div key={item.id} className="flex justify-between border-b pb-1">
                                     <span className="text-muted-foreground truncate pr-1" title={item.overheadName}>
@@ -237,13 +273,19 @@ export const CostRollupTab: React.FC<CostRollupTabProps> = ({
                             ))}
                             {standardOverheads.items.length === 0 && (
                                 <div className="col-span-2 text-center text-muted-foreground py-2">
-                                    No dynamic overhead variables registered.
+                                    No additional overhead variables registered.
                                 </div>
                             )}
+                            <div className="flex justify-between gap-2 border-t pt-2 col-span-2">
+                                <span className="text-muted-foreground">Additional Operating Overhead (excluded from COGS):</span>
+                                <span className="font-medium text-foreground shrink-0">
+                                    ₱{standardOverheads.additionalOperatingOverhead.toFixed(2)}
+                                </span>
+                            </div>
                         </div>
                         <div className="flex justify-between items-center text-xs font-semibold px-1">
                             <span className="text-muted-foreground">Total Overhead Expenses:</span>
-                            <span className="text-foreground font-bold">₱{standardOverheads.totalOverheads.toFixed(2)}</span>
+                            <span className="text-foreground font-bold">₱{standardOverheads.totalOverheadExpenses.toFixed(2)}</span>
                         </div>
                     </div>
 
@@ -398,10 +440,10 @@ export const CostRollupTab: React.FC<CostRollupTabProps> = ({
                         <div className="rounded-xl border bg-muted/30 p-4 space-y-2">
                             <div className="flex justify-between items-center text-xs">
                                 <span>Simulated COGS:</span>
-                                <span className="font-semibold text-foreground">₱{simulatedMaterialCost.toFixed(2)}</span>
+                                <span className="font-semibold text-foreground">₱{simulatedCogs.toFixed(2)}</span>
                             </div>
                             {(() => {
-                                const simGp = simulationTargetPrice - simulatedMaterialCost;
+                                const simGp = simulationTargetPrice - simulatedCogs;
                                 const simGpm = simulationTargetPrice > 0 ? (simGp / simulationTargetPrice) * 100 : 0;
                                 return (
                                     <div className="flex justify-between items-center text-xs font-bold text-primary">
@@ -411,8 +453,20 @@ export const CostRollupTab: React.FC<CostRollupTabProps> = ({
                                 );
                             })()}
                             <div className="flex justify-between items-center text-xs border-b pb-2">
-                                <span>Simulated Overheads:</span>
-                                <span className="font-semibold text-muted-foreground">₱{simulatedOverheads.totalOverheads.toFixed(2)}</span>
+                                <span>Simulated Overhead Expenses:</span>
+                                <span className="font-semibold text-muted-foreground">₱{simulatedOverheads.totalOverheadExpenses.toFixed(2)}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-xs">
+                                <span>Custom overhead included in COGS:</span>
+                                <span className="font-semibold text-muted-foreground">₱{simulatedOverheads.customOverhead.toFixed(2)}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-xs">
+                                <span>Additional overhead excluded from COGS:</span>
+                                <span className="font-semibold text-muted-foreground">₱{simulatedOverheads.additionalOperatingOverhead.toFixed(2)}</span>
+                            </div>
+                            <div className="flex justify-between items-center text-xs">
+                                <span>Simulated pre-yield direct cost:</span>
+                                <span className="font-semibold text-muted-foreground">₱{simulatedBreakdown.preYieldDirectCost.toFixed(2)}</span>
                             </div>
                             <div className="flex justify-between items-center text-sm border-t pt-2 mt-1">
                                 <span className="font-extrabold text-foreground">Simulated Net Profit:</span>
@@ -486,7 +540,7 @@ export const CostRollupTab: React.FC<CostRollupTabProps> = ({
                             <div className="rounded-lg bg-muted/30 p-3 text-xs space-y-1.5 border">
                                 <div className="flex justify-between">
                                     <span className="text-muted-foreground">Simulated Cost:</span>
-                                    <span className="font-semibold text-foreground">₱{simulatedMaterialCost.toFixed(2)}</span>
+                                    <span className="font-semibold text-foreground">₱{simulatedCogs.toFixed(2)}</span>
                                 </div>
                                 <div className="flex justify-between">
                                     <span className="text-muted-foreground">Agreed Selling Price:</span>
@@ -494,8 +548,8 @@ export const CostRollupTab: React.FC<CostRollupTabProps> = ({
                                 </div>
                                 <div className="flex justify-between border-t pt-1.5 mt-1">
                                     <span className="font-bold">Estimated Margin:</span>
-                                    <span className={`font-bold ${simulationTargetPrice - simulatedMaterialCost >= 0 ? "text-emerald-600" : "text-destructive"}`}>
-                                        ₱{(simulationTargetPrice - simulatedMaterialCost).toFixed(2)} ({simulatedNetMarginPercent.toFixed(1)}%)
+                                    <span className={`font-bold ${simulationTargetPrice - simulatedCogs >= 0 ? "text-emerald-600" : "text-destructive"}`}>
+                                        ₱{(simulationTargetPrice - simulatedCogs).toFixed(2)} ({simulatedNetMarginPercent.toFixed(1)}%)
                                     </span>
                                 </div>
                             </div>

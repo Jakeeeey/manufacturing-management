@@ -30,6 +30,7 @@ import { ImportationTab } from "./components/ImportationTab";
 import { useFinishedGoods, type RegisterFormField } from "./hooks/useFinishedGoods";
 import { Product, BOMItem, RoutingStep } from "./types";
 import { CreatableSelect } from "./components/CreatableSelect";
+import { calculateCostBreakdown, calculateOverheadSummary, calculateRouteBreakdown } from "./costing";
 
 export default function FinishedGoodsModule() {
     const searchParams = useSearchParams();
@@ -345,74 +346,65 @@ export default function FinishedGoodsModule() {
         toast.success(`Applied computed COGS cost (₱${importCogsPerL.toFixed(4)}/L) to ${count} oil ingredients in simulator sandbox!`);
     };
 
-    // Live standard cost calculations
-    const baseMaterialCost = useMemo(() => {
-        return editedBOM.reduce((sum, item) => {
-            const qty = Number(item.quantity) || 0;
-            const cost = Number(item.landedCost) || 0;
-            const wastage = Number(item.wastagePercent) || 0;
-            const costFactor = 1 - (wastage / 100);
-            const itemCost = (qty * cost) / (costFactor > 0 ? costFactor : 1);
-            if (item.type === "by_product") {
-                return sum - itemCost;
-            }
-            return sum + itemCost;
-        }, 0);
-    }, [editedBOM]);
+    const calculateCurrentCost = (priceOverrides: Record<string, number>, expectedYieldPercentage: number) => {
+        let materialsCost = 0;
+        let laborCost = 0;
+        let machineOverheadCost = 0;
 
-    const baseRoutingCost = useMemo(() => {
-        return editedRoutings.reduce((sum, step) => {
-            const labor = Number(step.laborFlatRate) || 0;
-            const machine = Number(step.machineHourlyRate) || 0;
-            const duration = Number(step.durationHours) || 0;
-            const stepCost = labor + (machine * duration);
-            return sum + stepCost;
-        }, 0);
-    }, [editedRoutings]);
+        editedRoutes.forEach(route => {
+            const workCenter = workCenters.find(wc => wc.work_center_id === route.work_center_id);
+            const routeBreakdown = calculateRouteBreakdown({
+                laborCost: route.estimated_labor_cost,
+                machineHourlyRate: workCenter?.overhead_cost_per_hour || 0,
+                setupTimeHours: route.setup_time_hours,
+                runTimeHours: route.run_time_hours,
+                baseQuantity: Number(editedVersionDetails.base_quantity) || 1,
+                materials: (route.bom_items || []).map(item => ({
+                    quantity: item.quantity_required,
+                    unitCost: priceOverrides[String(item.id)] ?? Number(item.cost_per_unit || 0),
+                    wastagePercent: item.wastage_factor_percentage
+                }))
+            });
 
-    // Simulation Cost calculations
-    const simulatedMaterialCost = useMemo(() => {
-        return editedBOM.reduce((sum, item) => {
-            const qty = Number(item.quantity) || 0;
-            const overridePrice = simulationPriceOverrides[item.id] !== undefined ? Number(simulationPriceOverrides[item.id]) : Number(item.landedCost);
-            const wastage = Number(item.wastagePercent) || 0;
-            const costFactor = 1 - (wastage / 100);
-            const itemCost = (qty * overridePrice) / (costFactor > 0 ? costFactor : 1);
-            if (item.type === "by_product") {
-                return sum - itemCost;
-            }
-            return sum + itemCost;
-        }, 0);
-    }, [editedBOM, simulationPriceOverrides]);
+            materialsCost += routeBreakdown.materialsCost;
+            laborCost += routeBreakdown.laborCost;
+            machineOverheadCost += routeBreakdown.machineOverheadCost;
+        });
 
-    const simulatedTotalUnitCost = useMemo(() => {
-        const simYieldPercent = Number(simulationYield) || 100;
-        const simYieldFactor = simYieldPercent / 100;
-        return (simulatedMaterialCost + baseRoutingCost) / (simYieldFactor > 0 ? simYieldFactor : 1);
-    }, [simulatedMaterialCost, baseRoutingCost, simulationYield]);
+        return calculateCostBreakdown({
+            materialsCost,
+            laborCost,
+            machineOverheadCost,
+            customOverheadCost: editedVersionDetails.custom_overhead,
+            expectedYieldPercentage
+        });
+    };
+
+    const standardCostBreakdown = useMemo(
+        () => calculateCurrentCost({}, Number(editedVersionDetails.expected_yield_percentage) || 100),
+        [editedRoutes, workCenters, editedVersionDetails]
+    );
+
+    const simulatedCostBreakdown = useMemo(
+        () => calculateCurrentCost(simulationPriceOverrides, Number(simulationYield) || 100),
+        [editedRoutes, workCenters, editedVersionDetails, simulationPriceOverrides, simulationYield]
+    );
 
     const standardPrice = Number(editedDetails.targetSellingPrice) || 0;
 
-    const totalCustomOverheads = useMemo(() => {
-        return editedOverheads.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
-    }, [editedOverheads]);
-
-    const standardTotalUnitCost = useMemo(() => {
-        const yieldPercent = Number(editedDetails.expectedYieldPercent) || 100;
-        const yieldFactor = yieldPercent / 100;
-        return (baseMaterialCost + baseRoutingCost) / (yieldFactor > 0 ? yieldFactor : 1);
-    }, [baseMaterialCost, baseRoutingCost, editedDetails.expectedYieldPercent]);
-
     const standardOverheads = useMemo(() => {
         return {
-            totalOverheads: totalCustomOverheads,
+            ...calculateOverheadSummary(
+                standardCostBreakdown.customOverheadCost,
+                editedOverheads.map(item => item.amount)
+            ),
             items: editedOverheads
         };
-    }, [totalCustomOverheads, editedOverheads]);
+    }, [standardCostBreakdown.customOverheadCost, editedOverheads]);
 
     const standardNetProfit = useMemo(() => {
-        return standardPrice - standardTotalUnitCost - standardOverheads.totalOverheads;
-    }, [standardPrice, standardTotalUnitCost, standardOverheads]);
+        return standardPrice - standardCostBreakdown.totalBaseCost - standardOverheads.excludedFromCogs;
+    }, [standardPrice, standardCostBreakdown.totalBaseCost, standardOverheads]);
 
     const standardNetMarginPercent = useMemo(() => {
         return standardPrice > 0 ? (standardNetProfit / standardPrice) * 100 : 0;
@@ -420,14 +412,17 @@ export default function FinishedGoodsModule() {
 
     const simulatedOverheads = useMemo(() => {
         return {
-            totalOverheads: totalCustomOverheads,
+            ...calculateOverheadSummary(
+                simulatedCostBreakdown.customOverheadCost,
+                editedOverheads.map(item => item.amount)
+            ),
             items: editedOverheads
         };
-    }, [totalCustomOverheads, editedOverheads]);
+    }, [simulatedCostBreakdown.customOverheadCost, editedOverheads]);
 
     const simulatedNetProfit = useMemo(() => {
-        return Number(simulationTargetPrice) - simulatedTotalUnitCost - simulatedOverheads.totalOverheads;
-    }, [simulationTargetPrice, simulatedTotalUnitCost, simulatedOverheads]);
+        return Number(simulationTargetPrice) - simulatedCostBreakdown.totalBaseCost - simulatedOverheads.excludedFromCogs;
+    }, [simulationTargetPrice, simulatedCostBreakdown.totalBaseCost, simulatedOverheads]);
 
     const simulatedNetMarginPercent = useMemo(() => {
         const targetPrice = Number(simulationTargetPrice) || 0;
@@ -1063,7 +1058,8 @@ export default function FinishedGoodsModule() {
                                         {activeTab === "costing" && (
                                             <CostRollupTab
                                                 standardPrice={standardPrice}
-                                                baseMaterialCost={standardTotalUnitCost}
+                                                standardCogs={standardCostBreakdown.totalBaseCost}
+                                                standardBreakdown={standardCostBreakdown}
                                                 standardOverheads={standardOverheads}
                                                 standardNetProfit={standardNetProfit}
                                                 standardNetMarginPercent={standardNetMarginPercent}
@@ -1077,7 +1073,8 @@ export default function FinishedGoodsModule() {
                                                 selectedProduct={selectedProduct}
                                                 selectedVersionId={selectedVersionId}
                                                 simulatedNetProfit={simulatedNetProfit}
-                                                simulatedMaterialCost={simulatedTotalUnitCost}
+                                                simulatedCogs={simulatedCostBreakdown.totalBaseCost}
+                                                simulatedBreakdown={simulatedCostBreakdown}
                                                 simulatedOverheads={simulatedOverheads}
                                                 simulatedNetMarginPercent={simulatedNetMarginPercent}
                                                 simulatedForexRate={simulatedForexRate}
