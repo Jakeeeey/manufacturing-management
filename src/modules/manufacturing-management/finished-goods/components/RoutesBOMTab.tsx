@@ -528,10 +528,10 @@ export const RoutesBOMTab: React.FC<RoutesBOMTabProps> = ({
                                         </div>
                                     ) : (
                                         <div className="overflow-x-auto rounded-lg border border-muted/60 bg-card">
-                                            <table className="w-full border-collapse text-left text-xs">
+                                            <table className="min-w-[1080px] w-full border-collapse text-left text-xs">
                                                 <thead>
                                                     <tr className="bg-muted/10 border-b border-muted/60 text-muted-foreground font-bold">
-                                                        <th className="p-2.5 w-[15%]">Material Type</th>
+                                                        <th className="p-2.5 w-[17%] min-w-[175px] whitespace-nowrap">Material Type</th>
                                                         <th className="p-2.5 w-[30%]">Material</th>
                                                         <th className="p-2.5 w-[15%]">Qty Required</th>
                                                         <th className="p-2.5 w-[15%]">UOM</th>
@@ -552,7 +552,7 @@ export const RoutesBOMTab: React.FC<RoutesBOMTabProps> = ({
                                                         const selectedMaterialType = b.material_type || materialTypeFromProduct(b.product_type, b.has_versions);
                                                         return (
                                                             <tr key={b.id} className="border-b border-muted/50 hover:bg-muted/5">
-                                                                <td className="p-1.5 align-middle">
+                                                                <td className="p-1.5 align-middle min-w-[175px]">
                                                                     <select
                                                                         aria-label="Material Type"
                                                                         value={selectedMaterialType || ""}
@@ -561,7 +561,7 @@ export const RoutesBOMTab: React.FC<RoutesBOMTabProps> = ({
                                                                             b.id,
                                                                             e.target.value as MaterialType | ""
                                                                         )}
-                                                                        className={`w-full h-8 rounded border px-2 py-1 text-[10px] font-bold uppercase tracking-wide bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary ${classification.className}`}
+                                                                        className={`w-full min-w-0 h-8 rounded border px-2 py-1 text-[10px] font-bold uppercase tracking-wide whitespace-nowrap truncate bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary ${classification.className}`}
                                                                     >
                                                                         <option value="">Select a Material Type</option>
                                                                         {MATERIAL_TYPE_OPTIONS.map(option => (
