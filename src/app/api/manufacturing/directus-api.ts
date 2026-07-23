@@ -366,9 +366,10 @@ export async function getBOMDetailsForVersion(productId: number, versionId: numb
 }
 
 /**
- * 4. Main roll-up engine: Calculates rollup costing standards recursively.
+ * @deprecated Kept for compatibility only. New costing consumers must use
+ * products/products-helper.ts and its explicit unit/batch result contract.
  */
-export async function calculateRollupCost(
+export async function calculateLegacyRollupCost(
     productId: number,
     visited: Set<number> = new Set(),
     productsMap?: Map<number, DirectusProduct>,
@@ -471,7 +472,7 @@ export async function calculateRollupCost(
         if (comp.landed_cost && Number(comp.landed_cost) > 0) {
             compUnitCost = Number(comp.landed_cost);
         } else if (comp.component_type === "sub_assembly") {
-            const subResult = await calculateRollupCost(comp.component_product_id, new Set(visited), productsMap, forexRate);
+            const subResult = await calculateLegacyRollupCost(comp.component_product_id, new Set(visited), productsMap, forexRate);
             compUnitCost = subResult.totalBaseCost;
             childrenNodes = subResult.costTree;
         } else {
