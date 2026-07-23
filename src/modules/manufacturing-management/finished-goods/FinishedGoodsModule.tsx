@@ -413,10 +413,10 @@ export default function FinishedGoodsModule() {
     const standardMarginSummary = useMemo(
         () => calculateMarginSummary(
             standardPrice,
-            standardCostBreakdown.yieldAdjustedUnitCost,
+            standardCostBreakdown.unitCost,
             standardOverheads.excludedFromCogs
         ),
-        [standardPrice, standardCostBreakdown.yieldAdjustedUnitCost, standardOverheads.excludedFromCogs]
+        [standardPrice, standardCostBreakdown.unitCost, standardOverheads.excludedFromCogs]
     );
 
     const simulatedOverheads = useMemo(() => {
@@ -432,10 +432,10 @@ export default function FinishedGoodsModule() {
     const simulatedMarginSummary = useMemo(
         () => calculateMarginSummary(
             Number(simulationTargetPrice),
-            simulatedCostBreakdown.yieldAdjustedUnitCost,
+            simulatedCostBreakdown.unitCost,
             simulatedOverheads.excludedFromCogs
         ),
-        [simulationTargetPrice, simulatedCostBreakdown.yieldAdjustedUnitCost, simulatedOverheads.excludedFromCogs]
+        [simulationTargetPrice, simulatedCostBreakdown.unitCost, simulatedOverheads.excludedFromCogs]
     );
 
     const treeProducts = useMemo(() => {
@@ -1067,7 +1067,7 @@ export default function FinishedGoodsModule() {
                                         {activeTab === "costing" && (
                                             <CostRollupTab
                                                 standardPrice={standardPrice}
-                                                standardCogs={standardCostBreakdown.yieldAdjustedUnitCost}
+                                                standardCogs={standardCostBreakdown.unitCost}
                                                 standardBreakdown={standardCostBreakdown}
                                                 standardOverheads={standardOverheads}
                                                 standardGrossProfit={standardMarginSummary.grossProfit}
@@ -1086,7 +1086,7 @@ export default function FinishedGoodsModule() {
                                                 simulatedGrossProfit={simulatedMarginSummary.grossProfit}
                                                 simulatedGrossMarginPercent={simulatedMarginSummary.grossMarginPercent}
                                                 simulatedNetProfit={simulatedMarginSummary.netProfit}
-                                                simulatedCogs={simulatedCostBreakdown.yieldAdjustedUnitCost}
+                                                simulatedCogs={simulatedCostBreakdown.unitCost}
                                                 simulatedBreakdown={simulatedCostBreakdown}
                                                 simulatedOverheads={simulatedOverheads}
                                                 simulatedNetMarginPercent={simulatedMarginSummary.netMarginPercent}

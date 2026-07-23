@@ -153,6 +153,8 @@ export async function calculateRollupCost(
         includedInCogs: 0,
         excludedFromCogs: 0,
         baseQuantity: 1,
+        unitCost: 0,
+        batchCost: 0,
         preYieldDirectCost: 0,
         yieldAdjustedUnitCost: 0,
         machineHours: 0,
@@ -293,7 +295,7 @@ export async function calculateRollupCost(
 
                 if (hasVersions) {
                     const subResult = await calculateRollupCost(bomItem.product_id, new Set(visited), productsMap, forexRate, profilesMap);
-                    compUnitCost = subResult.yieldAdjustedUnitCost;
+                    compUnitCost = subResult.unitCost;
                     subChildren = subResult.costTree;
                 } else if (bomItem.cost_per_unit !== null && bomItem.cost_per_unit !== undefined) {
                     compUnitCost = Number(bomItem.cost_per_unit);
@@ -370,7 +372,7 @@ export async function calculateRollupCost(
     const targetPrice = currentProduct.price_per_unit || 0;
     const margin = calculateMarginSummary(
         targetPrice,
-        breakdown.totalBaseCost,
+        breakdown.unitCost,
         overheadSummary.excludedFromCogs
     );
 

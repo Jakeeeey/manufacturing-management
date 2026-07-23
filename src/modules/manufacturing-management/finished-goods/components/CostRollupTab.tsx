@@ -222,7 +222,7 @@ export const CostRollupTab: React.FC<CostRollupTabProps> = ({
                         </div>
                         <div className="flex justify-between items-center text-xs border-b pb-2">
                             <span>Batch COGS</span>
-                            <span className="text-foreground text-sm font-bold">₱{standardBreakdown.totalBaseCost.toFixed(2)}</span>
+                            <span className="text-foreground text-sm font-bold">₱{standardBreakdown.batchCost.toFixed(2)}</span>
                         </div>
                         <div className="flex justify-between items-center text-xs font-bold pt-1">
                             <span className="text-primary">Gross Margin (on sales)</span>
@@ -263,7 +263,7 @@ export const CostRollupTab: React.FC<CostRollupTabProps> = ({
                         </div>
                         <div className="flex justify-between gap-2 col-span-2">
                             <span className="text-muted-foreground">Yield-adjusted unit cost</span>
-                            <span className="font-medium">₱{standardBreakdown.yieldAdjustedUnitCost.toFixed(2)}</span>
+                            <span className="font-medium">₱{standardBreakdown.unitCost.toFixed(2)}</span>
                         </div>
                         <div className="flex justify-between gap-2 col-span-2">
                             <span className="text-muted-foreground">Expected yield</span>
@@ -480,7 +480,7 @@ export const CostRollupTab: React.FC<CostRollupTabProps> = ({
                             </div>
                             <div className="flex justify-between items-center text-xs">
                                 <span>Simulated batch COGS:</span>
-                                <span className="font-semibold text-muted-foreground">₱{simulatedBreakdown.totalBaseCost.toFixed(2)}</span>
+                                <span className="font-semibold text-muted-foreground">₱{simulatedBreakdown.batchCost.toFixed(2)}</span>
                             </div>
                             <div className="flex justify-between items-center text-sm border-t pt-2 mt-1">
                                 <span className="font-extrabold text-foreground">Simulated Net Profit (margin on sales):</span>

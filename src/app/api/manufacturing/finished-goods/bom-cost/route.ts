@@ -21,8 +21,8 @@ export async function GET(request: Request) {
         const rollup = await calculateRollupCost(productId, new Set(), undefined, forexRate, undefined, versionId);
 
         return NextResponse.json({
-            cost: rollup.yieldAdjustedUnitCost,
-            batchCost: rollup.totalBaseCost,
+            cost: rollup.unitCost,
+            batchCost: rollup.batchCost,
             hasCogs: true,
             rollup
         });

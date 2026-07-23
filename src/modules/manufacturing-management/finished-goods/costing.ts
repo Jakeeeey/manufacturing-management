@@ -28,6 +28,10 @@ export interface CostingRouteBreakdown {
 
 export interface CostingBreakdown {
     baseQuantity: number;
+    /** Yield-adjusted cost for one finished unit. */
+    unitCost: number;
+    /** Yield-adjusted cost for the configured base batch. */
+    batchCost: number;
     materialsCost: number;
     laborCost: number;
     machineOverheadCost: number;
@@ -122,9 +126,12 @@ export function calculateCostBreakdown(input: {
     const yieldFactor = yieldPercentage / 100;
     const preYieldDirectCost = materialsCost + laborCost + machineOverheadCost + customOverheadCost;
     const yieldAdjustedUnitCost = preYieldDirectCost / (yieldFactor > 0 ? yieldFactor : 1);
+    const batchCost = yieldAdjustedUnitCost * baseQuantity;
 
     return {
         baseQuantity,
+        unitCost: yieldAdjustedUnitCost,
+        batchCost,
         materialsCost,
         laborCost,
         machineOverheadCost,
@@ -135,7 +142,7 @@ export function calculateCostBreakdown(input: {
         yieldAdjustedUnitCost,
         yieldPercentage,
         yieldFactor,
-        totalBaseCost: yieldAdjustedUnitCost * baseQuantity
+        totalBaseCost: batchCost
     };
 }
 

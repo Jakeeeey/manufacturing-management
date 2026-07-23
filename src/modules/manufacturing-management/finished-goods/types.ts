@@ -371,6 +371,10 @@ export interface CostRollupResult {
     includedInCogs: number;
     excludedFromCogs: number;
     baseQuantity: number;
+    /** Yield-adjusted cost for one finished unit. */
+    unitCost: number;
+    /** Yield-adjusted cost for the configured base batch. */
+    batchCost: number;
     preYieldDirectCost: number;
     yieldAdjustedUnitCost: number;
     machineHours: number;
