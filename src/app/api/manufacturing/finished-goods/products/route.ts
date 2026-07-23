@@ -2,6 +2,11 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { DIRECTUS_URL, headers } from "@/app/api/manufacturing/directus-api";
 import { calculateRollupCost } from "./products-helper";
+import {
+    ProductIdentityError,
+    ensureProductIdentityAvailable,
+    resolveProductIdentity
+} from "./product-identity";
 
 interface DirectusProductCurrencyProfile {
     id: number;
@@ -16,6 +21,7 @@ interface DirectusProduct {
     product_name: string;
     product_code: string;
     description: string;
+    short_description?: string | null;
     unit_of_measurement: { unit_id: number; unit_name: string; unit_shortcut: string } | null;
     cost_per_unit: number;
     price_per_unit: number;
@@ -35,7 +41,7 @@ export async function GET(request: Request) {
         const limit = parseInt(searchParams.get("limit") || "-1");
         const excludeRollup = searchParams.get("excludeRollup") === "true";
 
-        const explicitFields = "product_id,product_name,product_code,description,isActive,cost_per_unit,price_per_unit,product_brand,barcode,parent_id,parent_id.product_id,parent_id.product_name,product_category,product_class,product_segment,product_section,product_shelf_life,product_image,unit_of_measurement.unit_id,unit_of_measurement.unit_shortcut,unit_of_measurement.unit_name,unit_of_measurement_count,density_factor,production_capacity_per_hour,product_type";
+        const explicitFields = "product_id,product_name,product_code,description,short_description,isActive,cost_per_unit,price_per_unit,product_brand,barcode,parent_id,parent_id.product_id,parent_id.product_name,product_category,product_class,product_segment,product_section,product_shelf_life,product_image,unit_of_measurement.unit_id,unit_of_measurement.unit_shortcut,unit_of_measurement.unit_name,unit_of_measurement_count,density_factor,production_capacity_per_hour,product_type";
         let url = `${DIRECTUS_URL}/items/products?limit=${limit}&fields=${explicitFields}`;
         if (search && search.trim()) {
             url += `&search=${encodeURIComponent(search.trim())}`;
@@ -132,22 +138,23 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Missing required fields (product_name, product_code, versionName)" }, { status: 400 });
         }
 
-        // Check if a product with the same name or code already exists in Directus
-        const checkNameRes = await fetch(`${DIRECTUS_URL}/items/products?filter[product_name][_eq]=${encodeURIComponent(productDetails.product_name)}&limit=1`, { headers });
-        if (checkNameRes.ok) {
-            const checkData = await checkNameRes.json();
-            if (checkData.data && checkData.data.length > 0) {
-                return NextResponse.json({ error: "A product with this name already exists. Please choose a unique name." }, { status: 400 });
-            }
-        }
-
         const checkCodeRes = await fetch(`${DIRECTUS_URL}/items/products?filter[product_code][_eq]=${encodeURIComponent(productDetails.product_code)}&limit=1`, { headers });
         if (checkCodeRes.ok) {
             const checkData = await checkCodeRes.json();
             if (checkData.data && checkData.data.length > 0) {
-                return NextResponse.json({ error: "A product with this SKU already exists. Please choose a unique SKU." }, { status: 400 });
+                return NextResponse.json({
+                    error: "A product with this SKU already exists. Please choose a unique SKU.",
+                    code: "PRODUCT_SKU_CONFLICT"
+                }, { status: 400 });
             }
         }
+
+        const identity = await resolveProductIdentity({
+            productName: productDetails.product_name,
+            parentId: productDetails.parent_id,
+            unitId: productDetails.unit_of_measurement
+        });
+        await ensureProductIdentityAvailable(identity.descriptionKey);
 
         // Get logged in user ID from secure access token cookie
         let userId: number | null = null;
@@ -170,8 +177,21 @@ export async function POST(request: Request) {
         }
 
         // 1. Create Product
+        const productFields = { ...productDetails };
+        const description = productFields.description;
+        const short_description = productFields.short_description;
+        delete productFields.description;
+        delete productFields.short_description;
+        delete productFields.product_name;
+        delete productFields.parent_id;
+        delete productFields.unit_of_measurement;
         const productPayload = {
-            ...productDetails,
+            ...productFields,
+            product_name: identity.productName,
+            parent_id: identity.parentId,
+            unit_of_measurement: identity.unitId,
+            description: identity.descriptionKey,
+            short_description: typeof short_description === "string" ? short_description.trim() || null : description?.trim() || null,
             product_brand: productDetails.product_brand !== undefined ? productDetails.product_brand : null,
             product_category: productDetails.product_category !== undefined ? productDetails.product_category : null,
             product_class: productDetails.product_class !== undefined ? productDetails.product_class : null,
@@ -192,6 +212,25 @@ export async function POST(request: Request) {
         });
         if (!prodRes.ok) {
             const errText = await prodRes.text();
+            if (prodRes.status === 409 || /duplicate|unique constraint|unique key/i.test(errText)) {
+                const skuCheckRes = await fetch(
+                    `${DIRECTUS_URL}/items/products?filter[product_code][_eq]=${encodeURIComponent(productDetails.product_code)}&limit=1`,
+                    { headers, cache: "no-store" }
+                );
+                if (skuCheckRes.ok) {
+                    const skuCheckData = await skuCheckRes.json();
+                    if (skuCheckData.data && skuCheckData.data.length > 0) {
+                        return NextResponse.json({
+                            error: "A product with this SKU already exists. Please choose a unique SKU.",
+                            code: "PRODUCT_SKU_CONFLICT"
+                        }, { status: 400 });
+                    }
+                }
+                return NextResponse.json({
+                    error: "A product with this parent product and unit of measurement already exists.",
+                    code: "PRODUCT_PARENT_UOM_CONFLICT"
+                }, { status: 409 });
+            }
             throw new Error(`Directus failed to create product: ${prodRes.status} - ${errText}`);
         }
         const prodJson = await prodRes.json();
@@ -242,6 +281,9 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: true, productId, version: createdVersion });
     } catch (e) {
         console.error("API Error registering product:", e);
+        if (e instanceof ProductIdentityError) {
+            return NextResponse.json({ error: e.message, code: e.code }, { status: e.status });
+        }
         return NextResponse.json({ error: (e as { message?: string }).message || "Failed to register product" }, { status: 500 });
     }
 }

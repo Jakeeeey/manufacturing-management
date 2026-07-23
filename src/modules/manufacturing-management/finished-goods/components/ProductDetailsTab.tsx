@@ -20,6 +20,8 @@ import {
 interface ProductDetailsTabProps {
     editedDetails: Partial<Product>;
     handleDetailChange: (field: keyof Product, value: unknown) => void;
+    customOverhead: number;
+    handleCustomOverheadChange: (value: number) => void;
     selectedProduct: Product;
     units: Unit[];
     brands: Brand[];
@@ -38,6 +40,8 @@ interface ProductDetailsTabProps {
 export const ProductDetailsTab: React.FC<ProductDetailsTabProps> = ({
     editedDetails,
     handleDetailChange,
+    customOverhead,
+    handleCustomOverheadChange,
     selectedProduct,
     units,
     brands,
@@ -353,13 +357,18 @@ export const ProductDetailsTab: React.FC<ProductDetailsTabProps> = ({
                         </div>
 
                         <div className="space-y-1">
-                            <label className="text-[11px] font-bold text-muted-foreground uppercase">Product Description</label>
+                            <label className="text-[11px] font-bold text-muted-foreground uppercase">Short Description</label>
                             <textarea 
                                 rows={2}
                                 value={editedDetails.description || ""} 
                                 onChange={e => handleDetailChange("description", e.target.value)}
                                 className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary resize-none transition-all"
                             />
+                            {selectedProduct.identityKey && (
+                                <p className="text-[10px] text-muted-foreground">
+                                    System identity: {selectedProduct.identityKey}
+                                </p>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -493,8 +502,9 @@ export const ProductDetailsTab: React.FC<ProductDetailsTabProps> = ({
                                 <input 
                                     type="number" 
                                     step="0.01"
-                                    value={editedDetails.customOverhead || 0} 
-                                    onChange={e => handleDetailChange("customOverhead", parseFloat(e.target.value) || 0)}
+                                    value={customOverhead}
+                                    min="0"
+                                    onChange={e => handleCustomOverheadChange(e.target.value === "" ? 0 : parseFloat(e.target.value))}
                                     className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
                                 />
                             </div>

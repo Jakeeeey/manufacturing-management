@@ -18,6 +18,11 @@ export interface MovementRow {
     remarks: string | null;
 }
 
+export interface InventoryMovementQuantityRow {
+    lot_id: number | string | null;
+    quantity: number | string | null;
+}
+
 export interface PostMovementPayload {
     product_id: number;
     version_id?: number | null;

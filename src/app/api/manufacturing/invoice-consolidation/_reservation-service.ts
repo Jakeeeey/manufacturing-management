@@ -446,7 +446,6 @@ export async function allocateInvoice(invoiceId: number, userId: number) {
         `${DIRECTUS_URL}/items/inventory_lots?filter=${lotFilter}&fields=id,product_id,branch_id,lot_id,lot_number,batch_no,expiry_date,created_on,quantity,qa_status,source_type,source_reference&limit=-1`
     );
     const unfilteredLots: InventoryLotRow[] = (lotsJson.data || []).filter((lot: InventoryLotRow) => numericId(lot.lot_id, ["lot_id"]) !== null);
-
     // Fetch inventory movements to calculate the true ledger stock
     const branchId = Number(invoice.branch_id);
     const movFilter = encodeURIComponent(JSON.stringify({
@@ -687,7 +686,6 @@ export async function previewConsolidationAllocations(branchId: number, invoiceI
         `${DIRECTUS_URL}/items/inventory_lots?filter=${lotFilter}&fields=id,product_id,branch_id,lot_id.lot_id,lot_id.lot_name,lot_number,batch_no,expiry_date,created_on,quantity,qa_status,source_type,source_reference&limit=-1`
     );
     const unfilteredLots: InventoryLotRow[] = lotsJson.data || [];
-
     // Fetch inventory movements to calculate the true ledger stock
     const movFilter = encodeURIComponent(JSON.stringify({
         _and: [

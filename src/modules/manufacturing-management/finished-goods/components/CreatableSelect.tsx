@@ -27,6 +27,9 @@ export interface CreatableSelectProps {
     placeholder?: string;
     disabled?: boolean;
     className?: string;
+    id?: string;
+    "aria-invalid"?: boolean | "true" | "false";
+    "aria-describedby"?: string;
     onCreateOption?: (name: string) => Promise<void> | void;
     onKeyDown?: React.KeyboardEventHandler<HTMLElement>;
     "data-index"?: number;
@@ -41,6 +44,9 @@ export function CreatableSelect({
     placeholder = "Select option...",
     disabled = false,
     className,
+    id,
+    "aria-invalid": ariaInvalid,
+    "aria-describedby": ariaDescribedBy,
     onCreateOption,
     onKeyDown,
     "data-index": dataIndex,
@@ -82,6 +88,7 @@ export function CreatableSelect({
             {variant === "inline" ? (
                 <PopoverAnchor asChild>
                     <input
+                        id={id}
                         type="text"
                         disabled={disabled}
                         placeholder={placeholder}
@@ -115,15 +122,20 @@ export function CreatableSelect({
                             "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-xs shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
                             className
                         )}
+                        aria-invalid={ariaInvalid}
+                        aria-describedby={ariaDescribedBy}
                         data-index={dataIndex}
                     />
                 </PopoverAnchor>
             ) : (
                 <PopoverTrigger asChild>
                     <Button
+                        id={id}
                         variant="outline"
                         role="combobox"
                         aria-expanded={open}
+                        aria-invalid={ariaInvalid}
+                        aria-describedby={ariaDescribedBy}
                         className={cn("w-full justify-between", !value && "text-muted-foreground", className)}
                         disabled={disabled}
                         onKeyDown={onKeyDown}

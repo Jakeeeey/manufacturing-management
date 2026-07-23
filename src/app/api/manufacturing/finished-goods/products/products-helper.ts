@@ -75,7 +75,7 @@ export async function getLatestLandedCost(
  */
 export async function fetchAllProducts(search?: string, limit: number = -1): Promise<DirectusProduct[]> {
     try {
-        const explicitFields = "product_id,product_name,product_code,description,isActive,cost_per_unit,price_per_unit,product_brand,barcode,parent_id,parent_id.product_id,parent_id.product_name,product_category.category_name,unit_of_measurement.unit_id,unit_of_measurement.unit_shortcut,unit_of_measurement.unit_name,unit_of_measurement_count,product_image,density_factor,production_capacity_per_hour,product_type";
+        const explicitFields = "product_id,product_name,product_code,description,short_description,isActive,cost_per_unit,price_per_unit,product_brand,barcode,parent_id,parent_id.product_id,parent_id.product_name,product_category.category_name,unit_of_measurement.unit_id,unit_of_measurement.unit_shortcut,unit_of_measurement.unit_name,unit_of_measurement_count,product_image,density_factor,production_capacity_per_hour,product_type";
         let url = `${DIRECTUS_URL}/items/products?limit=${limit}&fields=${explicitFields}`;
         if (search && search.trim()) {
             url += `&search=${encodeURIComponent(search.trim())}`;
@@ -251,6 +251,8 @@ export async function calculateRollupCost(
                     const subResult = await calculateRollupCost(bomItem.product_id, new Set(visited), productsMap, forexRate, profilesMap);
                     compUnitCost = subResult.totalBaseCost;
                     subChildren = subResult.costTree;
+                } else if (bomItem.cost_per_unit !== null && bomItem.cost_per_unit !== undefined) {
+                    compUnitCost = Number(bomItem.cost_per_unit);
                 } else {
                     compUnitCost = await getLatestLandedCost(bomItem.product_id, forexRate, profilesMap, productsMap);
                 }
@@ -295,7 +297,8 @@ export async function calculateRollupCost(
         });
     }
 
-    const yieldFactor = (version.expected_yield_percentage || 100) / 100;
+    const yieldPercentage = Number(version.expected_yield_percentage ?? 100);
+    const yieldFactor = yieldPercentage / 100;
     const rolledCost = (materialsSubtotal + routingsSubtotal) / (yieldFactor > 0 ? yieldFactor : 1);
 
     const targetPrice = currentProduct.price_per_unit || 0;
@@ -310,7 +313,7 @@ export async function calculateRollupCost(
         bomVersion: version.version_name,
         materialsCost: materialsSubtotal,
         routingsCost: routingsSubtotal,
-        yieldPercentage: version.expected_yield_percentage || 100,
+        yieldPercentage,
         totalBaseCost: rolledCost,
         targetSellingPrice: targetPrice,
         grossMarginPercent: marginPercent,
@@ -327,6 +330,8 @@ export async function updateProductDetails(
         product_name?: string;
         product_code?: string;
         description?: string;
+        short_description?: string | null;
+        parent_id?: number | null;
         barcode?: string;
         price_per_unit?: number;
         density_factor?: number;
@@ -400,12 +405,14 @@ export async function syncProductOverheads(
 
         const url = `${DIRECTUS_URL}/items/product_overheads?filter[product_id][_eq]=${productId}&filter[version_id][_eq]=${versionId}&limit=-1`;
         const resGet = await fetch(url, { headers, cache: "no-store" });
-        const existing: { id: number }[] = resGet.ok ? (await resGet.json()).data || [] : [];
+        if (!resGet.ok) throw new Error(`Failed to fetch existing product overheads: ${resGet.status}`);
+        const existing: { id: number }[] = (await resGet.json()).data || [];
         const uiIds = new Set(validOverheads.map(o => String(o.id)));
 
         const toDelete = existing.filter(e => !uiIds.has(String(e.id)));
         for (const item of toDelete) {
-            await fetch(`${DIRECTUS_URL}/items/product_overheads/${item.id}`, { method: "DELETE", headers });
+            const res = await fetch(`${DIRECTUS_URL}/items/product_overheads/${item.id}`, { method: "DELETE", headers });
+            if (!res.ok) throw new Error(`Failed to delete product overhead ${item.id}: ${res.status}`);
         }
 
         for (const item of validOverheads) {
@@ -417,9 +424,11 @@ export async function syncProductOverheads(
             };
             const isNew = isNaN(Number(item.id)) || Number(item.id) < 0;
             if (isNew) {
-                await fetch(`${DIRECTUS_URL}/items/product_overheads`, { method: "POST", headers, body: JSON.stringify(payload) });
+                const res = await fetch(`${DIRECTUS_URL}/items/product_overheads`, { method: "POST", headers, body: JSON.stringify(payload) });
+                if (!res.ok) throw new Error(`Failed to create product overhead: ${res.status}`);
             } else {
-                await fetch(`${DIRECTUS_URL}/items/product_overheads/${item.id}`, { method: "PATCH", headers, body: JSON.stringify(payload) });
+                const res = await fetch(`${DIRECTUS_URL}/items/product_overheads/${item.id}`, { method: "PATCH", headers, body: JSON.stringify(payload) });
+                if (!res.ok) throw new Error(`Failed to update product overhead ${item.id}: ${res.status}`);
             }
         }
         return true;
