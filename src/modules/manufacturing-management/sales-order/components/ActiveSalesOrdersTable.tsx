@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { DollarSign, Eye, Check, Loader2, Search, SlidersHorizontal, ChevronLeft, ChevronRight } from "lucide-react";
 import { SalesOrder } from "../types";
+import { formatCurrency } from "@/lib/utils";
 
 interface ActiveSalesOrdersTableProps {
     salesOrders: SalesOrder[];
@@ -109,14 +110,14 @@ export function ActiveSalesOrdersTable({
     return (
         <div className="space-y-4">
             {/* Filters Header */}
-            <div className="flex flex-col gap-4 bg-card p-5 rounded-2xl border border-border/80 shadow-sm border-t-2 border-t-slate-800 dark:border-t-slate-700">
+            <div className="flex flex-col gap-4 bg-card p-5 rounded-2xl border border-border shadow-xs">
                 <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 w-full">
                     <form onSubmit={handleSearchSubmit} className="relative w-full xl:max-w-md flex gap-2">
                         <div className="relative flex-1">
                             <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                             <input
                                 type="text"
-                                placeholder="Search Order No or PO No..."
+                                placeholder="Search sales orders..."
                                 value={localSearch}
                                 onChange={(e) => {
                                     setLocalSearch(e.target.value);
@@ -129,7 +130,7 @@ export function ActiveSalesOrdersTable({
                         </div>
                         <button
                             type="submit"
-                            className="bg-slate-900 hover:bg-slate-800 text-white font-bold px-4 py-2 rounded-lg text-xs transition-all shadow-md cursor-pointer border-none"
+                            className="bg-primary hover:bg-primary/90 text-primary-foreground font-bold px-4 py-2 rounded-lg text-xs transition-all shadow-xs cursor-pointer border-none"
                         >
                             Search
                         </button>
@@ -183,7 +184,7 @@ export function ActiveSalesOrdersTable({
                                 value={dateFromFilter || ""}
                                 onChange={(e) => setDateFromFilter && setDateFromFilter(e.target.value)}
                                 title="Start Date"
-                                className="bg-transparent border-none rounded-md px-1.5 py-1 text-xs font-semibold text-foreground outline-none cursor-pointer focus:bg-background"
+                                className="bg-transparent border-none rounded-md px-1.5 py-1 text-xs font-semibold text-foreground outline-none cursor-pointer focus:bg-background dark:[color-scheme:dark]"
                             />
                             <span className="text-muted-foreground text-xs font-bold">to</span>
                             <input
@@ -191,7 +192,7 @@ export function ActiveSalesOrdersTable({
                                 value={dateToFilter || ""}
                                 onChange={(e) => setDateToFilter && setDateToFilter(e.target.value)}
                                 title="End Date"
-                                className="bg-transparent border-none rounded-md px-1.5 py-1 text-xs font-semibold text-foreground outline-none cursor-pointer focus:bg-background"
+                                className="bg-transparent border-none rounded-md px-1.5 py-1 text-xs font-semibold text-foreground outline-none cursor-pointer focus:bg-background dark:[color-scheme:dark]"
                             />
                         </div>
 
@@ -270,18 +271,18 @@ export function ActiveSalesOrdersTable({
                                         <td className="p-4 text-muted-foreground font-medium">
                                             {so.order_date ? new Date(so.order_date).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "N/A"}
                                         </td>
-                                        <td className="p-4 text-right font-black text-foreground text-sm">
-                                            ₱{(Number(so.total_amount) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        <td className="p-4 text-right font-black text-foreground text-sm font-mono">
+                                            {formatCurrency(so.total_amount)}
                                         </td>
                                         <td className="p-4 text-center">
                                             <span className={`inline-flex px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider ${
                                                 so.order_status === "Draft"
                                                     ? "bg-muted text-foreground border border-border"
                                                     : so.order_status === "Pending"
-                                                    ? "bg-sky-50 text-sky-700 border border-sky-200/60"
+                                                    ? "bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20"
                                                     : so.order_status === "For Approval"
-                                                    ? "bg-amber-50 text-amber-700 border border-amber-200/60"
-                                                    : "bg-emerald-50 text-emerald-700 border border-emerald-200/60"
+                                                    ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20"
+                                                    : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
                                             }`}>
                                                 {so.order_status}
                                             </span>

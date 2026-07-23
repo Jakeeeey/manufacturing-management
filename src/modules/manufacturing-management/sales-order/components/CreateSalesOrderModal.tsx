@@ -23,11 +23,13 @@ import {
     AlertDialogTitle
 } from "@/components/ui/alert-dialog";
 
+import { CreateSalesOrderPayload } from "../types";
+
 interface CreateSalesOrderModalProps {
     isOpen: boolean;
     onClose: () => void;
     // disabled-lint-next-line @typescript-eslint/no-explicit-any
-    onSubmit: (payload: any) => Promise<any>;
+    onSubmit: (payload: CreateSalesOrderPayload) => Promise<any>;
 }
 
 interface DirectOrderItem {
@@ -48,8 +50,11 @@ interface LineErrors {
 interface FormErrors {
     customerId?: string;
     poNo?: string;
-    discountAmount?: string;
+    branchId?: string;
+    paymentTermId?: string;
     deliveryDate?: string;
+    dueDate?: string;
+    discountAmount?: string;
     items?: Record<number, LineErrors>;
 }
 
@@ -113,8 +118,6 @@ export function CreateSalesOrderModal({
     const [paymentTerms, setPaymentTerms] = useState<any[]>([]);
     // disabled-lint-next-line @typescript-eslint/no-explicit-any
     const [salesmen, setSalesmen] = useState<any[]>([]);
-    // disabled-lint-next-line @typescript-eslint/no-explicit-any
-    const [suppliers, setSuppliers] = useState<any[]>([]);
 
     const [loadingLookups, setLoadingLookups] = useState(false);
     const [lookupError, setLookupError] = useState("");
@@ -125,7 +128,6 @@ export function CreateSalesOrderModal({
     const [branchId, setBranchId] = useState("");
     const [paymentTermId, setPaymentTermId] = useState("");
     const [salesmanId, setSalesmanId] = useState("");
-    const [supplierId, setSupplierId] = useState("");
     const [deliveryDate, setDeliveryDate] = useState("");
     const [dueDate, setDueDate] = useState("");
     const [discountAmount, setDiscountAmount] = useState(0);
@@ -265,7 +267,6 @@ export function CreateSalesOrderModal({
                 setBranches(Array.isArray(data.branches) ? data.branches : []);
                 setPaymentTerms(Array.isArray(data.paymentTerms) ? data.paymentTerms : []);
                 setSalesmen(Array.isArray(data.salesmen) ? data.salesmen : []);
-                setSuppliers(Array.isArray(data.suppliers) ? data.suppliers : []);
             } catch (err) {
                 console.error("Failed to load lookups:", err);
                 const message = err instanceof Error ? err.message : "Failed to load required setup directories.";
@@ -285,7 +286,6 @@ export function CreateSalesOrderModal({
         setBranchId("");
         setPaymentTermId("");
         setSalesmanId("");
-        setSupplierId("");
         setDeliveryDate("");
         setDueDate("");
         setDiscountAmount(0);
@@ -315,6 +315,23 @@ export function CreateSalesOrderModal({
             && paymentTerms.some(term => Number(term.id) === defaultPaymentTermId);
         setPaymentTermId(hasConfiguredTerm ? String(defaultPaymentTermId) : "");
     };
+
+    // Dynamically calculate Due Date whenever paymentTermId or deliveryDate changes
+    useEffect(() => {
+        if (!paymentTermId) {
+            setDueDate("");
+            return;
+        }
+        const term = paymentTerms.find(t => String(t.id) === String(paymentTermId));
+        const days = Number(term?.payment_days ?? term?.days ?? 0);
+        const baseDateStr = deliveryDate || new Date().toISOString().split("T")[0];
+        const [year, month, day] = baseDateStr.split("-").map(Number);
+        if (!year || !month || !day) return;
+        const targetDate = new Date(Date.UTC(year, month - 1, day + days));
+        const calculatedDueDate = targetDate.toISOString().split("T")[0];
+        setDueDate(calculatedDueDate);
+        setFormErrors(prev => ({ ...prev, dueDate: undefined }));
+    }, [paymentTermId, deliveryDate, paymentTerms]);
 
     const handleAddItem = () => {
         setItems(prev => [...prev, {
@@ -404,7 +421,7 @@ export function CreateSalesOrderModal({
         ? "Discount cannot be negative."
         : "Discount cannot exceed the order subtotal.";
     const isDirty = Boolean(
-        customerId || poNo || branchId || paymentTermId || salesmanId || supplierId
+        customerId || poNo || branchId || paymentTermId || salesmanId
         || deliveryDate || dueDate || discountAmount || remarks || items.length
     );
 
@@ -421,6 +438,10 @@ export function CreateSalesOrderModal({
         const errors: FormErrors = { items: {} };
         if (!customerId) errors.customerId = "Select a customer.";
         if (!poNo.trim()) errors.poNo = "Enter a PO number.";
+        if (!branchId) errors.branchId = "Select a production branch.";
+        if (!paymentTermId) errors.paymentTermId = "Select payment terms.";
+        if (!deliveryDate) errors.deliveryDate = "Select a delivery date.";
+        if (!dueDate) errors.dueDate = "Due date must be calculated.";
         if (discountInvalid) errors.discountAmount = discountErrorMessage;
 
         const leadTime = getLeadTimeStatus();
@@ -441,12 +462,16 @@ export function CreateSalesOrderModal({
                 if (versionState?.status === "unavailable") lineErrors.product = "No active BOM version is available.";
             }
             if (!Number.isFinite(item.quantity) || item.quantity <= 0) lineErrors.quantity = "Quantity must be greater than zero.";
-            if (!Number.isFinite(item.unit_price) || item.unit_price < 0) lineErrors.unit_price = "Unit price cannot be negative.";
+            if (!Number.isFinite(item.unit_price) || item.unit_price <= 0) lineErrors.unit_price = "Unit price must be explicitly greater than ₱0.00.";
             if (Object.keys(lineErrors).length > 0) errors.items![item.line_id] = lineErrors;
         });
         if (items.length === 0) errors.items = { 0: { product: "Add at least one product." } };
+        if (grandTotal <= 0 && items.length > 0) errors.discountAmount = "Total net amount must be greater than ₱0.00.";
 
-        const hasErrors = Boolean(errors.customerId || errors.poNo || errors.discountAmount || errors.deliveryDate || Object.keys(errors.items || {}).length);
+        const hasErrors = Boolean(
+            errors.customerId || errors.poNo || errors.branchId || errors.paymentTermId
+            || errors.deliveryDate || errors.dueDate || errors.discountAmount || Object.keys(errors.items || {}).length
+        );
         setFormErrors(errors);
         if (hasErrors) {
             requestAnimationFrame(() => {
@@ -474,15 +499,15 @@ export function CreateSalesOrderModal({
             await onSubmit({
                 customerId: Number(customerId),
                 poNo,
-                branchId: branchId ? Number(branchId) : null,
-                paymentTerms: paymentTermId ? Number(paymentTermId) : null,
-                salesmanId: salesmanId ? Number(salesmanId) : null,
-                supplierId: supplierId ? Number(supplierId) : null,
-                deliveryDate: deliveryDate || null,
-                dueDate: dueDate || null,
+                branchId: Number(branchId),
+                paymentTerms: Number(paymentTermId),
+                salesmanId: salesmanId ? Number(salesmanId) : undefined,
+                deliveryDate,
+                dueDate,
                 discountAmount,
                 remarks: finalRemarks,
                 items: items.map(item => ({
+                    parent_product_id: item.parent_product_id,
                     product_id: item.product_id,
                     quantity: item.quantity,
                     unit_price: item.unit_price
@@ -582,33 +607,43 @@ export function CreateSalesOrderModal({
                                 {formErrors.customerId && <p id="direct-so-customer-error" className="text-xs text-destructive">{formErrors.customerId}</p>}
                             </div>
 
-                            <div className="space-y-1">
-                                <label className={fieldLabelClassName}>Production Branch</label>
+                            <div className="space-y-1.5">
+                                <label className={fieldLabelClassName}>Production Branch <span className="text-destructive">*</span></label>
                                 <CreatableSelect
                                     options={branches.map(b => ({ value: String(b.id), label: b.branch_name }))}
                                     value={branchId}
-                                    onValueChange={val => setBranchId(val)}
+                                    onValueChange={val => {
+                                        setBranchId(val);
+                                        setFormErrors(prev => ({ ...prev, branchId: undefined }));
+                                    }}
                                     placeholder="Select Branch..."
                                     className="h-9 text-xs"
                                     aria-label="Production branch"
+                                    aria-invalid={Boolean(formErrors.branchId)}
                                 />
+                                {formErrors.branchId && <p className="text-xs text-destructive">{formErrors.branchId}</p>}
                             </div>
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div className="space-y-1">
-                                <label className={fieldLabelClassName}>Payment Terms</label>
+                            <div className="space-y-1.5">
+                                <label className={fieldLabelClassName}>Payment Terms <span className="text-destructive">*</span></label>
                                 <CreatableSelect
                                     options={paymentTerms.map(t => ({ value: String(t.id), label: `${t.payment_name} (${t.payment_days} days)` }))}
                                     value={paymentTermId}
-                                    onValueChange={val => setPaymentTermId(val)}
+                                    onValueChange={val => {
+                                        setPaymentTermId(val);
+                                        setFormErrors(prev => ({ ...prev, paymentTermId: undefined }));
+                                    }}
                                     placeholder="Select Terms..."
                                     className="h-9 text-xs"
                                     aria-label="Payment terms"
+                                    aria-invalid={Boolean(formErrors.paymentTermId)}
                                 />
+                                {formErrors.paymentTermId && <p className="text-xs text-destructive">{formErrors.paymentTermId}</p>}
                             </div>
 
-                            <div className="space-y-1">
+                            <div className="space-y-1.5">
                                 <label className={fieldLabelClassName}>Salesman</label>
                                 <CreatableSelect
                                     options={salesmen.map(s => ({ value: String(s.id), label: s.salesman_name }))}
@@ -620,22 +655,8 @@ export function CreateSalesOrderModal({
                                 />
                             </div>
 
-                            <div className="space-y-1">
-                                <label className={fieldLabelClassName}>Supplier</label>
-                                <CreatableSelect
-                                    options={suppliers.map(s => ({ value: String(s.id), label: s.supplier_name }))}
-                                    value={supplierId}
-                                    onValueChange={val => setSupplierId(val)}
-                                    placeholder="Select Supplier..."
-                                    className="h-9 text-xs"
-                                    aria-label="Supplier"
-                                />
-                            </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div className="space-y-1">
-                                <label htmlFor="direct-so-delivery-date" className={fieldLabelClassName}>Delivery Date</label>
+                            <div className="space-y-1.5">
+                                <label htmlFor="direct-so-delivery-date" className={fieldLabelClassName}>Delivery Date <span className="text-destructive">*</span></label>
                                 <input
                                     id="direct-so-delivery-date"
                                     type="date"
@@ -644,21 +665,26 @@ export function CreateSalesOrderModal({
                                         setDeliveryDate(e.target.value);
                                         setFormErrors(prev => ({ ...prev, deliveryDate: undefined }));
                                     }}
-                                    className={inputClassName}
+                                    className={`${inputClassName} dark:[color-scheme:dark]`}
                                     aria-invalid={Boolean(formErrors.deliveryDate)}
                                 />
-                                {formErrors.deliveryDate && <p className="text-xs text-destructive mt-1">{formErrors.deliveryDate}</p>}
+                                {formErrors.deliveryDate && <p className="text-xs text-destructive">{formErrors.deliveryDate}</p>}
                             </div>
+                        </div>
 
-                            <div className="space-y-1">
-                                <label htmlFor="direct-so-due-date" className={fieldLabelClassName}>Due Date</label>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="space-y-1.5">
+                                <label htmlFor="direct-so-due-date" className={fieldLabelClassName}>Due Date <span className="text-destructive">*</span></label>
                                 <input
                                     id="direct-so-due-date"
                                     type="date"
                                     value={dueDate}
-                                    onChange={e => setDueDate(e.target.value)}
-                                    className={inputClassName}
+                                    readOnly
+                                    title="System-calculated based on Payment Terms"
+                                    className={`${inputClassName} dark:[color-scheme:dark] bg-muted cursor-not-allowed text-muted-foreground`}
+                                    aria-invalid={Boolean(formErrors.dueDate)}
                                 />
+                                {formErrors.dueDate && <p className="text-xs text-destructive">{formErrors.dueDate}</p>}
                             </div>
 
                             <div className="space-y-1.5">
@@ -897,9 +923,9 @@ export function CreateSalesOrderModal({
                             >
                                 Cancel
                             </button>
-                            <button
+                             <button
                                 type="submit"
-                                disabled={submitting || !lookupsReady || discountInvalid}
+                                disabled={submitting || !lookupsReady || discountInvalid || grandTotal <= 0 || items.some(it => !it.unit_price || it.unit_price <= 0)}
                                 className="bg-primary hover:bg-primary/95 text-primary-foreground text-xs font-bold px-4 py-2 rounded-lg flex items-center gap-1.5 transition-all shadow-sm cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
                             >
                                 {submitting ? (

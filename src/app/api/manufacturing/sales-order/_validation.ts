@@ -2,6 +2,7 @@ import { z } from "zod";
 
 const positiveId = z.number().int().positive();
 const money = z.number().finite().nonnegative();
+const positiveMoney = z.number().finite().positive("Unit price must be explicitly greater than zero");
 
 function isValidIsoDate(value: string) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -16,10 +17,11 @@ const optionalDate = z.string().refine(isValidIsoDate, "Expected a valid YYYY-MM
 const optionalId = positiveId.nullish();
 
 const directItemSchema = z.object({
+    parent_product_id: positiveId.optional(),
     product_id: positiveId,
     quantity: z.number().finite().positive(),
-    unit_price: money
-}).strict();
+    unit_price: positiveMoney
+});
 
 export const salesOrderPostSchema = z.object({
     quotationId: positiveId.optional(),
@@ -30,9 +32,8 @@ export const salesOrderPostSchema = z.object({
     deliveryDate: optionalDate,
     paymentTerms: optionalId,
     remarks: z.string().nullish(),
-    discountAmount: money.refine(v => v === 0, { message: "Manual flat discount amounts are not allowed." }).default(0),
+    discountAmount: money.default(0),
     salesmanId: optionalId,
-    supplierId: optionalId,
     branchId: optionalId
 }).strict().superRefine((value, context) => {
     if (value.quotationId) {
@@ -48,6 +49,19 @@ export const salesOrderPostSchema = z.object({
     if (!value.customerId) {
         context.addIssue({ code: "custom", path: ["customerId"], message: "Customer is required" });
     }
+    if (!value.branchId) {
+        context.addIssue({ code: "custom", path: ["branchId"], message: "Production branch is required" });
+    }
+    if (!value.paymentTerms) {
+        context.addIssue({ code: "custom", path: ["paymentTerms"], message: "Payment terms are required" });
+    }
+    if (!value.deliveryDate) {
+        context.addIssue({ code: "custom", path: ["deliveryDate"], message: "Delivery date is required" });
+    }
+    if (!value.dueDate) {
+        context.addIssue({ code: "custom", path: ["dueDate"], message: "Due date is required" });
+    }
+
     if (!value.items?.length) {
         context.addIssue({ code: "custom", path: ["items"], message: "At least one item is required" });
         return;
@@ -59,11 +73,25 @@ export const salesOrderPostSchema = z.object({
     }
 
     const subtotal = value.items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
+    if (subtotal <= 0) {
+        context.addIssue({
+            code: "custom",
+            path: ["items"],
+            message: "Total subtotal must be greater than zero"
+        });
+    }
     if (value.discountAmount > subtotal) {
         context.addIssue({
             code: "custom",
             path: ["discountAmount"],
             message: "Discount cannot exceed the order subtotal"
+        });
+    }
+    if (subtotal - value.discountAmount <= 0) {
+        context.addIssue({
+            code: "custom",
+            path: ["discountAmount"],
+            message: "Total net amount must be greater than zero"
         });
     }
 });
@@ -84,7 +112,7 @@ const quantityPatchSchema = z.object({
 
 const statusPatchSchema = z.object({
     orderId: positiveId,
-    orderStatus: z.enum(["Draft", "Pending", "For Approval", "For Picking"]),
+    orderStatus: z.enum(["Draft", "Pending", "For Approval", "For Picking", "On Hold", "Cancelled"]),
     details: z.never().optional()
 }).strict();
 

@@ -734,7 +734,7 @@ export async function POST(request: Request) {
             }, { status: 400 });
         }
         const body = parsed.data;
-        const { quotationId, customerId, poNo, items, dueDate, deliveryDate, paymentTerms, remarks, discountAmount, salesmanId, supplierId, branchId } = body;
+        const { quotationId, customerId, poNo, items, dueDate, deliveryDate, paymentTerms, remarks, discountAmount, salesmanId, branchId } = body;
         const encoderId = user.id;
 
         if (!quotationId) {
@@ -833,7 +833,6 @@ export async function POST(request: Request) {
                 due_date: dueDate || null,
                 payment_terms: paymentTerms ? Number(paymentTerms) : null,
                 salesman_id: salesmanId ? Number(salesmanId) : null,
-                supplier_id: supplierId ? Number(supplierId) : null,
                 branch_id: branchId ? Number(branchId) : null
             };
             const detailPayloads = directItems.map((item) => ({
@@ -952,7 +951,6 @@ export async function POST(request: Request) {
             due_date: dueDate || null,
             payment_terms: paymentTerms ? Number(paymentTerms) : null,
             salesman_id: salesmanId ? Number(salesmanId) : null,
-            supplier_id: supplierId ? Number(supplierId) : null,
             branch_id: branchId ? Number(branchId) : null
         };
         const detailPayloads = quoteItems.map((item: any) => {
@@ -1074,19 +1072,39 @@ export async function PATCH(request: Request) {
             }
 
             const allowedTransitions: Record<string, string[]> = {
-                Draft: ["Pending", "For Approval"],
-                Pending: ["For Approval"],
-                "For Approval": ["Draft", "For Picking"],
-                "For Picking": ["For Invoicing", "Draft"]
+                Draft: ["Pending", "For Approval", "On Hold", "Cancelled"],
+                Pending: ["For Approval", "On Hold", "Cancelled"],
+                "For Approval": ["Draft", "For Picking", "On Hold", "Cancelled"],
+                "For Picking": ["For Invoicing", "Draft", "On Hold", "Cancelled"],
+                "On Hold": ["For Approval", "Draft", "For Picking", "Cancelled"],
+                Cancelled: []
             };
             if (!allowedTransitions[currentStatus]?.includes(targetStatus)) {
                 throw new ApiError(409, `Cannot transition sales order from ${currentStatus || "unknown"} to ${targetStatus}.`);
             }
 
-            const isApprovalDecision = currentStatus === "For Approval"
-                && (targetStatus === "For Picking" || targetStatus === "Draft");
+            const isApprovalDecision = (currentStatus === "For Approval" || currentStatus === "On Hold")
+                && (targetStatus === "For Picking" || targetStatus === "Draft" || targetStatus === "On Hold" || targetStatus === "Cancelled");
             if (isApprovalDecision && !(await canApproveSalesOrders(user))) {
                 throw new ApiError(403, "Sales-order approval access is required for this transition.");
+            }
+
+            if (targetStatus === "For Picking") {
+                if (allDetails.length === 0) {
+                    throw new ApiError(400, "Approval blocked: Sales Order has no item details.");
+                }
+                const total = allDetails.reduce((sum: number, detail: any) => {
+                    const quantity = Number(detail.ordered_quantity);
+                    const unitPrice = Number(detail.unit_price);
+                    if (!Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(unitPrice) || unitPrice <= 0) {
+                        throw new ApiError(400, "Approval blocked: Every item line must have a unit price explicitly greater than ₱0.00.");
+                    }
+                    return sum + quantity * unitPrice;
+                }, 0);
+                const netBalance = total - discount;
+                if (netBalance <= 0) {
+                    throw new ApiError(400, "Approval blocked: Sales Order total net balance must be explicitly greater than ₱0.00.");
+                }
             }
 
             let creditLimitExceeded = false;
