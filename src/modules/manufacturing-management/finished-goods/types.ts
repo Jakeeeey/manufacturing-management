@@ -212,6 +212,7 @@ export interface RouteBOMItem {
     product_code?: string;
     cost_per_unit?: number;
     is_foreign?: boolean;
+    material_type?: import("./material-types").MaterialType | null;
 }
 
 
@@ -375,7 +376,11 @@ export interface CostRollupResult {
     yieldFactor: number;
     totalBaseCost: number;
     targetSellingPrice: number;
+    grossProfit: number;
     grossMarginPercent: number;
+    netProfit: number;
+    netMarginPercent: number;
+    marginBasis: "sales";
     costTree: CostNode[];
 }
 

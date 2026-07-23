@@ -8,26 +8,28 @@ import { BOMMaterialSelect } from "./BOMMaterialSelect";
 import { CreatableSelect } from "./CreatableSelect";
 import { Button } from "@/components/ui/button";
 import { calculateMaterialCost } from "../costing";
+import {
+    MATERIAL_TYPE_OPTIONS,
+    MaterialType,
+    materialTypeFromProduct
+} from "../material-types";
 
 function materialClassification(item: RouteBOMItem) {
-    if (!item.product_id) {
-        return { label: "Select a material", className: "bg-muted text-muted-foreground border-border" };
+    const materialType = item.material_type || materialTypeFromProduct(item.product_type, item.has_versions);
+    const label = MATERIAL_TYPE_OPTIONS.find(option => option.value === materialType)?.label;
+
+    if (!materialType || !label) {
+        return { label: item.product_id ? "Unclassified" : "Select a material type", className: "bg-muted text-muted-foreground border-border" };
     }
 
-    const productType = Number(item.product_type);
-    if (productType === 389) {
-        return { label: "Raw Material", className: "bg-blue-500/10 text-blue-600 border-blue-500/20" };
-    }
-    if (productType === 390) {
-        return { label: "Packaging Item", className: "bg-amber-500/10 text-amber-600 border-amber-500/20" };
-    }
-    if (productType === 388 && item.has_versions) {
-        return { label: "Sub-assembly", className: "bg-violet-500/10 text-violet-600 border-violet-500/20" };
-    }
-    if (productType === 388) {
-        return { label: "Finished Good", className: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" };
-    }
-    return { label: "Unclassified", className: "bg-muted text-muted-foreground border-border" };
+    const classNameByType: Record<MaterialType, string> = {
+        raw_material: "bg-blue-500/10 text-blue-600 border-blue-500/20",
+        packaging: "bg-amber-500/10 text-amber-600 border-amber-500/20",
+        sub_assembly: "bg-violet-500/10 text-violet-600 border-violet-500/20",
+        finished_good: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20"
+    };
+
+    return { label, className: classNameByType[materialType] };
 }
 
 interface RoutesBOMTabProps {
@@ -133,6 +135,7 @@ export const RoutesBOMTab: React.FC<RoutesBOMTabProps> = ({
                 id: -Math.floor(Math.random() * 1000000),
                 route_id: routeId,
                 product_id: 0,
+                material_type: null,
                 quantity_required: 0,
                 product_type: null,
                 has_versions: false,
@@ -165,6 +168,27 @@ export const RoutesBOMTab: React.FC<RoutesBOMTabProps> = ({
             return {
                 ...r,
                 bom_items: (r.bom_items || []).map(b => b.id === bomItemId ? { ...b, [field]: value } : b)
+            };
+        }));
+        setHasUnsavedChanges(true);
+    };
+
+    const handleChangeMaterialType = (routeId: number, bomItemId: number, value: MaterialType | "") => {
+        setEditedRoutes(prev => prev.map(r => {
+            if (r.route_id !== routeId) return r;
+            return {
+                ...r,
+                bom_items: (r.bom_items || []).map(b => b.id === bomItemId ? {
+                    ...b,
+                    material_type: value || null,
+                    product_id: 0,
+                    product_name: "",
+                    product_code: "",
+                    product_type: null,
+                    has_versions: false,
+                    unit_of_measurement: null,
+                    cost_per_unit: 0
+                } : b)
             };
         }));
         setHasUnsavedChanges(true);
@@ -525,26 +549,39 @@ export const RoutesBOMTab: React.FC<RoutesBOMTabProps> = ({
                                                             wastagePercent: b.wastage_factor_percentage
                                                         });
                                                         const classification = materialClassification(b);
+                                                        const selectedMaterialType = b.material_type || materialTypeFromProduct(b.product_type, b.has_versions);
                                                         return (
                                                             <tr key={b.id} className="border-b border-muted/50 hover:bg-muted/5">
                                                                 <td className="p-1.5 align-middle">
-                                                                    <span
-                                                                        aria-label={`Material Type: ${classification.label}`}
-                                                                        title={`Material Type: ${classification.label}`}
-                                                                        className={`inline-flex w-fit items-center rounded border px-2 py-1 text-[10px] font-bold uppercase tracking-wide ${classification.className}`}
+                                                                    <select
+                                                                        aria-label="Material Type"
+                                                                        value={selectedMaterialType || ""}
+                                                                        onChange={(e) => handleChangeMaterialType(
+                                                                            r.route_id,
+                                                                            b.id,
+                                                                            e.target.value as MaterialType | ""
+                                                                        )}
+                                                                        className={`w-full h-8 rounded border px-2 py-1 text-[10px] font-bold uppercase tracking-wide bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary ${classification.className}`}
                                                                     >
-                                                                        {classification.label}
-                                                                    </span>
+                                                                        <option value="">Select a Material Type</option>
+                                                                        {MATERIAL_TYPE_OPTIONS.map(option => (
+                                                                            <option key={option.value} value={option.value}>{option.label}</option>
+                                                                        ))}
+                                                                    </select>
                                                                 </td>
                                                                 <td className="p-1.5 align-middle">
                                                                     <BOMMaterialSelect
                                                                         value={b.product_id || undefined}
+                                                                        type={selectedMaterialType}
+                                                                        disabled={!selectedMaterialType}
+                                                                        placeholder={selectedMaterialType ? "Choose Material..." : "Select material type first"}
                                                                         onSelectProduct={(prod) => {
                                                                             handleUpdateIngredient(r.route_id, b.id, "product_id", prod.product_id);
                                                                             handleUpdateIngredient(r.route_id, b.id, "product_name", prod.product_name);
                                                                             handleUpdateIngredient(r.route_id, b.id, "product_code", prod.product_code);
                                                                             handleUpdateIngredient(r.route_id, b.id, "product_type", prod.product_type ?? null);
                                                                             handleUpdateIngredient(r.route_id, b.id, "has_versions", Boolean(prod.has_versions));
+                                                                            handleUpdateIngredient(r.route_id, b.id, "material_type", selectedMaterialType);
                                                                             handleUpdateIngredient(r.route_id, b.id, "cost_per_unit", Number(prod.cost_per_unit || prod.price_per_unit || 0));
                                                                             handleUpdateIngredient(r.route_id, b.id, "unit_of_measurement", prod.unit_of_measurement?.unit_shortcut || "PCS");
                                                                         }}

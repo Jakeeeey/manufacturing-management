@@ -30,7 +30,7 @@ import { ImportationTab } from "./components/ImportationTab";
 import { useFinishedGoods, type RegisterFormField } from "./hooks/useFinishedGoods";
 import { Product, BOMItem, RoutingStep } from "./types";
 import { CreatableSelect } from "./components/CreatableSelect";
-import { calculateCostBreakdown, calculateOverheadSummary, calculateRouteBreakdown } from "./costing";
+import { calculateCostBreakdown, calculateMarginSummary, calculateOverheadSummary, calculateRouteBreakdown } from "./costing";
 
 export default function FinishedGoodsModule() {
     const searchParams = useSearchParams();
@@ -402,13 +402,14 @@ export default function FinishedGoodsModule() {
         };
     }, [standardCostBreakdown.customOverheadCost, editedOverheads]);
 
-    const standardNetProfit = useMemo(() => {
-        return standardPrice - standardCostBreakdown.totalBaseCost - standardOverheads.excludedFromCogs;
-    }, [standardPrice, standardCostBreakdown.totalBaseCost, standardOverheads]);
-
-    const standardNetMarginPercent = useMemo(() => {
-        return standardPrice > 0 ? (standardNetProfit / standardPrice) * 100 : 0;
-    }, [standardPrice, standardNetProfit]);
+    const standardMarginSummary = useMemo(
+        () => calculateMarginSummary(
+            standardPrice,
+            standardCostBreakdown.totalBaseCost,
+            standardOverheads.excludedFromCogs
+        ),
+        [standardPrice, standardCostBreakdown.totalBaseCost, standardOverheads.excludedFromCogs]
+    );
 
     const simulatedOverheads = useMemo(() => {
         return {
@@ -420,14 +421,14 @@ export default function FinishedGoodsModule() {
         };
     }, [simulatedCostBreakdown.customOverheadCost, editedOverheads]);
 
-    const simulatedNetProfit = useMemo(() => {
-        return Number(simulationTargetPrice) - simulatedCostBreakdown.totalBaseCost - simulatedOverheads.excludedFromCogs;
-    }, [simulationTargetPrice, simulatedCostBreakdown.totalBaseCost, simulatedOverheads]);
-
-    const simulatedNetMarginPercent = useMemo(() => {
-        const targetPrice = Number(simulationTargetPrice) || 0;
-        return targetPrice > 0 ? (simulatedNetProfit / targetPrice) * 100 : 0;
-    }, [simulationTargetPrice, simulatedNetProfit]);
+    const simulatedMarginSummary = useMemo(
+        () => calculateMarginSummary(
+            Number(simulationTargetPrice),
+            simulatedCostBreakdown.totalBaseCost,
+            simulatedOverheads.excludedFromCogs
+        ),
+        [simulationTargetPrice, simulatedCostBreakdown.totalBaseCost, simulatedOverheads.excludedFromCogs]
+    );
 
     const treeProducts = useMemo(() => {
         const childrenMap = new Map<string, Product[]>();
@@ -1061,8 +1062,10 @@ export default function FinishedGoodsModule() {
                                                 standardCogs={standardCostBreakdown.totalBaseCost}
                                                 standardBreakdown={standardCostBreakdown}
                                                 standardOverheads={standardOverheads}
-                                                standardNetProfit={standardNetProfit}
-                                                standardNetMarginPercent={standardNetMarginPercent}
+                                                standardGrossProfit={standardMarginSummary.grossProfit}
+                                                standardGrossMarginPercent={standardMarginSummary.grossMarginPercent}
+                                                standardNetProfit={standardMarginSummary.netProfit}
+                                                standardNetMarginPercent={standardMarginSummary.netMarginPercent}
                                                 simulationYield={simulationYield}
                                                 setSimulationYield={setSimulationYield}
                                                 simulationTargetPrice={simulationTargetPrice}
@@ -1072,11 +1075,13 @@ export default function FinishedGoodsModule() {
                                                 editedBOM={editedBOM}
                                                 selectedProduct={selectedProduct}
                                                 selectedVersionId={selectedVersionId}
-                                                simulatedNetProfit={simulatedNetProfit}
+                                                simulatedGrossProfit={simulatedMarginSummary.grossProfit}
+                                                simulatedGrossMarginPercent={simulatedMarginSummary.grossMarginPercent}
+                                                simulatedNetProfit={simulatedMarginSummary.netProfit}
                                                 simulatedCogs={simulatedCostBreakdown.totalBaseCost}
                                                 simulatedBreakdown={simulatedCostBreakdown}
                                                 simulatedOverheads={simulatedOverheads}
-                                                simulatedNetMarginPercent={simulatedNetMarginPercent}
+                                                simulatedNetMarginPercent={simulatedMarginSummary.netMarginPercent}
                                                 simulatedForexRate={simulatedForexRate}
                                                 setSimulatedForexRate={setSimulatedForexRate}
                                             />
