@@ -36,6 +36,8 @@ interface InventoryLotRow {
     source_reference?: string | null;
 }
 
+type StockLot = InventoryLotRow & { stockKey: string; versionId: number };
+
 interface ReservationRow {
     id: number;
     sales_invoice_detail_id: number | DetailRow;
@@ -64,6 +66,68 @@ function detailId(row: ReservationRow): number {
 
 function inventoryLotId(row: ReservationRow): number {
     return numericId(row.inventory_lot_id, ["id"]) || 0;
+}
+
+function batchNumber(batchNo?: string | null, lotNumber?: string | null): string {
+    return String(batchNo || lotNumber || "LOT-N/A").trim() || "LOT-N/A";
+}
+
+function stockKey(productId: number, branchId: number, lotId: number, batchNo: string, versionId: number): string {
+    return `${productId}:${branchId}:${lotId}:${batchNo}:${versionId}`;
+}
+
+function fefoCompare(a: InventoryLotRow, b: InventoryLotRow): number {
+    return (a.expiry_date || "9999-12-31").localeCompare(b.expiry_date || "9999-12-31")
+        || (a.created_on || "9999-12-31").localeCompare(b.created_on || "9999-12-31")
+        || a.id - b.id;
+}
+
+function canonicalStockLots(
+    metadata: InventoryLotRow[],
+    movements: MovementRow[],
+    jobVersionMap: Map<string, number>,
+    activeVersionMap: Map<number, number>,
+): { lots: StockLot[]; keyByLotId: Map<number, string> } {
+    const sortedMetadata = [...metadata].sort(fefoCompare);
+    const metadataByBaseKey = new Map<string, InventoryLotRow>();
+    for (const lot of sortedMetadata) {
+        const physicalLotId = numericId(lot.lot_id, ["lot_id"]);
+        if (!physicalLotId) continue;
+        const key = `${Number(lot.product_id)}:${Number(lot.branch_id)}:${physicalLotId}:${batchNumber(lot.batch_no, lot.lot_number)}`;
+        if (!metadataByBaseKey.has(key)) metadataByBaseKey.set(key, lot);
+    }
+
+    const quantityByKey = new Map<string, number>();
+    for (const movement of movements) {
+        const baseKey = `${Number(movement.product_id)}:${Number(movement.branch_id)}:${Number(movement.lot_id)}:${batchNumber(movement.batch_no)}`;
+        const lot = metadataByBaseKey.get(baseKey);
+        if (!lot) continue;
+        const fallbackVersion = (lot.source_reference && jobVersionMap.get(lot.source_reference))
+            || activeVersionMap.get(Number(lot.product_id)) || 0;
+        const versionId = Number(movement.version_id) || fallbackVersion;
+        const key = stockKey(Number(lot.product_id), Number(lot.branch_id), Number(movement.lot_id), batchNumber(movement.batch_no), versionId);
+        quantityByKey.set(key, (quantityByKey.get(key) || 0) + Number(movement.quantity || 0));
+    }
+
+    const lotsByKey = new Map<string, StockLot>();
+    const keyByLotId = new Map<number, string>();
+    for (const lot of sortedMetadata) {
+        const physicalLotId = numericId(lot.lot_id, ["lot_id"]);
+        if (!physicalLotId) continue;
+        const fallbackVersion = (lot.source_reference && jobVersionMap.get(lot.source_reference))
+            || activeVersionMap.get(Number(lot.product_id)) || 0;
+        const matchingVersions = [...quantityByKey.keys()].filter((key) => key.startsWith(
+            `${Number(lot.product_id)}:${Number(lot.branch_id)}:${physicalLotId}:${batchNumber(lot.batch_no, lot.lot_number)}:`
+        ));
+        for (const key of matchingVersions.length > 0 ? matchingVersions : [stockKey(Number(lot.product_id), Number(lot.branch_id), physicalLotId, batchNumber(lot.batch_no, lot.lot_number), fallbackVersion)]) {
+            keyByLotId.set(lot.id, key);
+            if (!lotsByKey.has(key)) {
+                const versionId = Number(key.slice(key.lastIndexOf(":") + 1));
+                lotsByKey.set(key, { ...lot, quantity: quantityByKey.get(key) || 0, stockKey: key, versionId });
+            }
+        }
+    }
+    return { lots: [...lotsByKey.values()].filter((lot) => lot.quantity > 0), keyByLotId };
 }
 
 async function directusJson(url: string, init?: RequestInit) {
@@ -236,39 +300,58 @@ async function reconcileInventoryLots(inventoryLotIds: number[], userId: number)
 
     // Resolve physical lots.lot_id from inventory_lots; query movements by physical lot + product
     const inventoryLotsJson = await directusJson(
-        `${DIRECTUS_URL}/items/inventory_lots?filter[id][_in]=${inventoryLotIds.join(",")}&fields=id,lot_id,product_id&limit=-1`
+        `${DIRECTUS_URL}/items/inventory_lots?filter[id][_in]=${inventoryLotIds.join(",")}&fields=id,lot_id,product_id,branch_id&limit=-1`
     );
-    const inventoryLots: { id: number; lot_id: number; product_id: number }[] = inventoryLotsJson.data || [];
-    if (inventoryLots.length === 0) return;
-
-    const physicalLotIds = [...new Set(inventoryLots.map(l => Number(l.lot_id)).filter(Boolean))];
-    const productIds = [...new Set(inventoryLots.map(l => Number(l.product_id)).filter(Boolean))];
-
-    // Map inventory_lots.id → (product_id, physical lot_id) key
-    const lotToKey = new Map<number, string>();
-    for (const il of inventoryLots) {
-        lotToKey.set(il.id, `${il.product_id}:${il.lot_id}`);
-    }
+    const touchedLots: InventoryLotRow[] = inventoryLotsJson.data || [];
+    if (touchedLots.length === 0) return;
+    const productIds = [...new Set(touchedLots.map((lot) => Number(lot.product_id)).filter(Boolean))];
+    const branchIds = [...new Set(touchedLots.map((lot) => Number(lot.branch_id)).filter(Boolean))];
+    const metadataFilter = encodeURIComponent(JSON.stringify({ _and: [
+        { product_id: { _in: productIds } },
+        { branch_id: { _in: branchIds } },
+        { qa_status: { _eq: "Passed" } },
+        { source_type: { _in: ["manufacturing", "yield_ledger"] } },
+    ] }));
+    const metadataJson = await directusJson(
+        `${DIRECTUS_URL}/items/inventory_lots?filter=${metadataFilter}&fields=id,product_id,branch_id,lot_id,lot_number,batch_no,expiry_date,created_on,quantity,qa_status,source_type,source_reference&limit=-1`
+    );
+    const inventoryLots: InventoryLotRow[] = metadataJson.data || [];
 
     const movFilter = encodeURIComponent(JSON.stringify({
         _and: [
-            { lot_id: { _in: physicalLotIds } },
             { product_id: { _in: productIds } },
+            { branch_id: { _in: branchIds } },
         ],
     }));
     const movJson = await directusJson(
         `${DIRECTUS_URL}/items/inventory_movements?filter=${movFilter}&limit=-1`
     );
     const movements: MovementRow[] = movJson.data || [];
-    const capacityByPhysicalKey = new Map<string, number>();
-    movements.forEach((mov) => {
-        const key = `${mov.product_id}:${mov.lot_id}`;
-        capacityByPhysicalKey.set(key, (capacityByPhysicalKey.get(key) || 0) + Number(mov.quantity || 0));
-    });
+
+    const jobOrderNumbers = [...new Set(inventoryLots.map((lot) => lot.source_reference).filter(Boolean))] as string[];
+    const jobVersionMap = new Map<string, number>();
+    if (jobOrderNumbers.length > 0) {
+        const jobFilter = encodeURIComponent(JSON.stringify({ job_order_no: { _in: jobOrderNumbers } }));
+        const jobJson = await directusJson(`${DIRECTUS_URL}/items/manufacturing_job_orders?filter=${jobFilter}&fields=job_order_no,version_id&limit=-1`);
+        for (const row of jobJson.data || []) jobVersionMap.set(String(row.job_order_no), Number(row.version_id));
+    }
+    const activeFilter = encodeURIComponent(JSON.stringify({ _and: [
+        { product_id: { _in: productIds } },
+        { status: { _eq: "Active" } },
+    ] }));
+    const activeJson = await directusJson(`${DIRECTUS_URL}/items/product_manufacturing_version?filter=${activeFilter}&fields=product_id,version_id&limit=-1`);
+    const activeVersionMap = new Map<number, number>();
+    for (const row of activeJson.data || []) {
+        const productId = Number(row.product_id);
+        if (!activeVersionMap.has(productId)) activeVersionMap.set(productId, Number(row.version_id));
+    }
+    const { lots, keyByLotId } = canonicalStockLots(inventoryLots, movements, jobVersionMap, activeVersionMap);
+    const capacityByKey = new Map(lots.map((lot) => [lot.stockKey, Number(lot.quantity)]));
+    const allLotIds = inventoryLots.map((lot) => lot.id);
 
     const filter = encodeURIComponent(JSON.stringify({
         _and: [
-            { inventory_lot_id: { _in: inventoryLotIds } },
+            { inventory_lot_id: { _in: allLotIds } },
             { status: { _in: ["Reserved", "Pending"] } },
         ],
     }));
@@ -276,18 +359,21 @@ async function reconcileInventoryLots(inventoryLotIds: number[], userId: number)
         `${DIRECTUS_URL}/items/sales_invoice_reservation?filter=${filter}&fields=id,inventory_lot_id,quantity,status,created_at&sort=created_at,id&limit=-1`
     );
     const rows: ReservationRow[] = reservationJson.data || [];
-    const grouped = new Map<number, ReservationRow[]>();
+    const touchedLotIds = new Set(inventoryLotIds);
+    const grouped = new Map<string, ReservationRow[]>();
     for (const row of rows) {
         const id = inventoryLotId(row);
-        const entries = grouped.get(id) || [];
+        if (row.status === "Pending" && !touchedLotIds.has(id)) continue;
+        const key = keyByLotId.get(id);
+        if (!key) continue;
+        const entries = grouped.get(key) || [];
         entries.push(row);
-        grouped.set(id, entries);
+        grouped.set(key, entries);
     }
 
     const now = new Date().toISOString();
-    for (const [invLotId, lotRows] of grouped) {
-        const key = lotToKey.get(invLotId) || "";
-        let remaining = capacityByPhysicalKey.get(key) || 0;
+    for (const [key, lotRows] of grouped) {
+        let remaining = capacityByKey.get(key) || 0;
         const reservedRows = lotRows.filter((row) => row.status === "Reserved");
         const pendingRows = lotRows.filter((row) => row.status === "Pending");
 
@@ -373,19 +459,7 @@ export async function allocateInvoice(invoiceId: number, userId: number) {
         `${DIRECTUS_URL}/items/inventory_movements?filter=${movFilter}&limit=-1`
     );
     const movements: MovementRow[] = movJson.data || [];
-    const movementStockByPhysicalLot = new Map<number, number>();
-    movements.forEach((mov) => {
-        const phyLotId = Number(mov.lot_id);
-        movementStockByPhysicalLot.set(phyLotId, (movementStockByPhysicalLot.get(phyLotId) || 0) + Number(mov.quantity || 0));
-    });
-
-    const lots = unfilteredLots.map((lot: InventoryLotRow) => {
-        const phyLotId = numericId(lot.lot_id, ["lot_id"]) || 0;
-        const ledgerQty = movementStockByPhysicalLot.get(phyLotId) || 0;
-        return { ...lot, quantity: ledgerQty };
-    }).filter((lot: InventoryLotRow) => lot.quantity > 0);
-
-    const jobOrderNumbers = [...new Set(lots.map((lot) => lot.source_reference).filter(Boolean))] as string[];
+    const jobOrderNumbers = [...new Set(unfilteredLots.map((lot) => lot.source_reference).filter(Boolean))] as string[];
     const jobVersionMap = new Map<string, number>();
     if (jobOrderNumbers.length > 0) {
         const joFilter = encodeURIComponent(JSON.stringify({ job_order_no: { _in: jobOrderNumbers } }));
@@ -414,8 +488,10 @@ export async function allocateInvoice(invoiceId: number, userId: number) {
         if (!activeVersionMap.has(productId)) activeVersionMap.set(productId, Number(version.version_id));
     }
 
-    const lotIds = lots.map((lot) => lot.id);
-    const reservedByLot = new Map<number, number>();
+    const { lots, keyByLotId } = canonicalStockLots(unfilteredLots, movements, jobVersionMap, activeVersionMap);
+
+    const lotIds = unfilteredLots.map((lot) => lot.id);
+    const reservedByStock = new Map<string, number>();
     const reservedByDetail = new Map<number, number>();
     if (lotIds.length > 0) {
         const reservationFilter = encodeURIComponent(JSON.stringify({
@@ -430,14 +506,15 @@ export async function allocateInvoice(invoiceId: number, userId: number) {
         for (const reservation of (activeReservationsJson.data || []) as ReservationRow[]) {
             const lotId = inventoryLotId(reservation);
             const detId = detailId(reservation);
-            reservedByLot.set(lotId, (reservedByLot.get(lotId) || 0) + Number(reservation.quantity || 0));
+            const key = keyByLotId.get(lotId);
+            if (key) reservedByStock.set(key, (reservedByStock.get(key) || 0) + Number(reservation.quantity || 0));
             reservedByDetail.set(detId, (reservedByDetail.get(detId) || 0) + Number(reservation.quantity || 0));
         }
     }
 
     const availableByLot = new Map<number, number>();
     for (const lot of lots) {
-        availableByLot.set(lot.id, Math.max(0, Number(lot.quantity || 0) - (reservedByLot.get(lot.id) || 0)));
+        availableByLot.set(lot.id, Math.max(0, Number(lot.quantity || 0) - (reservedByStock.get(lot.stockKey) || 0)));
     }
 
     const now = new Date().toISOString();
@@ -450,18 +527,9 @@ export async function allocateInvoice(invoiceId: number, userId: number) {
         const matchingLots = lots
             .filter((lot) => {
                 if (Number(lot.product_id) !== Number(detail.product_id)) return false;
-                const hasJobOrderLineage = ["manufacturing", "yield_ledger"].includes(lot.source_type || "") && lot.source_reference;
-                const stockVersion = hasJobOrderLineage
-                    ? (jobVersionMap.get(lot.source_reference!) || activeVersionMap.get(Number(lot.product_id)))
-                    : activeVersionMap.get(Number(lot.product_id));
-                return stockVersion === targetVersion && (availableByLot.get(lot.id) || 0) > 0;
+                return lot.versionId === targetVersion && (availableByLot.get(lot.id) || 0) > 0;
             })
-            .sort((a, b) => {
-                const expiryCompare = (a.expiry_date || "9999-12-31").localeCompare(b.expiry_date || "9999-12-31");
-                if (expiryCompare !== 0) return expiryCompare;
-                const createdCompare = (a.created_on || "9999-12-31").localeCompare(b.created_on || "9999-12-31");
-                return createdCompare !== 0 ? createdCompare : a.id - b.id;
-            });
+            .sort(fefoCompare);
 
         for (const lot of matchingLots) {
             if (remaining <= 0) break;
@@ -631,19 +699,7 @@ export async function previewConsolidationAllocations(branchId: number, invoiceI
         `${DIRECTUS_URL}/items/inventory_movements?filter=${movFilter}&limit=-1`
     );
     const movements: MovementRow[] = movJson.data || [];
-    const movementStockByPhysicalLot = new Map<number, number>();
-    movements.forEach((mov) => {
-        const phyLotId = Number(mov.lot_id);
-        movementStockByPhysicalLot.set(phyLotId, (movementStockByPhysicalLot.get(phyLotId) || 0) + Number(mov.quantity || 0));
-    });
-
-    const lots = unfilteredLots.map((lot: InventoryLotRow) => {
-        const phyLotId = numericId(lot.lot_id, ["lot_id"]) || 0;
-        const ledgerQty = movementStockByPhysicalLot.get(phyLotId) || 0;
-        return { ...lot, quantity: ledgerQty };
-    }).filter((lot: InventoryLotRow) => lot.quantity > 0);
-
-    const jobOrderNumbers = [...new Set(lots.map((lot) => lot.source_reference).filter(Boolean))] as string[];
+    const jobOrderNumbers = [...new Set(unfilteredLots.map((lot) => lot.source_reference).filter(Boolean))] as string[];
     const jobVersionMap = new Map<string, number>();
     if (jobOrderNumbers.length > 0) {
         const jobFilter = encodeURIComponent(JSON.stringify({ job_order_no: { _in: jobOrderNumbers } }));
@@ -670,20 +726,23 @@ export async function previewConsolidationAllocations(branchId: number, invoiceI
         if (!activeVersionMap.has(productId)) activeVersionMap.set(productId, Number(version.version_id));
     }
 
+    const { lots, keyByLotId } = canonicalStockLots(unfilteredLots, movements, jobVersionMap, activeVersionMap);
+
     const detailIds = details.map((detail) => detail.detail_id);
-    const lotIds = lots.map((lot) => lot.id);
+    const lotIds = unfilteredLots.map((lot) => lot.id);
     const reservations: ReservationRow[] = lotIds.length > 0
         ? (await directusJson(
             `${DIRECTUS_URL}/items/sales_invoice_reservation?filter[inventory_lot_id][_in]=${lotIds.join(",")}&filter[status][_eq]=Reserved&fields=id,sales_invoice_detail_id,inventory_lot_id,quantity,status&limit=-1`
         )).data || []
         : [];
-    const reservedByLot = new Map<number, number>();
+    const reservedByStock = new Map<string, number>();
     const selectedReservationsByDetail = new Map<number, ReservationRow[]>();
     const selectedDetailIds = new Set(detailIds);
     for (const reservation of reservations) {
         const lotId = inventoryLotId(reservation);
         const detId = detailId(reservation);
-        reservedByLot.set(lotId, (reservedByLot.get(lotId) || 0) + Number(reservation.quantity || 0));
+        const key = keyByLotId.get(lotId);
+        if (key) reservedByStock.set(key, (reservedByStock.get(key) || 0) + Number(reservation.quantity || 0));
         if (selectedDetailIds.has(detId)) {
             const rows = selectedReservationsByDetail.get(detId) || [];
             rows.push(reservation);
@@ -697,10 +756,14 @@ export async function previewConsolidationAllocations(branchId: number, invoiceI
     const productMap = new Map<number, { product_name: string; product_code: string }>();
     for (const product of productJson.data || []) productMap.set(Number(product.product_id), product);
 
-    const lotById = new Map(lots.map((lot) => [lot.id, lot]));
+    const lotById = new Map(unfilteredLots.flatMap((metadata) => {
+        const key = keyByLotId.get(metadata.id);
+        const lot = lots.find((candidate) => candidate.stockKey === key);
+        return lot ? [[metadata.id, lot] as const] : [];
+    }));
     const availableByLot = new Map(lots.map((lot) => [
         lot.id,
-        Math.max(0, Number(lot.quantity || 0) - (reservedByLot.get(lot.id) || 0)),
+        Math.max(0, Number(lot.quantity || 0) - (reservedByStock.get(lot.stockKey) || 0)),
     ]));
     const allocationMap = new Map<string, {
         productId: number;
@@ -762,17 +825,9 @@ export async function previewConsolidationAllocations(branchId: number, invoiceI
             const matchingLots = lots
                 .filter((lot) => {
                     if (Number(lot.product_id) !== productId) return false;
-                    const hasJobOrderLineage = ["manufacturing", "yield_ledger"].includes(lot.source_type || "") && lot.source_reference;
-                    const stockVersion = hasJobOrderLineage
-                        ? (jobVersionMap.get(lot.source_reference!) || activeVersionMap.get(productId))
-                        : activeVersionMap.get(productId);
-                    return stockVersion === targetVersion && (availableByLot.get(lot.id) || 0) > 0;
+                    return lot.versionId === targetVersion && (availableByLot.get(lot.id) || 0) > 0;
                 })
-                .sort((a, b) =>
-                    (a.expiry_date || "9999-12-31").localeCompare(b.expiry_date || "9999-12-31")
-                    || (a.created_on || "9999-12-31").localeCompare(b.created_on || "9999-12-31")
-                    || a.id - b.id
-                );
+                .sort(fefoCompare);
             for (const lot of matchingLots) {
                 if (remaining <= 0) break;
                 const available = availableByLot.get(lot.id) || 0;

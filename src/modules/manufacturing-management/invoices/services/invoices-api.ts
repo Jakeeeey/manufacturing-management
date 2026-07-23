@@ -1,18 +1,6 @@
 // src/modules/manufacturing-management/invoices/services/invoices-api.ts
 
-import { Invoice, InvoiceLineItem, PendingSalesOrder, SalesOrderLineItem } from "../types";
-
-interface DirectusSalesOrder {
-    order_id: string | number;
-    order_no: string;
-    customer_code: string;
-    customer_name?: string;
-    order_date: string;
-    net_amount?: number | string;
-    total_amount?: number | string;
-    remarks?: string;
-    order_status?: string;
-}
+import { Invoice, InvoiceLineItem } from "../types";
 
 async function handleResponse(res: Response, fallbackMessage: string) {
     if (!res.ok) {
@@ -35,35 +23,11 @@ export async function fetchInvoices(): Promise<{ data: Invoice[]; detailsMap: Re
 }
 
 /**
- * Create a new invoice with its details in Directus.
- */
-export async function createInvoice(payload: {
-    invoice_no: string;
-    invoice_date: string;
-    due_date: string;
-    customer_id: number;
-    sales_order_id?: number | null;
-    total_amount: number;
-    discount_amount: number;
-    vat_amount: number;
-    net_amount: number;
-    remarks?: string;
-    items: { product_id: number; quantity: number; unit_price: number; net_amount: number }[];
-}): Promise<{ success: boolean; invoice_id: number; invoice_no: string }> {
-    const res = await fetch("/api/manufacturing/sales-invoice", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-    });
-    return handleResponse(res, "Failed to create invoice");
-}
-
-/**
  * Update an invoice's status and remarks (used for logging payments).
  */
 export async function updateInvoiceStatus(
-    invoiceId: number, 
-    status?: string, 
+    invoiceId: number,
+    status?: string,
     remarks?: string,
     payment?: { amount: number; method: string; reference: string }
 ): Promise<{ success: boolean }> {
@@ -73,32 +37,4 @@ export async function updateInvoiceStatus(
         body: JSON.stringify({ invoiceId, status, remarks, payment })
     });
     return handleResponse(res, "Failed to update invoice status");
-}
-
-/**
- * Fetch Sales Orders that are eligible for invoicing (e.g. status: "For Consolidation" or "Completed")
- */
-export async function fetchPendingInvoicesSalesOrders(): Promise<{ data: PendingSalesOrder[]; detailsMap: Record<number, SalesOrderLineItem[]> }> {
-    // We can fetch Sales Orders with status "For Consolidation" as they are approved and ready to be billed
-    const res = await fetch("/api/manufacturing/sales-order?limit=250");
-    const json = await handleResponse(res, "Failed to load pending sales orders");
-    
-    // Filter only orders that are ready for invoicing ('For Invoicing')
-    // (Translating backend schema objects into light PendingSalesOrder list)
-    const filteredData = (json.data || []).filter((so: DirectusSalesOrder) => 
-        so.order_status === "For Invoicing"
-    );
-    
-    return {
-        data: filteredData.map((so: DirectusSalesOrder) => ({
-            order_id: Number(so.order_id),
-            order_no: so.order_no,
-            customer_code: so.customer_code,
-            customer_name: so.customer_name || so.customer_code,
-            order_date: so.order_date,
-            total_amount: Number(so.net_amount || so.total_amount || 0),
-            remarks: so.remarks
-        })),
-        detailsMap: json.detailsMap || {}
-    };
 }
