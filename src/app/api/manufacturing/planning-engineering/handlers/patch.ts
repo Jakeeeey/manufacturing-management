@@ -42,7 +42,7 @@ export async function handlePATCH(request: Request) {
         // 1. Task status/completion update
         if (body.taskId !== undefined && body.taskPatch !== undefined) {
             const { taskId, taskPatch } = body;
-            const res = await fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_routes/${taskId}?fields=jo_route_id,job_order_id,sequence_order,work_center_id,operation_id,planned_setup_hours,planned_run_hours,actual_setup_hours,actual_run_hours,estimated_labor_cost,actual_labor_cost`, {
+            const res = await fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_routes/${taskId}?fields=jo_route_id,job_order_id,sequence_order,work_center_id,operation_id,planned_setup_hours,planned_run_hours,actual_setup_hours,actual_run_hours,step_batch_size,run_time_hours_factor`, {
                 method: "PATCH",
                 headers,
                 body: JSON.stringify(taskPatch)
@@ -73,7 +73,7 @@ export async function handlePATCH(request: Request) {
                             let dailyBreakdown = [...jo.daily_breakdown] as DailyBreakdownItem[];
                             let modified = false;
  
-                            const tasksRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_routes?filter[job_order_id][_eq]=${jo.job_order_id}&limit=-1&fields=jo_route_id,job_order_id,sequence_order,work_center_id,operation_id,planned_setup_hours,planned_run_hours,actual_setup_hours,actual_run_hours,estimated_labor_cost,actual_labor_cost`, { headers });
+                            const tasksRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_routes?filter[job_order_id][_eq]=${jo.job_order_id}&limit=-1&fields=jo_route_id,job_order_id,sequence_order,work_center_id,operation_id,planned_setup_hours,planned_run_hours,actual_setup_hours,actual_run_hours,step_batch_size,run_time_hours_factor`, { headers });
                             const totalSteps = tasksRes.ok ? ((await tasksRes.json()).data || []).length : 1;
 
                             if (taskStatus === "Completed") {
@@ -257,7 +257,7 @@ export async function handlePATCH(request: Request) {
             }
 
             // 1. Fetch route step details
-            const routeStepRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_routes/${taskId}?fields=jo_route_id,job_order_id,sequence_order,work_center_id,operation_id,planned_setup_hours,planned_run_hours,actual_setup_hours,actual_run_hours,estimated_labor_cost,actual_labor_cost`, { headers });
+            const routeStepRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_routes/${taskId}?fields=jo_route_id,job_order_id,sequence_order,work_center_id,operation_id,planned_setup_hours,planned_run_hours,actual_setup_hours,actual_run_hours,step_batch_size,run_time_hours_factor`, { headers });
             if (!routeStepRes.ok) throw new Error("Route step not found");
             const routeStep = (await routeStepRes.json()).data;
             const jobOrderId = routeStep.job_order_id;

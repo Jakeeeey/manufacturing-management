@@ -209,7 +209,6 @@ export async function syncRoutesAndBOM(versionId: number, routes: any[], userId:
                 setup_time_hours: Number(step.setup_time_hours || 0),
                 run_time_hours: Number(step.run_time_hours || step.durationHours || 0),
                 step_batch_size: Number(step.step_batch_size !== undefined ? step.step_batch_size : 1),
-                estimated_labor_cost: Number(step.estimated_labor_cost || step.laborFlatRate || 0),
                 qa_template_id: step.qa_template_id || null,
                 created_by: userId
             };

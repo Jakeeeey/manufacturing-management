@@ -33,7 +33,6 @@ interface DirectusProduct {
     barcode?: string | null;
     parent_id?: number | null;
     density_factor?: number | null;
-    production_capacity_per_hour?: number | null;
     has_versions?: boolean;
     currency_profile?: DirectusProductCurrencyProfile | null;
     has_cogs?: boolean;
@@ -46,7 +45,7 @@ export async function GET(request: Request) {
         const limit = parseInt(searchParams.get("limit") || "-1");
         const excludeRollup = searchParams.get("excludeRollup") === "true";
 
-        const explicitFields = "product_id,product_name,product_code,description,short_description,isActive,cost_per_unit,price_per_unit,product_brand,barcode,parent_id,parent_id.product_id,parent_id.product_name,product_category,product_class,product_segment,product_section,product_shelf_life,product_image,unit_of_measurement.unit_id,unit_of_measurement.unit_shortcut,unit_of_measurement.unit_name,unit_of_measurement_count,density_factor,production_capacity_per_hour,product_type";
+        const explicitFields = "product_id,product_name,product_code,description,short_description,isActive,cost_per_unit,price_per_unit,product_brand,barcode,parent_id,parent_id.product_id,parent_id.product_name,product_category,product_class,product_segment,product_section,product_shelf_life,product_image,unit_of_measurement.unit_id,unit_of_measurement.unit_shortcut,unit_of_measurement.unit_name,unit_of_measurement_count,density_factor,product_type";
         let url = `${DIRECTUS_URL}/items/products?limit=${limit}&fields=${explicitFields}`;
         if (search && search.trim()) {
             url += `&search=${encodeURIComponent(search.trim())}`;
@@ -296,7 +295,7 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
     try {
         const body = await request.json();
-        const { product_id, production_capacity_per_hour } = body;
+        const { product_id } = body;
         if (!product_id) {
             return NextResponse.json({ error: "Missing product_id" }, { status: 400 });
         }
@@ -304,7 +303,7 @@ export async function PATCH(request: Request) {
         const res = await fetch(`${DIRECTUS_URL}/items/products/${product_id}`, {
             method: "PATCH",
             headers,
-            body: JSON.stringify({ production_capacity_per_hour: Number(production_capacity_per_hour) })
+            body: JSON.stringify(body)
         });
 
         if (!res.ok) {
