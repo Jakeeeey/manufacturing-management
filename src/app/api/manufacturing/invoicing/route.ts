@@ -129,11 +129,12 @@ export async function POST(request: Request) {
             );
             if (!lotsResponse.ok) throw new ApiError(503, "Unable to read eligible finished-goods lots.");
             const lots = ((await lotsResponse.json()).data || []) as Row[];
-            const lotIds = lots.map((lot) => Number(lot.lot_id)).filter(Boolean);
-            const movements = lotIds.length ? await directus("inventory_movements", new URLSearchParams({
+            const physicalLotIds = lots.map((lot) => Number(lot.lot_id)).filter(Boolean);
+            const inventoryLotIds = lots.map((lot) => Number(lot.id)).filter(Boolean);
+            const movements = physicalLotIds.length ? await directus("inventory_movements", new URLSearchParams({
                 "filter[branch_id][_eq]": String(branchId),
                 "filter[product_id][_in]": productIds.join(","),
-                "filter[lot_id][_in]": lotIds.join(","),
+                "filter[lot_id][_in]": physicalLotIds.join(","),
                 fields: "product_id,version_id,lot_id,quantity",
                 limit: "-1",
             })) as Row[] : [];
@@ -160,10 +161,38 @@ export async function POST(request: Request) {
                 jobVersions.get(String(lot.source_reference || "")) || activeVersionMap.get(Number(lot.product_id)) || null,
             ]));
             const stock = new Map<string, number>();
+            const reservedByStockKey = new Map<string, number>();
             for (const movement of movements) {
                 const versionId = Number(movement.version_id) || lotVersions.get(`${Number(movement.product_id)}:${Number(movement.lot_id)}`);
-                const key = `${Number(movement.product_id)}:${versionId || ""}`;
+                const key = `${Number(movement.product_id)}:${Number(movement.lot_id)}:${versionId || ""}`;
                 stock.set(key, (stock.get(key) || 0) + Number(movement.quantity || 0));
+            }
+            if (inventoryLotIds.length > 0) {
+                const reservationRes = await fetch(
+                    `${DIRECTUS_URL}/items/sales_invoice_reservation?filter[inventory_lot_id][_in]=${inventoryLotIds.join(",")}&filter[status][_eq]=Reserved&fields=inventory_lot_id,quantity&limit=-1`,
+                    { headers, cache: "no-store" }
+                );
+                if (reservationRes.ok) {
+                    const reservationRows: { inventory_lot_id: number | { id?: number }; quantity: number }[] = (await reservationRes.json()).data || [];
+                    for (const reservation of reservationRows) {
+                        const invLotId = typeof reservation.inventory_lot_id === "object"
+                            ? Number(reservation.inventory_lot_id?.id || 0)
+                            : Number(reservation.inventory_lot_id || 0);
+                        const lot = lots.find((l) => Number(l.id) === invLotId);
+                        if (!lot) continue;
+                        const versionId = lotVersions.get(`${Number(lot.product_id)}:${Number(lot.lot_id)}`) || "";
+                        const key = `${Number(lot.product_id)}:${Number(lot.lot_id)}:${versionId}`;
+                        reservedByStockKey.set(key, (reservedByStockKey.get(key) || 0) + Number(reservation.quantity || 0));
+                    }
+                }
+            }
+            const availableByProductVersion = new Map<string, number>();
+            for (const [key, total] of stock) {
+                const reserved = reservedByStockKey.get(key) || 0;
+                const available = Math.max(0, total - reserved);
+                const parts = key.split(":");
+                const pvKey = `${parts[0]}:${parts[2] || ""}`;
+                availableByProductVersion.set(pvKey, (availableByProductVersion.get(pvKey) || 0) + available);
             }
             const demand = new Map<string, number>();
             for (const detail of details) {
@@ -173,7 +202,7 @@ export async function POST(request: Request) {
                 demand.set(key, (demand.get(key) || 0) + Number(detail.ordered_quantity));
             }
             const shortages = [...demand]
-                .filter(([key, quantity]) => (stock.get(key) || 0) < quantity)
+                .filter(([key, quantity]) => (availableByProductVersion.get(key) || 0) < quantity)
                 .map(([key, required]) => {
                     const [productId, versionId] = key.split(":").map(Number);
                     return {
@@ -183,14 +212,14 @@ export async function POST(request: Request) {
                         versionName: versionMap.get(versionId) || `Version ${versionId}`,
                         branchId,
                         required,
-                        available: stock.get(key) || 0,
+                        available: availableByProductVersion.get(key) || 0,
                     };
                 });
             if (shortages.length) {
                 const first = shortages[0];
                 throw new ApiError(
                     409,
-                    `Insufficient ${first.productName} (${first.versionName}) stock in branch ${branchId}: ${first.required} required, ${first.available} available.`,
+                    `Insufficient ${first.productName} (${first.versionName}) stock in branch ${branchId}: ${first.required} required, ${first.available} available (after existing reservations).`,
                     { shortages },
                 );
             }
