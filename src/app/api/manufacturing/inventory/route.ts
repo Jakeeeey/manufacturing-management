@@ -19,6 +19,10 @@ interface InventoryLot {
     source_reference?: string | null;
     source_type?: string | null;
     remarks?: string | null;
+    version_id?: number | null;
+    reserved_quantity?: number;
+    on_hand_quantity?: number;
+    available_quantity?: number;
 }
 
 interface LedgerEntry {
@@ -36,6 +40,7 @@ interface DirectusMovementRaw {
     transaction_type_id?: number | {
         type_name?: string | null;
     } | null;
+    version_id?: number | { version_id?: number } | null;
 }
 
 export async function GET() {
@@ -117,6 +122,31 @@ export async function GET() {
         const uniqueBatches = uniqueRowsByMovementStockKey(
             porData as Array<InventoryLot & Record<string, unknown>>
         );
+        const inventoryLotIds = porData.map((batch: InventoryLot) => Number(batch.id)).filter(Boolean);
+        const stockKeyByInventoryLot = new Map<number, string>(porData.map((batch: InventoryLot) => [
+            Number(batch.id),
+            movementStockKey(batch as unknown as Record<string, unknown>),
+        ]));
+        const reservedByStockKey = new Map<string, number>();
+        if (inventoryLotIds.length > 0) {
+            const reservationRes = await fetch(
+                `${DIRECTUS_URL}/items/sales_invoice_reservation?filter[inventory_lot_id][_in]=${inventoryLotIds.join(",")}&filter[status][_eq]=Reserved&fields=inventory_lot_id,quantity&limit=-1`,
+                { headers, cache: "no-store" }
+            );
+            if (!reservationRes.ok) throw new Error("Failed to fetch active invoice reservations from Directus");
+            const reservations: { inventory_lot_id: number | { id?: number }; quantity: number | string }[] = (await reservationRes.json()).data || [];
+            for (const reservation of reservations) {
+                const inventoryLotId = typeof reservation.inventory_lot_id === "object"
+                    ? Number(reservation.inventory_lot_id?.id || 0)
+                    : Number(reservation.inventory_lot_id || 0);
+                const key = stockKeyByInventoryLot.get(inventoryLotId);
+                if (!key) continue;
+                reservedByStockKey.set(
+                    key,
+                    (reservedByStockKey.get(key) || 0) + Number(reservation.quantity || 0)
+                );
+            }
+        }
 
         // Map inventory lots to the Batch format expected by the frontend
         const batches = uniqueBatches.map((b: InventoryLot) => {
@@ -126,8 +156,15 @@ export async function GET() {
 
             // Find matching movements
             const lotMvts = lotId ? (movementsByLot.get(lotId) || []) : [];
+            const key = movementStockKey(b as unknown as Record<string, unknown>);
+            const stockMovements = lotMvts.filter((movement) =>
+                movementStockKey(movement as unknown as Record<string, unknown>) === key
+            );
             // Creation movement is the inbound addition (quantity > 0) or fallback to first movement
-            const creationMvt = lotMvts.find((m: DirectusMovementRaw) => Number(m.quantity) > 0) || lotMvts[0];
+            const creationMvt = stockMovements.find((m: DirectusMovementRaw) => Number(m.quantity) > 0) || stockMovements[0];
+            const versionId = typeof creationMvt?.version_id === "object"
+                ? Number(creationMvt.version_id?.version_id || 0) || null
+                : Number(creationMvt?.version_id || 0) || null;
 
             const txnTypeName = typeof creationMvt?.transaction_type_id === "object"
                 ? creationMvt.transaction_type_id?.type_name
@@ -135,10 +172,14 @@ export async function GET() {
 
             const resolvedTxnType = txnTypeName || (b.source_type ? String(b.source_type).replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()) : "Legacy Stock");
             const resolvedRemarks = b.remarks || b.rejection_reason || creationMvt?.remarks || null;
+            const onHand = movementStock.get(key) || 0;
+            const reserved = Math.min(onHand, reservedByStockKey.get(key) || 0);
+            const available = Math.max(0, onHand - reserved);
 
             return {
                 line_id: b.id,
                 product_id: b.product_id,
+                version_id: versionId,
                 branch_id: b.branch_id,
                 batch_no: batchNo,
                 lot_number: batchNo || "LOT-N/A",
@@ -146,7 +187,10 @@ export async function GET() {
                 lot_name: lotName,
                 storage_assignment_state: lotId ? "assigned" : "legacy_unassigned",
                 expiration_date: b.expiry_date || null,
-                quantity_received: movementStock.get(movementStockKey(b as unknown as Record<string, unknown>)) || 0,
+                quantity_received: available,
+                on_hand_quantity: onHand,
+                reserved_quantity: reserved,
+                available_quantity: available,
                 base_unit_cost_php: Number(b.unit_cost || 0),
                 allocated_expense_php: 0,
                 final_landed_unit_cost: Number(b.unit_cost || 0),

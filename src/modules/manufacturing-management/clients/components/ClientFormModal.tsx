@@ -1,7 +1,10 @@
 /* eslint-disable */
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { X, Save, User, MapPin, ChevronDown, Loader2, Search, Sliders, Building, Phone, Settings } from "lucide-react";
-import { Customer, StoreType } from "../types";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
+import { Customer, PaymentTerm, StoreType } from "../types";
 import { toast } from "sonner";
 import CustomerMapSelector from "./CustomerMapSelector";
 import { ClientProduct, ClientProductVersion } from "../hooks/useClients";
@@ -14,6 +17,7 @@ export interface ClientFormData {
     customer_email: string;
     store_name: string;
     store_type_id: string;
+    payment_term: string;
     province: string;
     city: string;
     brgy: string;
@@ -33,6 +37,7 @@ interface ClientFormModalProps {
     provinces: { code: string; name: string }[];
     cities: { code: string; name: string; provinceCode: string | boolean }[];
     barangays: { code: string; name: string; cityCode: string }[];
+    paymentTerms: PaymentTerm[];
     selectedProvinceCode: string;
     setSelectedProvinceCode: (v: string) => void;
     selectedCityCode: string;
@@ -48,6 +53,83 @@ interface ClientFormModalProps {
     updateProductVersionOverride?: (productId: number, versionId: number | null) => Promise<void>;
 }
 
+interface SearchableOption {
+    value: string;
+    label: string;
+    description?: string;
+}
+
+interface SearchableSelectProps {
+    options: SearchableOption[];
+    value: string;
+    placeholder: string;
+    searchPlaceholder: string;
+    emptyText: string;
+    disabled?: boolean;
+    onSelect: (value: string) => void;
+}
+
+function SearchableSelect({
+    options,
+    value,
+    placeholder,
+    searchPlaceholder,
+    emptyText,
+    disabled = false,
+    onSelect,
+}: SearchableSelectProps) {
+    const [open, setOpen] = useState(false);
+    const selectedOption = options.find((option) => option.value === value);
+
+    return (
+        <Popover open={open} onOpenChange={setOpen}>
+            <PopoverTrigger asChild>
+                <button
+                    type="button"
+                    role="combobox"
+                    aria-expanded={open}
+                    disabled={disabled}
+                    className={cn(
+                        "w-full h-9 rounded-lg border bg-background text-foreground text-xs font-semibold px-3 py-2 outline-none focus:ring-1 focus:ring-primary focus:border-primary cursor-pointer transition-all flex items-center justify-between text-left disabled:opacity-50 disabled:cursor-not-allowed",
+                        !selectedOption && "text-muted-foreground",
+                    )}
+                >
+                    <span className="truncate">{selectedOption?.label || placeholder}</span>
+                    <ChevronDown className="ml-2 h-3.5 w-3.5 shrink-0 opacity-60" />
+                </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                <Command>
+                    <CommandInput placeholder={searchPlaceholder} />
+                    <CommandList className="max-h-64">
+                        <CommandEmpty>{emptyText}</CommandEmpty>
+                        <CommandGroup>
+                            {options.map((option) => (
+                                <CommandItem
+                                    key={option.value}
+                                    value={`${option.label} ${option.value}`}
+                                    onSelect={() => {
+                                        onSelect(option.value);
+                                        setOpen(false);
+                                    }}
+                                >
+                                    <span className="flex min-w-0 flex-1 flex-col">
+                                        <span className="truncate">{option.label}</span>
+                                        {option.description ? (
+                                            <span className="text-[10px] text-muted-foreground">{option.description}</span>
+                                        ) : null}
+                                    </span>
+                                    <span className={cn("ml-2 text-primary", value === option.value ? "opacity-100" : "opacity-0")}>✓</span>
+                                </CommandItem>
+                            ))}
+                        </CommandGroup>
+                    </CommandList>
+                </Command>
+            </PopoverContent>
+        </Popover>
+    );
+}
+
 export default function ClientFormModal({
     isOpen,
     onClose,
@@ -59,6 +141,7 @@ export default function ClientFormModal({
     provinces,
     cities,
     barangays,
+    paymentTerms,
     selectedProvinceCode,
     setSelectedProvinceCode,
     selectedCityCode,
@@ -531,58 +614,58 @@ export default function ClientFormModal({
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div className="space-y-1.5 flex flex-col justify-end">
                                     <label className="text-[10px] font-bold text-muted-foreground uppercase">Province</label>
-                                    <select
+                                    <SearchableSelect
+                                        options={provinces.map((province) => ({
+                                            value: province.code,
+                                            label: province.name,
+                                        }))}
                                         value={selectedProvinceCode}
-                                        onChange={(e) => {
-                                            const val = e.target.value;
-                                            setSelectedProvinceCode(val);
+                                        placeholder="Select Province..."
+                                        searchPlaceholder="Search province or PSGC code..."
+                                        emptyText="No provinces found."
+                                        onSelect={(value) => {
+                                            setSelectedProvinceCode(value);
                                             setSelectedCityCode("");
                                             setFormData((prev: ClientFormData) => ({ ...prev, province: "", city: "", brgy: "" }));
                                         }}
-                                        className="w-full h-9 rounded-lg border bg-background text-foreground text-xs font-semibold px-3 py-2 outline-none focus:ring-1 focus:ring-primary focus:border-primary cursor-pointer transition-all"
-                                    >
-                                        <option value="">Select Province...</option>
-                                        {provinces.map(p => (
-                                            <option key={p.code} value={p.code}>{p.name}</option>
-                                        ))}
-                                    </select>
+                                    />
                                 </div>
 
                                 <div className="space-y-1.5 flex flex-col justify-end">
                                     <label className="text-[10px] font-bold text-muted-foreground uppercase">City / Municipality</label>
-                                    <select
+                                    <SearchableSelect
+                                        options={filteredCities.map((city) => ({
+                                            value: city.code,
+                                            label: city.name,
+                                        }))}
                                         value={selectedCityCode}
-                                        onChange={(e) => {
-                                            const val = e.target.value;
-                                            setSelectedCityCode(val);
+                                        placeholder="Select City..."
+                                        searchPlaceholder="Search city or PSGC code..."
+                                        emptyText="No cities or municipalities found."
+                                        disabled={!selectedProvinceCode}
+                                        onSelect={(value) => {
+                                            setSelectedCityCode(value);
                                             setFormData((prev: ClientFormData) => ({ ...prev, city: "", brgy: "" }));
                                         }}
-                                        disabled={!selectedProvinceCode}
-                                        className="w-full h-9 rounded-lg border bg-background text-foreground text-xs font-semibold px-3 py-2 outline-none focus:ring-1 focus:ring-primary focus:border-primary cursor-pointer transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                                    >
-                                        <option value="">Select City...</option>
-                                        {filteredCities.map(c => (
-                                            <option key={c.code} value={c.code}>{c.name}</option>
-                                        ))}
-                                    </select>
+                                    />
                                 </div>
 
                                 <div className="space-y-1.5 flex flex-col justify-end">
                                     <label className="text-[10px] font-bold text-muted-foreground uppercase">Barangay</label>
-                                    <select
+                                    <SearchableSelect
+                                        options={barangays.map((barangay) => ({
+                                            value: barangay.code,
+                                            label: barangay.name,
+                                        }))}
                                         value={formData.brgy}
-                                        onChange={(e) => {
-                                            const val = e.target.value;
-                                            setFormData((prev: ClientFormData) => ({ ...prev, brgy: val }));
-                                        }}
+                                        placeholder="Select Barangay..."
+                                        searchPlaceholder="Search barangay or PSGC code..."
+                                        emptyText="No barangays found."
                                         disabled={!selectedCityCode}
-                                        className="w-full h-9 rounded-lg border bg-background text-foreground text-xs font-semibold px-3 py-2 outline-none focus:ring-1 focus:ring-primary focus:border-primary cursor-pointer transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                                    >
-                                        <option value="">Select Barangay...</option>
-                                        {barangays.map(b => (
-                                            <option key={b.code} value={b.code}>{b.name}</option>
-                                        ))}
-                                    </select>
+                                        onSelect={(value) => {
+                                            setFormData((prev: ClientFormData) => ({ ...prev, brgy: value }));
+                                        }}
+                                    />
                                 </div>
                             </div>
 
@@ -646,6 +729,29 @@ export default function ClientFormModal({
 
                         {/* section 4: Settings */}
                         <div className="bg-card border rounded-2xl p-5 shadow-sm hover:shadow-md transition-shadow">
+                            <div className="mb-5 space-y-1.5">
+                                <label className="text-[10px] font-bold text-muted-foreground uppercase">Payment Terms</label>
+                                <SearchableSelect
+                                    options={paymentTerms.map((term) => ({
+                                        value: String(term.id),
+                                        label: term.payment_name,
+                                        description: term.payment_days !== null && term.payment_days !== undefined
+                                            ? `${term.payment_days} day${term.payment_days === 1 ? "" : "s"}`
+                                            : undefined,
+                                    }))}
+                                    value={formData.payment_term}
+                                    placeholder="Select Payment Terms..."
+                                    searchPlaceholder="Search payment terms..."
+                                    emptyText="No payment terms found."
+                                    disabled={paymentTerms.length === 0}
+                                    onSelect={(value) => {
+                                        setFormData((prev: ClientFormData) => ({ ...prev, payment_term: value }));
+                                    }}
+                                />
+                                {paymentTerms.length === 0 ? (
+                                    <p className="text-[10px] text-muted-foreground">Payment terms are unavailable.</p>
+                                ) : null}
+                            </div>
                             <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2.5">
                                     <span className="p-2 rounded-xl bg-primary/10 text-primary shrink-0">

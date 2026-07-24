@@ -110,13 +110,13 @@ export default function AuditQueueModule() {
                 {!selectedBranchId ? (
                     <ConsolidationEmptyState icon={Building2} title="Select Branch" description="Choose a branch to view its audit queue." />
                 ) : loading ? (
-                    <div className="grid gap-4 p-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 md:p-7" aria-label="Loading audit batches">
-                        {Array.from({ length: 8 }, (_, index) => <Skeleton key={index} className="h-48 rounded-2xl" />)}
+                    <div className="grid gap-4 p-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4" aria-label="Loading audit batches">
+                        {Array.from({ length: 8 }, (_, index) => <Skeleton key={index} className="h-48 rounded-xl" />)}
                     </div>
                 ) : batches.length === 0 ? (
                     <ConsolidationEmptyState icon={ShieldCheck} title="No Batches Pending Audit" description="Batches in Picked status will appear here." />
                 ) : (
-                    <div className="grid gap-4 p-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 md:p-7">
+                    <div className="grid gap-4 p-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
                         {batches.map((batch) => {
                                 const pct = progressPct(batch);
                                 const picked = pickedTotal(batch);
@@ -126,7 +126,7 @@ export default function AuditQueueModule() {
                                         type="button"
                                         key={batch.id}
                                         onClick={() => handleBatchClick(batch)}
-                                        className="group rounded-2xl border border-border/60 bg-card p-5 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-violet-500/40 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/30"
+                                        className="group rounded-xl border bg-card p-4 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-violet-500/40 hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/30"
                                     >
                                         <div className="flex items-start justify-between mb-4">
                                             <div className="min-w-0 flex-1">

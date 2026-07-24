@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
-import { Plus, Search, Edit, DollarSign, Activity, Settings, Check, LayoutGrid, Image as ImageIcon, ChevronsLeft, ChevronsRight, RefreshCw, Info, Calendar, User, X } from "lucide-react";
+import { Plus, Search, Edit, DollarSign, Activity, Settings, Check, LayoutGrid, Image as ImageIcon, ChevronsLeft, ChevronsRight, RefreshCw, Info, Calendar, User, X, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import { WorkCenter, AssetRecord, DepartmentRecord } from "@/modules/manufacturing-management/finished-goods/types";
 import { 
@@ -30,6 +30,11 @@ export default function WorkStationsModule() {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
+    const [statusFilter, setStatusFilter] = useState<string>("ALL");
+    const [departmentFilter, setDepartmentFilter] = useState<string | number>("ALL");
+    const [deptFilterSearch, setDeptFilterSearch] = useState("");
+    const [isDeptFilterDropdownOpen, setIsDeptFilterDropdownOpen] = useState(false);
+
     const [currentPage, setCurrentPage] = useState(1);
     const [pageSize, setPageSize] = useState(10);
 
@@ -62,14 +67,14 @@ export default function WorkStationsModule() {
     // Formats Asset label to display in UI (hiding raw database IDs)
     const getAssetLabel = (asset: AssetRecord): string => {
         const name = typeof asset.item_id === 'object' ? asset.item_id?.item_name || "" : "";
-        const serial = asset.serial || "";
+        const rfid = asset.rfid_code || "";
         const condition = asset.condition || "";
 
         let label = name;
         if (!label) {
-            label = serial || asset.barcode || "Equipment Asset";
-        } else if (serial) {
-            label = `${label} (Serial: ${serial})`;
+            label = rfid || asset.barcode || "Equipment Asset";
+        } else if (rfid) {
+            label = `${label} (RFID: ${rfid})`;
         }
         if (condition) {
             label = `${label} - ${condition}`;
@@ -118,26 +123,39 @@ export default function WorkStationsModule() {
         loadData();
     }, []);
 
+    // Filtered departments for top department filter search
+    const filteredDeptOptions = useMemo(() => {
+        if (!deptFilterSearch.trim()) return departments;
+        const query = deptFilterSearch.toLowerCase();
+        return departments.filter(d => (d.department_name || "").toLowerCase().includes(query));
+    }, [departments, deptFilterSearch]);
+
     // Filtered Work Centers list
     const filteredWorkCenters = useMemo(() => {
         const departmentsById = new Map(
             departments.map(department => [Number(department.department_id), department])
         );
         const filtered = workCenters.filter(wc => {
-            const query = searchQuery.toLowerCase();
-            const matchesName = wc.work_center_name.toLowerCase().includes(query);
-            const assetName = typeof wc.asset?.item_id === 'object' ? wc.asset?.item_id?.item_name || "" : "";
-            const matchesAsset = assetName.toLowerCase().includes(query) ||
-                                 wc.asset?.serial?.toLowerCase().includes(query) || 
-                                 wc.asset?.barcode?.toLowerCase().includes(query);
-            const department = wc.department || departmentsById.get(Number(wc.department_id));
-            const matchesDept = department?.department_name?.toLowerCase().includes(query);
-            return matchesName || matchesAsset || matchesDept;
+            const query = searchQuery.toLowerCase().trim();
+            const matchesQuery = !query || 
+                wc.work_center_name.toLowerCase().includes(query) ||
+                (typeof wc.asset?.item_id === 'object' ? wc.asset?.item_id?.item_name || "" : "").toLowerCase().includes(query) ||
+                (wc.asset?.rfid_code || "").toLowerCase().includes(query) ||
+                (wc.asset?.barcode || "").toLowerCase().includes(query) ||
+                (wc.department || departmentsById.get(Number(wc.department_id)))?.department_name?.toLowerCase().includes(query);
+
+            const matchesStatus = statusFilter === "ALL" || 
+                (statusFilter === "ACTIVE" ? Boolean(wc.is_active) : !Boolean(wc.is_active));
+
+            const matchesDept = departmentFilter === "ALL" || 
+                Number(wc.department_id) === Number(departmentFilter);
+
+            return matchesQuery && matchesStatus && matchesDept;
         });
 
         // Priority the newly created data to show first (newest ID first)
         return [...filtered].sort((a, b) => b.work_center_id - a.work_center_id);
-    }, [departments, workCenters, searchQuery]);
+    }, [departments, workCenters, searchQuery, statusFilter, departmentFilter]);
 
     // Reset page to 1 when search query, filter result length, or page size changes
     useEffect(() => {
@@ -196,9 +214,20 @@ export default function WorkStationsModule() {
             return;
         }
 
-        const capacityNum = Number(capacity);
-        if (isNaN(capacityNum) || !Number.isInteger(capacityNum) || capacityNum < 0) {
-            toast.error("Capacity per hour must be a whole number greater than or equal to zero.");
+        const capacityTrimmed = capacity.trim();
+        const capacityNum = Number(capacityTrimmed);
+        if (!capacityTrimmed || isNaN(capacityNum) || !Number.isInteger(capacityNum) || capacityNum <= 0) {
+            toast.error("Capacity per hour is required and must be a whole number greater than zero.");
+            return;
+        }
+
+        if (!selectedAssetId) {
+            toast.error("Asset Equipment Association is required.");
+            return;
+        }
+
+        if (!selectedDeptId) {
+            toast.error("Owner Department is required.");
             return;
         }
 
@@ -266,7 +295,7 @@ export default function WorkStationsModule() {
         return assets.filter(a => {
             const assetName = typeof a.item_id === 'object' ? a.item_id?.item_name || "" : "";
             return assetName.toLowerCase().includes(search) ||
-                (a.serial || "").toLowerCase().includes(search) ||
+                (a.rfid_code || "").toLowerCase().includes(search) ||
                 (a.barcode || "").toLowerCase().includes(search);
         });
     }, [assets, assetSearch]);
@@ -304,7 +333,7 @@ export default function WorkStationsModule() {
             </div>
 
             {/* Filter and search block */}
-            <div className="flex items-center gap-4 bg-muted/10 p-3 rounded-lg border border-border/50">
+            <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3 bg-muted/10 p-3 rounded-lg border border-border/50">
                 <div className="relative flex-1">
                     <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground opacity-70" />
                     <input
@@ -314,6 +343,88 @@ export default function WorkStationsModule() {
                         onChange={(e) => setSearchQuery(e.target.value)}
                         className="w-full h-9 pl-10 pr-3 rounded-lg border border-muted bg-background text-foreground text-xs focus:outline-none focus:ring-1 focus:ring-primary"
                     />
+                </div>
+
+                {/* Status Filter */}
+                <div className="w-full md:w-[150px] shrink-0">
+                    <Select
+                        value={statusFilter}
+                        onValueChange={(val) => setStatusFilter(val)}
+                    >
+                        <SelectTrigger className="w-full h-9 bg-background border border-border text-foreground text-xs">
+                            <SelectValue placeholder="All Statuses" />
+                        </SelectTrigger>
+                        <SelectContent position="popper" sideOffset={4} className="bg-popover border border-border text-foreground text-xs">
+                            <SelectItem value="ALL">All Statuses</SelectItem>
+                            <SelectItem value="ACTIVE">Active</SelectItem>
+                            <SelectItem value="INACTIVE">Inactive</SelectItem>
+                        </SelectContent>
+                    </Select>
+                </div>
+
+                {/* Searchable Department Filter */}
+                <div className="relative w-full md:w-[200px] shrink-0">
+                    <button
+                        type="button"
+                        onClick={() => setIsDeptFilterDropdownOpen(prev => !prev)}
+                        className="w-full h-9 px-3 rounded-lg border border-border bg-background text-foreground text-xs flex items-center justify-between font-normal"
+                    >
+                        <span className="truncate">
+                            {departmentFilter === "ALL"
+                                ? "All Departments"
+                                : departments.find(d => Number(d.department_id) === Number(departmentFilter))?.department_name || "All Departments"}
+                        </span>
+                        <ChevronDown className="h-3.5 w-3.5 opacity-50 shrink-0 ml-1" />
+                    </button>
+
+                    {isDeptFilterDropdownOpen && (
+                        <>
+                            <div className="fixed inset-0 z-20" onClick={() => setIsDeptFilterDropdownOpen(false)} />
+                            <div className="absolute right-0 mt-1 w-56 max-h-56 overflow-hidden rounded-lg bg-popover border border-border shadow-xl py-1.5 z-30 flex flex-col text-xs">
+                                <div className="px-2 pb-1.5 border-b border-border/50">
+                                    <input
+                                        type="text"
+                                        placeholder="Search department..."
+                                        value={deptFilterSearch}
+                                        onChange={(e) => setDeptFilterSearch(e.target.value)}
+                                        className="w-full h-7 px-2 rounded bg-muted/20 border border-border text-foreground text-[11px] outline-none focus:ring-1 focus:ring-primary"
+                                        autoFocus
+                                    />
+                                </div>
+                                <div className="flex-1 overflow-y-auto max-h-40 py-1">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setDepartmentFilter("ALL");
+                                            setIsDeptFilterDropdownOpen(false);
+                                        }}
+                                        className={`w-full text-left px-3 py-1.5 hover:bg-muted text-foreground flex items-center justify-between ${departmentFilter === "ALL" ? "font-semibold text-primary" : ""}`}
+                                    >
+                                        <span>All Departments</span>
+                                        {departmentFilter === "ALL" && <Check className="h-3.5 w-3.5 text-primary" />}
+                                    </button>
+                                    {filteredDeptOptions.length === 0 ? (
+                                        <div className="px-3 py-2 text-muted-foreground italic text-[11px]">No departments found</div>
+                                    ) : (
+                                        filteredDeptOptions.map(dept => (
+                                            <button
+                                                key={dept.department_id}
+                                                type="button"
+                                                onClick={() => {
+                                                    setDepartmentFilter(dept.department_id);
+                                                    setIsDeptFilterDropdownOpen(false);
+                                                }}
+                                                className={`w-full text-left px-3 py-1.5 hover:bg-muted text-foreground flex items-center justify-between ${Number(departmentFilter) === Number(dept.department_id) ? "font-semibold text-primary" : ""}`}
+                                            >
+                                                <span className="truncate">{dept.department_name}</span>
+                                                {Number(departmentFilter) === Number(dept.department_id) && <Check className="h-3.5 w-3.5 text-primary" />}
+                                            </button>
+                                        ))
+                                    )}
+                                </div>
+                            </div>
+                        </>
+                    )}
                 </div>
             </div>
 
@@ -369,18 +480,30 @@ export default function WorkStationsModule() {
                                         {formatNumber(Number(wc.capacity_per_hour) || 0, "en-PH", 0)} units
                                     </td>
                                     <td className="p-4 align-middle text-muted-foreground">
-                                        {wc.asset ? (() => {
-                                            const assetName = typeof wc.asset.item_id === 'object' ? wc.asset.item_id?.item_name || "" : "";
+                                        {(() => {
+                                            const linkedAsset = wc.asset || assets.find(a => a.id === wc.asset_id);
+                                            if (!linkedAsset) {
+                                                return <span className="text-muted-foreground/50 italic">None linked</span>;
+                                            }
+                                            const matchedCatalogAsset = assets.find(a => a.id === wc.asset_id || a.id === linkedAsset.id);
+                                            const assetName = typeof linkedAsset.item_id === 'object' 
+                                                ? linkedAsset.item_id?.item_name || "" 
+                                                : (typeof matchedCatalogAsset?.item_id === 'object' ? matchedCatalogAsset?.item_id?.item_name || "" : "");
+                                            const rfidCode = linkedAsset.rfid_code || matchedCatalogAsset?.rfid_code || "";
+                                            const barcodeCode = linkedAsset.barcode || matchedCatalogAsset?.barcode || "";
+                                            const condition = linkedAsset.condition || matchedCatalogAsset?.condition || "Good";
+                                            const itemImage = linkedAsset.item_image || matchedCatalogAsset?.item_image || null;
+
                                             return (
                                                 <div className="flex items-center gap-3">
-                                                    {wc.asset.item_image ? (
+                                                    {itemImage ? (
                                                         // eslint-disable-next-line @next/next/no-img-element
                                                         <img 
-                                                            src={wc.asset.item_image} 
+                                                            src={itemImage} 
                                                             alt={assetName || "Asset"} 
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
-                                                                setPreviewImage(wc.asset?.item_image || null);
+                                                                setPreviewImage(itemImage);
                                                             }}
                                                             className="w-10 h-10 object-cover rounded border border-border shrink-0 cursor-zoom-in hover:scale-105 transition-transform"
                                                         />
@@ -391,18 +514,16 @@ export default function WorkStationsModule() {
                                                     )}
                                                     <div className="flex flex-col">
                                                         <span className="font-semibold text-foreground">
-                                                            {assetName || wc.asset.serial || wc.asset.barcode || "Asset"}
+                                                            {assetName || rfidCode || barcodeCode || "Asset"}
                                                         </span>
-                                                        {assetName && wc.asset.serial && (
-                                                            <span className="text-[10px] text-muted-foreground">Serial: {wc.asset.serial}</span>
+                                                        {assetName && rfidCode && (
+                                                            <span className="text-[10px] text-muted-foreground">RFID: {rfidCode}</span>
                                                         )}
-                                                        <span className="text-[10px] text-muted-foreground">Cond: {wc.asset.condition || "Good"}</span>
+                                                        <span className="text-[10px] text-muted-foreground">Cond: {condition}</span>
                                                     </div>
                                                 </div>
                                             );
-                                        })() : (
-                                            <span className="text-muted-foreground/50 italic">None linked</span>
-                                        )}
+                                        })()}
                                     </td>
                                     <td className="p-4 align-middle text-muted-foreground">
                                         {(() => {
@@ -536,13 +657,6 @@ export default function WorkStationsModule() {
                                     <p className="text-xs text-muted-foreground">Specify machinery, line costs, capacity, and owner department.</p>
                                 </div>
                             </div>
-                            <button
-                                type="button"
-                                onClick={() => setIsModalOpen(false)}
-                                className="text-muted-foreground hover:text-foreground text-sm font-semibold transition-colors px-3 py-1.5 hover:bg-muted rounded-lg"
-                            >
-                                Close
-                            </button>
                         </div>
 
                         {/* Modal Form Body */}
@@ -594,7 +708,7 @@ export default function WorkStationsModule() {
                                     />
                                 </div>
                                 <div className="space-y-1">
-                                    <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Capacity / Hour (Units)</label>
+                                    <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Capacity / Hour (Units) <span className="text-destructive">*</span></label>
                                     <input
                                         type="number"
                                         min="0"
@@ -612,18 +726,18 @@ export default function WorkStationsModule() {
                                                 e.preventDefault();
                                             }
                                         }}
-                                        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
+                                        className={`w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 transition-all ${validationAttempted && (!capacity.trim() || isNaN(Number(capacity)) || Number(capacity) <= 0) ? "border-destructive focus:ring-destructive focus:ring-1" : "border-border focus:ring-primary"}`}
                                     />
                                 </div>
                             </div>
 
                             {/* Searchable dropdown: Asset / Equipment */}
                             <div className="space-y-1 relative">
-                                <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Asset Equipment Association</label>
+                                <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Asset Equipment Association <span className="text-destructive">*</span></label>
                                 <div className="relative">
                                     <input
                                         type="text"
-                                        placeholder="Search asset or equipment serial..."
+                                        placeholder="Search asset or equipment RFID..."
                                         value={assetSearch}
                                         onChange={e => {
                                             setAssetSearch(e.target.value);
@@ -649,7 +763,7 @@ export default function WorkStationsModule() {
                                                 setIsAssetDropdownOpen(false);
                                             }
                                         }}
-                                        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
+                                        className={`w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 transition-all ${validationAttempted && !selectedAssetId ? "border-destructive focus:ring-destructive focus:ring-1" : "border-border focus:ring-primary"}`}
                                     />
                                     {selectedAssetId && (
                                         <button
@@ -712,7 +826,7 @@ export default function WorkStationsModule() {
 
                             {/* Owner Department */}
                             <div className="space-y-1">
-                                <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Owner Department</label>
+                                <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Owner Department <span className="text-destructive">*</span></label>
                                 <Select
                                     value={selectedDeptId ? String(selectedDeptId) : "none"}
                                     onValueChange={(val) => {
@@ -723,7 +837,7 @@ export default function WorkStationsModule() {
                                         }
                                     }}
                                 >
-                                    <SelectTrigger className="w-full h-[38px] rounded-lg bg-background border border-border text-foreground text-sm">
+                                    <SelectTrigger className={`w-full h-[38px] rounded-lg bg-background border text-foreground text-sm ${validationAttempted && !selectedDeptId ? "border-destructive focus:ring-destructive" : "border-border"}`}>
                                         <SelectValue placeholder="Select department..." />
                                     </SelectTrigger>
                                     <SelectContent position="popper" sideOffset={4} className="bg-popover border border-border text-foreground">
@@ -845,18 +959,36 @@ export default function WorkStationsModule() {
                             {/* Associated Asset / Equipment */}
                             <div className="space-y-2">
                                 <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Associated Asset &amp; Equipment</span>
-                                {viewingWorkCenter.asset ? (() => {
-                                    const assetName = typeof viewingWorkCenter.asset.item_id === 'object' ? viewingWorkCenter.asset.item_id?.item_name || "" : "";
+                                {(() => {
+                                    const linkedAsset = viewingWorkCenter.asset || assets.find(a => a.id === viewingWorkCenter.asset_id);
+                                    if (!linkedAsset) {
+                                        return (
+                                            <div className="border border-dashed border-border/80 rounded-xl p-6 text-center text-muted-foreground bg-muted/5">
+                                                <ImageIcon className="h-8 w-8 mx-auto text-muted-foreground/20 mb-1.5" />
+                                                <span className="font-semibold text-xs block text-muted-foreground/70">No Asset Associated</span>
+                                                <p className="text-[10px] text-muted-foreground/50 mt-0.5">Use the Edit Modal to link a piece of machinery or equipment.</p>
+                                            </div>
+                                        );
+                                    }
+                                    const matchedCatalogAsset = assets.find(a => a.id === viewingWorkCenter.asset_id || a.id === linkedAsset.id);
+                                    const assetName = typeof linkedAsset.item_id === 'object' 
+                                        ? linkedAsset.item_id?.item_name || "" 
+                                        : (typeof matchedCatalogAsset?.item_id === 'object' ? matchedCatalogAsset?.item_id?.item_name || "" : "");
+                                    const rfidCode = linkedAsset.rfid_code || matchedCatalogAsset?.rfid_code || "N/A";
+                                    const barcodeCode = linkedAsset.barcode || matchedCatalogAsset?.barcode || "N/A";
+                                    const condition = linkedAsset.condition || matchedCatalogAsset?.condition || "Good";
+                                    const itemImage = linkedAsset.item_image || matchedCatalogAsset?.item_image || null;
+
                                     return (
                                         <div className="border border-border/60 rounded-xl p-4 flex flex-col md:flex-row gap-4 bg-background">
                                             {/* Left: Image Container */}
                                             <div className="w-full md:w-1/3 shrink-0">
-                                                {viewingWorkCenter.asset.item_image ? (
+                                                {itemImage ? (
                                                     // eslint-disable-next-line @next/next/no-img-element
                                                     <img 
-                                                        src={viewingWorkCenter.asset.item_image} 
+                                                        src={itemImage} 
                                                         alt={assetName || "Asset image"} 
-                                                        onClick={() => setPreviewImage(viewingWorkCenter.asset?.item_image || null)}
+                                                        onClick={() => setPreviewImage(itemImage)}
                                                         className="w-full h-24 object-cover rounded-lg border border-border bg-muted/5 shrink-0 cursor-zoom-in hover:scale-102 transition-transform"
                                                     />
                                                 ) : (
@@ -874,28 +1006,22 @@ export default function WorkStationsModule() {
                                                 </div>
                                                 <div className="grid grid-cols-2 gap-2 text-[11px]">
                                                     <div>
-                                                        <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">Serial Number</span>
-                                                        <span className="font-semibold text-foreground truncate block">{viewingWorkCenter.asset.serial || "N/A"}</span>
+                                                        <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">RFID Code</span>
+                                                        <span className="font-semibold text-foreground truncate block">{rfidCode}</span>
                                                     </div>
                                                     <div>
                                                         <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">Barcode</span>
-                                                        <span className="font-semibold text-foreground truncate block">{viewingWorkCenter.asset.barcode || "N/A"}</span>
+                                                        <span className="font-semibold text-foreground truncate block">{barcodeCode}</span>
                                                     </div>
                                                     <div className="col-span-2">
                                                         <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">Condition</span>
-                                                        <span className="font-semibold text-foreground">{viewingWorkCenter.asset.condition || "Good"}</span>
+                                                        <span className="font-semibold text-foreground">{condition}</span>
                                                     </div>
                                                 </div>
                                             </div>
                                         </div>
                                     );
-                                })() : (
-                                    <div className="border border-dashed border-border/80 rounded-xl p-6 text-center text-muted-foreground bg-muted/5">
-                                        <ImageIcon className="h-8 w-8 mx-auto text-muted-foreground/20 mb-1.5" />
-                                        <span className="font-semibold text-xs block text-muted-foreground/70">No Asset Associated</span>
-                                        <p className="text-[10px] text-muted-foreground/50 mt-0.5">Use the Edit Modal to link a piece of machinery or equipment.</p>
-                                    </div>
-                                )}
+                                })()}
                             </div>
 
                             {/* Metadata */}
@@ -936,7 +1062,7 @@ export default function WorkStationsModule() {
                                 onClick={() => setIsViewModalOpen(false)}
                                 className="px-5 py-2 bg-primary hover:bg-primary/95 text-primary-foreground font-semibold rounded-lg text-xs transition-colors shadow-md shadow-primary/20"
                             >
-                                Close
+                                Cancel
                             </button>
                         </div>
                     </div>

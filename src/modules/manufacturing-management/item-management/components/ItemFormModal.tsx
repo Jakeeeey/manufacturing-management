@@ -98,14 +98,6 @@ export default function ItemFormModal({
                     <h3 className="text-sm font-bold text-foreground">
                         {item ? "Edit Catalog Item" : "Register New Catalog Item"}
                     </h3>
-                    <button
-                        type="button"
-                        onClick={onClose}
-                        className="text-muted-foreground hover:text-foreground text-xs font-semibold px-2 py-1 hover:bg-muted rounded transition-colors"
-                        disabled={submitting}
-                    >
-                        Cancel
-                    </button>
                 </div>
 
                 {/* Form */}
