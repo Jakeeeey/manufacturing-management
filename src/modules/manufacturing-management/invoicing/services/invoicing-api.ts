@@ -1,4 +1,4 @@
-import { CreateInvoicePayload, CreatedInvoiceResult, InvoicingCandidate, InvoicingFilters, PrintableInvoice, ReceiptType } from "../types";
+import { CreateInvoicePayload, CreatedInvoiceResult, InvoicingCandidate, InvoicingFilters, PrintableInvoice, ReceiptType, SalesOrderAvailability } from "../types";
 
 async function responseJson(response: Response, fallback: string) {
     const body = await response.json().catch(() => ({}));
@@ -35,6 +35,13 @@ export async function fetchReceiptTypes(): Promise<ReceiptType[]> {
 
 export async function fetchPrintableInvoice(invoiceId: number): Promise<PrintableInvoice> {
     return responseJson(await fetch(`/api/manufacturing/invoicing/${invoiceId}/print-data`, { cache: "no-store" }), "Failed to load printable invoice");
+}
+
+export async function fetchSalesOrderAvailability(salesOrderId: number): Promise<SalesOrderAvailability> {
+    return responseJson(
+        await fetch(`/api/manufacturing/invoicing/availability?salesOrderId=${salesOrderId}`, { cache: "no-store" }),
+        "Failed to calculate stock availability"
+    );
 }
 
 export async function archiveInvoiceDocument(invoiceId: number, file: Blob, invoiceNo: string): Promise<void> {
