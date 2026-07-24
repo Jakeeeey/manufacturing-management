@@ -224,7 +224,6 @@ export interface DirectusProductPerSupplier {
         barcode?: string | null;
         parent_id?: number | null;
         density_factor?: number | null;
-        production_capacity_per_hour?: number | null;
         has_versions?: boolean;
     };
 }
