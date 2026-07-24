@@ -7,6 +7,30 @@ import { RouteStep, RouteBOMItem, OperationType, WorkCenter, QATemplate, Unit } 
 import { BOMMaterialSelect } from "./BOMMaterialSelect";
 import { CreatableSelect } from "./CreatableSelect";
 import { Button } from "@/components/ui/button";
+import { calculateMaterialCost } from "../costing";
+import {
+    MATERIAL_TYPE_OPTIONS,
+    MaterialType,
+    materialTypeFromProduct
+} from "../material-types";
+
+function materialClassification(item: RouteBOMItem) {
+    const materialType = item.material_type || materialTypeFromProduct(item.product_type, item.has_versions);
+    const label = MATERIAL_TYPE_OPTIONS.find(option => option.value === materialType)?.label;
+
+    if (!materialType || !label) {
+        return { label: item.product_id ? "Unclassified" : "Select a material type", className: "bg-muted text-muted-foreground border-border" };
+    }
+
+    const classNameByType: Record<MaterialType, string> = {
+        raw_material: "bg-blue-500/10 text-blue-600 border-blue-500/20",
+        packaging: "bg-amber-500/10 text-amber-600 border-amber-500/20",
+        sub_assembly: "bg-violet-500/10 text-violet-600 border-violet-500/20",
+        finished_good: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20"
+    };
+
+    return { label, className: classNameByType[materialType] };
+}
 
 interface RoutesBOMTabProps {
     editedRoutes: RouteStep[];
@@ -85,7 +109,7 @@ export const RoutesBOMTab: React.FC<RoutesBOMTabProps> = ({
             sequence_order: nextSeq,
             setup_time_hours: 0,
             run_time_hours: 0,
-            estimated_labor_cost: 0,
+            step_batch_size: 1,
             qa_template_id: null,
             bom_items: []
         };
@@ -111,7 +135,10 @@ export const RoutesBOMTab: React.FC<RoutesBOMTabProps> = ({
                 id: -Math.floor(Math.random() * 1000000),
                 route_id: routeId,
                 product_id: 0,
+                material_type: null,
                 quantity_required: 0,
+                product_type: null,
+                has_versions: false,
                 unit_of_measurement: null,
                 wastage_factor_percentage: 0,
                 cost_per_unit: 0
@@ -141,6 +168,27 @@ export const RoutesBOMTab: React.FC<RoutesBOMTabProps> = ({
             return {
                 ...r,
                 bom_items: (r.bom_items || []).map(b => b.id === bomItemId ? { ...b, [field]: value } : b)
+            };
+        }));
+        setHasUnsavedChanges(true);
+    };
+
+    const handleChangeMaterialType = (routeId: number, bomItemId: number, value: MaterialType | "") => {
+        setEditedRoutes(prev => prev.map(r => {
+            if (r.route_id !== routeId) return r;
+            return {
+                ...r,
+                bom_items: (r.bom_items || []).map(b => b.id === bomItemId ? {
+                    ...b,
+                    material_type: value || null,
+                    product_id: 0,
+                    product_name: "",
+                    product_code: "",
+                    product_type: null,
+                    has_versions: false,
+                    unit_of_measurement: null,
+                    cost_per_unit: 0
+                } : b)
             };
         }));
         setHasUnsavedChanges(true);
@@ -299,10 +347,22 @@ export const RoutesBOMTab: React.FC<RoutesBOMTabProps> = ({
                                             value={r.work_center_id ? String(r.work_center_id) : ""}
                                             onValueChange={(val) => {
                                                 handleUpdateRoute(r.route_id, "work_center_id", val ? parseInt(val) : null);
+                                                const selectedWorkCenter = workCenters.find(wc => wc.work_center_id === (val ? parseInt(val) : null));
+                                                if (selectedWorkCenter && selectedWorkCenter.capacity_per_hour) {
+                                                    handleUpdateRoute(r.route_id, "step_batch_size", selectedWorkCenter.capacity_per_hour);
+                                                }
                                             }}
                                             placeholder="Select Work Center..."
                                             className="h-9 text-xs"
                                         />
+                                        {(() => {
+                                            const selectedWorkCenter = workCenters.find(wc => wc.work_center_id === r.work_center_id);
+                                            return selectedWorkCenter ? (
+                                                <span className="text-[10px] text-muted-foreground">
+                                                    Machine rate: ₱{Number(selectedWorkCenter.overhead_cost_per_hour || 0).toFixed(2)}/hr | Cap: {Number(selectedWorkCenter.capacity_per_hour || 1).toFixed(2)}/hr
+                                                </span>
+                                            ) : null;
+                                        })()}
                                     </div>
 
                                     {/* Setup Time */}
@@ -421,15 +481,15 @@ export const RoutesBOMTab: React.FC<RoutesBOMTabProps> = ({
                                         </div>
                                     </div>
 
-                                    {/* Estimated Labor Cost */}
+                                    {/* Step Batch Size */}
                                     <div className="space-y-1">
                                         <label className="text-[10px] uppercase font-bold text-muted-foreground tracking-wide flex items-center gap-1">
-                                            <DollarSign className="h-3 w-3" /> Labor Cost (Flat)
+                                            <Layers className="h-3 w-3" /> Step Batch Size
                                         </label>
                                         <input
                                             type="number"
-                                            value={r.estimated_labor_cost}
-                                            onChange={(e) => handleUpdateRoute(r.route_id, "estimated_labor_cost", parseFloat(e.target.value) || 0)}
+                                            value={r.step_batch_size ?? 1}
+                                            onChange={(e) => handleUpdateRoute(r.route_id, "step_batch_size", parseFloat(e.target.value) || 1)}
                                             className="w-full h-9 px-2.5 rounded-lg border border-muted bg-background text-foreground text-xs focus:outline-none focus:ring-1 focus:ring-primary"
                                         />
                                     </div>
@@ -472,31 +532,60 @@ export const RoutesBOMTab: React.FC<RoutesBOMTabProps> = ({
                                         </div>
                                     ) : (
                                         <div className="overflow-x-auto rounded-lg border border-muted/60 bg-card">
-                                            <table className="w-full border-collapse text-left text-xs">
+                                            <table className="min-w-[1080px] w-full border-collapse text-left text-xs">
                                                 <thead>
                                                     <tr className="bg-muted/10 border-b border-muted/60 text-muted-foreground font-bold">
+                                                        <th className="p-2.5 w-[17%] min-w-[175px] whitespace-nowrap">Material Type</th>
                                                         <th className="p-2.5 w-[30%]">Material</th>
                                                         <th className="p-2.5 w-[15%]">Qty Required</th>
                                                         <th className="p-2.5 w-[15%]">UOM</th>
                                                         <th className="p-2.5 w-[12%]">Wastage %</th>
                                                         <th className="p-2.5 w-[12%]">Landed Cost</th>
-                                                        <th className="p-2.5 w-[12%]">Computed Cost</th>
+                                                        <th className="p-2.5 w-[12%]">Ingredient Cost (pre-yield)</th>
                                                         <th className="p-2.5 w-[6%] text-center">Action</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody>
                                                     {(r.bom_items || []).map((b) => {
-                                                        const wastageFact = 1 - (Number(b.wastage_factor_percentage || 0) / 100);
-                                                        const compCost = (Number(b.quantity_required || 0) * Number(b.cost_per_unit || 0)) / (wastageFact > 0 ? wastageFact : 1);
+                                                        const compCost = calculateMaterialCost({
+                                                            quantity: b.quantity_required,
+                                                            unitCost: b.cost_per_unit || 0,
+                                                            wastagePercent: b.wastage_factor_percentage
+                                                        });
+                                                        const classification = materialClassification(b);
+                                                        const selectedMaterialType = b.material_type || materialTypeFromProduct(b.product_type, b.has_versions);
                                                         return (
                                                             <tr key={b.id} className="border-b border-muted/50 hover:bg-muted/5">
+                                                                <td className="p-1.5 align-middle min-w-[175px]">
+                                                                    <select
+                                                                        aria-label="Material Type"
+                                                                        value={selectedMaterialType || ""}
+                                                                        onChange={(e) => handleChangeMaterialType(
+                                                                            r.route_id,
+                                                                            b.id,
+                                                                            e.target.value as MaterialType | ""
+                                                                        )}
+                                                                        className={`w-full min-w-0 h-8 rounded border px-2 py-1 text-[10px] font-bold uppercase tracking-wide whitespace-nowrap truncate bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary ${classification.className}`}
+                                                                    >
+                                                                        <option value="">Select a Material Type</option>
+                                                                        {MATERIAL_TYPE_OPTIONS.map(option => (
+                                                                            <option key={option.value} value={option.value}>{option.label}</option>
+                                                                        ))}
+                                                                    </select>
+                                                                </td>
                                                                 <td className="p-1.5 align-middle">
                                                                     <BOMMaterialSelect
                                                                         value={b.product_id || undefined}
+                                                                        type={selectedMaterialType}
+                                                                        disabled={!selectedMaterialType}
+                                                                        placeholder={selectedMaterialType ? "Choose Material..." : "Select material type first"}
                                                                         onSelectProduct={(prod) => {
                                                                             handleUpdateIngredient(r.route_id, b.id, "product_id", prod.product_id);
                                                                             handleUpdateIngredient(r.route_id, b.id, "product_name", prod.product_name);
                                                                             handleUpdateIngredient(r.route_id, b.id, "product_code", prod.product_code);
+                                                                            handleUpdateIngredient(r.route_id, b.id, "product_type", prod.product_type ?? null);
+                                                                            handleUpdateIngredient(r.route_id, b.id, "has_versions", Boolean(prod.has_versions));
+                                                                            handleUpdateIngredient(r.route_id, b.id, "material_type", selectedMaterialType);
                                                                             handleUpdateIngredient(r.route_id, b.id, "cost_per_unit", Number(prod.cost_per_unit || prod.price_per_unit || 0));
                                                                             handleUpdateIngredient(r.route_id, b.id, "unit_of_measurement", prod.unit_of_measurement?.unit_shortcut || "PCS");
                                                                         }}

@@ -1,6 +1,7 @@
 import React from "react";
 import { FileText, Loader2, ArrowRight } from "lucide-react";
 import { QuotationHeader } from "../types";
+import { formatCurrency } from "@/lib/utils";
 
 interface QuotationPipelineTableProps {
     quotes: QuotationHeader[];
@@ -42,7 +43,7 @@ export function QuotationPipelineTable({
                             <tr key={q.id} className="hover:bg-muted/30 transition-colors">
                                 <td className="p-3 font-bold text-foreground">{q.quote_number}</td>
                                 <td className="p-3 font-medium text-foreground">{custName}</td>
-                                <td className="p-3 text-right font-bold text-primary">₱{(Number(q.total_selling_price) || 0).toFixed(2)}</td>
+                                <td className="p-3 text-right font-bold text-primary font-mono">{formatCurrency(q.total_selling_price)}</td>
                                 <td className="p-3 text-muted-foreground">{new Date(q.quote_date).toLocaleDateString()}</td>
                                 <td className="p-3 text-center">
                                     <button

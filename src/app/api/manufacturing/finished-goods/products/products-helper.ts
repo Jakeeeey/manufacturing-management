@@ -5,6 +5,7 @@ import {
     CostRollupResult,
     CostNode
 } from "@/modules/manufacturing-management/finished-goods/types";
+import { calculateCostBreakdown, calculateMaterialCost, calculateMarginSummary, calculateOverheadSummary, calculateRouteBreakdown } from "@/modules/manufacturing-management/finished-goods/costing";
 import { getActiveVersionForProduct, getBOMDetailsForVersion } from "../versions/versions-helper";
 
 /**
@@ -144,11 +145,29 @@ export async function calculateRollupCost(
         bomId: null,
         bomVersion: "v1.0",
         materialsCost: 0,
+        machineOverheadCost: 0,
+        customOverheadCost: 0,
+        additionalOperatingOverhead: 0,
+        totalOverheadExpenses: 0,
+        includedInCogs: 0,
+        excludedFromCogs: 0,
+        baseQuantity: 1,
+        unitCost: 0,
+        batchCost: 0,
+        preYieldDirectCost: 0,
+        yieldAdjustedUnitCost: 0,
+        machineHours: 0,
+        totalMachineCost: 0,
         routingsCost: 0,
         yieldPercentage: 100,
+        yieldFactor: 1,
         totalBaseCost: 0,
         targetSellingPrice: 0,
+        grossProfit: 0,
         grossMarginPercent: 0,
+        netProfit: 0,
+        netMarginPercent: 0,
+        marginBasis: "sales",
         costTree: []
     });
 
@@ -179,9 +198,26 @@ export async function calculateRollupCost(
         : await getActiveVersionForProduct(productId);
     if (!version) {
         const landedCost = await getLatestLandedCost(productId, forexRate, profilesMap, productsMap);
+        const leafBreakdown = calculateCostBreakdown({
+            materialsCost: landedCost,
+            machineOverheadCost: 0,
+            customOverheadCost: 0,
+            expectedYieldPercentage: 100,
+            baseQuantity: 1
+        });
         return {
             ...defaultResult(currentProduct.product_name, currentProduct.product_code),
-            totalBaseCost: landedCost,
+            ...leafBreakdown,
+            ...(() => {
+                const overheadSummary = calculateOverheadSummary(leafBreakdown.customOverheadCost);
+                return {
+                    additionalOperatingOverhead: overheadSummary.additionalOperatingOverhead,
+                    totalOverheadExpenses: overheadSummary.totalOverheadExpenses,
+                    includedInCogs: overheadSummary.includedInCogs,
+                    excludedFromCogs: overheadSummary.excludedFromCogs
+                };
+            })(),
+            routingsCost: 0,
             targetSellingPrice: currentProduct.price_per_unit || 0,
             costTree: [{
                 id: `leaf-${productId}`,
@@ -214,8 +250,10 @@ export async function calculateRollupCost(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const unitsMap = new Map<number, string>(unitsList.map((u: any) => [u.unit_id, u.unit_shortcut]));
 
-    let materialsSubtotal = 0;
-    let routingsSubtotal = 0;
+    let materialsBatchSubtotal = 0;
+    let machineOverheadCost = 0;
+    let machineHoursSubtotal = 0;
+    let totalMachineCostSubtotal = 0;
     const costTreeNodes: CostNode[] = [];
 
     // Process each route step
@@ -223,17 +261,16 @@ export async function calculateRollupCost(
         const workCenter = r.work_center_id ? workCentersMap.get(r.work_center_id) : null;
         const opName = r.operation_id ? (operationsMap.get(r.operation_id) || `Operation #${r.operation_id}`) : `Operation Step`;
 
-        // Routing Step Cost (Setup hours and flat labor are amortized by the version's base quantity)
-        const baseQty = Number(version?.base_quantity) || 1;
-        const laborCost = Number(r.estimated_labor_cost || 0) / baseQty;
-        const wcOverheadRate = workCenter ? Number(workCenter.overhead_cost_per_hour || 0) : 0;
-        const setupHoursPerUnit = Number(r.setup_time_hours || 0) / baseQty;
-        const runHoursPerUnit = Number(r.run_time_hours || 0);
-        const totalHours = setupHoursPerUnit + runHoursPerUnit;
-        const overheadCost = wcOverheadRate * totalHours;
-        const stepCost = laborCost + overheadCost;
-
-        routingsSubtotal += stepCost;
+        const routeBreakdown = calculateRouteBreakdown({
+            stepBatchSize: r.step_batch_size || 1,
+            machineHourlyRate: workCenter?.overhead_cost_per_hour || 0,
+            setupTimeHours: r.setup_time_hours,
+            runTimeHours: r.run_time_hours,
+            baseQuantity: Number(version?.base_quantity) || 1
+        });
+        machineOverheadCost += routeBreakdown.machineOverheadCost;
+        machineHoursSubtotal += routeBreakdown.machineHours;
+        totalMachineCostSubtotal += routeBreakdown.totalMachineCost;
 
         const childrenNodes: CostNode[] = [];
 
@@ -249,7 +286,7 @@ export async function calculateRollupCost(
 
                 if (hasVersions) {
                     const subResult = await calculateRollupCost(bomItem.product_id, new Set(visited), productsMap, forexRate, profilesMap);
-                    compUnitCost = subResult.totalBaseCost;
+                    compUnitCost = subResult.unitCost;
                     subChildren = subResult.costTree;
                 } else if (bomItem.cost_per_unit !== null && bomItem.cost_per_unit !== undefined) {
                     compUnitCost = Number(bomItem.cost_per_unit);
@@ -257,10 +294,13 @@ export async function calculateRollupCost(
                     compUnitCost = await getLatestLandedCost(bomItem.product_id, forexRate, profilesMap, productsMap);
                 }
 
-                const wastageFactor = 1 - (Number(bomItem.wastage_factor_percentage || 0) / 100);
-                const lineCost = (bomItem.quantity_required * compUnitCost) / (wastageFactor > 0 ? wastageFactor : 1);
+                const lineCost = calculateMaterialCost({
+                    quantity: bomItem.quantity_required,
+                    unitCost: compUnitCost,
+                    wastagePercent: bomItem.wastage_factor_percentage
+                });
 
-                materialsSubtotal += lineCost;
+                materialsBatchSubtotal += lineCost;
 
                 const ingName = compProduct ? compProduct.product_name : `Component #${bomItem.product_id}`;
                 const uomName = bomItem.unit_of_measurement
@@ -288,22 +328,42 @@ export async function calculateRollupCost(
             id: `route-${r.route_id}`,
             name: `${opName} (${workCenter ? workCenter.work_center_name : "No Work Center"})`,
             type: "routing",
-            quantity: totalHours,
+            quantity: 1,
             uom: "hrs",
-            unitCost: wcOverheadRate,
+            unitCost: routeBreakdown.machineOverheadCost,
             wastagePercent: 0,
-            totalCost: stepCost,
+            totalCost: routeBreakdown.machineOverheadCost,
+            machineRate: workCenter?.overhead_cost_per_hour || 0,
+            machineHours: routeBreakdown.machineHours,
+            machineCostPerUnit: routeBreakdown.machineOverheadCost,
+            stepBatchSize: r.step_batch_size || 1,
             children: childrenNodes.length > 0 ? childrenNodes : undefined
         });
     }
 
-    const yieldPercentage = Number(version.expected_yield_percentage ?? 100);
-    const yieldFactor = yieldPercentage / 100;
-    const rolledCost = (materialsSubtotal + routingsSubtotal) / (yieldFactor > 0 ? yieldFactor : 1);
+    const baseQuantity = Number(version?.base_quantity) > 0 ? Number(version?.base_quantity) : 1;
+    const materialsSubtotal = materialsBatchSubtotal / baseQuantity;
+
+    const breakdown = calculateCostBreakdown({
+        materialsCost: materialsSubtotal,
+        machineOverheadCost: machineOverheadCost,
+        customOverheadCost: version.custom_overhead || 0,
+        expectedYieldPercentage: version.expected_yield_percentage,
+        baseQuantity,
+        machineHours: machineHoursSubtotal,
+        totalMachineCost: totalMachineCostSubtotal
+    });
+    const overheadSummary = calculateOverheadSummary(
+        breakdown.customOverheadCost,
+        (version.overheads || []).map(overhead => overhead.amount)
+    );
 
     const targetPrice = currentProduct.price_per_unit || 0;
-    const marginPhp = targetPrice - rolledCost;
-    const marginPercent = targetPrice > 0 ? (marginPhp / targetPrice) * 100 : 0;
+    const margin = calculateMarginSummary(
+        targetPrice,
+        breakdown.unitCost,
+        overheadSummary.excludedFromCogs
+    );
 
     return {
         productId,
@@ -311,12 +371,15 @@ export async function calculateRollupCost(
         sku: currentProduct.product_code,
         bomId: version.version_id, // map version_id as bomId
         bomVersion: version.version_name,
-        materialsCost: materialsSubtotal,
-        routingsCost: routingsSubtotal,
-        yieldPercentage,
-        totalBaseCost: rolledCost,
+        ...breakdown,
+        additionalOperatingOverhead: overheadSummary.additionalOperatingOverhead,
+        totalOverheadExpenses: overheadSummary.totalOverheadExpenses,
+        includedInCogs: overheadSummary.includedInCogs,
+        excludedFromCogs: overheadSummary.excludedFromCogs,
+        totalMachineCost: breakdown.totalMachineCost,
+        routingsCost: breakdown.machineOverheadCost,
         targetSellingPrice: targetPrice,
-        grossMarginPercent: marginPercent,
+        ...margin,
         costTree: costTreeNodes
     };
 }
@@ -324,6 +387,12 @@ export async function calculateRollupCost(
 /**
  * Updates product details.
  */
+export interface ProductDetailsUpdateResult {
+    ok: boolean;
+    status?: number;
+    error?: string;
+}
+
 export async function updateProductDetails(
     productId: number,
     details: {
@@ -347,7 +416,7 @@ export async function updateProductDetails(
         production_capacity_per_hour?: number;
         unit_of_measurement?: number | null;
     }
-): Promise<boolean> {
+): Promise<ProductDetailsUpdateResult> {
     try {
         const url = `${DIRECTUS_URL}/items/products/${productId}`;
         const res = await fetch(url, {
@@ -355,10 +424,96 @@ export async function updateProductDetails(
             headers,
             body: JSON.stringify(details)
         });
-        return res.ok;
+        if (res.ok) return { ok: true };
+        return {
+            ok: false,
+            status: res.status,
+            error: await res.text()
+        };
     } catch (e) {
         console.error(`[Manufacturing Directus API] Failed updating product details:`, e);
-        return false;
+        return {
+            ok: false,
+            error: e instanceof Error ? e.message : String(e)
+        };
+    }
+}
+
+export interface ProductDetailsVerificationInput {
+    productName: string;
+    productCode: string;
+    parentId: number | null;
+    productBrand: number;
+    productCategory: number;
+    unitOfMeasurement: number;
+    unitOfMeasurementCount: number;
+    densityFactor: number;
+    productShelfLife: number;
+
+}
+
+function directusRelationId(value: unknown, keys: string[]): number | null {
+    if (value === null || value === undefined) return null;
+    if (typeof value === "object") {
+        const record = value as Record<string, unknown>;
+        for (const key of keys) {
+            if (record[key] !== undefined && record[key] !== null) {
+                const nestedId = Number(record[key]);
+                return Number.isFinite(nestedId) ? nestedId : null;
+            }
+        }
+        return null;
+    }
+    const id = Number(value);
+    return Number.isFinite(id) ? id : null;
+}
+
+function numbersMatch(actual: unknown, expected: number): boolean {
+    const parsed = Number(actual);
+    return Number.isFinite(parsed) && Math.abs(parsed - expected) < 0.000001;
+}
+
+export async function verifyProductDetails(
+    productId: number,
+    expected: ProductDetailsVerificationInput
+): Promise<{ ok: boolean; error?: string }> {
+    try {
+        const query = new URLSearchParams({
+            fields: "product_id,product_name,product_code,parent_id,product_brand,product_category,unit_of_measurement,unit_of_measurement_count,density_factor,product_shelf_life,production_capacity_per_hour",
+            limit: "1"
+        });
+        const res = await fetch(`${DIRECTUS_URL}/items/products/${productId}?${query.toString()}`, {
+            headers,
+            cache: "no-store"
+        });
+        if (!res.ok) return { ok: false, error: "Product update could not be verified." };
+
+        const saved = (await res.json()).data as Record<string, unknown> | undefined;
+        if (!saved) return { ok: false, error: "Product update could not be verified." };
+
+        const parentId = directusRelationId(saved.parent_id, ["product_id", "id"]);
+        const productBrand = directusRelationId(saved.product_brand, ["brand_id", "id"]);
+        const productCategory = directusRelationId(saved.product_category, ["category_id", "id"]);
+        const unitOfMeasurement = directusRelationId(saved.unit_of_measurement, ["unit_id", "id"]);
+
+        const matches =
+            String(saved.product_name || "").trim() === expected.productName &&
+            String(saved.product_code || "").trim() === expected.productCode &&
+            parentId === expected.parentId &&
+            productBrand === expected.productBrand &&
+            productCategory === expected.productCategory &&
+            unitOfMeasurement === expected.unitOfMeasurement &&
+            numbersMatch(saved.unit_of_measurement_count, expected.unitOfMeasurementCount) &&
+            numbersMatch(saved.density_factor, expected.densityFactor) &&
+            numbersMatch(saved.product_shelf_life, expected.productShelfLife);
+
+
+        return matches
+            ? { ok: true }
+            : { ok: false, error: "Directus did not persist all requested product details." };
+    } catch (e) {
+        console.error("[Manufacturing Directus API] Failed verifying product details:", e);
+        return { ok: false, error: "Product update could not be verified." };
     }
 }
 

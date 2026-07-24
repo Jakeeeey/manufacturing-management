@@ -709,7 +709,7 @@ export async function handleGET(request: Request) {
                 setup_time_hours: r.setup_time_hours,
                 run_time_hours: r.run_time_hours,
                 duration_hours: Number(r.setup_time_hours || 0) + Number(r.run_time_hours || 0),
-                estimated_labor_cost: r.estimated_labor_cost,
+                step_batch_size: r.step_batch_size,
                 operation_id: r.operation_id,
                 work_center_id: r.work_center_id,
                 qa_template_id: r.qa_template_id,

@@ -5,8 +5,13 @@ import { calculateRollupCost } from "./products-helper";
 import {
     ProductIdentityError,
     ensureProductIdentityAvailable,
+    ensureProductSkuAvailable,
     resolveProductIdentity
 } from "./product-identity";
+import {
+    ProductRequiredFieldsError,
+    validateProductRegistration
+} from "@/modules/manufacturing-management/finished-goods/product-validation";
 
 interface DirectusProductCurrencyProfile {
     id: number;
@@ -103,7 +108,7 @@ export async function GET(request: Request) {
                 // Get rolled up cost (COGS) using current active version routes & route-level BOM
                 const costRollup = await calculateRollupCost(p.product_id, new Set(), productsMap, 58.00, profilesMap);
                 if (costRollup && costRollup.bomId !== null) {
-                    productCopy.cost_per_unit = costRollup.totalBaseCost;
+                    productCopy.cost_per_unit = costRollup.unitCost;
                     productCopy.has_cogs = true;
                 } else {
                     productCopy.cost_per_unit = 0;
@@ -132,27 +137,16 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
     try {
         const body = await request.json();
-        const { productDetails, versionName, supplierIds, expectedYield } = body;
+        const { productDetails, versionName, supplierIds, expectedYield } = body || {};
 
-        if (!productDetails || !productDetails.product_name || !productDetails.product_code || !versionName) {
-            return NextResponse.json({ error: "Missing required fields (product_name, product_code, versionName)" }, { status: 400 });
-        }
+        const validatedDetails = validateProductRegistration({ productDetails, versionName, expectedYield });
 
-        const checkCodeRes = await fetch(`${DIRECTUS_URL}/items/products?filter[product_code][_eq]=${encodeURIComponent(productDetails.product_code)}&limit=1`, { headers });
-        if (checkCodeRes.ok) {
-            const checkData = await checkCodeRes.json();
-            if (checkData.data && checkData.data.length > 0) {
-                return NextResponse.json({
-                    error: "A product with this SKU already exists. Please choose a unique SKU.",
-                    code: "PRODUCT_SKU_CONFLICT"
-                }, { status: 400 });
-            }
-        }
+        const productCode = await ensureProductSkuAvailable(validatedDetails.productCode);
 
         const identity = await resolveProductIdentity({
-            productName: productDetails.product_name,
+            productName: validatedDetails.productName,
             parentId: productDetails.parent_id,
-            unitId: productDetails.unit_of_measurement
+            unitId: validatedDetails.unitOfMeasurement
         });
         await ensureProductIdentityAvailable(identity.descriptionKey);
 
@@ -187,13 +181,18 @@ export async function POST(request: Request) {
         delete productFields.unit_of_measurement;
         const productPayload = {
             ...productFields,
+            product_code: productCode,
             product_name: identity.productName,
             parent_id: identity.parentId,
             unit_of_measurement: identity.unitId,
+            density_factor: validatedDetails.densityFactor,
+            unit_of_measurement_count: validatedDetails.unitOfMeasurementCount,
+            product_brand: validatedDetails.productBrand,
+            product_category: validatedDetails.productCategory,
+            product_shelf_life: validatedDetails.productShelfLife,
+
             description: identity.descriptionKey,
             short_description: typeof short_description === "string" ? short_description.trim() || null : description?.trim() || null,
-            product_brand: productDetails.product_brand !== undefined ? productDetails.product_brand : null,
-            product_category: productDetails.product_category !== undefined ? productDetails.product_category : null,
             product_class: productDetails.product_class !== undefined ? productDetails.product_class : null,
             product_segment: productDetails.product_segment !== undefined ? productDetails.product_segment : null,
             product_section: productDetails.product_section !== undefined ? productDetails.product_section : null,
@@ -214,7 +213,7 @@ export async function POST(request: Request) {
             const errText = await prodRes.text();
             if (prodRes.status === 409 || /duplicate|unique constraint|unique key/i.test(errText)) {
                 const skuCheckRes = await fetch(
-                    `${DIRECTUS_URL}/items/products?filter[product_code][_eq]=${encodeURIComponent(productDetails.product_code)}&limit=1`,
+                    `${DIRECTUS_URL}/items/products?filter[product_code][_eq]=${encodeURIComponent(productCode)}&limit=1`,
                     { headers, cache: "no-store" }
                 );
                 if (skuCheckRes.ok) {
@@ -223,7 +222,7 @@ export async function POST(request: Request) {
                         return NextResponse.json({
                             error: "A product with this SKU already exists. Please choose a unique SKU.",
                             code: "PRODUCT_SKU_CONFLICT"
-                        }, { status: 400 });
+                        }, { status: 409 });
                     }
                 }
                 return NextResponse.json({
@@ -239,10 +238,10 @@ export async function POST(request: Request) {
         // 2. Create Product Version (Active status by default for first version)
         const versionPayload = {
             product_id: productId,
-            version_name: versionName,
+            version_name: validatedDetails.versionName,
             base_quantity: 1,
-            uom_id: productDetails.unit_of_measurement || null,
-            expected_yield_percentage: expectedYield !== undefined ? Number(expectedYield) : 100,
+            uom_id: validatedDetails.unitOfMeasurement,
+            expected_yield_percentage: validatedDetails.expectedYield,
             status: "Active",
             valid_from: new Date().toISOString().split("T")[0]
         };
@@ -281,6 +280,12 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: true, productId, version: createdVersion });
     } catch (e) {
         console.error("API Error registering product:", e);
+        if (e instanceof ProductRequiredFieldsError) {
+            return NextResponse.json(
+                { error: e.message, code: e.code, fields: e.fields },
+                { status: e.status }
+            );
+        }
         if (e instanceof ProductIdentityError) {
             return NextResponse.json({ error: e.message, code: e.code }, { status: e.status });
         }

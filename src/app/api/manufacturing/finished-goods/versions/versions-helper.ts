@@ -146,6 +146,47 @@ export async function getBOMDetailsForVersion(productId: number, versionId: numb
         const bomJson = await resBom.json();
         const bomItems: RouteBOMItem[] = bomJson.data || [];
 
+        const bomProductIds = [...new Set(
+            bomItems
+                .map(item => Number(item.product_id))
+                .filter(productId => Number.isFinite(productId) && productId > 0)
+        )];
+        if (bomProductIds.length > 0) {
+            const productFilter = encodeURIComponent(JSON.stringify({ product_id: { _in: bomProductIds } }));
+            const versionFilter = encodeURIComponent(JSON.stringify({ product_id: { _in: bomProductIds } }));
+            const [productsRes, productVersionsRes] = await Promise.all([
+                fetch(
+                    `${DIRECTUS_URL}/items/products?filter=${productFilter}&fields=product_id,product_type&limit=-1`,
+                    { headers, cache: "no-store" }
+                ),
+                fetch(
+                    `${DIRECTUS_URL}/items/product_manufacturing_version?filter=${versionFilter}&fields=product_id&limit=-1`,
+                    { headers, cache: "no-store" }
+                )
+            ]);
+
+            const products = productsRes.ok ? (await productsRes.json()).data || [] : [];
+            const productTypes = new Map<number, number | null>(
+                products.map((product: { product_id?: number; product_type?: number | null }) => [
+                    Number(product.product_id),
+                    product.product_type == null ? null : Number(product.product_type)
+                ])
+            );
+            const versionedProductIds = new Set<number>(
+                productVersionsRes.ok
+                    ? ((await productVersionsRes.json()).data || [])
+                        .map((productVersion: { product_id?: number }) => Number(productVersion.product_id))
+                        .filter((productId: number) => Number.isFinite(productId) && productId > 0)
+                    : []
+            );
+
+            bomItems.forEach(item => {
+                const productId = Number(item.product_id);
+                item.product_type = productTypes.get(productId) ?? null;
+                item.has_versions = versionedProductIds.has(productId);
+            });
+        }
+
         routes.forEach(r => {
             r.bom_items = bomItems.filter(b => b.route_id === r.route_id);
         });

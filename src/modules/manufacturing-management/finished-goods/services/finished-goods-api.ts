@@ -63,7 +63,7 @@ export async function fetchProducts(search?: string, limit: number = 100): Promi
             cost_per_unit: p.cost_per_unit ? Number(p.cost_per_unit) : undefined,
             unit_of_measurement_count: p.unit_of_measurement_count ? Number(p.unit_of_measurement_count) : undefined,
             product_image: p.product_image || undefined,
-            production_capacity_per_hour: p.production_capacity_per_hour ? Number(p.production_capacity_per_hour) : undefined,
+
             has_versions: !!p.has_versions
         };
     });
@@ -153,7 +153,6 @@ export async function saveBOMDetails(
         productShelfLife?: number;
         productImage?: string;
         parent_id?: number | null;
-        productionCapacityPerHour?: number;
         unit_of_measurement?: number | null;
     },
     routes: RouteStep[],
@@ -166,13 +165,29 @@ export async function saveBOMDetails(
     });
     if (!res.ok) {
         let msg = "Failed to save BOM details via BFF";
+        let code: string | undefined;
+        let fields: Record<string, string> | undefined;
         try {
             const errJson = await res.json();
             if (errJson && errJson.error) msg = errJson.error;
+            if (errJson && errJson.code) code = errJson.code;
+            if (errJson && errJson.fields) fields = errJson.fields;
         } catch { }
-        throw new Error(msg);
+        const error = new Error(msg) as Error & {
+            status?: number;
+            code?: string;
+            fields?: Record<string, string>;
+        };
+        error.status = res.status;
+        error.code = code;
+        error.fields = fields;
+        throw error;
     }
-    return res.json();
+    const payload = await res.json();
+    if (!payload?.success) {
+        throw new Error("The product update was not confirmed by the server.");
+    }
+    return payload;
 }
 
 export async function registerProduct(
@@ -210,14 +225,21 @@ export async function registerProduct(
     if (!res.ok) {
         let msg = "Failed to register product via BFF";
         let code: string | undefined;
+        let fields: Record<string, string> | undefined;
         try {
             const errJson = await res.json();
             if (errJson && errJson.error) msg = errJson.error;
             if (errJson && errJson.code) code = errJson.code;
+            if (errJson && errJson.fields) fields = errJson.fields;
         } catch { }
-        const error = new Error(msg) as Error & { status?: number; code?: string };
+        const error = new Error(msg) as Error & {
+            status?: number;
+            code?: string;
+            fields?: Record<string, string>;
+        };
         error.status = res.status;
         error.code = code;
+        error.fields = fields;
         throw error;
     }
     return res.json();

@@ -21,7 +21,7 @@ export function useProductionWorkflow() {
 
     // Operator logs for the selected task
     const [routeOperators, setRouteOperators] = useState<RouteOperatorRecord[]>([]);
-    const [operatorsSummary, setOperatorsSummary] = useState({ total_hours: 0, total_labor_cost: 0 });
+    const [operatorsSummary, setOperatorsSummary] = useState({ total_hours: 0 });
     
     // UI states
     const [loadingJobs, setLoadingJobs] = useState(true);
@@ -105,7 +105,7 @@ export function useProductionWorkflow() {
     const fetchJobOrderOperators = useCallback(async (tasks: RoutingTask[], silent = false) => {
         if (tasks.length === 0) {
             setRouteOperators([]);
-            setOperatorsSummary({ total_hours: 0, total_labor_cost: 0 });
+            setOperatorsSummary({ total_hours: 0 });
             return;
         }
         if (!silent) setLoadingOperators(true);
@@ -126,10 +126,8 @@ export function useProductionWorkflow() {
 
             // Compute total hours and cost across all tasks
             const totalHours = allOps.reduce((sum, r) => sum + (r.actual_hours || 0), 0);
-            const totalLaborCost = allOps.reduce((sum, r) => sum + (r.labor_cost || 0), 0);
             setOperatorsSummary({
-                total_hours: Math.round(totalHours * 100) / 100,
-                total_labor_cost: Math.round(totalLaborCost * 100) / 100
+                total_hours: Math.round(totalHours * 100) / 100
             });
         } catch (err: any) {
             console.error("Error fetching job order operators:", err);
@@ -242,7 +240,7 @@ export function useProductionWorkflow() {
             setManualHours("");
         } else {
             setRouteOperators([]);
-            setOperatorsSummary({ total_hours: 0, total_labor_cost: 0 });
+            setOperatorsSummary({ total_hours: 0 });
         }
     }, [selectedJobOrderId, sortedTasks, fetchJobOrderOperators]);
 
@@ -371,14 +369,12 @@ export function useProductionWorkflow() {
         try {
             const taskOps = routeOperators.filter((op) => op.task_id === taskObj.id);
             const totalHours = taskOps.reduce((sum, r) => sum + (r.actual_hours || 0), 0);
-            const totalLaborCost = taskOps.reduce((sum, r) => sum + (r.labor_cost || 0), 0);
 
             await patchRoutingTask({
                 taskId: taskObj.id,
                 taskPatch: {
                     status: "Completed",
                     completed_at: new Date().toISOString(),
-                    actual_labor_cost: Math.round(totalLaborCost * 100) / 100,
                     actual_run_hours: Math.round(totalHours * 100) / 100
                 }
             });
@@ -507,7 +503,6 @@ export function useProductionWorkflow() {
                     body: JSON.stringify({
                         taskId: selectedTask.id,
                         taskPatch: {
-                            actual_labor_cost: operatorsSummary.total_labor_cost,
                             actual_run_hours: operatorsSummary.total_hours
                         }
                     })

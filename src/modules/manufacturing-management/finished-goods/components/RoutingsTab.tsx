@@ -140,7 +140,7 @@ export const RoutingsTab: React.FC<RoutingsTabProps> = ({
                                 <tr className="border-b bg-muted/40 font-semibold text-muted-foreground">
                                     <th className="p-3 w-20">Seq</th>
                                     <th className="p-3">Step Name</th>
-                                    <th className="p-3">Labor Flat Rate</th>
+                                    <th className="p-3">Step Batch Size</th>
                                     <th className="p-3">OH (Factory Overhead) / Hr</th>
                                     <th className="p-3">Duration (H:M:S)</th>
                                     <th className="p-3 text-center w-28">Requires QA</th>
@@ -150,7 +150,7 @@ export const RoutingsTab: React.FC<RoutingsTabProps> = ({
                             </thead>
                             <tbody>
                                 {editedRoutings.sort((a,b) => a.sequence - b.sequence).map((step, index) => {
-                                    const computedCost = step.laborFlatRate + (step.machineHourlyRate * step.durationHours);
+                                    const computedCost = (step.machineHourlyRate * step.durationHours) / (step.stepBatchSize || 1);
                                     
                                     return (
                                         <tr key={step.id} className="border-b last:border-0 hover:bg-muted/5 transition-colors">
@@ -270,29 +270,29 @@ export const RoutingsTab: React.FC<RoutingsTabProps> = ({
                                             </td>
                                             <td className="p-1 border-r border-muted/20 w-36 align-middle">
                                                 <div className="relative flex items-center px-2">
-                                                    <span className="text-xs text-muted-foreground mr-1.5 select-none font-semibold">₱</span>
+                                                    <span className="text-xs text-muted-foreground mr-1.5 select-none font-semibold">Qty</span>
                                                     <input 
                                                         type="number" 
-                                                        step="0.01"
-                                                        value={step.laborFlatRate === 0 ? "" : step.laborFlatRate} 
+                                                        step="0.0001"
+                                                        value={step.stepBatchSize === 0 || !step.stepBatchSize ? "" : step.stepBatchSize} 
                                                         data-index={index}
                                                         onChange={e => {
                                                             const val = parseFloat(e.target.value);
-                                                            handleRoutingChange(step.id, "laborFlatRate", isNaN(val) ? 0 : val);
+                                                            handleRoutingChange(step.id, "stepBatchSize", isNaN(val) ? 1 : val);
                                                         }}
                                                         onKeyDown={e => {
                                                             if (e.key === "ArrowDown") {
                                                                 e.preventDefault();
-                                                                const el = document.querySelector(`.rt-labor-input[data-index="${index + 1}"]`) as HTMLInputElement;
+                                                                const el = document.querySelector(`.rt-batch-input[data-index="${index + 1}"]`) as HTMLInputElement;
                                                                 if (el) el.focus();
                                                             } else if (e.key === "ArrowUp") {
                                                                 e.preventDefault();
-                                                                const el = document.querySelector(`.rt-labor-input[data-index="${index - 1}"]`) as HTMLInputElement;
+                                                                const el = document.querySelector(`.rt-batch-input[data-index="${index - 1}"]`) as HTMLInputElement;
                                                                 if (el) el.focus();
                                                             }
                                                         }}
-                                                        className="rt-labor-input w-full bg-transparent border-0 focus:ring-1 focus:ring-primary focus:bg-background focus:outline-hidden py-1 px-1.5 text-sm text-foreground rounded-sm"
-                                                        placeholder="0.00"
+                                                        className="rt-batch-input w-full bg-transparent border-0 focus:ring-1 focus:ring-primary focus:bg-background focus:outline-hidden py-1 px-1.5 text-sm text-foreground rounded-sm"
+                                                        placeholder="1.0"
                                                     />
                                                 </div>
                                             </td>

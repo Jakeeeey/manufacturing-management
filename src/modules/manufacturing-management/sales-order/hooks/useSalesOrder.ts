@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
-import { SalesOrder, SalesOrderDetail } from "../types";
+import { SalesOrder, SalesOrderDetail, CreateSalesOrderPayload } from "../types";
 import { 
     fetchSalesOrders, 
     fetchSalesOrderDetails, 
@@ -217,8 +217,7 @@ export function useSalesOrder() {
         }
     };
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const handleCreateSalesOrderDirect = async (payload: any) => {
+    const handleCreateSalesOrderDirect = async (payload: CreateSalesOrderPayload) => {
         try {
             const res = await createSalesOrderDirect(payload);
             toast.success("Sales Order created directly!");
@@ -231,9 +230,9 @@ export function useSalesOrder() {
                 dateToFilter
             );
             return res;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        } catch (e: any) {
-            toast.error(e.message || "Failed to create sales order directly");
+        } catch (e: unknown) {
+            const msg = e instanceof Error ? e.message : "Failed to create sales order directly";
+            toast.error(msg);
             throw e;
         }
     };

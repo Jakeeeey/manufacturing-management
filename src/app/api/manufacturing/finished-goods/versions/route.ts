@@ -128,7 +128,7 @@ export async function POST(request: Request) {
                             sequence_order: step.sequence_order,
                             setup_time_hours: step.setup_time_hours || 0,
                             run_time_hours: step.run_time_hours || 0,
-                            estimated_labor_cost: step.estimated_labor_cost || 0,
+                            step_batch_size: step.step_batch_size !== undefined ? step.step_batch_size : 1,
                             qa_template_id: step.qa_template_id || null,
                             created_by: userId
                         };

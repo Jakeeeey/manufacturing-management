@@ -19,6 +19,7 @@ import {
 
 interface ProductDetailsTabProps {
     editedDetails: Partial<Product>;
+    editFieldErrors: Record<string, string>;
     handleDetailChange: (field: keyof Product, value: unknown) => void;
     customOverhead: number;
     handleCustomOverheadChange: (value: number) => void;
@@ -39,6 +40,7 @@ interface ProductDetailsTabProps {
 
 export const ProductDetailsTab: React.FC<ProductDetailsTabProps> = ({
     editedDetails,
+    editFieldErrors,
     handleDetailChange,
     customOverhead,
     handleCustomOverheadChange,
@@ -57,6 +59,7 @@ export const ProductDetailsTab: React.FC<ProductDetailsTabProps> = ({
     products
 }) => {
     const [uploadingImage, setUploadingImage] = React.useState(false);
+    const fieldError = (field: string) => editFieldErrors[field];
 
     const parentOptions = React.useMemo(() => {
         const baseOptions = products
@@ -162,12 +165,16 @@ export const ProductDetailsTab: React.FC<ProductDetailsTabProps> = ({
                     <div className="space-y-3">
                         <div className="space-y-1">
                             <label className="text-[11px] font-bold text-muted-foreground uppercase">Product Title <span className="text-red-500">*</span></label>
-                            <input 
-                                type="text" 
-                                value={editedDetails.title || ""} 
-                                onChange={e => handleDetailChange("title", e.target.value)}
-                                className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
-                            />
+                                <input
+                                    type="text"
+                                    required
+                                    value={editedDetails.title || ""}
+                                    onChange={e => handleDetailChange("title", e.target.value)}
+                                    aria-invalid={!!fieldError("title")}
+                                    aria-describedby={fieldError("title") ? "edit-title-error" : undefined}
+                                    className={`w-full rounded-lg border bg-background px-3 py-1.5 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all ${fieldError("title") ? "border-red-500 focus:ring-red-500" : "border-border"}`}
+                                />
+                                {fieldError("title") && <p id="edit-title-error" className="text-[10px] text-red-600" role="alert">{fieldError("title")}</p>}
                         </div>
 
                         <div className="grid grid-cols-2 gap-3">
@@ -175,10 +182,18 @@ export const ProductDetailsTab: React.FC<ProductDetailsTabProps> = ({
                                 <label className="text-[11px] font-bold text-muted-foreground uppercase">SKU / Code <span className="text-red-500">*</span></label>
                                 <input 
                                     type="text" 
+                                    required
                                     value={editedDetails.sku || ""} 
                                     onChange={e => handleDetailChange("sku", e.target.value)}
-                                    className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
+                                    aria-invalid={!!fieldError("sku")}
+                                    aria-describedby={fieldError("sku") ? "edit-sku-error" : undefined}
+                                    className={`w-full rounded-lg border bg-background px-3 py-1.5 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all ${fieldError("sku") ? "border-red-500 focus:ring-red-500" : "border-border"}`}
                                 />
+                                {fieldError("sku") && (
+                                    <p id="edit-sku-error" className="text-[10px] text-red-600" role="alert">
+                                        {fieldError("sku")}
+                                    </p>
+                                )}
                             </div>
                             <div className="space-y-1">
                                 <label className="text-[11px] font-bold text-muted-foreground uppercase">Barcode / EAN</label>
@@ -199,11 +214,15 @@ export const ProductDetailsTab: React.FC<ProductDetailsTabProps> = ({
                                     value={editedDetails.product_brand ? String(editedDetails.product_brand) : ""}
                                     onValueChange={(val) => handleDetailChange("product_brand", val ? Number(val) : undefined)}
                                     placeholder="Select brand..."
+                                    aria-invalid={!!fieldError("productBrand")}
+                                    aria-describedby={fieldError("productBrand") ? "edit-brand-error" : undefined}
+                                    className={fieldError("productBrand") ? "border-red-500" : undefined}
                                     onCreateOption={async (name) => {
                                         const newId = await handleCreateBrand(name);
                                         if (newId) handleDetailChange("product_brand", newId);
                                     }}
                                 />
+                                {fieldError("productBrand") && <p id="edit-brand-error" className="text-[10px] text-red-600" role="alert">{fieldError("productBrand")}</p>}
                             </div>
                             <div className="space-y-1">
                                 <label className="text-[11px] font-bold text-muted-foreground uppercase">Category <span className="text-red-500">*</span></label>
@@ -212,11 +231,15 @@ export const ProductDetailsTab: React.FC<ProductDetailsTabProps> = ({
                                     value={editedDetails.product_category ? String(editedDetails.product_category) : ""}
                                     onValueChange={(val) => handleDetailChange("product_category", val ? Number(val) : undefined)}
                                     placeholder="Select category..."
+                                    aria-invalid={!!fieldError("productCategory")}
+                                    aria-describedby={fieldError("productCategory") ? "edit-category-error" : undefined}
+                                    className={fieldError("productCategory") ? "border-red-500" : undefined}
                                     onCreateOption={async (name) => {
                                         const newId = await handleCreateCategory(name);
                                         if (newId) handleDetailChange("product_category", newId);
                                     }}
                                 />
+                                {fieldError("productCategory") && <p id="edit-category-error" className="text-[10px] text-red-600" role="alert">{fieldError("productCategory")}</p>}
                             </div>
                         </div>
 
@@ -388,13 +411,18 @@ export const ProductDetailsTab: React.FC<ProductDetailsTabProps> = ({
                                     value={editedDetails.baseUom || ""}
                                     onValueChange={(val) => handleDetailChange("baseUom", val)}
                                     placeholder="Select Base UOM..."
+                                    aria-invalid={!!fieldError("unit_of_measurement")}
+                                    aria-describedby={fieldError("unit_of_measurement") ? "edit-uom-error" : undefined}
+                                    className={fieldError("unit_of_measurement") ? "border-red-500" : undefined}
                                 />
+                                {fieldError("unit_of_measurement") && <p id="edit-uom-error" className="text-[10px] text-red-600" role="alert">{fieldError("unit_of_measurement")}</p>}
                             </div>
 
                             <div className="space-y-1">
                                 <label className="text-[11px] font-bold text-muted-foreground uppercase">UOM Count (Pack Multiplier) <span className="text-red-500">*</span></label>
                                 <input 
                                     type="number" 
+                                    required
                                     value={editedDetails.unit_of_measurement_count || ""} 
                                     onChange={e => {
                                         const valStr = e.target.value;
@@ -411,8 +439,11 @@ export const ProductDetailsTab: React.FC<ProductDetailsTabProps> = ({
                                             }
                                         }
                                     }}
-                                    className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
+                                    aria-invalid={!!fieldError("unitOfMeasurementCount")}
+                                    aria-describedby={fieldError("unitOfMeasurementCount") ? "edit-uom-count-error" : undefined}
+                                    className={`w-full rounded-lg border bg-background px-3 py-1.5 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all ${fieldError("unitOfMeasurementCount") ? "border-red-500 focus:ring-red-500" : "border-border"}`}
                                 />
+                                {fieldError("unitOfMeasurementCount") && <p id="edit-uom-count-error" className="text-[10px] text-red-600" role="alert">{fieldError("unitOfMeasurementCount")}</p>}
                             </div>
 
                             <div className="space-y-1">
@@ -420,10 +451,14 @@ export const ProductDetailsTab: React.FC<ProductDetailsTabProps> = ({
                                 <input 
                                     type="number" 
                                     step="0.001"
-                                    value={editedDetails.densityFactor !== undefined ? editedDetails.densityFactor : 1.0} 
-                                    onChange={e => handleDetailChange("densityFactor", parseFloat(e.target.value) || 1.0)}
-                                    className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
+                                    required
+                                    value={editedDetails.densityFactor !== undefined ? editedDetails.densityFactor : ""}
+                                    onChange={e => handleDetailChange("densityFactor", e.target.value === "" ? undefined : Number(e.target.value))}
+                                    aria-invalid={!!fieldError("densityFactor")}
+                                    aria-describedby={fieldError("densityFactor") ? "edit-density-error" : undefined}
+                                    className={`w-full rounded-lg border bg-background px-3 py-1.5 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all ${fieldError("densityFactor") ? "border-red-500 focus:ring-red-500" : "border-border"}`}
                                 />
+                                {fieldError("densityFactor") && <p id="edit-density-error" className="text-[10px] text-red-600" role="alert">{fieldError("densityFactor")}</p>}
                             </div>
 
                             <div className="space-y-1">
@@ -431,12 +466,16 @@ export const ProductDetailsTab: React.FC<ProductDetailsTabProps> = ({
                                 <div className="relative">
                                     <Activity className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/60" />
                                     <input 
-                                        type="number" 
-                                        step="0.1"
-                                        value={editedDetails.expectedYieldPercent || 0} 
-                                        onChange={e => handleDetailChange("expectedYieldPercent", parseFloat(e.target.value) || 0)}
-                                        className="w-full rounded-lg border border-border bg-background pl-9 pr-3 py-1.5 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
-                                    />
+                                    type="number"
+                                    step="0.1"
+                                    required
+                                    value={editedDetails.expectedYieldPercent ?? ""}
+                                    onChange={e => handleDetailChange("expectedYieldPercent", e.target.value === "" ? undefined : Number(e.target.value))}
+                                    aria-invalid={!!fieldError("expected_yield_percentage")}
+                                    aria-describedby={fieldError("expected_yield_percentage") ? "edit-yield-error" : undefined}
+                                    className={`w-full rounded-lg border bg-background pl-9 pr-3 py-1.5 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all ${fieldError("expected_yield_percentage") ? "border-red-500 focus:ring-red-500" : "border-border"}`}
+                                />
+                                {fieldError("expected_yield_percentage") && <p id="edit-yield-error" className="text-[10px] text-red-600" role="alert">{fieldError("expected_yield_percentage")}</p>}
                                 </div>
                             </div>
 
@@ -446,25 +485,17 @@ export const ProductDetailsTab: React.FC<ProductDetailsTabProps> = ({
                                 </label>
                                 <input 
                                     type="number" 
+                                    required
                                     value={editedDetails.product_shelf_life || ""} 
                                     onChange={e => handleDetailChange("product_shelf_life", e.target.value ? Number(e.target.value) : undefined)}
-                                    className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
+                                    aria-invalid={!!fieldError("productShelfLife")}
+                                    aria-describedby={fieldError("productShelfLife") ? "edit-shelf-life-error" : undefined}
+                                    className={`w-full rounded-lg border bg-background px-3 py-1.5 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all ${fieldError("productShelfLife") ? "border-red-500 focus:ring-red-500" : "border-border"}`}
                                     placeholder="e.g. 365"
                                 />
+                                {fieldError("productShelfLife") && <p id="edit-shelf-life-error" className="text-[10px] text-red-600" role="alert">{fieldError("productShelfLife")}</p>}
                             </div>
 
-                            <div className="space-y-1">
-                                <label className="text-[11px] font-bold text-muted-foreground uppercase flex items-center gap-1">
-                                    <Sliders className="h-3 w-3 text-muted-foreground" /> Capacity (Qty/Hr) <span className="text-red-500">*</span>
-                                </label>
-                                <input 
-                                    type="number" 
-                                    value={editedDetails.production_capacity_per_hour !== undefined ? editedDetails.production_capacity_per_hour : ""} 
-                                    onChange={e => handleDetailChange("production_capacity_per_hour", e.target.value ? parseFloat(e.target.value) : 0)}
-                                    className="w-full rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
-                                    placeholder="e.g. 100"
-                                />
-                            </div>
                         </div>
                     </div>
 

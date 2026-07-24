@@ -19,13 +19,14 @@ import {
 } from "@/components/ui/popover";
 import { useDebounce } from "use-debounce";
 import { BFFCatalogProduct } from "../types";
+import { MaterialType } from "../material-types";
 
 interface BOMMaterialSelectProps {
     value?: number;
     onSelectProduct: (product: BFFCatalogProduct) => void;
     placeholder?: string;
     disabled?: boolean;
-    type?: string;
+    type?: MaterialType | "by_product" | null;
 }
 
 export function BOMMaterialSelect({
@@ -133,10 +134,16 @@ export function BOMMaterialSelect({
             if (type === "packaging") {
                 return pType === 390;
             }
-            if (type === "sub_assembly" || type === "finished_good") {
-                return pType === 388;
+            if (type === "sub_assembly") {
+                return pType === 388 && Boolean(opt.has_versions);
             }
-            return true;
+            if (type === "finished_good") {
+                return pType === 388 && !opt.has_versions;
+            }
+            if (type === "by_product") {
+                return true;
+            }
+            return false;
         });
     }, [options, type]);
 

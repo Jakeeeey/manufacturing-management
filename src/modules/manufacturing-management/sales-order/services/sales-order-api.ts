@@ -1,11 +1,16 @@
-import { SalesOrder, SalesOrderDetail, QuotationHeader } from "../types";
+import { SalesOrder, SalesOrderDetail, QuotationHeader, CreateSalesOrderPayload } from "../types";
 
-async function handleResponse(res: Response, fallbackMessage: string) {
+async function handleResponse<T = unknown>(res: Response, fallbackMessage: string): Promise<T> {
     if (!res.ok) {
         let errMsg = fallbackMessage;
         try {
             const data = await res.json();
             if (data && data.error) errMsg = data.error;
+            if (data && Array.isArray(data.issues) && data.issues.length > 0) {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const issueDetails = data.issues.map((i: any) => i.message || `${i.path}: ${i.message}`).join("; ");
+                errMsg = `${errMsg}: ${issueDetails}`;
+            }
         } catch {}
         throw new Error(errMsg);
     }
@@ -44,8 +49,7 @@ export async function fetchSalesOrderDetails(
     return handleResponse(res, "Failed to load order details");
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function updateSalesOrderStatus(orderId: number, orderStatus: string): Promise<any> {
+export async function updateSalesOrderStatus(orderId: number, orderStatus: string): Promise<{ success: boolean }> {
     const res = await fetch("/api/manufacturing/sales-order", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -54,8 +58,7 @@ export async function updateSalesOrderStatus(orderId: number, orderStatus: strin
     return handleResponse(res, "Failed to update Sales Order status");
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function updateSalesOrderDetails(orderId: number, details: { detail_id: number; ordered_quantity: number }[]): Promise<any> {
+export async function updateSalesOrderDetails(orderId: number, details: { detail_id: number; ordered_quantity: number }[]): Promise<{ success: boolean }> {
     const res = await fetch("/api/manufacturing/sales-order", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -64,13 +67,19 @@ export async function updateSalesOrderDetails(orderId: number, details: { detail
     return handleResponse(res, "Failed to update Sales Order quantities");
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function approveSalesOrder(orderId: number): Promise<any> {
+export async function approveSalesOrder(orderId: number): Promise<{ success: boolean }> {
     return updateSalesOrderStatus(orderId, "For Picking");
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function convertQuotationToSalesOrder(quotationId: number): Promise<any> {
+export async function holdSalesOrder(orderId: number): Promise<{ success: boolean }> {
+    return updateSalesOrderStatus(orderId, "On Hold");
+}
+
+export async function cancelSalesOrder(orderId: number): Promise<{ success: boolean }> {
+    return updateSalesOrderStatus(orderId, "Cancelled");
+}
+
+export async function convertQuotationToSalesOrder(quotationId: number): Promise<{ success: boolean; data?: SalesOrder }> {
     const res = await fetch("/api/manufacturing/sales-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -79,8 +88,7 @@ export async function convertQuotationToSalesOrder(quotationId: number): Promise
     return handleResponse(res, "Failed to convert quotation");
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function createSalesOrderDirect(payload: any): Promise<any> {
+export async function createSalesOrderDirect(payload: CreateSalesOrderPayload): Promise<{ success: boolean; data?: SalesOrder }> {
     const res = await fetch("/api/manufacturing/sales-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
