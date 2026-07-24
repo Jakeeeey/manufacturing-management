@@ -53,7 +53,7 @@ export default function LotFormDialog({
 
     return (
         <Dialog open={isOpen} onOpenChange={(open) => { if (!open) onClose(); }}>
-            <DialogContent className="sm:max-w-[425px]">
+            <DialogContent className="sm:max-w-[425px]" showCloseButton={false}>
                 <form onSubmit={handleFormSubmit} className="space-y-4">
                     <DialogHeader>
                         <DialogTitle>{editingLot ? "Edit Lot" : "Add New Lot"}</DialogTitle>
