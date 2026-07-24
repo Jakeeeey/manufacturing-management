@@ -76,7 +76,7 @@ export async function getLatestLandedCost(
  */
 export async function fetchAllProducts(search?: string, limit: number = -1): Promise<DirectusProduct[]> {
     try {
-        const explicitFields = "product_id,product_name,product_code,description,short_description,isActive,cost_per_unit,price_per_unit,product_brand,barcode,parent_id,parent_id.product_id,parent_id.product_name,product_category.category_name,unit_of_measurement.unit_id,unit_of_measurement.unit_shortcut,unit_of_measurement.unit_name,unit_of_measurement_count,product_image,density_factor,production_capacity_per_hour,product_type";
+        const explicitFields = "product_id,product_name,product_code,description,short_description,isActive,cost_per_unit,price_per_unit,product_brand,barcode,parent_id,parent_id.product_id,parent_id.product_name,product_category.category_name,unit_of_measurement.unit_id,unit_of_measurement.unit_shortcut,unit_of_measurement.unit_name,unit_of_measurement_count,product_image,density_factor,product_type";
         let url = `${DIRECTUS_URL}/items/products?limit=${limit}&fields=${explicitFields}`;
         if (search && search.trim()) {
             url += `&search=${encodeURIComponent(search.trim())}`;
@@ -413,7 +413,6 @@ export async function updateProductDetails(
         product_shelf_life?: number;
         unit_of_measurement_count?: number;
         product_image?: string;
-        production_capacity_per_hour?: number;
         unit_of_measurement?: number | null;
     }
 ): Promise<ProductDetailsUpdateResult> {
@@ -479,7 +478,7 @@ export async function verifyProductDetails(
 ): Promise<{ ok: boolean; error?: string }> {
     try {
         const query = new URLSearchParams({
-            fields: "product_id,product_name,product_code,parent_id,product_brand,product_category,unit_of_measurement,unit_of_measurement_count,density_factor,product_shelf_life,production_capacity_per_hour",
+            fields: "product_id,product_name,product_code,parent_id,product_brand,product_category,unit_of_measurement,unit_of_measurement_count,density_factor,product_shelf_life",
             limit: "1"
         });
         const res = await fetch(`${DIRECTUS_URL}/items/products/${productId}?${query.toString()}`, {
