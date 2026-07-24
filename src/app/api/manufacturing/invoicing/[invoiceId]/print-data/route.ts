@@ -29,20 +29,23 @@ export async function GET(_request: Request, { params }: { params: Promise<{ inv
         const invoice = (await invoiceResponse.json()).data as Row;
 
         const detailRows = await rows("sales_invoice_details", new URLSearchParams({
-            "filter[invoice_no][_eq]": String(invoiceId), fields: "detail_id,product_id,unit_price,quantity,discount_amount,gross_amount,total_amount,net_amount", limit: "-1",
+            "filter[invoice_no][_eq]": String(invoiceId), fields: "detail_id,product_id,unit_price,quantity,discount_amount,gross_amount,total_amount", limit: "-1",
         }));
         const productIds = [...new Set(detailRows.map((detail) => Number(detail.product_id)).filter(Boolean))];
-        const [orders, customers, salesmen, terms, types, products] = await Promise.all([
+        const [orders, customers, salesmen, terms, types, products, templates] = await Promise.all([
             rows("sales_order", new URLSearchParams({ "filter[order_id][_eq]": String(invoice.order_id), fields: "order_id,order_no,po_no", limit: "1" })),
             rows("customer", new URLSearchParams({ "filter[customer_code][_eq]": String(invoice.customer_code || ""), fields: "customer_code,customer_name,store_name,customer_tin,brgy,city,province", limit: "1" })),
             invoice.salesman_id ? rows("salesman", new URLSearchParams({ "filter[id][_eq]": String(invoice.salesman_id), fields: "id,salesman_name", limit: "1" })) : [],
             invoice.payment_terms ? rows("payment_terms", new URLSearchParams({ "filter[id][_eq]": String(invoice.payment_terms), fields: "id,payment_name,payment_days", limit: "1" })) : [],
             invoice.invoice_type ? rows("sales_invoice_type", new URLSearchParams({ "filter[id][_eq]": String(invoice.invoice_type), fields: "id,type,isOfficial,max_length", limit: "1" })) : [],
             productIds.length ? rows("products", new URLSearchParams({ "filter[product_id][_in]": productIds.join(","), fields: "product_id,product_code,product_name,unit_of_measurement.unit_shortcut", limit: "-1" })) : [],
+            invoice.invoice_type ? rows("sales_invoice_template", new URLSearchParams({ "filter[sales_invoice_type_id][_eq]": String(invoice.invoice_type), fields: "id,template_config", limit: "1" })) : [],
         ]);
         const productMap = new Map(products.map((product) => [Number(product.product_id), product]));
         const customer = customers[0];
         const type = types[0];
+        const template = templates[0] as Row | undefined;
+        const templateConfig = template?.template_config as Record<string, unknown> | undefined;
 
         return NextResponse.json({
             invoiceId,
@@ -77,7 +80,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ inv
                     unitPrice: Number(detail.unit_price || 0),
                     discountAmount: discount,
                     grossAmount: gross,
-                    netAmount: Number(detail.net_amount ?? detail.total_amount ?? gross - discount),
+                    netAmount: Number(detail.total_amount ?? gross - discount),
                 };
             }),
             totals: {
@@ -86,6 +89,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ inv
                 vat: Number(invoice.vat_amount || 0),
                 net: Number(invoice.net_amount || 0),
             },
+            templateConfig: templateConfig ? templateConfig as unknown as Record<string, unknown> : undefined,
         });
     } catch (error) {
         console.error("Printable invoice error:", error);

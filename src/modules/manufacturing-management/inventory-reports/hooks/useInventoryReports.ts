@@ -249,6 +249,8 @@ export function useInventoryReports() {
             const lotInfo = lotId !== null ? lotMap.get(lotId) : null;
             const maxCapacity = lotInfo?.maxBatchCapacity || 10;
             const quantity = Number(b.quantity_received || 0);
+            const onHandQuantity = Number(b.on_hand_quantity ?? quantity);
+            const reservedQuantity = Number(b.reserved_quantity || 0);
 
             // Look up branch name
             const branchName = branchMap.get(b.branch_id) || `Branch #${b.branch_id}`;
@@ -272,6 +274,8 @@ export function useInventoryReports() {
                 transactionType: b.transaction_type || (b.source_type ? String(b.source_type).replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()) : "Legacy Stock"),
                 batchNo: b.batch_no || b.lot_number || "LOT-N/A",
                 quantity,
+                onHandQuantity,
+                reservedQuantity,
                 unitCost: Number(b.final_landed_unit_cost || b.base_unit_cost_php || 0),
                 qaStatus: b.qa_status || "Passed",
                 remarks: b.remarks || b.rejection_reason || null,

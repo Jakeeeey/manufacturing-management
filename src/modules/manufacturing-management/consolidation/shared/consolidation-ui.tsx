@@ -11,8 +11,8 @@ const statusStyles: Record<string, string> = {
 
 export function ConsolidationShell({ children, className }: { children: ReactNode; className?: string }) {
     return (
-        <div className={cn("min-h-full bg-[radial-gradient(circle_at_top_right,hsl(var(--primary)/0.08),transparent_35%)] p-4 text-foreground md:p-8", className)}>
-            <div className="mx-auto max-w-[1600px] space-y-6">{children}</div>
+        <div className={cn("p-2 text-foreground sm:p-4", className)}>
+            <div className="mx-auto space-y-4">{children}</div>
         </div>
     );
 }
@@ -33,21 +33,21 @@ export function ConsolidationHeader({
     controls?: ReactNode;
 }) {
     return (
-        <section className="overflow-hidden rounded-3xl border border-border/60 bg-card shadow-sm">
-            <div className="flex flex-col gap-6 p-5 lg:flex-row lg:items-end lg:justify-between lg:p-7">
-                <div className="flex items-center gap-4">
-                    <div className="rounded-2xl bg-primary p-3.5 shadow-lg shadow-primary/20">
-                        <Icon className="h-7 w-7 text-primary-foreground" />
+        <section className="rounded-xl border bg-card shadow-sm">
+            <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+                <div className="flex items-center gap-3">
+                    <div className="rounded-xl border border-primary/20 bg-primary/10 p-2 text-primary">
+                        <Icon className="h-5 w-5" />
                     </div>
                     <div>
-                        <p className="text-[10px] font-black uppercase tracking-[0.28em] text-primary">{eyebrow}</p>
-                        <h1 className="text-2xl font-black uppercase italic tracking-tighter md:text-4xl">
+                        <p className="text-[10px] font-extrabold uppercase tracking-wide text-primary">{eyebrow}</p>
+                        <h1 className="text-sm font-black uppercase tracking-wide">
                             {title} <span className="text-primary">{accent}</span>
                         </h1>
-                        <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+                        <p className="text-[10px] text-muted-foreground">{description}</p>
                     </div>
                 </div>
-                {controls && <div className="w-full lg:w-auto">{controls}</div>}
+                {controls && <div className="w-full sm:w-auto">{controls}</div>}
             </div>
         </section>
     );
@@ -55,7 +55,7 @@ export function ConsolidationHeader({
 
 export function FilterField({ label, children, className }: { label: string; children: ReactNode; className?: string }) {
     return (
-        <label className={cn("space-y-1.5 text-[10px] font-black uppercase tracking-widest text-muted-foreground", className)}>
+        <label className={cn("space-y-1.5 text-[10px] font-extrabold uppercase tracking-wide text-muted-foreground", className)}>
             <span>{label}</span>
             {children}
         </label>
@@ -76,11 +76,11 @@ export function ConsolidationSection({
     className?: string;
 }) {
     return (
-        <section className={cn("overflow-hidden rounded-3xl border border-border/60 bg-card shadow-sm", className)}>
-            <div className="flex flex-col gap-4 border-b border-border/60 px-5 py-5 xl:flex-row xl:items-end xl:justify-between md:px-7">
+        <section className={cn("rounded-xl border bg-card shadow-sm", className)}>
+            <div className="flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                    <p className="text-[10px] font-black uppercase tracking-[0.24em] text-primary">{eyebrow}</p>
-                    <h2 className="mt-1 text-xl font-black uppercase tracking-tight">{title}</h2>
+                    <p className="text-[10px] font-extrabold uppercase tracking-wide text-primary/70">{eyebrow}</p>
+                    <h2 className="text-xs font-black uppercase tracking-wide">{title}</h2>
                 </div>
                 {controls}
             </div>
@@ -91,18 +91,18 @@ export function ConsolidationSection({
 
 export function ConsolidationStatusBadge({ status }: { status: string }) {
     return (
-        <span className={cn("inline-flex rounded-full border px-2.5 py-1 text-[9px] font-black uppercase tracking-wider", statusStyles[status] || statusStyles.Pending)}>
+        <span className={cn("inline-flex rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-wider", statusStyles[status] || statusStyles.Pending)}>
             {status}
         </span>
     );
 }
 
-export function ConsolidationEmptyState({ icon: Icon, title, description }: { icon: LucideIcon; title: string; description?: string }) {
+export function ConsolidationEmptyState({ icon: Icon, title, description }: { icon: LucideIcon; title: string; description?: ReactNode }) {
     return (
-        <div className="flex min-h-72 flex-col items-center justify-center px-5 py-12 text-center text-muted-foreground">
+        <div className="flex min-h-72 flex-col items-center justify-center px-4 py-12 text-center text-muted-foreground">
             <Icon className="mb-4 h-12 w-12 opacity-40" />
-            <p className="font-black uppercase tracking-widest">{title}</p>
-            {description && <p className="mt-2 max-w-md text-sm">{description}</p>}
+            <p className="text-xs font-black uppercase tracking-wider">{title}</p>
+            {description && <p className="mt-1 max-w-md text-[10px]">{description}</p>}
         </div>
     );
 }

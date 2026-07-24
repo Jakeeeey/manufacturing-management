@@ -176,7 +176,7 @@ export default function InvoiceConsolidationModule() {
                         }}
                         disabled={!selectedBranch}
                         className={cn(
-                            "group relative overflow-hidden rounded-2xl border border-border/60 bg-card p-4 text-left shadow-sm transition-colors",
+                            "group relative overflow-hidden rounded-xl border bg-card p-4 text-left shadow-sm transition-colors",
                             active
                                 ? "ring-2 ring-primary/30"
                                 : "hover:border-primary/30",
@@ -211,7 +211,7 @@ export default function InvoiceConsolidationModule() {
         return (
             <ConsolidationShell>
                 {dashboardHeader}
-                <section className="overflow-hidden rounded-3xl border border-dashed border-border/60 bg-card/50"><ConsolidationEmptyState icon={Building2} title="Select a branch" description="Choose a branch to view and create consolidation batches." /></section>
+                <section className="rounded-xl border border-dashed bg-card/50"><ConsolidationEmptyState icon={Building2} title="Select a branch" description="Choose a branch to view and create consolidation batches." /></section>
 
                 {selectedBranch && (
                     <CreateConsolidationModal
@@ -257,22 +257,14 @@ export default function InvoiceConsolidationModule() {
             {/* Main Table */}
             <ConsolidationSection eyebrow="Batch Register" title="Consolidation Batches" className="relative min-h-[420px]" >
                 {loading && (
-                    <div className="absolute inset-0 z-40 flex flex-col items-center justify-center gap-5 bg-background/70 backdrop-blur-sm">
-                        <div className="rounded-3xl border border-border/50 bg-card p-5 shadow-2xl"><Loader2 className="h-10 w-10 animate-spin text-primary" /></div>
-                        <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.25em] text-muted-foreground"><RefreshCw className="h-3 w-3 animate-spin" /> Syncing Consolidations</div>
-                    </div>
+                        <div className="absolute inset-0 z-40 flex flex-col items-center justify-center gap-5 bg-background/70 backdrop-blur-sm">
+                            <div className="rounded-xl border bg-card p-5 shadow-2xl"><Loader2 className="h-10 w-10 animate-spin text-primary" /></div>
+                            <div className="flex items-center gap-2 text-[10px] font-extrabold uppercase tracking-wide text-muted-foreground"><RefreshCw className="h-3 w-3 animate-spin" /> Syncing Consolidations</div>
+                        </div>
                 )}
 
                 {consolidations.length === 0 && !loading ? (
-                    <div className="text-center py-12">
-                        <Package className="h-10 w-10 text-muted-foreground/30 mx-auto" />
-                        <h5 className="font-bold text-foreground text-xs uppercase tracking-wide mt-2">
-                            No Consolidation Batches
-                        </h5>
-                        <p className="text-[10px] text-muted-foreground mt-1">
-                            Click &quot;Create Batch&quot; to create an invoice consolidation batch for <strong>{selectedBranch.branchName}</strong>.
-                        </p>
-                    </div>
+                    <ConsolidationEmptyState icon={Package} title="No Consolidation Batches" description={<>Click &quot;Create Batch&quot; to create an invoice consolidation batch for <strong>{selectedBranch.branchName}</strong>.</>} />
                 ) : (
                     <div className="min-h-0 flex-1 overflow-auto custom-scrollbar">
                         <Table className="min-w-[760px]">
@@ -335,8 +327,8 @@ export default function InvoiceConsolidationModule() {
                 )}
 
                 {/* Pagination */}
-                <div className="flex shrink-0 flex-col items-center justify-between gap-4 border-t border-border/50 bg-muted/30 px-4 py-4 backdrop-blur-md sm:flex-row sm:px-8">
-                        <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                <div className="flex shrink-0 flex-col items-center justify-between gap-4 border-t bg-muted/30 px-4 py-4 sm:flex-row sm:px-8">
+                        <span className="text-[10px] font-extrabold uppercase tracking-wide text-muted-foreground">
                             Page {page + 1} of {Math.max(1, totalPages)} <span className="mx-2 opacity-20">|</span> {summary.All} Total Entries
                         </span>
                         <div className="flex items-center gap-2">
