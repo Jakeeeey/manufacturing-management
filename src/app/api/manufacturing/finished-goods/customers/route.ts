@@ -2,6 +2,18 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { fetchCustomers, createCustomer, updateCustomer, deleteCustomer } from "./customers-helper";
 
+function parsePaymentTerm(value: unknown): number | null | undefined {
+    if (value === undefined) return undefined;
+    if (value === null || value === "") return null;
+
+    const parsed = Number(value);
+    if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+        throw new Error("Payment Term must be a valid payment-term ID.");
+    }
+
+    return parsed;
+}
+
 export async function GET(request: Request) {
     try {
         const { searchParams } = new URL(request.url);
@@ -53,8 +65,16 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Unauthorized: A valid encoder session could not be established." }, { status: 401 });
         }
 
+        let paymentTerm: number | null | undefined;
+        try {
+            paymentTerm = parsePaymentTerm(body.payment_term);
+        } catch (error) {
+            return NextResponse.json({ error: error instanceof Error ? error.message : "Invalid payment term" }, { status: 400 });
+        }
+
         const newCustomer = await createCustomer({
             ...body,
+            ...(paymentTerm !== undefined ? { payment_term: paymentTerm } : {}),
             encoder_id: encoderId
         });
         return NextResponse.json(newCustomer);
@@ -72,7 +92,17 @@ export async function PATCH(request: Request) {
             return NextResponse.json({ error: "Missing required 'id' parameter" }, { status: 400 });
         }
         const body = await request.json();
-        const updated = await updateCustomer(id, body);
+        let paymentTerm: number | null | undefined;
+        try {
+            paymentTerm = parsePaymentTerm(body.payment_term);
+        } catch (error) {
+            return NextResponse.json({ error: error instanceof Error ? error.message : "Invalid payment term" }, { status: 400 });
+        }
+
+        const updated = await updateCustomer(id, {
+            ...body,
+            ...(paymentTerm !== undefined ? { payment_term: paymentTerm } : {}),
+        });
         return NextResponse.json(updated);
     } catch (e) {
         console.error("API Error updating customer:", e);

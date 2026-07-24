@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Customer, StoreType } from "../types";
+import { Customer, PaymentTerm, StoreType } from "../types";
 import { toast } from "sonner";
 
 export interface ClientProduct {
@@ -39,6 +39,7 @@ export function useClients() {
         customer_email: "",
         store_name: "",
         store_type_id: "",
+        payment_term: "",
         province: "",
         city: "",
         brgy: "",
@@ -60,14 +61,16 @@ export function useClients() {
     
     const [selectedProvinceCode, setSelectedProvinceCode] = useState("");
     const [selectedCityCode, setSelectedCityCode] = useState("");
+    const [paymentTerms, setPaymentTerms] = useState<PaymentTerm[]>([]);
 
     // Load customers and store types
     const loadData = async () => {
         setLoading(true);
         try {
-            const [custRes, storeRes] = await Promise.all([
+            const [custRes, storeRes, paymentRes] = await Promise.all([
                 fetch("/api/manufacturing/finished-goods/customers?all=true"),
-                fetch("/api/manufacturing/finished-goods/store-types")
+                fetch("/api/manufacturing/finished-goods/store-types"),
+                fetch("/api/manufacturing/payment-terms")
             ]);
             
             if (custRes.ok) {
@@ -77,6 +80,10 @@ export function useClients() {
             if (storeRes.ok) {
                 const storeData = await storeRes.json();
                 setStoreTypes(storeData);
+            }
+            if (paymentRes.ok) {
+                const paymentData = await paymentRes.json();
+                setPaymentTerms(Array.isArray(paymentData) ? paymentData : []);
             }
         } catch (err) {
             console.error("Error loading client data:", err);
@@ -91,7 +98,7 @@ export function useClients() {
         try {
             const [provRes, cityRes] = await Promise.all([
                 fetch("/api/psgc/provinces"),
-                fetch("/api/psgc/cities")
+                fetch("/api/psgc/cities-municipalities")
             ]);
             
             if (provRes.ok) {
@@ -152,6 +159,7 @@ export function useClients() {
             customer_email: "",
             store_name: "",
             store_type_id: "",
+            payment_term: "",
             province: "",
             city: "",
             brgy: "",
@@ -183,6 +191,13 @@ export function useClients() {
             storeTypeId = typeof rawStoreType === "object" ? String(rawStoreType.id) : String(rawStoreType);
         }
 
+        const rawPaymentTerm = c.payment_term;
+        const paymentTermId = rawPaymentTerm && typeof rawPaymentTerm === "object"
+            ? String(rawPaymentTerm.id)
+            : rawPaymentTerm
+                ? String(rawPaymentTerm)
+                : "";
+
         setFormData({
             customer_code: c.customer_code,
             customer_name: c.customer_name,
@@ -191,6 +206,7 @@ export function useClients() {
             customer_email: c.customer_email || "",
             store_name: c.store_name || "",
             store_type_id: storeTypeId,
+            payment_term: paymentTermId,
             province: c.province || "",
             city: c.city || "",
             brgy: c.brgy || "",
@@ -296,6 +312,7 @@ export function useClients() {
             customer_email: formData.customer_email.trim() || undefined,
             store_name: formData.store_name.trim() || undefined,
             store_type: formData.store_type_id ? Number(formData.store_type_id) : null,
+            payment_term: formData.payment_term ? Number(formData.payment_term) : null,
             province: provName.trim() || undefined,
             city: cityName.trim() || undefined,
             brgy: brgyName.trim() || undefined,
@@ -450,6 +467,7 @@ export function useClients() {
         provinces,
         cities,
         barangays,
+        paymentTerms,
         selectedProvinceCode,
         setSelectedProvinceCode,
         selectedCityCode,

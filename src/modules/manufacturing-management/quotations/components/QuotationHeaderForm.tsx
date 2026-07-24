@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import { Customer } from "../types";
+import { PaymentTerm } from "../../clients/types";
 import ClientFormModal from "../../clients/components/ClientFormModal";
 
 interface PriceType {
@@ -68,6 +69,7 @@ export function QuotationHeaderForm({
         customer_email: "",
         store_name: "",
         store_type_id: "",
+        payment_term: "",
         province: "",
         city: "",
         brgy: "",
@@ -85,6 +87,7 @@ export function QuotationHeaderForm({
     const [selectedCityCode, setSelectedCityCode] = useState("");
     
     const [storeTypes, setStoreTypes] = useState<{ id: number; store_type: string }[]>([]);
+    const [paymentTerms, setPaymentTerms] = useState<PaymentTerm[]>([]);
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const [isSaving, setIsSaving] = useState(false);
 
@@ -100,6 +103,15 @@ export function QuotationHeaderForm({
                     }
                 })
                 .catch(err => console.error("Error loading store types:", err));
+
+            fetch("/api/manufacturing/payment-terms")
+                .then(res => res.json())
+                .then(data => {
+                    if (Array.isArray(data)) {
+                        setPaymentTerms(data);
+                    }
+                })
+                .catch(err => console.error("Error loading payment terms:", err));
 
             // Load PSGC Provinces
             fetch("/api/psgc/provinces")
@@ -128,6 +140,7 @@ export function QuotationHeaderForm({
             setProvinces([]);
             setCities([]);
             setBarangays([]);
+            setPaymentTerms([]);
             setSelectedProvinceCode("");
             setSelectedCityCode("");
             setFormData({
@@ -138,6 +151,7 @@ export function QuotationHeaderForm({
                 customer_email: "",
                 store_name: "",
                 store_type_id: "",
+                payment_term: "",
                 province: "",
                 city: "",
                 brgy: "",
@@ -241,6 +255,7 @@ export function QuotationHeaderForm({
                     city: cityName.trim() || undefined,
                     province: provName.trim() || undefined,
                     store_type: formData.store_type_id ? Number(formData.store_type_id) : undefined,
+                    payment_term: formData.payment_term ? Number(formData.payment_term) : null,
                     latitude: parsedLatitude !== null && !isNaN(parsedLatitude) ? parsedLatitude : null,
                     longitude: parsedLongitude !== null && !isNaN(parsedLongitude) ? parsedLongitude : null,
                     isActive: 1
@@ -416,6 +431,7 @@ export function QuotationHeaderForm({
                 provinces={provinces}
                 cities={cities}
                 barangays={barangays}
+                paymentTerms={paymentTerms}
                 selectedProvinceCode={selectedProvinceCode}
                 setSelectedProvinceCode={setSelectedProvinceCode}
                 selectedCityCode={selectedCityCode}

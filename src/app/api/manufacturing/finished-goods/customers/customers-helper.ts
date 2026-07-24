@@ -27,6 +27,7 @@ export async function createCustomer(payload: {
     customer_email?: string;
     store_name?: string;
     store_type?: number | null;
+    payment_term?: number | null;
     brgy?: string;
     city?: string;
     province?: string;
@@ -65,6 +66,7 @@ export async function updateCustomer(id: number | string, payload: Partial<{
     customer_email?: string;
     store_name?: string;
     store_type?: number | null;
+    payment_term?: number | null;
     brgy?: string;
     city?: string;
     province?: string;
