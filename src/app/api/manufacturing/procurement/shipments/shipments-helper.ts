@@ -6,6 +6,7 @@ import type { PurchaseOrderListQuery } from "../../purchase-orders/_schemas";
 import { buildPurchaseOrderProductPayload, calculatePurchaseOrderLine } from "../../purchase-orders/_domain";
 import { resolvePurchaseOrderLineId, summarizeReceivingHistory } from "../../qa-receiving/_receiving-history";
 import { assertMrpProductJobOrderPairs } from "../../purchase-orders/_mrp-validation";
+import { DecimalValue, normalizeDecimal } from "@/modules/manufacturing-management/decimal";
 
 interface DirectusPO {
     purchase_order_id: number;
@@ -70,7 +71,7 @@ interface DirectusInventoryLot {
     product_id: number;
     quantity: number;
     qa_status?: string;
-    unit_cost?: number;
+    unit_cost?: number | string;
     lot_number?: string;
     batch_no?: string;
     lot_id?: number | { lot_id: number; lot_name?: string } | null;
@@ -138,10 +139,10 @@ export interface ExtendedShipmentLineItem {
     latest_receipt?: LatestReceivingSnapshot | null;
     rejection_reason?: string;
     qa_status?: string;
-    base_unit_cost_php?: number;
-    unit_price_foreign?: number;
-    allocated_expense_php?: number;
-    final_landed_unit_cost?: number;
+    base_unit_cost_php?: number | string;
+    unit_price_foreign?: number | string;
+    allocated_expense_php?: number | string;
+    final_landed_unit_cost?: number | string;
     lot_number?: string;
     batch_no?: string;
     lot_id?: number | null;
@@ -205,9 +206,11 @@ function supplierId(value: DirectusPO["supplier_name"]): number | null {
 }
 
 function mapPurchaseOrder(po: DirectusPO, suppliers: ReadonlyMap<number, DirectusSupplier>, canonicalStatus = false) {
-    const rate = po.exchange_rate ? Number(po.exchange_rate) : 58.00;
-    const totalPhp = Number(po.total_amount || po.gross_amount || 0);
-    const foreignCurrency = po.total_foreign_currency ? Number(po.total_foreign_currency) : (totalPhp / rate);
+    const rate = DecimalValue.from(po.exchange_rate ?? 58).toFixed(6);
+    const totalPhp = normalizeDecimal(String(po.total_amount ?? po.gross_amount ?? 0));
+    const foreignCurrency = po.total_foreign_currency != null
+        ? normalizeDecimal(String(po.total_foreign_currency))
+        : DecimalValue.from(totalPhp).divideRounded(rate, 2).toFixed(2);
     const storedSupplierId = supplierId(po.supplier_name);
     const supplier = storedSupplierId ? suppliers.get(storedSupplierId) || storedSupplierId : null;
     const status = canonicalStatus
@@ -573,10 +576,10 @@ export async function fetchShipmentLineItems(shipmentId: number): Promise<Extend
                 qa_status: activeLot ? activeLot.qa_status || "Pending" : "Pending",
                 // purchase_order_products.unit_price is the PHP base price;
                 // unit_price_foreign is the submitted transaction-currency price.
-                base_unit_cost_php: Number(pop.unit_price ?? 0),
-                unit_price_foreign: Number(pop.unit_price_foreign ?? pop.unit_price ?? 0),
-                allocated_expense_php: 0,
-                final_landed_unit_cost: activeLot ? Number(activeLot.unit_cost || 0) : Number(pop.unit_price || 0),
+                base_unit_cost_php: normalizeDecimal(String(pop.unit_price ?? 0)),
+                unit_price_foreign: normalizeDecimal(String(pop.unit_price_foreign ?? pop.unit_price ?? 0)),
+                allocated_expense_php: "0.00",
+                final_landed_unit_cost: normalizeDecimal(String(activeLot?.unit_cost ?? pop.unit_price ?? 0)),
                 batch_no: activeLot ? canonicalBatchNumber(activeLot.batch_no, activeLot.lot_number) || "" : "",
                 lot_number: activeLot ? canonicalBatchNumber(activeLot.batch_no, activeLot.lot_number) || "" : "",
                 lot_id: resolveInventoryLotId(activeLot?.lot_id),
@@ -604,8 +607,12 @@ export async function createIncomingShipment(
     const createdProductIds: number[] = [];
     try {
         await assertMrpProductJobOrderPairs(lineItems);
-        const totalPhp = Number(shipmentData.total_php_value || 0);
+        const totalPhp = normalizeDecimal(String(shipmentData.total_php_value ?? 0));
         const extendedData = shipmentData as ExtendedShipment;
+        const exchangeRate = DecimalValue.from(extendedData.exchange_rate ?? 58).toFixed(6);
+        const totalForeignCurrency = extendedData.total_foreign_currency != null
+            ? normalizeDecimal(String(extendedData.total_foreign_currency))
+            : DecimalValue.from(totalPhp).divideRounded(exchangeRate, 2).toFixed(2);
 
         const poPayload = {
             purchase_order_no: `PO-${extendedData.reference_number || Date.now()}`,
@@ -627,8 +634,8 @@ export async function createIncomingShipment(
             is_posted: 0,
             lead_time_receiving: extendedData.date_received || null,
             encoder_id: userId || null,
-            exchange_rate: Number(extendedData.exchange_rate) || 58.00,
-            total_foreign_currency: Number(extendedData.total_foreign_currency) || (totalPhp / (Number(extendedData.exchange_rate) || 58.00))
+            exchange_rate: exchangeRate,
+            total_foreign_currency: totalForeignCurrency
         };
 
         const res = await fetch(`${DIRECTUS_URL}/items/purchase_order`, {
@@ -655,7 +662,7 @@ export async function createIncomingShipment(
 
         for (const item of lineItems) {
             const qty = Number(item.quantity_ordered || 0);
-            const price = Number(item.base_unit_cost_php || 0);
+            const price = item.base_unit_cost_php || 0;
             const amounts = calculatePurchaseOrderLine({
                 quantity: qty,
                 unitPrice: price,
