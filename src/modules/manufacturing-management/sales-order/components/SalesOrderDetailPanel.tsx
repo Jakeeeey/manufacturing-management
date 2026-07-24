@@ -17,6 +17,8 @@ interface SalesOrderDetailPanelProps {
     loadingDetails: boolean;
     updatingStatusId: number | null;
     handleApproveOrder: (orderId: number) => void;
+    handleUpdateQuantities: (orderId: number, details: { detail_id: number; ordered_quantity: number }[]) => Promise<void>;
+    handleSubmitForApproval: (orderId: number) => Promise<void>;
     onOrderUpdated?: () => void;
 }
 
@@ -27,6 +29,8 @@ export function SalesOrderDetailPanel({
     loadingDetails,
     updatingStatusId,
     handleApproveOrder,
+    handleUpdateQuantities,
+    handleSubmitForApproval,
     onOrderUpdated
 }: SalesOrderDetailPanelProps) {
     const [editableQuantities, setEditableQuantities] = useState<Record<number, number>>({});
@@ -71,33 +75,16 @@ export function SalesOrderDetailPanel({
         return current !== undefined && current !== item.ordered_quantity;
     });
 
-    const handleSaveQuantities = async (andApprove = false) => {
+    const handleSaveQuantities = async () => {
         setSavingQuantities(true);
         try {
             const detailsPayload = orderDetails.map(item => ({
                 detail_id: item.detail_id,
                 ordered_quantity: editableQuantities[item.detail_id] ?? item.ordered_quantity
             }));
-
-            const res = await fetch(`/api/manufacturing/sales-order/${selectedOrder.order_id}`, {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ details: detailsPayload })
-            });
-
-            if (!res.ok) {
-                const errData = await res.json().catch(() => ({}));
-                throw new Error(errData.error || "Failed to update item quantities");
-            }
-
-            toast.success("Item quantities updated successfully!");
-
+            await handleUpdateQuantities(selectedOrder.order_id, detailsPayload);
             if (onOrderUpdated) {
                 onOrderUpdated();
-            }
-
-            if (andApprove) {
-                handleApproveOrder(selectedOrder.order_id);
             }
         } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : "Error saving quantities";
@@ -391,7 +378,7 @@ export function SalesOrderDetailPanel({
                     <div className="space-y-2">
                         <button
                             disabled={savingQuantities || orderDetails.length === 0 || !hasChanges}
-                            onClick={() => handleSaveQuantities(false)}
+                            onClick={() => handleSaveQuantities()}
                             className={`w-full inline-flex items-center justify-center gap-2 rounded-xl py-3 text-xs font-bold shadow-xs transition-all cursor-pointer ${
                                 hasChanges 
                                     ? "bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-600 active:scale-[0.98] shadow-md shadow-emerald-500/10 hover:shadow-emerald-500/25"
@@ -408,7 +395,7 @@ export function SalesOrderDetailPanel({
                         </button>
                         <button
                             disabled={updatingStatusId === selectedOrder.order_id || orderDetails.length === 0 || hasChanges}
-                            onClick={() => handleSaveQuantities(true)}
+                            onClick={() => handleSubmitForApproval(selectedOrder.order_id)}
                             className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-primary hover:bg-primary/90 py-3 text-xs font-bold text-primary-foreground shadow-xs transition-all active:scale-[0.98] disabled:opacity-50 cursor-pointer border-none"
                             title={hasChanges ? "Please save quantity edits before submitting for approval" : ""}
                         >
