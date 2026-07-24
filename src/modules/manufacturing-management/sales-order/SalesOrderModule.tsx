@@ -18,6 +18,8 @@ export default function SalesOrderModule() {
         updatingStatusId,
         viewOrderDetails,
         handleApproveOrder,
+        handleUpdateQuantities,
+        handleSubmitForApproval,
         handleCreateSalesOrderDirect,
         refreshData,
         currentPage,
@@ -111,6 +113,8 @@ export default function SalesOrderModule() {
                         loadingDetails={loadingDetails}
                         updatingStatusId={updatingStatusId}
                         handleApproveOrder={handleApproveOrder}
+                        handleUpdateQuantities={handleUpdateQuantities}
+                        handleSubmitForApproval={handleSubmitForApproval}
                         onOrderUpdated={refreshData}
                     />
                 </div>
