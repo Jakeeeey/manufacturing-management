@@ -24,6 +24,7 @@ export default function ClientsModule() {
         provinces,
         cities,
         barangays,
+        paymentTerms,
         selectedProvinceCode,
         setSelectedProvinceCode,
         selectedCityCode,
@@ -135,6 +136,7 @@ export default function ClientsModule() {
                 provinces={provinces}
                 cities={cities}
                 barangays={barangays}
+                paymentTerms={paymentTerms}
                 selectedProvinceCode={selectedProvinceCode}
                 setSelectedProvinceCode={setSelectedProvinceCode}
                 selectedCityCode={selectedCityCode}
