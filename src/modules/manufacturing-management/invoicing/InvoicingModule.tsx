@@ -1,10 +1,13 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { ArrowRight, Building2, Calendar, ChevronDown, ChevronRight, FileCheck2, Hash, Loader2, RefreshCw, RotateCcw, Search, Users } from "lucide-react";
 import CreateInvoiceModal from "./components/CreateInvoiceModal";
 import { useInvoicing } from "./hooks/useInvoicing";
 import { InvoicingCandidate } from "./types";
+import { fetchBranches } from "../invoice-consolidation/services/invoice-consolidation-api";
+import type { Branch } from "../invoice-consolidation/types";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 
 function formatCurrency(amount: number) {
     return new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", minimumFractionDigits: 2 }).format(amount);
@@ -22,6 +25,11 @@ export default function InvoicingModule() {
     const [selected, setSelected] = useState<InvoicingCandidate | null>(null);
     const [expanded, setExpanded] = useState<Set<string>>(new Set());
     const [searchInput, setSearchInput] = useState("");
+    const [branches, setBranches] = useState<Branch[]>([]);
+
+    useEffect(() => {
+        fetchBranches().then((data: Branch[]) => setBranches(data || [])).catch(() => {});
+    }, []);
 
     const toggleGroup = (code: string) => {
         const next = new Set(expanded);
@@ -71,9 +79,15 @@ export default function InvoicingModule() {
                     <span className={FM.label}><Hash size={12} />Customer Code</span>
                     <input value={filters.customerCode} onChange={e => applyFilters({ customerCode: e.target.value })} placeholder="Filter by code" className={`${FM.input} mt-1`} />
                 </div>
-                <div className="flex-1 min-w-[150px]">
-                    <span className={FM.label}><Building2 size={12} />Branch ID</span>
-                    <input value={filters.branchId} onChange={e => applyFilters({ branchId: e.target.value })} placeholder="Branch number" type="number" className={`${FM.input} mt-1`} />
+                <div className="flex-1 min-w-[180px]">
+                    <span className={FM.label}><Building2 size={12} />Branch</span>
+                    <SearchableSelect
+                        value={filters.branchId}
+                        onValueChange={(value) => applyFilters({ branchId: value })}
+                        options={branches.map((b) => ({ value: String(b.id), label: `${b.branchName} (${b.branchCode})` }))}
+                        placeholder="All branches"
+                        className="mt-1 h-10 rounded-xl bg-background text-sm font-bold normal-case tracking-normal"
+                    />
                 </div>
                 <div className="min-w-[130px]">
                     <span className={FM.label}><Calendar size={12} />From</span>

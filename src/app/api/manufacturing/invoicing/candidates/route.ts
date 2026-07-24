@@ -7,6 +7,7 @@ import {
     SALES_ORDER_FIELDS,
 } from "../../sales-order/_read";
 import { getUserIdFromToken } from "../../invoice-consolidation/_auth";
+import { calculateSalesOrderAvailability } from "../../invoice-consolidation/_reservation-service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -68,6 +69,21 @@ export async function GET(request: Request) {
             const branches = (await read("branches", branchParams)).data || [];
             const branchMap = new Map(branches.map((b: Record<string, unknown>) => [Number(b.id), String(b.branch_name)]));
             for (const candidate of candidates) candidate.branch_name = branchMap.get(Number(candidate.branch_id)) || `Branch #${candidate.branch_id}`;
+        }
+
+        // Enrich each candidate with stockStatus (Available / Partial / Unavailable)
+        const candidateSettled = await Promise.allSettled(candidates.map(async (candidate: Record<string, unknown>) => {
+            const result = await calculateSalesOrderAvailability(Number(candidate.order_id));
+            return { orderId: Number(candidate.order_id), stockStatus: result.overallStockStatus };
+        }));
+        const statusMap = new Map<number, string>();
+        for (const settled of candidateSettled) {
+            if (settled.status === "fulfilled" && settled.value) {
+                statusMap.set(settled.value.orderId, settled.value.stockStatus);
+            }
+        }
+        for (const candidate of candidates) {
+            candidate.stockStatus = statusMap.get(Number(candidate.order_id)) || "Unavailable";
         }
 
         return NextResponse.json({ data: candidates });
