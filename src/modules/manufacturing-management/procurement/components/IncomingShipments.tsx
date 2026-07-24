@@ -51,7 +51,7 @@ import { toast } from "sonner";
 import { BOMMaterialSelect } from "@/modules/manufacturing-management/finished-goods/components/BOMMaterialSelect";
 import { CreatableSelect } from "@/modules/manufacturing-management/finished-goods/components/CreatableSelect";
 import { INVENTORY_STATUS, PAYMENT_STATUS } from "@/app/api/manufacturing/procurement/_domain";
-import { DecimalValue, formatDecimal, isNonNegativeDecimal } from "@/lib/manufacturing/decimal";
+import { DecimalValue, formatDecimal, isNonNegativeDecimal } from "@/modules/manufacturing-management/decimal";
 
 export interface ManifestLineFormItem {
     product_id: string;

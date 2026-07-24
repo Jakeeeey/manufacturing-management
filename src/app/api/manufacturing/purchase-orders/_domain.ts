@@ -10,7 +10,7 @@ export type ApprovalAction = typeof APPROVAL_ACTIONS[number];
 export const QA_PARAMETER_TYPES = ["Numeric", "Boolean", "Text"] as const;
 export type QaParameterType = typeof QA_PARAMETER_TYPES[number];
 
-import { compareDecimals, DecimalValue, type DecimalInput } from "@/lib/manufacturing/decimal";
+import { compareDecimals, DecimalValue, type DecimalInput } from "@/modules/manufacturing-management/decimal";
 
 export type CurrencyCode = string;
 export type QaDisposition = "Passed" | "Partially Accepted" | "Rejected";

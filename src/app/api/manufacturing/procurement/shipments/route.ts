@@ -20,7 +20,7 @@ import {
 } from "../../purchase-orders/_schemas";
 import { buildPurchaseOrderProductPayload, calculatePurchaseOrderTotals } from "../../purchase-orders/_domain";
 import { assertMrpProductJobOrderPairs, MrpPairValidationError } from "../../purchase-orders/_mrp-validation";
-import { compareDecimals, DecimalValue, normalizeDecimal } from "@/lib/manufacturing/decimal";
+import { compareDecimals, DecimalValue, normalizeDecimal } from "@/modules/manufacturing-management/decimal";
 
 class InvalidTransitionError extends Error {}
 

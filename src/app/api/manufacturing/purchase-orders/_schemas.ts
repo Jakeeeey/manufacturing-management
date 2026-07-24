@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { compareDecimals, DecimalValue, isWithinDecimalCapacity } from "@/lib/manufacturing/decimal";
+import { compareDecimals, DecimalValue, isWithinDecimalCapacity } from "@/modules/manufacturing-management/decimal";
 
 const MODULE_PATHS = {
     procurement: "/mm/incoming-shipments",

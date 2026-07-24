@@ -10,7 +10,7 @@ import type { ApprovalStage } from "./_domain";
 import type { AuthorizedPurchaseOrderUser } from "./_auth";
 import type { z } from "zod";
 import type { purchaseOrderApprovalSchema } from "./_schemas";
-import { normalizeDecimal } from "@/lib/manufacturing/decimal";
+import { normalizeDecimal } from "@/modules/manufacturing-management/decimal";
 
 type ApprovalCommand = z.infer<typeof purchaseOrderApprovalSchema>;
 

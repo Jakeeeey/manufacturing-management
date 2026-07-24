@@ -9,7 +9,7 @@ import {
 import type { z } from "zod";
 import type { purchaseOrderCreateSchema } from "./_schemas";
 import { assertMrpProductJobOrderPairs } from "./_mrp-validation";
-import { compareDecimals, normalizeDecimal, type DecimalInput } from "@/lib/manufacturing/decimal";
+import { compareDecimals, normalizeDecimal, type DecimalInput } from "@/modules/manufacturing-management/decimal";
 
 type PurchaseOrderDraft = z.infer<typeof purchaseOrderCreateSchema>;
 

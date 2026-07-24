@@ -10,7 +10,7 @@ import type { z } from "zod";
 import type { purchaseOrderCancellationSchema, purchaseOrderRevisionSchema } from "./_schemas";
 import type { AuthorizedPurchaseOrderUser } from "./_auth";
 import { assertMrpProductJobOrderPairs } from "./_mrp-validation";
-import { compareDecimals, normalizeDecimal, type DecimalInput } from "@/lib/manufacturing/decimal";
+import { compareDecimals, normalizeDecimal, type DecimalInput } from "@/modules/manufacturing-management/decimal";
 
 type RevisionCommand = z.infer<typeof purchaseOrderRevisionSchema>;
 type CancellationCommand = z.infer<typeof purchaseOrderCancellationSchema>;

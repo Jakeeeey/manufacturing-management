@@ -6,7 +6,7 @@ import type { PurchaseOrderListQuery } from "../../purchase-orders/_schemas";
 import { buildPurchaseOrderProductPayload, calculatePurchaseOrderLine } from "../../purchase-orders/_domain";
 import { resolvePurchaseOrderLineId, summarizeReceivingHistory } from "../../qa-receiving/_receiving-history";
 import { assertMrpProductJobOrderPairs } from "../../purchase-orders/_mrp-validation";
-import { DecimalValue, normalizeDecimal } from "@/lib/manufacturing/decimal";
+import { DecimalValue, normalizeDecimal } from "@/modules/manufacturing-management/decimal";
 
 interface DirectusPO {
     purchase_order_id: number;
