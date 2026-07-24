@@ -28,6 +28,12 @@ import {
 } from "@/components/ui/table";
 import { fetchBranches } from "../../invoice-consolidation/services/invoice-consolidation-api";
 import type { Branch } from "../../invoice-consolidation/types";
+import {
+    ConsolidationShell,
+    ConsolidationHeader,
+    ConsolidationStatusBadge,
+    ConsolidationEmptyState,
+} from "../shared/consolidation-ui";
 
 type BatchStatus = "Pending" | "Picking" | "Picked" | "Audited";
 
@@ -64,13 +70,6 @@ interface DashboardSummary {
 }
 
 const numberFormatter = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
-const statusStyles: Record<string, string> = {
-    Pending: "border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-400",
-    Picking: "border-blue-500/25 bg-blue-500/10 text-blue-700 dark:text-blue-400",
-    Picked: "border-violet-500/25 bg-violet-500/10 text-violet-700 dark:text-violet-400",
-    Audited: "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
-};
-
 function toLocalDate(date: Date): string {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -102,14 +101,14 @@ function DashboardLoading() {
         <div className="space-y-5" aria-label="Loading consolidation summary">
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
                 {Array.from({ length: 5 }, (_, index) => (
-                    <Skeleton key={index} className="h-28 rounded-2xl" />
+                    <Skeleton key={index} className="h-28 rounded-xl" />
                 ))}
             </div>
             <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
-                <Skeleton className="h-72 rounded-2xl" />
-                <Skeleton className="h-72 rounded-2xl" />
+                <Skeleton className="h-72 rounded-xl" />
+                <Skeleton className="h-72 rounded-xl" />
             </div>
-            <Skeleton className="h-80 rounded-2xl" />
+            <Skeleton className="h-80 rounded-xl" />
         </div>
     );
 }
@@ -213,57 +212,49 @@ export default function ConsolidationSummaryModule() {
     }, [page, totalPages]);
 
     return (
-        <div className="min-h-full bg-[radial-gradient(circle_at_top_right,hsl(var(--primary)/0.08),transparent_35%)] p-4 text-foreground md:p-8">
-            <div className="mx-auto max-w-[1600px] space-y-6">
-                <section className="overflow-hidden rounded-3xl border border-border/60 bg-card shadow-sm">
-                    <div className="flex flex-col gap-6 p-5 lg:flex-row lg:items-end lg:justify-between lg:p-7">
-                        <div className="flex items-center gap-4">
-                            <div className="rounded-2xl bg-primary p-3.5 shadow-lg shadow-primary/20">
-                                <ChartNoAxesCombined className="h-7 w-7 text-primary-foreground" />
-                            </div>
-                            <div>
-                                <p className="text-[10px] font-black uppercase tracking-[0.28em] text-primary">Operations Control</p>
-                                <h1 className="text-2xl font-black uppercase italic tracking-tighter md:text-4xl">
-                                    Consolidation <span className="text-primary">Summary</span>
-                                </h1>
-                                <p className="mt-1 text-sm text-muted-foreground">Invoice flow, fulfillment, and completed batch shortages.</p>
-                            </div>
-                        </div>
-                        <div className="grid w-full gap-3 sm:grid-cols-2 lg:w-auto lg:grid-cols-[220px_160px_160px_auto]">
-                            <div className="space-y-1.5 text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-                                <span>Branch</span>
-                                <SearchableSelect
-                                    value={branchId ? String(branchId) : ""}
-                                    onValueChange={(value) => setBranchId(Number(value))}
-                                    disabled={loadingBranches}
-                                    options={branches.map((branch) => ({
-                                        value: String(branch.id),
-                                        label: `${branch.branchName} (${branch.branchCode})`,
-                                    }))}
-                                    placeholder={loadingBranches ? "Loading branches..." : "Search and select branch..."}
-                                    className="h-10 rounded-xl bg-background text-sm font-bold normal-case tracking-normal"
-                                />
-                            </div>
-                            <label className="space-y-1.5 text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-                                From
-                                <Input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} className="h-10 rounded-xl font-bold" />
-                            </label>
-                            <label className="space-y-1.5 text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-                                Through
-                                <Input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} className="h-10 rounded-xl font-bold" />
-                            </label>
-                            <Button
-                                type="button"
-                                onClick={() => setRefreshKey((value) => value + 1)}
-                                disabled={!branchId || loading || rangeInvalid}
-                                className="h-10 self-end rounded-xl px-4 font-black uppercase tracking-wider"
-                            >
-                                {loading ? <Loader2 className="animate-spin" /> : <RefreshCw />}
-                                Refresh
-                            </Button>
-                        </div>
+        <ConsolidationShell>
+            <ConsolidationHeader
+                icon={ChartNoAxesCombined}
+                eyebrow="Operations Control"
+                title="Consolidation"
+                accent="Summary"
+                description="Invoice flow, fulfillment, and completed batch shortages."
+                controls={
+                    <div className="grid w-full gap-3 sm:grid-cols-2 lg:w-auto lg:grid-cols-[220px_160px_160px_auto]">
+                        <label className="space-y-1.5 text-[10px] font-extrabold uppercase tracking-wide text-muted-foreground">
+                            <span>Branch</span>
+                            <SearchableSelect
+                                value={branchId ? String(branchId) : ""}
+                                onValueChange={(value) => setBranchId(Number(value))}
+                                disabled={loadingBranches}
+                                options={branches.map((branch) => ({
+                                    value: String(branch.id),
+                                    label: `${branch.branchName} (${branch.branchCode})`,
+                                }))}
+                                placeholder={loadingBranches ? "Loading branches..." : "Search and select branch..."}
+                                className="h-10 rounded-xl bg-background text-sm font-bold normal-case tracking-normal"
+                            />
+                        </label>
+                        <label className="space-y-1.5 text-[10px] font-extrabold uppercase tracking-wide text-muted-foreground">
+                            From
+                            <Input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} className="h-10 rounded-xl font-bold" />
+                        </label>
+                        <label className="space-y-1.5 text-[10px] font-extrabold uppercase tracking-wide text-muted-foreground">
+                            Through
+                            <Input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} className="h-10 rounded-xl font-bold" />
+                        </label>
+                        <Button
+                            type="button"
+                            onClick={() => setRefreshKey((value) => value + 1)}
+                            disabled={!branchId || loading || rangeInvalid}
+                            className="h-10 self-end rounded-xl px-4 font-black uppercase tracking-wider"
+                        >
+                            {loading ? <Loader2 className="animate-spin" /> : <RefreshCw />}
+                            Refresh
+                        </Button>
                     </div>
-                </section>
+                }
+            />
 
                 {rangeInvalid && (
                     <Alert variant="destructive">
@@ -283,26 +274,22 @@ export default function ConsolidationSummaryModule() {
                 {loading && !summary ? (
                     <DashboardLoading />
                 ) : !branchId && !loadingBranches ? (
-                    <div className="flex min-h-80 flex-col items-center justify-center rounded-3xl border border-dashed text-center text-muted-foreground">
+                    <div className="flex min-h-72 flex-col items-center justify-center rounded-xl border border-dashed text-center text-muted-foreground">
                         <Boxes className="mb-4 h-12 w-12 opacity-40" />
-                        <p className="font-black uppercase tracking-widest">No active branches available</p>
+                        <p className="text-xs font-black uppercase tracking-wider">No active branches available</p>
                     </div>
                 ) : summary && summary.status.All === 0 ? (
-                    <div className="flex min-h-80 flex-col items-center justify-center rounded-3xl border border-dashed bg-card/50 text-center text-muted-foreground">
-                        <ClipboardList className="mb-4 h-12 w-12 opacity-40" />
-                        <p className="font-black uppercase tracking-widest">No consolidation activity</p>
-                        <p className="mt-2 text-sm">No batches were created in the selected period.</p>
-                    </div>
+                    <ConsolidationEmptyState icon={ClipboardList} title="No consolidation activity" description="No batches were created in the selected period." />
                 ) : summary ? (
                     <>
                         <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
                             {workflow.map((item, index) => {
                                 const Icon = item.icon;
                                 return (
-                                    <div key={item.label} className="relative overflow-hidden rounded-2xl border border-border/60 bg-card p-5 shadow-sm">
+                                    <div key={item.label} className="relative overflow-hidden rounded-xl border bg-card p-4 shadow-sm">
                                         <div className="flex items-start justify-between">
                                             <div>
-                                                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-muted-foreground">{item.label}</p>
+                                                <p className="text-[10px] font-extrabold uppercase tracking-wide text-muted-foreground">{item.label}</p>
                                                 <p className="mt-2 text-3xl font-black tabular-nums">{formatNumber(item.value)}</p>
                                             </div>
                                             <Icon className={`h-6 w-6 ${item.color}`} />
@@ -314,10 +301,10 @@ export default function ConsolidationSummaryModule() {
                         </section>
 
                         <section className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
-                            <div className="rounded-3xl border border-border/60 bg-card p-5 shadow-sm md:p-7">
+                            <div className="rounded-xl border bg-card p-4 shadow-sm">
                                 <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
                                     <div>
-                                        <p className="text-[10px] font-black uppercase tracking-[0.24em] text-primary">Quantity Fulfillment</p>
+                                        <p className="text-[10px] font-extrabold uppercase tracking-wide text-primary/70">Quantity Fulfillment</p>
                                         <p className="mt-2 text-5xl font-black tracking-tighter tabular-nums">{formatNumber(summary.quantities.fulfillmentRate)}%</p>
                                     </div>
                                     <div className="grid grid-cols-2 gap-x-8 gap-y-3 text-right">
@@ -335,13 +322,13 @@ export default function ConsolidationSummaryModule() {
                                         ["Remaining", summary.quantities.remaining],
                                         ["Completed short", summary.quantities.completedShort],
                                     ].map(([label, value]) => (
-                                        <div key={label} className="rounded-2xl bg-muted/45 p-4">
+                                        <div key={label} className="rounded-xl bg-muted/45 p-4">
                                             <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">{label}</p>
                                             <p className="mt-1 text-xl font-black tabular-nums">{formatNumber(Number(value))}</p>
                                         </div>
                                     ))}
                                 </div>
-                                <div className={`mt-5 flex items-center gap-3 rounded-2xl border p-4 ${summary.discrepancyBatches > 0 ? "border-amber-500/30 bg-amber-500/10" : "border-emerald-500/30 bg-emerald-500/10"}`}>
+                                <div className={`mt-5 flex items-center gap-3 rounded-xl border p-4 ${summary.discrepancyBatches > 0 ? "border-amber-500/30 bg-amber-500/10" : "border-emerald-500/30 bg-emerald-500/10"}`}>
                                     {summary.discrepancyBatches > 0 ? <AlertTriangle className="h-5 w-5 text-amber-600" /> : <CheckCircle2 className="h-5 w-5 text-emerald-600" />}
                                     <div>
                                         <p className="text-sm font-black">{summary.discrepancyBatches} completed batch{summary.discrepancyBatches === 1 ? "" : "es"} with discrepancies</p>
@@ -350,11 +337,11 @@ export default function ConsolidationSummaryModule() {
                                 </div>
                             </div>
 
-                            <div className="rounded-3xl border border-border/60 bg-card p-5 shadow-sm md:p-7">
+                            <div className="rounded-xl border bg-card p-4 shadow-sm">
                                 <div className="mb-6 flex items-center justify-between">
                                     <div>
-                                        <p className="text-[10px] font-black uppercase tracking-[0.24em] text-primary">Demand Leaders</p>
-                                        <h2 className="mt-1 text-xl font-black uppercase tracking-tight">Top Products</h2>
+                                        <p className="text-[10px] font-extrabold uppercase tracking-wide text-primary/70">Demand Leaders</p>
+                                        <h2 className="text-xs font-black uppercase tracking-wide">Top Products</h2>
                                     </div>
                                     <Boxes className="h-6 w-6 text-muted-foreground/50" />
                                 </div>
@@ -377,11 +364,11 @@ export default function ConsolidationSummaryModule() {
                             </div>
                         </section>
 
-                        <section className="overflow-hidden rounded-3xl border border-border/60 bg-card shadow-sm">
-                            <div className="flex flex-col gap-4 border-b border-border/60 px-5 py-5 xl:flex-row xl:items-end xl:justify-between md:px-7">
+                        <section className="rounded-xl border bg-card shadow-sm">
+                            <div className="flex flex-col gap-4 border-b p-4 sm:flex-row sm:items-center sm:justify-between">
                                 <div>
-                                    <p className="text-[10px] font-black uppercase tracking-[0.24em] text-primary">Batch Register</p>
-                                    <h2 className="mt-1 text-xl font-black uppercase tracking-tight">All Consolidations</h2>
+                                    <p className="text-[10px] font-extrabold uppercase tracking-wide text-primary/70">Batch Register</p>
+                                    <h2 className="text-xs font-black uppercase tracking-wide">All Consolidations</h2>
                                 </div>
                                 <div className="grid gap-2 sm:grid-cols-[minmax(220px,1fr)_150px_110px]">
                                     <Input
@@ -431,7 +418,7 @@ export default function ConsolidationSummaryModule() {
                                     {visibleBatches.map((batch) => (
                                         <TableRow key={batch.id}>
                                             <TableCell className="pl-5 font-black md:pl-7">{batch.consolidatorNo}</TableCell>
-                                            <TableCell><span className={`inline-flex rounded-full border px-2.5 py-1 text-[9px] font-black uppercase tracking-wider ${statusStyles[batch.status] || statusStyles.Pending}`}>{batch.status}</span></TableCell>
+                                            <TableCell><ConsolidationStatusBadge status={batch.status} /></TableCell>
                                             <TableCell className="text-muted-foreground">{formatDate(batch.createdAt)}</TableCell>
                                             <TableCell className="text-right font-bold tabular-nums">{formatNumber(batch.invoiceCount)}</TableCell>
                                             <TableCell className="text-right font-bold tabular-nums">{formatNumber(batch.productCount)}</TableCell>
@@ -449,7 +436,7 @@ export default function ConsolidationSummaryModule() {
                                     )}
                                 </TableBody>
                             </Table>
-                            <div className="flex flex-col gap-3 border-t border-border/60 px-5 py-4 sm:flex-row sm:items-center sm:justify-between md:px-7">
+                            <div className="flex flex-col gap-3 border-t p-4 sm:flex-row sm:items-center sm:justify-between">
                                 <p className="text-xs font-bold text-muted-foreground">
                                     {filteredBatches.length} result{filteredBatches.length === 1 ? "" : "s"} · Page {page + 1} of {totalPages}
                                 </p>
@@ -465,7 +452,6 @@ export default function ConsolidationSummaryModule() {
                         </section>
                     </>
                 ) : null}
-            </div>
-        </div>
+        </ConsolidationShell>
     );
 }
