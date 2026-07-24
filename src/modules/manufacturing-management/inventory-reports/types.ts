@@ -14,6 +14,8 @@ export interface BatchReportEntry {
     transactionType: string;
     batchNo: string;
     quantity: number;
+    onHandQuantity: number;
+    reservedQuantity: number;
     unitCost: number;
     qaStatus: string;
     remarks: string | null;

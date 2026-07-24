@@ -346,6 +346,8 @@ export default function InventoryMovementReport({
                         transactionType: b.transaction_type || (b.source_type ? String(b.source_type).replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()) : "Legacy Stock"),
                         batchNo: b.batch_no || b.lot_number || "LOT-N/A",
                         quantity: Number(b.quantity_received || 0),
+                        onHandQuantity: Number(b.on_hand_quantity ?? b.quantity_received ?? 0),
+                        reservedQuantity: Number(b.reserved_quantity || 0),
                         unitCost: Number(b.final_landed_unit_cost || b.base_unit_cost_php || 0),
                         qaStatus: b.qa_status || "Passed",
                         remarks: b.remarks || b.rejection_reason || null,
@@ -374,7 +376,7 @@ export default function InventoryMovementReport({
                     doc.setFontSize(8.5);
                     doc.setFont("helvetica", "bold");
                     doc.setTextColor(15, 23, 42);
-                    doc.text(`Product: ${prod.productCode} - ${prod.productName} | Total Stock: ${prod.totalAvailable.toLocaleString("en-PH", { minimumFractionDigits: 2 })} ${prod.uomShortcut}`, 10, currentY, { baseline: "top" });
+                    doc.text(`Product: ${prod.productCode} - ${prod.productName} | Total Available: ${prod.totalAvailable.toLocaleString("en-PH", { minimumFractionDigits: 2 })} ${prod.uomShortcut}`, 10, currentY, { baseline: "top" });
                     currentY += 5;
 
                     prod.versions?.forEach((ver) => {
@@ -509,6 +511,8 @@ export default function InventoryMovementReport({
                         transactionType: b.transaction_type || (b.source_type ? String(b.source_type).replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()) : "Legacy Stock"),
                         batchNo: b.batch_no || b.lot_number || "LOT-N/A",
                         quantity: Number(b.quantity_received || 0),
+                        onHandQuantity: Number(b.on_hand_quantity ?? b.quantity_received ?? 0),
+                        reservedQuantity: Number(b.reserved_quantity || 0),
                         unitCost: Number(b.final_landed_unit_cost || b.base_unit_cost_php || 0),
                         qaStatus: b.qa_status || "Passed",
                         remarks: b.remarks || b.rejection_reason || null,
@@ -529,7 +533,7 @@ export default function InventoryMovementReport({
                     doc.setFontSize(8.5);
                     doc.setFont("helvetica", "bold");
                     doc.setTextColor(15, 23, 42);
-                    doc.text(`Product: ${prod.productCode} - ${prod.productName} | Total Stock: ${prod.totalAvailable.toLocaleString("en-PH", { minimumFractionDigits: 2 })} ${prod.uomShortcut}`, 10, currentY, { baseline: "top" });
+                    doc.text(`Product: ${prod.productCode} - ${prod.productName} | Total Available: ${prod.totalAvailable.toLocaleString("en-PH", { minimumFractionDigits: 2 })} ${prod.uomShortcut}`, 10, currentY, { baseline: "top" });
                     currentY += 5;
 
                     prod.lots?.forEach((lot) => {
@@ -775,7 +779,7 @@ export default function InventoryMovementReport({
                                     Product SKU / Recipe Version / Storage Bin & Batch Code
                                 </TableHead>
                                 <TableHead className="w-[35%] pr-4 text-right text-xs font-bold uppercase tracking-wider text-foreground">
-                                    On-Hand Available Stock Qty
+                                    Available Stock Qty (On Hand - Reserved)
                                 </TableHead>
                             </TableRow>
                         </TableHeader>
@@ -920,7 +924,7 @@ export default function InventoryMovementReport({
                                                                                                         <TableHead className="text-[10px] font-bold py-1 uppercase tracking-wider pl-2.5 text-muted-foreground border-r border-border">Batch No</TableHead>
                                                                                                         <TableHead className="text-[10px] font-bold py-1 uppercase tracking-wider text-muted-foreground border-r border-border">Source Doc No</TableHead>
                                                                                                         <TableHead className="text-[10px] font-bold py-1 uppercase tracking-wider text-muted-foreground border-r border-border">Txn Type</TableHead>
-                                                                                                        <TableHead className="text-[10px] font-bold py-1 uppercase tracking-wider text-right pr-2 text-muted-foreground border-r border-border">Qty</TableHead>
+                                                                                                        <TableHead className="text-[10px] font-bold py-1 uppercase tracking-wider text-right pr-2 text-muted-foreground border-r border-border">Available</TableHead>
                                                                                                         <TableHead className="text-[10px] font-bold py-1 uppercase tracking-wider text-right pr-2 text-muted-foreground border-r border-border">Unit Cost</TableHead>
                                                                                                         <TableHead className="text-[10px] font-bold py-1 uppercase tracking-wider text-center text-muted-foreground border-r border-border">QA Status</TableHead>
                                                                                                         <TableHead className="text-[10px] font-bold py-1 uppercase tracking-wider text-center text-muted-foreground border-r border-border">Mfg Date</TableHead>
@@ -936,6 +940,7 @@ export default function InventoryMovementReport({
                                                                                                             <TableCell className="py-1 text-muted-foreground font-sans font-medium border-r border-border">{batch.transactionType}</TableCell>
                                                                                                             <TableCell className="py-1 text-right font-black text-foreground pr-2 border-r border-border">
                                                                                                                 {batch.quantity.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                                                                                                                <span className="block text-[9px] font-normal text-muted-foreground">{batch.onHandQuantity.toLocaleString("en-PH", { minimumFractionDigits: 2 })} on hand - {batch.reservedQuantity.toLocaleString("en-PH", { minimumFractionDigits: 2 })} reserved</span>
                                                                                                             </TableCell>
                                                                                                             <TableCell className="py-1 text-right font-semibold text-muted-foreground pr-2 border-r border-border">
                                                                                                                 ₱{batch.unitCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -1018,7 +1023,7 @@ export default function InventoryMovementReport({
                                                                                             <TableHead className="text-[10px] font-bold py-1 uppercase tracking-wider pl-2.5 text-muted-foreground border-r border-border">Batch No</TableHead>
                                                                                             <TableHead className="text-[10px] font-bold py-1 uppercase tracking-wider text-muted-foreground border-r border-border">Source Doc No</TableHead>
                                                                                             <TableHead className="text-[10px] font-bold py-1 uppercase tracking-wider text-muted-foreground border-r border-border">Txn Type</TableHead>
-                                                                                            <TableHead className="text-[10px] font-bold py-1 uppercase tracking-wider text-right pr-2 text-muted-foreground border-r border-border">Qty</TableHead>
+                                                                                            <TableHead className="text-[10px] font-bold py-1 uppercase tracking-wider text-right pr-2 text-muted-foreground border-r border-border">Available</TableHead>
                                                                                             <TableHead className="text-[10px] font-bold py-1 uppercase tracking-wider text-right pr-2 text-muted-foreground border-r border-border">Unit Cost</TableHead>
                                                                                             <TableHead className="text-[10px] font-bold py-1 uppercase tracking-wider text-center text-muted-foreground border-r border-border">QA Status</TableHead>
                                                                                             <TableHead className="text-[10px] font-bold py-1 uppercase tracking-wider text-center text-muted-foreground border-r border-border">Mfg Date</TableHead>
@@ -1034,6 +1039,7 @@ export default function InventoryMovementReport({
                                                                                                 <TableCell className="py-1 text-muted-foreground font-sans font-medium border-r border-border">{batch.transactionType}</TableCell>
                                                                                                 <TableCell className="py-1 text-right font-black text-foreground pr-2 border-r border-border">
                                                                                                     {batch.quantity.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
+                                                                                                    <span className="block text-[9px] font-normal text-muted-foreground">{batch.onHandQuantity.toLocaleString("en-PH", { minimumFractionDigits: 2 })} on hand - {batch.reservedQuantity.toLocaleString("en-PH", { minimumFractionDigits: 2 })} reserved</span>
                                                                                                 </TableCell>
                                                                                                 <TableCell className="py-1 text-right font-semibold text-muted-foreground pr-2 border-r border-border">
                                                                                                     ₱{batch.unitCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}

@@ -137,48 +137,48 @@ export default function PickingWorkspaceModule({ batchNo }: PickingWorkspaceModu
 
     return (
         <ConsolidationShell className="flex-1 overflow-y-auto pb-28">
-            <header className="overflow-hidden rounded-3xl border border-border/60 bg-card shadow-sm">
-                <div className="flex flex-col gap-6 p-5 lg:flex-row lg:items-center lg:justify-between lg:p-7">
-                <div className="flex items-center gap-4">
+            <header className="rounded-xl border bg-card shadow-sm">
+                <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+                <div className="flex items-center gap-3">
                     <Button
                         variant="outline"
                         size="icon"
                         onClick={handleClose}
-                        className="h-11 w-11 shrink-0 rounded-2xl"
+                        className="h-9 w-9 shrink-0 rounded-xl"
                         disabled={saving || submitting}
                         suppressHydrationWarning
                     >
-                        <ArrowLeft className="h-5 w-5" />
+                        <ArrowLeft className="h-4 w-4" />
                     </Button>
                     <div>
-                        <p className="text-[10px] font-black uppercase tracking-[0.28em] text-blue-600">Picking Workspace</p>
-                        <div className="mt-1 flex flex-wrap items-center gap-3">
-                            <h1 className="text-2xl font-black uppercase italic tracking-tighter md:text-4xl">
+                        <p className="text-[10px] font-extrabold uppercase tracking-wide text-blue-600">Picking Workspace</p>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <h1 className="text-sm font-black uppercase tracking-wide">
                                 {consolidation.consolidatorNo}
                             </h1>
                             <ConsolidationStatusBadge status="Picking" />
                         </div>
-                        <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mt-0.5">
+                        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mt-0.5">
                             {consolidation.branchName || `Branch #${consolidation.branchId}`}
                         </p>
                     </div>
                 </div>
                 <div className="grid grid-cols-3 gap-2 sm:gap-3">
-                    <div className="rounded-2xl bg-muted/45 px-4 py-3 text-right">
+                    <div className="rounded-xl bg-muted/45 px-4 py-3 text-right">
                         <div className="text-2xl font-black leading-none text-blue-600 tabular-nums">
                             {totals.picked} <span className="text-sm text-muted-foreground/50">/ {totals.ordered}</span>
                         </div>
-                        <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest mt-0.5">Items Picked</p>
+                        <p className="text-[10px] font-extrabold uppercase text-muted-foreground tracking-wide mt-0.5">Items Picked</p>
                     </div>
-                    <div className="rounded-2xl bg-muted/45 px-4 py-3 text-right">
+                    <div className="rounded-xl bg-muted/45 px-4 py-3 text-right">
                         <div className="text-2xl font-black leading-none tabular-nums">
                             {totals.short}
                         </div>
-                        <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest mt-0.5">Remaining</p>
+                        <p className="text-[10px] font-extrabold uppercase text-muted-foreground tracking-wide mt-0.5">Remaining</p>
                     </div>
-                    <div className="rounded-2xl bg-muted/45 px-4 py-3 text-right">
+                    <div className="rounded-xl bg-muted/45 px-4 py-3 text-right">
                         <div className="text-2xl font-black leading-none tabular-nums">{totals.pct.toFixed(0)}%</div>
-                        <p className="mt-0.5 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Progress</p>
+                        <p className="mt-0.5 text-[10px] font-extrabold uppercase tracking-wide text-muted-foreground">Progress</p>
                     </div>
                 </div>
                 </div>
@@ -188,7 +188,7 @@ export default function PickingWorkspaceModule({ batchNo }: PickingWorkspaceModu
             </header>
 
             {/* Keyboard legend */}
-            <div className="hidden flex-wrap items-center gap-3 rounded-2xl border border-border/60 bg-card/70 px-5 py-3 text-[9px] font-bold uppercase tracking-wider text-muted-foreground md:flex">
+            <div className="hidden flex-wrap items-center gap-3 rounded-xl border bg-card/70 px-4 py-3 text-[9px] font-bold uppercase tracking-wider text-muted-foreground md:flex">
                 <kbd className="rounded border border-border/40 bg-background px-1.5 py-0.5 font-mono text-[9px] font-black text-foreground">Tab</kbd>
                 <span>Next product</span>
                 <span className="text-muted-foreground/30">|</span>
@@ -230,9 +230,9 @@ export default function PickingWorkspaceModule({ batchNo }: PickingWorkspaceModu
             </div>
 
             {/* Product list */}
-            <section className="overflow-hidden rounded-3xl border border-border/60 bg-card shadow-sm">
-                <div className="mx-auto space-y-3 p-4 md:p-6">
-                    <div className="flex items-center justify-between mb-4">
+            <section className="rounded-xl border bg-card shadow-sm">
+                <div className="mx-auto space-y-3 p-4">
+                    <div className="flex items-center justify-between">
                         <h2 className="text-xs font-bold text-muted-foreground uppercase tracking-wide">
                             Products ({localItems.length})
                         </h2>
@@ -261,7 +261,7 @@ export default function PickingWorkspaceModule({ batchNo }: PickingWorkspaceModu
                                         setTimeout(() => document.getElementById(inputId)?.focus(), 0);
                                     }
                                 }}
-                                className={`rounded-2xl border p-4 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 ${
+                                className={`rounded-xl border p-4 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 ${
                                     isEditing ? "ring-2 ring-primary/30" : ""
                                 } ${
                                     hasStockError
@@ -389,7 +389,7 @@ export default function PickingWorkspaceModule({ batchNo }: PickingWorkspaceModu
             </section>
 
             {/* Footer */}
-            <footer className="fixed inset-x-4 bottom-4 z-40 mx-auto flex max-w-[1544px] flex-col gap-3 rounded-2xl border border-border/70 bg-card/95 px-4 py-3 shadow-lg backdrop-blur sm:flex-row sm:items-center sm:justify-between md:inset-x-8">
+            <footer className="fixed inset-x-4 bottom-4 z-40 mx-auto flex max-w-[1544px] flex-col gap-3 rounded-xl border bg-card/95 px-4 py-3 shadow-lg backdrop-blur sm:flex-row sm:items-center sm:justify-between md:inset-x-8">
                 <div className="flex items-center gap-4 text-xs text-muted-foreground">
                     <span>
                         Progress: <strong className="text-foreground">{totals.pct.toFixed(0)}%</strong>
@@ -443,7 +443,7 @@ export default function PickingWorkspaceModule({ batchNo }: PickingWorkspaceModu
                             initial={{ scale: 0.95, opacity: 0 }}
                             animate={{ scale: 1, opacity: 1 }}
                             exit={{ scale: 0.95, opacity: 0 }}
-                            className="bg-card border rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4"
+                            className="bg-card border rounded-xl shadow-2xl w-full max-w-sm p-6 space-y-4"
                         >
                             <div className="flex items-center gap-3">
                                 <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-500">

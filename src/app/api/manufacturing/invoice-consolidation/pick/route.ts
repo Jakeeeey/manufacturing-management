@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { DIRECTUS_URL, headers as directusHeaders } from "../../directus-api";
 import {
     fetchSourceMovements,
-    type InventoryMovementQuantityRow,
     netMovementsZeroForSource,
     postMovements,
     type PostMovementPayload,
@@ -276,20 +275,23 @@ export async function POST(req: NextRequest) {
                 }
             }
 
+            const consumptionByKey = new Map<string, number>();
+            const involvedLots = new Set<number>();
+            const involvedProducts = new Set<number>();
             const movementsToPost: PostMovementPayload[] = [];
-            const consumedByInventoryLot = new Map<number, number>();
+
             for (const reservation of reservations) {
                 const consumed = consumptionByReservation.get(reservation.id) || 0;
                 if (consumed <= 0) continue;
                 const detail = typeof reservation.sales_invoice_detail_id === "object" ? reservation.sales_invoice_detail_id : null;
                 const lot = typeof reservation.inventory_lot_id === "object" ? reservation.inventory_lot_id : null;
                 const productId = Number(detail?.product_id || 0);
-                const inventoryLotId = relationId(reservation.inventory_lot_id);
                 const physicalLotId = Number(lot?.lot_id || 0);
-                if (!productId || !inventoryLotId || !physicalLotId) {
+                if (!productId || !physicalLotId) {
                     return NextResponse.json({ message: `Reservation ${reservation.id} has incomplete lot data` }, { status: 422 });
                 }
 
+                const batchNo = String(lot?.batch_no || lot?.lot_number || "LOT-N/A");
                 movementsToPost.push({
                     product_id: productId,
                     lot_id: physicalLotId,
@@ -297,43 +299,48 @@ export async function POST(req: NextRequest) {
                     transaction_type_id: TXN_TYPE_SALES_ISSUE,
                     source_document_id: batchId,
                     source_document_no: consolidator.consolidator_no,
-                    batch_no: lot?.batch_no || lot?.lot_number || "LOT-N/A",
+                    batch_no: batchNo,
                     expiry_date: lot?.expiry_date || null,
                     manufacturing_date: lot?.created_on ? lot.created_on.slice(0, 10) : null,
                     quantity: -Math.abs(consumed),
                     created_by: userId,
                     remarks: `Invoice consolidation reservation ${reservation.id} - ${consolidator.consolidator_no}`,
                 });
-                consumedByInventoryLot.set(
-                    inventoryLotId,
-                    (consumedByInventoryLot.get(inventoryLotId) || 0) + consumed
-                );
+                const key = `${productId}:${physicalLotId}:${batchNo}`;
+                consumptionByKey.set(key, (consumptionByKey.get(key) || 0) + consumed);
+                involvedLots.add(physicalLotId);
+                involvedProducts.add(productId);
             }
 
-            const currentLotQuantities = new Map<number, number>();
-            if (consumedByInventoryLot.size > 0) {
-                const consumedLotIds = [...consumedByInventoryLot.keys()];
+            const currentByKey = new Map<string, number>();
+            if (involvedLots.size > 0) {
                 const movFilter = encodeURIComponent(JSON.stringify({
-                    lot_id: { _in: consumedLotIds }
+                    _and: [
+                        { lot_id: { _in: [...involvedLots] } },
+                        { product_id: { _in: [...involvedProducts] } },
+                    ],
                 }));
-                const currentMovementsRes = await fetch(
+                const movRes = await fetch(
                     `${DIRECTUS_URL}/items/inventory_movements?filter=${movFilter}&limit=-1`,
                     { headers: directusHeaders, cache: "no-store" }
                 );
-                if (!currentMovementsRes.ok) {
-                    return NextResponse.json({ message: "Failed to revalidate reserved inventory lots" }, { status: 502 });
+                if (!movRes.ok) {
+                    return NextResponse.json({ message: "Failed to revalidate stock" }, { status: 502 });
                 }
-                const movements = (await currentMovementsRes.json()).data as InventoryMovementQuantityRow[] || [];
-                movements.forEach((mov) => {
-                    const lotId = Number(mov.lot_id);
-                    const qty = Number(mov.quantity || 0);
-                    currentLotQuantities.set(lotId, (currentLotQuantities.get(lotId) || 0) + qty);
-                });
+                const rows = (await movRes.json()).data as Record<string, unknown>[] || [];
+                for (const row of rows) {
+                    const pk = `${Number(row.product_id || 0)}:${Number(row.lot_id || 0)}:${String(row.batch_no || "")}`;
+                    currentByKey.set(pk, (currentByKey.get(pk) || 0) + Number(row.quantity || 0));
+                }
             }
 
-            for (const [inventoryLotId, consumed] of consumedByInventoryLot) {
-                if ((currentLotQuantities.get(inventoryLotId) || 0) < consumed) {
-                    return NextResponse.json({ message: `Inventory lot ${inventoryLotId} changed during picking` }, { status: 409 });
+            for (const [key, needed] of consumptionByKey) {
+                const onHand = currentByKey.get(key) || 0;
+                if (onHand < needed) {
+                    const parts = key.split(":");
+                    return NextResponse.json({
+                        message: `Stock changed: product ${parts[0]}, physical lot ${parts[1]}, batch ${parts[2]}: on-hand ${onHand} < needed ${needed}`,
+                    }, { status: 409 });
                 }
             }
 

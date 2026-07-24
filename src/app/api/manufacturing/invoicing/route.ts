@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getUserIdFromToken } from "../invoice-consolidation/_auth";
+import { allocateInvoicesForConsolidation, releaseReservationIds } from "../invoice-consolidation/_reservation-service";
 import { DIRECTUS_URL, headers } from "../directus-api";
 
 export const runtime = "nodejs";
@@ -202,6 +203,7 @@ export async function POST(request: Request) {
 
             let invoiceId: number | null = null;
             const detailIds: number[] = [];
+            let reservationIds: number[] = [];
             try {
                 const headerResponse = await fetch(`${DIRECTUS_URL}/items/sales_invoice`, {
                     method: "POST",
@@ -256,6 +258,9 @@ export async function POST(request: Request) {
                     detailIds.push(detailId);
                 }
 
+                const allocation = await allocateInvoicesForConsolidation([invoiceId], userId);
+                reservationIds = allocation.createdReservationIds;
+
                 const orderUpdate = await fetch(`${DIRECTUS_URL}/items/sales_order/${salesOrderId}`, {
                     method: "PATCH",
                     headers,
@@ -264,14 +269,26 @@ export async function POST(request: Request) {
                 if (!orderUpdate.ok) throw new Error(`sales-order update returned ${orderUpdate.status}`);
             } catch (error) {
                 const cleanupFailures: string[] = [];
+                if (reservationIds.length > 0) {
+                    const released = await releaseReservationIds(reservationIds, userId).catch(() => false);
+                    if (!released) cleanupFailures.push("invoice reservations");
+                }
                 for (const detailId of detailIds.reverse()) await remove("sales_invoice_details", detailId).catch((failure) => cleanupFailures.push(String(failure)));
                 if (invoiceId) await remove("sales_invoice", invoiceId).catch((failure) => cleanupFailures.push(String(failure)));
                 if (cleanupFailures.length) throw new ApiError(500, "Invoice creation failed and cleanup was incomplete.", { cleanupRequired: true, invoiceId });
                 console.error("Invoice creation compensated:", error);
+                if (error instanceof Error && error.message.includes("Insufficient eligible stock")) {
+                    throw new ApiError(409, error.message);
+                }
                 throw new ApiError(503, "Invoice creation failed. Partial records were removed; please retry.");
             }
 
-            return NextResponse.json({ invoiceId, invoiceNo, transactionStatus: "Prepared" }, { status: 201 });
+            return NextResponse.json({
+                invoiceId,
+                invoiceNo,
+                transactionStatus: "Prepared",
+                reservationCount: reservationIds.length,
+            }, { status: 201 });
         });
     } catch (error) {
         if (error instanceof ApiError) return NextResponse.json({ error: error.message, ...error.details }, { status: error.status });

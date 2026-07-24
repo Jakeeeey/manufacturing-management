@@ -853,6 +853,149 @@ export async function previewConsolidationAllocations(branchId: number, invoiceI
     };
 }
 
+export async function calculateSalesOrderAvailability(salesOrderId: number) {
+    const orderJson = await directusJson(
+        `${DIRECTUS_URL}/items/sales_order/${salesOrderId}?fields=order_id,order_no,customer_code,branch_id,order_status`
+    );
+    const order: { order_id: number; order_no: string; customer_code: string; branch_id: number; order_status: string } | undefined = orderJson.data;
+    if (!order) throw new Error("Sales order not found");
+
+    const detailsJson = await directusJson(
+        `${DIRECTUS_URL}/items/sales_order_details?filter[order_id][_eq]=${salesOrderId}&fields=detail_id,product_id,bom_version_id,ordered_quantity&limit=-1`
+    );
+    const details: { detail_id: number; product_id: number; bom_version_id: number; ordered_quantity: number }[] = detailsJson.data || [];
+    if (details.length === 0) return { lines: [], overallStockStatus: "Unavailable" as const };
+
+    const productIds = [...new Set(details.map((d) => Number(d.product_id)))];
+    const branchId = Number(order.branch_id);
+
+    const customerFilter = encodeURIComponent(JSON.stringify({ customer_code: { _eq: order.customer_code } }));
+    const customerJson = await directusJson(`${DIRECTUS_URL}/items/customer?filter=${customerFilter}&fields=id&limit=1`);
+    const customerId = Number(customerJson.data?.[0]?.id || 0);
+    const pairs = details.map((d) => ({ customerId, productId: Number(d.product_id) }));
+    const demandVersionMap = await resolveVersions(pairs);
+
+    const lotFilter = encodeURIComponent(JSON.stringify({
+        _and: [
+            { product_id: { _in: productIds } },
+            { branch_id: { _eq: branchId } },
+            { qa_status: { _eq: "Passed" } },
+            { source_type: { _in: ["manufacturing", "yield_ledger"] } },
+        ],
+    }));
+    const lotsJson = await directusJson(
+        `${DIRECTUS_URL}/items/inventory_lots?filter=${lotFilter}&fields=id,product_id,branch_id,lot_id,lot_number,batch_no,expiry_date,created_on,quantity,qa_status,source_type,source_reference&limit=-1`
+    );
+    const unfilteredLots: InventoryLotRow[] = (lotsJson.data || []).filter((lot: InventoryLotRow) => numericId(lot.lot_id, ["lot_id"]) !== null);
+
+    const movFilter = encodeURIComponent(JSON.stringify({ _and: [{ product_id: { _in: productIds } }, { branch_id: { _eq: branchId } }] }));
+    const movJson = await directusJson(`${DIRECTUS_URL}/items/inventory_movements?filter=${movFilter}&limit=-1`);
+    const movements: MovementRow[] = movJson.data || [];
+
+    const jobOrderNumbers = [...new Set(unfilteredLots.map((lot) => lot.source_reference).filter(Boolean))] as string[];
+    const jobVersionMap = new Map<string, number>();
+    if (jobOrderNumbers.length > 0) {
+        const joFilter = encodeURIComponent(JSON.stringify({ job_order_no: { _in: jobOrderNumbers } }));
+        const joJson = await directusJson(`${DIRECTUS_URL}/items/manufacturing_job_orders?filter=${joFilter}&fields=job_order_no,version_id&limit=-1`);
+        for (const jobOrder of joJson.data || []) {
+            if (jobOrder.job_order_no && jobOrder.version_id) jobVersionMap.set(String(jobOrder.job_order_no), Number(jobOrder.version_id));
+        }
+    }
+    const activeFilter = encodeURIComponent(JSON.stringify({ _and: [{ product_id: { _in: productIds } }, { status: { _eq: "Active" } }] }));
+    const activeJson = await directusJson(`${DIRECTUS_URL}/items/product_manufacturing_version?filter=${activeFilter}&fields=product_id,version_id&limit=-1`);
+    const activeVersionMap = new Map<number, number>();
+    for (const version of activeJson.data || []) {
+        const pid = Number(version.product_id);
+        if (!activeVersionMap.has(pid)) activeVersionMap.set(pid, Number(version.version_id));
+    }
+
+    const { lots, keyByLotId } = canonicalStockLots(unfilteredLots, movements, jobVersionMap, activeVersionMap);
+
+    const lotIds = unfilteredLots.map((lot) => lot.id);
+    const reservedByStock = new Map<string, number>();
+    if (lotIds.length > 0) {
+        const reservationFilter = encodeURIComponent(JSON.stringify({ _and: [{ inventory_lot_id: { _in: lotIds } }, { status: { _eq: "Reserved" } }] }));
+        const reservationJson = await directusJson(`${DIRECTUS_URL}/items/sales_invoice_reservation?filter=${reservationFilter}&fields=inventory_lot_id,quantity&limit=-1`);
+        for (const reservation of (reservationJson.data || []) as { inventory_lot_id: number | { id?: number }; quantity: number }[]) {
+            const id = typeof reservation.inventory_lot_id === "object" ? Number(reservation.inventory_lot_id?.id || 0) : Number(reservation.inventory_lot_id || 0);
+            const key = keyByLotId.get(id);
+            if (key) reservedByStock.set(key, (reservedByStock.get(key) || 0) + Number(reservation.quantity || 0));
+        }
+    }
+
+    const productJson = await directusJson(`${DIRECTUS_URL}/items/products?filter[product_id][_in]=${productIds.join(",")}&fields=product_id,product_name,product_code&limit=-1`);
+    const productMap = new Map<number, { product_name: string; product_code: string }>();
+    for (const product of productJson.data || []) productMap.set(Number(product.product_id), product);
+
+    const availableByLot = new Map(lots.map((lot) => [
+        lot.id, Math.max(0, Number(lot.quantity || 0) - (reservedByStock.get(lot.stockKey) || 0)),
+    ]));
+
+    const versionJson = await directusJson(`${DIRECTUS_URL}/items/product_manufacturing_version?filter[version_id][_in]=${[...new Set(details.map((d) => Number(d.bom_version_id)).filter(Boolean))].join(",")}&fields=version_id,version_name&limit=-1`);
+    const versionNameMap = new Map<number, string>();
+    for (const v of versionJson.data || []) versionNameMap.set(Number(v.version_id), String(v.version_name || `Version ${v.version_id}`));
+
+    const lines: {
+        detailId: number;
+        productId: number;
+        productName: string;
+        productCode: string;
+        versionId: number;
+        versionName: string;
+        required: number;
+        onHand: number;
+        reserved: number;
+        available: number;
+        shortage: number;
+    }[] = [];
+
+    let totalShortage = 0;
+
+    for (const detail of details) {
+        const productId = Number(detail.product_id);
+        const product = productMap.get(productId) || { product_name: `Product #${productId}`, product_code: "" };
+        const required = Number(detail.ordered_quantity);
+        const targetVersion = demandVersionMap.get(`${customerId}:${productId}`)?.versionId || Number(detail.bom_version_id);
+
+        const matchingLots = lots.filter((lot) =>
+            Number(lot.product_id) === productId && lot.versionId === targetVersion && (availableByLot.get(lot.id) || 0) > 0
+        ).sort(fefoCompare);
+
+        let onHand = 0;
+        let reserved = 0;
+        let available = 0;
+
+        for (const lot of matchingLots) {
+            const avail = availableByLot.get(lot.id) || 0;
+            onHand += Number(lot.quantity || 0);
+            reserved += reservedByStock.get(lot.stockKey) || 0;
+            available += avail;
+        }
+
+        const availableFromStock = Math.min(required, available);
+        const shortage = Math.max(0, required - availableFromStock);
+        totalShortage += shortage;
+
+        lines.push({
+            detailId: Number(detail.detail_id),
+            productId,
+            productName: product.product_name,
+            productCode: product.product_code,
+            versionId: targetVersion,
+            versionName: versionNameMap.get(targetVersion) || `Version ${targetVersion}`,
+            required,
+            onHand,
+            reserved,
+            available,
+            shortage,
+        });
+    }
+
+    const overallStockStatus: "Available" | "Partial" | "Unavailable" = totalShortage <= 0 ? "Available" : lines.some((l) => l.available > 0 && l.shortage > 0) ? "Partial" : "Unavailable";
+
+    return { lines, overallStockStatus };
+}
+
 export async function releaseInvoiceReservations(invoiceId: number, userId: number) {
     const linkedJson = await directusJson(
         `${DIRECTUS_URL}/items/consolidator_invoices?filter[invoice_id][_eq]=${invoiceId}&filter[consolidator_id][consolidator_no][_starts_with]=CLINV-&filter[consolidator_id][is_delete][_eq]=0&fields=id&limit=1`
