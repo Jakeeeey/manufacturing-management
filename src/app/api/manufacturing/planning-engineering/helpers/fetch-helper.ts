@@ -36,7 +36,7 @@ export async function fetchJobOrders(): Promise<DirectusJobOrder[]> {
         const fetchList = [
             fetch(`${DIRECTUS_URL}/items/manufacturing_job_orders?limit=-1&sort=-job_order_id`, { headers: headersNoCache }),
             fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_allocations?limit=-1`, { headers: headersNoCache }),
-            fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_routes?limit=-1&fields=jo_route_id,job_order_id,sequence_order,work_center_id,operation_id,planned_setup_hours,planned_run_hours,actual_setup_hours,actual_run_hours,estimated_labor_cost,actual_labor_cost`, { headers: headersNoCache }),
+            fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_routes?limit=-1&fields=jo_route_id,job_order_id,sequence_order,work_center_id,operation_id,planned_setup_hours,planned_run_hours,actual_setup_hours,actual_run_hours,step_batch_size,run_time_hours_factor`, { headers: headersNoCache }),
             fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_route_operators?limit=-1`, { headers: headersNoCache }),
             fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_qa_records?limit=-1`, { headers: headersNoCache }),
             fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_materials?limit=-1`, { headers: headersNoCache }),
@@ -228,8 +228,8 @@ export async function fetchJobOrders(): Promise<DirectusJobOrder[]> {
                         duration_hours: Number(task.planned_setup_hours || 0) + Number(task.planned_run_hours || 0),
                         actual_setup_hours: Number(task.actual_setup_hours || 0),
                         actual_run_hours: totalHours > 0 ? totalHours : Number(task.actual_run_hours || 0),
-                        estimated_labor_cost: Number(task.estimated_labor_cost || 0),
-                        actual_labor_cost: totalCost > 0 ? totalCost : Number(task.actual_labor_cost || 0),
+                        step_batch_size: Number(task.step_batch_size || 1),
+                        run_time_hours_factor: Number(task.run_time_hours_factor || 0),
                         completed_at: task.completed_at,
                         requires_qa: reqQA ? 1 : 0,
                         assignments: taskAssigns,
@@ -247,7 +247,8 @@ export async function fetchJobOrders(): Promise<DirectusJobOrder[]> {
                 setup_time_hours: t.planned_setup_hours,
                 run_time_hours: t.planned_run_hours,
                 duration_hours: t.duration_hours,
-                estimated_labor_cost: t.estimated_labor_cost,
+                step_batch_size: t.step_batch_size,
+                run_time_hours_factor: t.run_time_hours_factor,
                 status: t.status
             }));
 

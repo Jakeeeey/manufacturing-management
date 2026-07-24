@@ -143,13 +143,11 @@ export default function OperatorPanel({
     }, [routeOperators]);
 
     const taskSummary = React.useMemo(() => {
-        const totalHours = routeOperators.reduce((sum, r) => sum + (r.actual_hours || 0), 0);
-        const totalLaborCost = routeOperators.reduce((sum, r) => sum + (r.labor_cost || 0), 0);
+        const totalHours = groupedOperators.reduce((sum, g) => sum + g.total_logged_hours, 0);
         return {
-            total_hours: totalHours,
-            total_labor_cost: totalLaborCost
+            total_hours: totalHours
         };
-    }, [routeOperators]);
+    }, [groupedOperators]);
 
     // Sync halted step selection with the active step
     useEffect(() => {
@@ -246,14 +244,6 @@ export default function OperatorPanel({
                         <div className="border-r border-border h-3 hidden sm:block" />
                         <div>
                             Actual: <strong className="text-foreground font-mono">{taskSummary.total_hours.toFixed(1)}h</strong>
-                        </div>
-                        <div className="border-r border-border h-3 hidden sm:block" />
-                        <div>
-                            Est Labor: <strong className="text-foreground font-mono">₱{Number(selectedTask.estimated_labor_cost || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}</strong>
-                        </div>
-                        <div className="border-r border-border h-3 hidden sm:block" />
-                        <div>
-                            Act Labor: <strong className="text-foreground font-mono">₱{taskSummary.total_labor_cost.toLocaleString(undefined, { maximumFractionDigits: 0 })}</strong>
                         </div>
                     </div>
 

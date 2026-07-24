@@ -145,7 +145,6 @@ export async function calculateRollupCost(
         bomId: null,
         bomVersion: "v1.0",
         materialsCost: 0,
-        laborCost: 0,
         machineOverheadCost: 0,
         customOverheadCost: 0,
         additionalOperatingOverhead: 0,
@@ -201,7 +200,6 @@ export async function calculateRollupCost(
         const landedCost = await getLatestLandedCost(productId, forexRate, profilesMap, productsMap);
         const leafBreakdown = calculateCostBreakdown({
             materialsCost: landedCost,
-            laborCost: 0,
             machineOverheadCost: 0,
             customOverheadCost: 0,
             expectedYieldPercentage: 100,
@@ -253,8 +251,7 @@ export async function calculateRollupCost(
     const unitsMap = new Map<number, string>(unitsList.map((u: any) => [u.unit_id, u.unit_shortcut]));
 
     let materialsBatchSubtotal = 0;
-    let laborSubtotal = 0;
-    let machineOverheadSubtotal = 0;
+    let machineOverheadCost = 0;
     let machineHoursSubtotal = 0;
     let totalMachineCostSubtotal = 0;
     const costTreeNodes: CostNode[] = [];
@@ -264,20 +261,14 @@ export async function calculateRollupCost(
         const workCenter = r.work_center_id ? workCentersMap.get(r.work_center_id) : null;
         const opName = r.operation_id ? (operationsMap.get(r.operation_id) || `Operation #${r.operation_id}`) : `Operation Step`;
 
-        // Routing Step Cost (setup hours and flat labor are amortized by the version's base quantity)
-        const wcOverheadRate = workCenter ? Number(workCenter.overhead_cost_per_hour || 0) : 0;
         const routeBreakdown = calculateRouteBreakdown({
-            laborCost: r.estimated_labor_cost,
-            machineHourlyRate: wcOverheadRate,
-            operationCapacity: workCenter ? Number(workCenter.capacity_per_hour || 0) : 0,
+            stepBatchSize: r.step_batch_size || 1,
+            machineHourlyRate: workCenter?.overhead_cost_per_hour || 0,
             setupTimeHours: r.setup_time_hours,
             runTimeHours: r.run_time_hours,
             baseQuantity: Number(version?.base_quantity) || 1
         });
-        const stepCost = routeBreakdown.totalCost;
-
-        laborSubtotal += routeBreakdown.laborCost;
-        machineOverheadSubtotal += routeBreakdown.machineOverheadCost;
+        machineOverheadCost += routeBreakdown.machineOverheadCost;
         machineHoursSubtotal += routeBreakdown.machineHours;
         totalMachineCostSubtotal += routeBreakdown.totalMachineCost;
 
@@ -337,16 +328,15 @@ export async function calculateRollupCost(
             id: `route-${r.route_id}`,
             name: `${opName} (${workCenter ? workCenter.work_center_name : "No Work Center"})`,
             type: "routing",
-            quantity: routeBreakdown.machineHours,
+            quantity: 1,
             uom: "hrs",
-            unitCost: wcOverheadRate,
+            unitCost: routeBreakdown.machineOverheadCost,
             wastagePercent: 0,
-            totalCost: stepCost,
-            laborCost: routeBreakdown.laborCost,
-            machineRate: wcOverheadRate,
+            totalCost: routeBreakdown.machineOverheadCost,
+            machineRate: workCenter?.overhead_cost_per_hour || 0,
             machineHours: routeBreakdown.machineHours,
-            machineCostPerUnit: routeBreakdown.machineCostPerUnit,
-            operationCapacity: routeBreakdown.operationCapacity,
+            machineCostPerUnit: routeBreakdown.machineOverheadCost,
+            stepBatchSize: r.step_batch_size || 1,
             children: childrenNodes.length > 0 ? childrenNodes : undefined
         });
     }
@@ -356,9 +346,8 @@ export async function calculateRollupCost(
 
     const breakdown = calculateCostBreakdown({
         materialsCost: materialsSubtotal,
-        laborCost: laborSubtotal,
-        machineOverheadCost: machineOverheadSubtotal,
-        customOverheadCost: version.custom_overhead,
+        machineOverheadCost: machineOverheadCost,
+        customOverheadCost: version.custom_overhead || 0,
         expectedYieldPercentage: version.expected_yield_percentage,
         baseQuantity,
         machineHours: machineHoursSubtotal,
@@ -387,7 +376,8 @@ export async function calculateRollupCost(
         totalOverheadExpenses: overheadSummary.totalOverheadExpenses,
         includedInCogs: overheadSummary.includedInCogs,
         excludedFromCogs: overheadSummary.excludedFromCogs,
-        routingsCost: breakdown.laborCost + breakdown.machineOverheadCost,
+        totalMachineCost: breakdown.totalMachineCost,
+        routingsCost: breakdown.machineOverheadCost,
         targetSellingPrice: targetPrice,
         ...margin,
         costTree: costTreeNodes
@@ -459,7 +449,7 @@ export interface ProductDetailsVerificationInput {
     unitOfMeasurementCount: number;
     densityFactor: number;
     productShelfLife: number;
-    productionCapacityPerHour: number;
+
 }
 
 function directusRelationId(value: unknown, keys: string[]): number | null {
@@ -515,8 +505,8 @@ export async function verifyProductDetails(
             unitOfMeasurement === expected.unitOfMeasurement &&
             numbersMatch(saved.unit_of_measurement_count, expected.unitOfMeasurementCount) &&
             numbersMatch(saved.density_factor, expected.densityFactor) &&
-            numbersMatch(saved.product_shelf_life, expected.productShelfLife) &&
-            numbersMatch(saved.production_capacity_per_hour, expected.productionCapacityPerHour);
+            numbersMatch(saved.product_shelf_life, expected.productShelfLife);
+
 
         return matches
             ? { ok: true }

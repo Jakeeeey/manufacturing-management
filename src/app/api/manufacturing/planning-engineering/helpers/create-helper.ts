@@ -305,7 +305,7 @@ export async function createJobOrder(joData: Partial<DirectusJobOrder>, salesOrd
             if (routes && routes.length > 0) {
                 for (const r of routes) {
                     const plannedSetup = Number(r.setup_time_hours || 0);
-                    const plannedRun = (productionQty * Number(r.run_time_hours || 0)) / baseQuantity;
+                    const plannedRun = (productionQty / Number(r.step_batch_size || 1)) * Number(r.run_time_hours || 0);
                     totalEstimatedHours += (plannedSetup + plannedRun);
 
                     // Insert into JO routes table
@@ -318,8 +318,8 @@ export async function createJobOrder(joData: Partial<DirectusJobOrder>, salesOrd
                         planned_run_hours: plannedRun,
                         actual_setup_hours: 0,
                         actual_run_hours: 0,
-                        estimated_labor_cost: (productionQty * Number(r.estimated_labor_cost || 0)) / baseQuantity,
-                        actual_labor_cost: 0
+                        step_batch_size: Number(r.step_batch_size || 1),
+                        run_time_hours_factor: Number(r.run_time_hours || 0)
                     };
 
                     const routeRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_routes?fields=jo_route_id`, {

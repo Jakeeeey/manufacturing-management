@@ -66,7 +66,6 @@ export type RegisterFormField =
     | "densityFactor"
     | "expectedYield"
     | "shelfLife"
-    | "productionCapacityPerHour"
     | "versionName";
 
 export type RegisterFormErrors = Partial<Record<RegisterFormField, string>>;
@@ -152,7 +151,6 @@ export function useFinishedGoods(initialTab: string = "details") {
         shelfLife: "",
         productImage: "",
         parentId: "",
-        productionCapacityPerHour: "",
         supplierIds: [] as string[]
     });
     const [registerFormErrors, setRegisterFormErrors] = useState<RegisterFormErrors>({});
@@ -280,7 +278,7 @@ export function useFinishedGoods(initialTab: string = "details") {
                 cost_per_unit: p.cost_per_unit ? Number(p.cost_per_unit) : undefined,
                 unit_of_measurement_count: p.unit_of_measurement_count ? Number(p.unit_of_measurement_count) : undefined,
                 product_image: p.product_image || undefined,
-                production_capacity_per_hour: p.production_capacity_per_hour ? Number(p.production_capacity_per_hour) : undefined,
+
                 has_versions: !!p.has_versions
             };
         });
@@ -383,7 +381,7 @@ export function useFinishedGoods(initialTab: string = "details") {
             unit_of_measurement_count: selectedProduct.unit_of_measurement_count,
             product_image: selectedProduct.product_image,
             parent_id: selectedProduct.parent_id,
-            production_capacity_per_hour: selectedProduct.production_capacity_per_hour || 0
+
         };
 
         if (selectedVersionId === null || !versions.some((v) => v.version_id === selectedVersionId)) {
@@ -443,9 +441,9 @@ export function useFinishedGoods(initialTab: string = "details") {
                                 sequence: r.sequence_order,
                                 name: `Step ${r.sequence_order}`,
                                 operationId: r.operation_id || undefined,
-                                laborFlatRate: r.estimated_labor_cost,
                                 machineHourlyRate: 0,
                                 durationHours: r.run_time_hours,
+                                stepBatchSize: r.step_batch_size || 1,
                                 requiresQA: !!r.qa_template_id
                             });
 
@@ -525,7 +523,7 @@ export function useFinishedGoods(initialTab: string = "details") {
                 unit_of_measurement_count: registerForm.uomCount,
                 density_factor: registerForm.densityFactor,
                 product_shelf_life: registerForm.shelfLife,
-                production_capacity_per_hour: registerForm.productionCapacityPerHour
+
             },
             versionName: registerForm.versionName,
             expectedYield: registerForm.expectedYield
@@ -600,7 +598,7 @@ export function useFinishedGoods(initialTab: string = "details") {
                     product_shelf_life: shelfLifeVal,
                     product_image: registerForm.productImage || undefined,
                     parent_id: registerForm.parentId ? Number(registerForm.parentId) : null,
-                    production_capacity_per_hour: Number(registerForm.productionCapacityPerHour) || 0
+
                 },
                 registerForm.versionName.trim(),
                 registerForm.supplierIds.map(Number),
@@ -639,7 +637,6 @@ export function useFinishedGoods(initialTab: string = "details") {
                     shelfLife: "",
                     productImage: "",
                     parentId: "",
-                    productionCapacityPerHour: "",
                     supplierIds: [] as string[]
                 });
 
@@ -676,7 +673,7 @@ export function useFinishedGoods(initialTab: string = "details") {
                         cost_per_unit: p.cost_per_unit ? Number(p.cost_per_unit) : undefined,
                         unit_of_measurement_count: p.unit_of_measurement_count ? Number(p.unit_of_measurement_count) : undefined,
                         product_image: p.product_image || undefined,
-                        production_capacity_per_hour: p.production_capacity_per_hour ? Number(p.production_capacity_per_hour) : undefined,
+
                         has_versions: !!p.has_versions
                       };
                 });
@@ -898,7 +895,6 @@ export function useFinishedGoods(initialTab: string = "details") {
                 productShelfLife: validatedDetails.productShelfLife,
                 productImage: editedDetails.product_image,
                 parent_id: editedDetails.parent_id !== undefined ? (editedDetails.parent_id ? Number(editedDetails.parent_id) : null) : null,
-                productionCapacityPerHour: validatedDetails.productionCapacityPerHour,
                 unit_of_measurement: validatedDetails.unitOfMeasurement
             };
 
@@ -943,7 +939,7 @@ export function useFinishedGoods(initialTab: string = "details") {
                             product_image: editedDetails.product_image,
                             parent_id: updatedParentId,
                             parentProduct: updatedParentId === null,
-                            production_capacity_per_hour: editedDetails.production_capacity_per_hour !== undefined ? editedDetails.production_capacity_per_hour : p.production_capacity_per_hour
+
                         };
                     }
                     return p;
@@ -976,7 +972,7 @@ export function useFinishedGoods(initialTab: string = "details") {
                             unit_of_measurement_count: editedDetails.unit_of_measurement_count,
                             product_image: editedDetails.product_image,
                             parent_id: updatedParentId,
-                            production_capacity_per_hour: editedDetails.production_capacity_per_hour !== undefined ? editedDetails.production_capacity_per_hour : p.production_capacity_per_hour,
+
                             unit_of_measurement: updatedUnitOfMeasurement
                         };
                     }
