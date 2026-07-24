@@ -28,7 +28,7 @@ interface DirectusWorkCenter {
 export async function GET() {
     try {
         const [res, usersRes] = await Promise.all([
-            fetch(`${DIRECTUS_URL}/items/manufacturing_work_centers?limit=-1&sort=-work_center_id&fields=*,asset_id.id,asset_id.item_image,asset_id.serial,asset_id.barcode,asset_id.condition,asset_id.item_id.id,asset_id.item_id.item_name,department_id.department_id,department_id.department_name`, { headers, cache: "no-store" }),
+            fetch(`${DIRECTUS_URL}/items/manufacturing_work_centers?limit=-1&sort=-work_center_id&fields=*,asset_id.id,asset_id.item_image,asset_id.serial,asset_id.rfid_code,asset_id.barcode,asset_id.condition,asset_id.item_id.id,asset_id.item_id.item_name,department_id.department_id,department_id.department_name`, { headers, cache: "no-store" }),
             fetch(`${DIRECTUS_URL}/items/user?limit=-1&fields=user_id,user_fname,user_lname`, { headers, cache: "no-store" }).catch(() => null)
         ]);
 

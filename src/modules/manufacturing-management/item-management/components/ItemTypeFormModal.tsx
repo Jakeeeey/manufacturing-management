@@ -49,14 +49,6 @@ export default function ItemTypeFormModal({ isOpen, onClose, onSave, itemType }:
                     <h3 className="text-sm font-bold text-foreground">
                         {itemType ? "Edit Item Type" : "Register New Item Type"}
                     </h3>
-                    <button
-                        type="button"
-                        onClick={onClose}
-                        className="text-muted-foreground hover:text-foreground text-xs font-semibold px-2 py-1 hover:bg-muted rounded transition-colors"
-                        disabled={submitting}
-                    >
-                        Cancel
-                    </button>
                 </div>
 
                 {/* Form */}

@@ -67,10 +67,8 @@ export default function AssetsModule() {
     // Form inputs
     const [itemImage, setItemImage] = useState("");
     const [selectedItemId, setSelectedItemId] = useState<number | null>(null);
-    const [quantity, setQuantity] = useState("1");
     const [rfidCode, setRfidCode] = useState("");
     const [barcode, setBarcode] = useState("");
-    const [serial, setSerial] = useState("");
     const [selectedDeptId, setSelectedDeptId] = useState<number | null>(null);
     const [costPerItem, setCostPerItem] = useState("0");
     const [condition, setCondition] = useState<AssetRecord["condition"]>("Good");
@@ -159,13 +157,12 @@ export default function AssetsModule() {
             }
 
             const matchesName = itemName.toLowerCase().includes(query);
-            const matchesSerial = (asset.serial || "").toLowerCase().includes(query);
             const matchesBarcode = (asset.barcode || "").toLowerCase().includes(query);
             const matchesRfid = (asset.rfid_code || "").toLowerCase().includes(query);
             const matchesCond = (asset.condition || "").toLowerCase().includes(query);
             const matchesDept = deptName.toLowerCase().includes(query);
 
-            return matchesName || matchesSerial || matchesBarcode || matchesRfid || matchesCond || matchesDept;
+            return matchesName || matchesBarcode || matchesRfid || matchesCond || matchesDept;
         });
     }, [assets, searchQuery, items, departments, conditionFilter, statusFilter]);
 
@@ -185,10 +182,8 @@ export default function AssetsModule() {
         setItemImage("");
         setImageFilename("");
         setSelectedItemId(null);
-        setQuantity("1");
         setRfidCode("");
         setBarcode("");
-        setSerial("");
         setSelectedDeptId(null);
         setCostPerItem("0");
         setCondition("Good");
@@ -222,15 +217,13 @@ export default function AssetsModule() {
         const itemId = asset.item_id && typeof asset.item_id === "object" ? (asset.item_id as unknown as CatalogItem).id : (typeof asset.item_id === 'number' ? asset.item_id : null);
         setSelectedItemId(itemId);
 
-        setQuantity(asset.quantity !== null && asset.quantity !== undefined ? String(asset.quantity) : "1");
         setRfidCode(asset.rfid_code || "");
         setBarcode(asset.barcode || "");
-        setSerial(asset.serial || "");
 
         const deptId = asset.department && typeof asset.department === "object" ? (asset.department as unknown as DepartmentRecord).department_id : (typeof asset.department === 'number' ? asset.department : null);
         setSelectedDeptId(deptId);
 
-        setCostPerItem(asset.cost_per_item !== null && asset.cost_per_item !== undefined ? String(asset.cost_per_item) : "0");
+        setCostPerItem(asset.cost_per_item !== null && asset.cost_per_item !== undefined ? String(asset.cost_per_item) : (asset.total !== null && asset.total !== undefined ? String(asset.total) : "0"));
         setCondition(asset.condition || "Good");
         setLifeSpan(asset.life_span !== null && asset.life_span !== undefined ? String(asset.life_span) : "");
         setIsActiveWarning(Boolean(asset.is_active_warning));
@@ -258,26 +251,51 @@ export default function AssetsModule() {
             toast.error("Please select an inventory item.");
             return;
         }
-        if (!quantity || Number(quantity) < 1) {
-            toast.error("Quantity must be at least 1.");
+        if (!costPerItem || Number(costPerItem) < 0) {
+            toast.error("Total Cost cannot be negative.");
             return;
         }
-        if (!costPerItem || Number(costPerItem) < 0) {
-            toast.error("Cost per Item cannot be negative.");
-            return;
+
+        const trimmedRfid = rfidCode.trim();
+        const trimmedBarcode = barcode.trim();
+
+        // Check RFID Uniqueness
+        if (trimmedRfid) {
+            const isDuplicateRfid = assets.some(a =>
+                a.id !== editingAsset?.id &&
+                (a.rfid_code || "").trim().toLowerCase() === trimmedRfid.toLowerCase()
+            );
+            if (isDuplicateRfid) {
+                toast.warning("RFID Code already exists in the database.");
+                return;
+            }
+        }
+
+        // Check Barcode Uniqueness
+        if (trimmedBarcode) {
+            const isDuplicateBarcode = assets.some(a =>
+                a.id !== editingAsset?.id &&
+                (a.barcode || "").trim().toLowerCase() === trimmedBarcode.toLowerCase()
+            );
+            if (isDuplicateBarcode) {
+                toast.warning("Barcode already exists in the database.");
+                return;
+            }
         }
 
         setSaving(true);
         try {
+            const totalVal = parseFloat(costPerItem) || 0;
             const payload = {
                 item_image: itemImage.trim() || null,
                 item_id: selectedItemId,
-                quantity: parseInt(quantity) || 1,
-                rfid_code: rfidCode.trim() || null,
-                barcode: barcode.trim() || null,
-                serial: serial.trim() || null,
+                quantity: 1,
+                rfid_code: trimmedRfid || null,
+                barcode: trimmedBarcode || null,
+                serial: null,
                 department: selectedDeptId,
-                cost_per_item: parseFloat(costPerItem) || 0,
+                cost_per_item: totalVal,
+                total: totalVal,
                 condition: condition || "Good",
                 life_span: lifeSpan.trim() ? parseInt(lifeSpan) : null,
                 is_active_warning: isActiveWarning,
@@ -425,12 +443,19 @@ export default function AssetsModule() {
         }
     };
 
-    // Calculate Total Cost dynamically
-    const calculatedTotal = useMemo(() => {
-        const qty = parseInt(quantity) || 0;
-        const cost = parseFloat(costPerItem) || 0;
-        return qty * cost;
-    }, [quantity, costPerItem]);
+
+    // Check barcode and RFID code duplicate status for real-time red border feedback
+    const isDuplicateBarcode = useMemo(() => {
+        const trimmed = barcode.trim().toLowerCase();
+        if (!trimmed) return false;
+        return assets.some(a => a.id !== editingAsset?.id && (a.barcode || "").trim().toLowerCase() === trimmed);
+    }, [barcode, assets, editingAsset]);
+
+    const isDuplicateRfid = useMemo(() => {
+        const trimmed = rfidCode.trim().toLowerCase();
+        if (!trimmed) return false;
+        return assets.some(a => a.id !== editingAsset?.id && (a.rfid_code || "").trim().toLowerCase() === trimmed);
+    }, [rfidCode, assets, editingAsset]);
 
     // Filter items
     const filteredItems = useMemo(() => {
@@ -470,7 +495,7 @@ export default function AssetsModule() {
                     <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground opacity-70" />
                     <input
                         type="text"
-                        placeholder="Search by asset name, serial, barcode, RFID code, or condition..."
+                        placeholder="Search by asset name, barcode, RFID code, or condition..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         className="w-full h-9 pl-10 pr-3 rounded-lg border border-muted bg-background text-foreground text-xs focus:outline-none focus:ring-1 focus:ring-primary"
@@ -536,10 +561,8 @@ export default function AssetsModule() {
                             <tr className="bg-muted/10 border-b border-muted/50 text-muted-foreground font-bold uppercase tracking-wider text-[10px]">
                                 <th className="p-4 pl-6 w-[8%]">Image</th>
                                 <th className="p-4">Item Name</th>
-                                <th className="p-4">Qty</th>
-                                <th className="p-4">Cost per Item</th>
                                 <th className="p-4">Total Cost</th>
-                                <th className="p-4">Serial / Barcode / RFID</th>
+                                <th className="p-4">Barcode / RFID Code</th>
                                 <th className="p-4">Department</th>
                                 <th className="p-4">Condition</th>
                                 <th className="p-4">Status</th>
@@ -593,21 +616,14 @@ export default function AssetsModule() {
                                         <td className="p-4 align-middle font-semibold text-foreground text-sm">
                                             {itemName}
                                         </td>
-                                        <td className="p-4 align-middle text-muted-foreground font-medium">
-                                            {asset.quantity || 1}
-                                        </td>
-                                        <td className="p-4 align-middle text-muted-foreground font-medium">
-                                            {formatCurrency(asset.cost_per_item || 0)}
-                                        </td>
                                         <td className="p-4 align-middle text-foreground font-bold">
-                                            {formatCurrency(asset.total || 0)}
+                                            {formatCurrency(asset.total || asset.cost_per_item || 0)}
                                         </td>
                                         <td className="p-4 align-middle text-muted-foreground">
                                             <div className="flex flex-col gap-0.5 text-[11px]">
-                                                {asset.serial && <div><span className="font-semibold text-foreground">S/N:</span> {asset.serial}</div>}
                                                 {asset.barcode && <div><span className="font-semibold text-foreground">Barcode:</span> {asset.barcode}</div>}
                                                 {asset.rfid_code && <div><span className="font-semibold text-foreground">RFID:</span> {asset.rfid_code}</div>}
-                                                {!asset.serial && !asset.barcode && !asset.rfid_code && <span className="italic opacity-50">No codes linked</span>}
+                                                {!asset.barcode && !asset.rfid_code && <span className="italic opacity-50">No codes linked</span>}
                                             </div>
                                         </td>
                                         <td className="p-4 align-middle">
@@ -748,13 +764,6 @@ export default function AssetsModule() {
                                     <p className="text-xs text-muted-foreground">Log machinery specs, costs, location department, and condition.</p>
                                 </div>
                             </div>
-                            <button
-                                type="button"
-                                onClick={() => setIsModalOpen(false)}
-                                className="text-muted-foreground hover:text-foreground text-sm font-semibold transition-colors px-3 py-1.5 hover:bg-muted rounded-lg"
-                            >
-                                Close
-                            </button>
                         </div>
 
                         {/* Modal Form Body */}
@@ -875,31 +884,10 @@ export default function AssetsModule() {
                                 </Select>
                             </div>
 
-                            {/* Quantity and cost per item */}
+                            {/* Total Cost and Useful Lifespan */}
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-1">
-                                    <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Quantity <span className="text-destructive">*</span></label>
-                                    <input
-                                        type="number"
-                                        min="1"
-                                        required
-                                        value={quantity}
-                                        onChange={e => {
-                                            const val = e.target.value;
-                                            if (val === "" || Number(val) >= 0) {
-                                                setQuantity(val);
-                                            }
-                                        }}
-                                        onKeyDown={e => {
-                                            if (e.key === "-" || e.key === "+") {
-                                                e.preventDefault();
-                                            }
-                                        }}
-                                        className={`w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 transition-all ${validationAttempted && (!quantity || Number(quantity) < 1) ? "border-destructive focus:ring-destructive focus:ring-1" : "border-border focus:ring-primary"}`}
-                                    />
-                                </div>
-                                <div className="space-y-1">
-                                    <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Cost per Item (₱) <span className="text-destructive">*</span></label>
+                                    <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Total Cost (₱) <span className="text-destructive">*</span></label>
                                     <input
                                         type="number"
                                         step="0.01"
@@ -919,29 +907,6 @@ export default function AssetsModule() {
                                         }}
                                         className={`w-full rounded-lg border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 transition-all ${validationAttempted && (!costPerItem || Number(costPerItem) < 0) ? "border-destructive focus:ring-destructive focus:ring-1" : "border-border focus:ring-primary"}`}
                                     />
-                                </div>
-                            </div>
-
-                            {/* Calculated Total Cost */}
-                            <div className="bg-muted/10 p-3 rounded-lg border border-border/50 flex justify-between items-center text-xs">
-                                <span className="font-bold text-muted-foreground uppercase">Estimated Total Cost:</span>
-                                <span className="font-extrabold text-foreground text-sm">₱{calculatedTotal.toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
-                            </div>
-
-                            {/* Condition and Lifespan */}
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-1">
-                                    <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Physical Condition</label>
-                                    <select
-                                        value={condition || "Good"}
-                                        onChange={e => setCondition(e.target.value as AssetRecord["condition"])}
-                                        className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
-                                    >
-                                        <option value="Good">Good</option>
-                                        <option value="Bad">Bad</option>
-                                        <option value="Under Maintenance">Under Maintenance</option>
-                                        <option value="Discontinued">Discontinued</option>
-                                    </select>
                                 </div>
                                 <div className="space-y-1">
                                     <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Useful Lifespan (Months)</label>
@@ -964,6 +929,21 @@ export default function AssetsModule() {
                                         className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
                                     />
                                 </div>
+                            </div>
+
+                            {/* Condition */}
+                            <div className="space-y-1">
+                                <label className="text-[11px] font-bold text-muted-foreground uppercase block mb-1">Physical Condition</label>
+                                <select
+                                    value={condition || "Good"}
+                                    onChange={e => setCondition(e.target.value as AssetRecord["condition"])}
+                                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
+                                >
+                                    <option value="Good">Good</option>
+                                    <option value="Bad">Bad</option>
+                                    <option value="Under Maintenance">Under Maintenance</option>
+                                    <option value="Discontinued">Discontinued</option>
+                                </select>
                             </div>
 
                             {/* Date Acquired & Image URL */}
@@ -992,18 +972,8 @@ export default function AssetsModule() {
                                 </div>
                             </div>
 
-                            {/* Codes: Serial, Barcode, RFID */}
-                            <div className="grid grid-cols-3 gap-3">
-                                <div className="space-y-1">
-                                    <label className="text-[10px] font-bold text-muted-foreground uppercase block mb-1">Serial Number</label>
-                                    <input
-                                        type="text"
-                                        placeholder="S/N Code"
-                                        value={serial}
-                                        onChange={e => setSerial(e.target.value)}
-                                        className="w-full rounded-lg border border-border bg-background px-2.5 py-2 text-xs text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
-                                    />
-                                </div>
+                            {/* Codes: Barcode, RFID Code */}
+                            <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-1">
                                     <label className="text-[10px] font-bold text-muted-foreground uppercase block mb-1">Barcode</label>
                                     <input
@@ -1011,18 +981,28 @@ export default function AssetsModule() {
                                         placeholder="Barcode"
                                         value={barcode}
                                         onChange={e => setBarcode(e.target.value)}
-                                        className="w-full rounded-lg border border-border bg-background px-2.5 py-2 text-xs text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
+                                        className={`w-full rounded-lg border bg-background px-3 py-2 text-xs text-foreground outline-none focus:ring-1 transition-all ${
+                                            isDuplicateBarcode ? "border-destructive focus:ring-destructive focus:ring-1" : "border-border focus:ring-primary"
+                                        }`}
                                     />
+                                    {isDuplicateBarcode && (
+                                        <span className="text-[10px] text-destructive font-medium block mt-0.5">Barcode already exists in database</span>
+                                    )}
                                 </div>
                                 <div className="space-y-1">
                                     <label className="text-[10px] font-bold text-muted-foreground uppercase block mb-1">RFID Code</label>
                                     <input
                                         type="text"
-                                        placeholder="RFID RFID"
+                                        placeholder="RFID Code"
                                         value={rfidCode}
                                         onChange={e => setRfidCode(e.target.value)}
-                                        className="w-full rounded-lg border border-border bg-background px-2.5 py-2 text-xs text-foreground outline-none focus:ring-1 focus:ring-primary transition-all"
+                                        className={`w-full rounded-lg border bg-background px-3 py-2 text-xs text-foreground outline-none focus:ring-1 transition-all ${
+                                            isDuplicateRfid ? "border-destructive focus:ring-destructive focus:ring-1" : "border-border focus:ring-primary"
+                                        }`}
                                     />
+                                    {isDuplicateRfid && (
+                                        <span className="text-[10px] text-destructive font-medium block mt-0.5">RFID Code already exists in database</span>
+                                    )}
                                 </div>
                             </div>
 
@@ -1080,13 +1060,6 @@ export default function AssetsModule() {
                         {/* Header */}
                         <div className="flex items-center justify-between px-5 py-3.5 border-b bg-muted/10 shrink-0">
                             <h4 className="text-sm font-bold text-foreground">Register New Catalog Item</h4>
-                            <button
-                                type="button"
-                                onClick={() => setIsNewItemModalOpen(false)}
-                                className="text-muted-foreground hover:text-foreground text-xs font-semibold px-2 py-1 hover:bg-muted rounded"
-                            >
-                                Cancel
-                            </button>
                         </div>
                         {/* Body Form */}
                         <form onSubmit={handleCreateItemSubmit} className="p-5 space-y-4 text-xs">
@@ -1193,24 +1166,12 @@ export default function AssetsModule() {
                             {/* Details Grid */}
                             <div className="grid grid-cols-2 gap-4 bg-muted/10 p-4 rounded-xl border border-border/50">
                                 <div className="space-y-1">
-                                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Quantity</span>
+                                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Total Cost</span>
                                     <span className="text-sm font-semibold text-foreground">
-                                        {viewingAsset.quantity || 0} units
+                                        {formatCurrency(viewingAsset.total || viewingAsset.cost_per_item || 0)}
                                     </span>
                                 </div>
                                 <div className="space-y-1">
-                                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Cost per Item</span>
-                                    <span className="text-sm font-semibold text-foreground">
-                                        {formatCurrency(viewingAsset.cost_per_item)}
-                                    </span>
-                                </div>
-                                <div className="space-y-1 pt-2 border-t border-border/30">
-                                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Estimated Total Cost</span>
-                                    <span className="text-sm font-bold text-foreground">
-                                        {formatCurrency(viewingAsset.total)}
-                                    </span>
-                                </div>
-                                <div className="space-y-1 pt-2 border-t border-border/30">
                                     <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">Useful Lifespan</span>
                                     <span className="text-sm font-semibold text-foreground">
                                         {viewingAsset.life_span ? `${viewingAsset.life_span} Months` : "N/A"}
@@ -1282,10 +1243,6 @@ export default function AssetsModule() {
                                     <div className="flex-1 space-y-2 min-w-0">
                                         <div className="grid grid-cols-1 gap-2 text-[11px]">
                                             <div>
-                                                <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">Serial Number</span>
-                                                <span className="font-semibold text-foreground truncate block">{viewingAsset.serial || "N/A"}</span>
-                                            </div>
-                                            <div>
                                                 <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider block">Barcode</span>
                                                 <span className="font-semibold text-foreground truncate block">{viewingAsset.barcode || "N/A"}</span>
                                             </div>
@@ -1342,7 +1299,7 @@ export default function AssetsModule() {
                                 onClick={() => setIsViewModalOpen(false)}
                                 className="px-5 py-2 bg-primary hover:bg-primary/95 text-primary-foreground font-semibold rounded-lg text-xs transition-colors shadow-md shadow-primary/20"
                             >
-                                Close
+                                Cancel
                             </button>
                         </div>
                     </div>

@@ -79,13 +79,20 @@ export async function GET() {
     }
 }
 
-function formatManilaTimestamp(dateString: string): string {
-    if (!dateString) return "";
+function getManilaTimeString(dateString?: string | null): string | null {
+    if (dateString === null) return null;
+    const now = new Date();
+    const manilaTime = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+    const timePart = manilaTime.toISOString().substring(11, 19);
+
+    if (!dateString) {
+        const datePart = manilaTime.toISOString().substring(0, 10);
+        return `${datePart}T${timePart}.000Z`;
+    }
+
     const match = dateString.match(/^(\d{4})-(\d{2})-(\d{2})/);
     if (!match) return dateString;
     const [, year, month, day] = match;
-    const now = new Date();
-    const timePart = now.toISOString().substring(11, 19);
     return `${year}-${month}-${day}T${timePart}.000Z`;
 }
 
@@ -113,23 +120,52 @@ export async function POST(request: Request) {
             console.error("Error parsing user token in POST assets route:", err);
         }
 
-        // Clean payload fields
+        const cleanRfid = payload.rfid_code?.trim() || null;
+        const cleanBarcode = payload.barcode?.trim() || null;
+
+        if (cleanRfid) {
+            const checkRfidRes = await fetch(`${DIRECTUS_URL}/items/assets_and_equipment?filter[rfid_code][_eq]=${encodeURIComponent(cleanRfid)}`, { headers, cache: "no-store" });
+            if (checkRfidRes.ok) {
+                const checkRfidJson = await checkRfidRes.json();
+                if (checkRfidJson.data && checkRfidJson.data.length > 0) {
+                    return NextResponse.json({ error: "RFID Code already exists in the database." }, { status: 400 });
+                }
+            }
+        }
+
+        if (cleanBarcode) {
+            const checkBarcodeRes = await fetch(`${DIRECTUS_URL}/items/assets_and_equipment?filter[barcode][_eq]=${encodeURIComponent(cleanBarcode)}`, { headers, cache: "no-store" });
+            if (checkBarcodeRes.ok) {
+                const checkBarcodeJson = await checkBarcodeRes.json();
+                if (checkBarcodeJson.data && checkBarcodeJson.data.length > 0) {
+                    return NextResponse.json({ error: "Barcode already exists in the database." }, { status: 400 });
+                }
+            }
+        }
+
+        // Clean payload fields (registration of one asset at a time)
+        const costVal = payload.cost_per_item !== undefined ? Number(payload.cost_per_item) : 0;
+        const manilaNow = getManilaTimeString()!;
+
         const formattedPayload = {
             item_image: payload.item_image || null,
             item_id: payload.item_id || null,
-            quantity: payload.quantity !== undefined ? Number(payload.quantity) : 1,
-            rfid_code: payload.rfid_code || null,
-            barcode: payload.barcode || null,
-            serial: payload.serial || null,
+            quantity: 1,
+            rfid_code: cleanRfid,
+            barcode: cleanBarcode,
+            serial: null,
             department: payload.department || null,
             employee: payload.employee || null,
-            cost_per_item: payload.cost_per_item !== undefined ? Number(payload.cost_per_item) : 0,
-            total: (payload.quantity !== undefined ? Number(payload.quantity) : 1) * (payload.cost_per_item !== undefined ? Number(payload.cost_per_item) : 0),
+            cost_per_item: costVal,
+            total: costVal,
             condition: payload.condition || "Good",
             life_span: payload.life_span !== undefined ? Number(payload.life_span) : null,
             is_active_warning: payload.is_active_warning !== undefined ? !!payload.is_active_warning : false,
             is_active: payload.is_active !== undefined ? !!payload.is_active : true,
-            date_acquired: payload.date_acquired ? formatManilaTimestamp(payload.date_acquired) : null,
+            date_acquired: payload.date_acquired ? getManilaTimeString(payload.date_acquired) : manilaNow,
+            date_created: manilaNow,
+            created_at: manilaNow,
+            updated_at: manilaNow,
             created_by: userId ? Number(userId) : 24
         };
 
