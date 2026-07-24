@@ -109,48 +109,48 @@ export default function AuditWorkspaceModule({ batchNo }: AuditWorkspaceModulePr
 
     return (
         <ConsolidationShell className="flex-1 overflow-y-auto pb-28">
-            <header className="overflow-hidden rounded-3xl border border-border/60 bg-card shadow-sm">
-                <div className="flex flex-col gap-6 p-5 lg:flex-row lg:items-center lg:justify-between lg:p-7">
-                <div className="flex items-center gap-4">
+            <header className="rounded-xl border bg-card shadow-sm">
+                <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+                <div className="flex items-center gap-3">
                     <Button
                         variant="outline"
                         size="icon"
                         onClick={() => router.push("/mm/consolidation/auditing")}
-                        className="h-11 w-11 shrink-0 rounded-2xl"
+                        className="h-9 w-9 shrink-0 rounded-xl"
                         disabled={submitting}
                         suppressHydrationWarning
                     >
-                        <ArrowLeft className="h-5 w-5" />
+                        <ArrowLeft className="h-4 w-4" />
                     </Button>
                     <div>
-                        <p className="text-[10px] font-black uppercase tracking-[0.28em] text-violet-600">Audit Workspace</p>
-                        <div className="mt-1 flex flex-wrap items-center gap-3">
-                            <h1 className="text-2xl font-black uppercase italic tracking-tighter md:text-4xl">
+                        <p className="text-[10px] font-extrabold uppercase tracking-wide text-violet-600">Audit Workspace</p>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <h1 className="text-sm font-black uppercase tracking-wide">
                                 {consolidation.consolidatorNo}
                             </h1>
                             <ConsolidationStatusBadge status="Picked" />
                         </div>
-                        <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mt-0.5">
+                        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mt-0.5">
                             {consolidation.branchName || `Branch #${consolidation.branchId}`}
                         </p>
                     </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                    <div className="rounded-2xl bg-muted/45 px-4 py-3 text-right">
+                    <div className="rounded-xl bg-muted/45 px-4 py-3 text-right">
                         <div className="text-2xl font-black leading-none text-emerald-600 tabular-nums">
                             {auditedCount} <span className="text-sm text-muted-foreground/50">/ {totalItems}</span>
                         </div>
-                        <p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest mt-0.5">Audited SKUs</p>
+                        <p className="text-[10px] font-extrabold uppercase text-muted-foreground tracking-wide mt-0.5">Audited SKUs</p>
                     </div>
-                    <div className="rounded-2xl bg-muted/45 px-4 py-3 text-right"><div className="text-2xl font-black leading-none tabular-nums">{progressPercent.toFixed(0)}%</div><p className="mt-0.5 text-[10px] font-black uppercase tracking-widest text-muted-foreground">Progress</p></div>
+                    <div className="rounded-xl bg-muted/45 px-4 py-3 text-right"><div className="text-2xl font-black leading-none tabular-nums">{progressPercent.toFixed(0)}%</div><p className="mt-0.5 text-[10px] font-extrabold uppercase tracking-wide text-muted-foreground">Progress</p></div>
                 </div>
                 </div>
                 <div className="h-3 overflow-hidden rounded-full bg-muted shadow-inner"><motion.div className="h-full rounded-full bg-emerald-500" initial={{ width: 0 }} animate={{ width: `${progressPercent}%` }} transition={{ ease: "circOut", duration: 0.5 }} /></div>
             </header>
 
-            <section className="overflow-hidden rounded-3xl border border-border/60 bg-card shadow-sm">
-                <div className="mx-auto space-y-3 p-4 md:p-6">
-                    <div className="flex items-center justify-between mb-4">
+            <section className="rounded-xl border bg-card shadow-sm">
+                <div className="mx-auto space-y-3 p-4">
+                    <div className="flex items-center justify-between">
                         <h2 className="text-xs font-bold text-muted-foreground uppercase tracking-wide">
                             Products to Verify ({totalItems})
                         </h2>
@@ -166,7 +166,7 @@ export default function AuditWorkspaceModule({ batchNo }: AuditWorkspaceModulePr
                             <div
                                 key={d.id}
                                 onClick={() => handleToggleAudit(d.id)}
-                                className={`rounded-2xl border p-4 transition-all cursor-pointer ${
+                                className={`rounded-xl border p-4 transition-all cursor-pointer ${
                                     isAudited
                                         ? "bg-emerald-500/5 border-emerald-500/30"
                                         : "bg-card border-border hover:border-blue-500/30 hover:shadow-sm"
@@ -214,7 +214,7 @@ export default function AuditWorkspaceModule({ batchNo }: AuditWorkspaceModulePr
                 </div>
             </section>
 
-            <footer className="fixed inset-x-4 bottom-4 z-40 mx-auto flex max-w-[1544px] flex-col gap-3 rounded-2xl border border-border/70 bg-card/95 px-4 py-3 shadow-lg backdrop-blur sm:flex-row sm:items-center sm:justify-between md:inset-x-8">
+            <footer className="fixed inset-x-4 bottom-4 z-40 mx-auto flex max-w-[1544px] flex-col gap-3 rounded-xl border bg-card/95 px-4 py-3 shadow-lg backdrop-blur sm:flex-row sm:items-center sm:justify-between md:inset-x-8">
                 <div className="flex items-center gap-4 text-xs text-muted-foreground">
                     <span>
                         Verified: <strong className={isComplete ? "text-emerald-500" : "text-foreground"}>{auditedCount}/{totalItems}</strong>
@@ -267,7 +267,7 @@ export default function AuditWorkspaceModule({ batchNo }: AuditWorkspaceModulePr
 
             {showRepickConfirm && (
                 <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-                    <div className="bg-card border rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+                    <div className="bg-card border rounded-xl shadow-2xl w-full max-w-sm p-6 space-y-4">
                         <div className="flex items-center gap-3">
                             <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-500">
                                 <RefreshCcw className="h-5 w-5" />
@@ -311,7 +311,7 @@ export default function AuditWorkspaceModule({ batchNo }: AuditWorkspaceModulePr
 
             {showConfirm && (
                 <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-                    <div className="bg-card border rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+                    <div className="bg-card border rounded-xl shadow-2xl w-full max-w-sm p-6 space-y-4">
                         <div className="flex items-center gap-3">
                             <div className="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-500">
                                 <ShieldCheck className="h-5 w-5" />

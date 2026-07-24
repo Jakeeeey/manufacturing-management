@@ -11,6 +11,7 @@ export interface InvoicingCandidate {
     net_amount?: number;
     total_amount?: number;
     details: InvoicingLine[];
+    stockStatus?: StockStatus;
 }
 
 export interface InvoicingLine {
@@ -42,6 +43,7 @@ export interface CreatedInvoiceResult {
     invoiceId: number;
     invoiceNo: string;
     transactionStatus: "Prepared";
+    reservationCount: number;
 }
 
 export interface PrintableInvoiceLine {
@@ -54,6 +56,48 @@ export interface PrintableInvoiceLine {
     discountAmount: number;
     grossAmount: number;
     netAmount: number;
+}
+
+export interface ORFieldConfig {
+    x: number;
+    y: number;
+    fontSize?: number;
+    fontFamily?: 'courier' | 'helvetica' | 'times';
+    fontWeight?: 'normal' | 'bold';
+    label?: string;
+    charSpacing?: number;
+    scaleX?: number;
+    maxWidth?: number;
+    lineHeight?: number;
+    hidden?: boolean;
+    barcodeHeight?: number;
+    barcodeModuleWidth?: number;
+    hideBarcodeText?: boolean;
+}
+
+export interface ORTableSettings {
+    startY: number;
+    rowHeight: number;
+    fontSize: number;
+    product_name_width?: number;
+    columns?: {
+        barcode?: { x: number };
+        product_name?: { x: number };
+        quantity?: { x: number };
+        unit_price?: { x: number };
+        discount?: { x: number };
+        net_amount?: { x: number };
+    };
+}
+
+export interface ORTemplate {
+    id?: string;
+    name?: string;
+    width: number;
+    height: number;
+    backgroundImage?: string;
+    fields: Record<string, ORFieldConfig>;
+    tableSettings: ORTableSettings;
 }
 
 export interface PrintableInvoice {
@@ -73,6 +117,7 @@ export interface PrintableInvoice {
     paymentTermName: string;
     lines: PrintableInvoiceLine[];
     totals: { gross: number; discount: number; vat: number; net: number };
+    templateConfig?: ORTemplate;
 }
 
 export interface CustomerGroup {
@@ -90,3 +135,24 @@ export interface InvoicingFilters {
     dateFrom: string;
     dateTo: string;
 }
+
+export interface AvailabilityLine {
+    detailId: number;
+    productId: number;
+    productName: string;
+    productCode: string;
+    versionId: number;
+    versionName: string;
+    required: number;
+    onHand: number;
+    reserved: number;
+    available: number;
+    shortage: number;
+}
+
+export interface SalesOrderAvailability {
+    lines: AvailabilityLine[];
+    overallStockStatus: "Available" | "Partial" | "Unavailable";
+}
+
+export type StockStatus = "Available" | "Partial" | "Unavailable";
