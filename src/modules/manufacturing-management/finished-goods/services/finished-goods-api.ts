@@ -209,7 +209,6 @@ export async function registerProduct(
         product_shelf_life?: number;
         product_image?: string;
         parent_id?: number | null;
-        production_capacity_per_hour?: number;
     },
     versionName: string,
     supplierIds?: number[],
