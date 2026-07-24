@@ -439,7 +439,7 @@ export async function handleGET(request: Request) {
             const quantity = Number(searchParams.get("quantity") || 0);
 
             // Fetch job order route step details
-            const stepRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_routes/${joRouteId}?fields=jo_route_id,job_order_id,sequence_order,work_center_id,operation_id,planned_setup_hours,planned_run_hours,actual_setup_hours,actual_run_hours,estimated_labor_cost,actual_labor_cost`, { headers, cache: "no-store" });
+            const stepRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_routes/${joRouteId}?fields=jo_route_id,job_order_id,sequence_order,work_center_id,operation_id,planned_setup_hours,planned_run_hours,actual_setup_hours,actual_run_hours,step_batch_size,run_time_hours_factor`, { headers, cache: "no-store" });
             if (!stepRes.ok) return NextResponse.json([]);
             const step = (await stepRes.json()).data;
             if (!step) return NextResponse.json([]);
@@ -523,7 +523,7 @@ export async function handleGET(request: Request) {
             const joMap = new Map<number, any>();
             jobOrders.forEach((jo: any) => joMap.set(Number(jo.job_order_id), jo));
 
-            const routesRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_routes?limit=-1&fields=jo_route_id,job_order_id,sequence_order,work_center_id,operation_id,planned_setup_hours,planned_run_hours,actual_setup_hours,actual_run_hours,estimated_labor_cost,actual_labor_cost`, { headers, cache: "no-store" });
+            const routesRes = await fetch(`${DIRECTUS_URL}/items/manufacturing_job_order_routes?limit=-1&fields=jo_route_id,job_order_id,sequence_order,work_center_id,operation_id,planned_setup_hours,planned_run_hours,actual_setup_hours,actual_run_hours,step_batch_size,run_time_hours_factor`, { headers, cache: "no-store" });
             const routes = routesRes.ok ? ((await routesRes.json()).data || []) : [];
             const routeMap = new Map<number, any>();
             routes.forEach((r: any) => routeMap.set(Number(r.jo_route_id), r));

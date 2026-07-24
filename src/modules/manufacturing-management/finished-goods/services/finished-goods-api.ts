@@ -106,7 +106,7 @@ export async function fetchSections(): Promise<ProductSection[]> {
 }
 
 export async function fetchVersions(productId: number): Promise<ProductVersion[]> {
-    const res = await fetch(`/api/manufacturing/finished-goods/versions?productId=${productId}`);
+    const res = await fetch(`/api/manufacturing/finished-goods/versions?productId=${productId}`, { cache: "no-store" });
     if (!res.ok) throw new Error("Failed to fetch versions from BFF");
     return res.json();
 }
@@ -119,7 +119,7 @@ export async function fetchBOMDetails(productId: number, versionId: number, fore
     if (forexRate) {
         query.append("forexRate", String(forexRate));
     }
-    const res = await fetch(`/api/manufacturing/finished-goods/bom-details?${query.toString()}`);
+    const res = await fetch(`/api/manufacturing/finished-goods/bom-details?${query.toString()}`, { cache: "no-store" });
     if (!res.ok) throw new Error("Failed to fetch BOM details from BFF");
     return res.json();
 }
